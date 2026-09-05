@@ -911,17 +911,17 @@ SKIPPED_NOTE = ("its body, or the path its body-file names, is one of this "
 #
 # `$(` AND NOTHING ELSE, and the cut is measured over THE SET THIS CONSTANT CAN
 # REACH -- which is the correction that matters, because the first measurement
-# of it was over a wider set, and the numbers below say by how much rather than
-# a multiplier standing in for them. `_judgeable` is
-# called on a body that arrived as a FLAG TOKEN and on nothing else: a
-# `--body-file` body returns before it, and so does a heredoc. In the allow
-# corpus, 23 bodies arrive by flag token and 44 by `--body-file`; 43 of the 44
-# carry a backtick and were never affected either way, and exactly ONE of the 23
-# did. So the first cut's backtick cost one corpus row, not "most comments" --
-# and that row is still the reason to make the cut, because its backticks are
-# BACKSLASH-ESCAPED and so cannot be substitution under any reading: it was
-# judged and refused at e73ec4b and allowed unjudged at 7804eaf. This cut leaves
-# 7 corpus rows unjudged, all 7 holding a real `$(`.
+# of it was taken over a wider set; the numbers below are the cost over the set
+# this constant reaches. `_judgeable` is called on a body that arrived as a FLAG
+# TOKEN and on nothing else: a `--body-file` body returns before it, and so does
+# a heredoc. In the allow corpus, 23 bodies arrive by flag token and 44 by
+# `--body-file`; 43 of the 44 carry a backtick and were never affected either
+# way, and exactly ONE of the 23 did. So the first cut's backtick cost one
+# corpus row, not "most comments" -- and that row is still the reason to make
+# the cut, because its backticks are BACKSLASH-ESCAPED and so cannot be
+# substitution under any reading: it was judged and refused at e73ec4b and
+# allowed unjudged at 7804eaf. This cut leaves 7 corpus rows unjudged, all 7
+# holding a real `$(`.
 #
 # THE COST OF THE CUT, stated: a body holding a real `` `cmd` `` or `${VAR}` is
 # now judged on its SOURCE. That direction is a refusal, not a pass, and a

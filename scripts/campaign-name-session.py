@@ -39,8 +39,9 @@ and the caller's own rename is the one most likely to need a person.
 A prompt sent to a WORKING pane is QUEUED, and the harness merges every prompt
 queued before the turn ends into one input line: three `/rename` prompts sent
 to one working pane landed as the single name
-`campaign-1-worker-3/rename campaign-1-planner-1/rename campaign-1-worker-3`
-(2026-09-04, #169). A session naming itself is always mid-turn, so refusing a
+`campaign-1-executor-3/rename campaign-1-planner-1/rename campaign-1-executor-3`
+(2026-09-04, #169 -- `executor` was the role word that day, and a dated
+observation is quoted as it was observed). A session naming itself is always mid-turn, so refusing a
 working pane would refuse the ordinary case. Instead this sends at most one
 prompt per pane per call -- a pane named twice is refused before anything is
 applied -- and reads the pane's `agent_status` from `herdr agent list` before

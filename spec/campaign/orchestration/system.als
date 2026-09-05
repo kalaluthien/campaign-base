@@ -79,7 +79,7 @@ sig Agent {
    and takes whatever of the state below it turns out not to share.
 
    WHAT #185 RETIRED: a planner working a sub-issue by its own hands used to be
-   "a Worker atom of the same session". AgentInheritsSessionRole below forbids
+   an Agent atom of the worker role in the same session. AgentInheritsSessionRole below forbids
    that, so a planner session reaches `work` along no edge at all, and its code
    modes are a delegate or a separate worker session. */
 

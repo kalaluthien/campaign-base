@@ -1,7 +1,7 @@
 # Launching a delegate, in full
 
 The procedure behind `AGENTS.md` § Delegate launch, which keeps
-only the invariants. The launcher is the planner and the delegate is an
+only the invariants. The launcher is the planner and the delegate is a
 worker (`AGENTS.md` § The binding). Everything here is a probed fact about herdr 0.8.2 and the
 Claude CLI on this machine, and every item is a failure that raises no error.
 

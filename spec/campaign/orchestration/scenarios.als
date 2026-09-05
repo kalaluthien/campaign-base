@@ -251,7 +251,7 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
 /* Whether a session may perform this event on this issue. The table in #185:
 
      planner    campaign plane, any campaign            code plane: never
-     worker   campaign plane, its own campaign and
+     worker     campaign plane, its own campaign and
                 only a sub-issue it holds a claim on    code plane: only a
                                                         sub-issue it has claimed
      no role    refused on both planes
@@ -309,7 +309,7 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
 
    The reason no command can reach it: `sessionCloseIssue` in
    session/system.als already pins every campaign-issue close to the acting session's own campaign, for
-   every role and independently of `mayAct` -- so a scenario asserting an
+   every role and independently of `mayAct` -- so a scenario asserting a
    worker cannot close ANOTHER campaign's issue comes out UNSAT whatever this
    predicate says, and one was written and deleted for exactly that reason: it
    survived widening the carve-out to every campaign issue, with the whole

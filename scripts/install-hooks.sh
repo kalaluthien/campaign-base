@@ -18,7 +18,7 @@
 # (if present), then this repository's own: check-rule-readers, check-tree-shape,
 # check-cross-references, and check-commit-claim -- the commit half of the
 # claim gate, whose pre-tool-use half is the harness hook below.
-# post-commit pushes a campaign-*/ branch as soon as it has a commit, so an
+# post-commit pushes a campaign-*/ branch as soon as it has a commit, so a
 # worker never sits on a finished commit unpushed; it touches no other branch.
 #
 # Refuses rather than overwrites: an existing hook not written by this script, a

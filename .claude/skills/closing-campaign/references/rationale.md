@@ -66,7 +66,7 @@ happens to match and misses the rest. Ask the session instead.
 
 ## Step 2 — work only on this machine
 
-Step 1's two unenumerable cases land here: an agent herdr has forgotten and an
+Step 1's two unenumerable cases land here: an agent herdr has forgotten and a
 worker nothing recorded both still leave their work in a checkout. The delete
 spares the base checkout, but step 5 closes the campaign issue indexing it, so it is
 read here too.

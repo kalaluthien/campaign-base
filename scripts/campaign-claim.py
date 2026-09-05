@@ -34,7 +34,7 @@ The obvious join is a session's own directory: `herdr agent list` prints a
 against this machine on 2026-09-04 it found nothing, for two reasons that are
 the ordinary case and not an edge:
 
-  * herdr reports where a session was STARTED, not where it is working. An
+  * herdr reports where a session was STARTED, not where it is working. A
     worker on the base works in a worktree (AGENTS.md, Execution mode) and
     its herdr `cwd` stays at the clone it launched from, on `main`.
   * that worktree belongs to the BASE ROOT's repository, while the clone the
@@ -169,7 +169,7 @@ here refuses a name AT THE CLAIM any more: a claim can be cut under a stale
 name, and the write that follows is where it is caught.
 
 Two readers took the name up, and they ask different questions. #185's
-check-campaign-claim.py resolves the ROLE from it on every write, so an
+check-campaign-claim.py resolves the ROLE from it on every write, so a
 worker named for another campaign is refused that campaign's issues and a
 name of no shape is refused both planes -- that is the enforcement of AGENTS.md
 'The session name'. `OTHER_CAMPAIGN` below is #187's, and is only a shape: it

@@ -107,6 +107,13 @@ FORM_CASES = [
     ("repos: the heading named in an error message", fence('echo "REFUSE: the ## Repos list did not read"'), 0),
     ("repos: a parse naming no tool is outside the claim",
      fence("""while read -r l; do case $l in '## Repos') f=1;; esac; done < README.md"""), 0),
+    # `## Lands in` joined this rule in #217. Its own case, because the row's
+    # other alternations are all satisfied by `owner/repo` and would pass with
+    # the new heading deleted from the pattern.
+    ("repos: a shell parse of `## Lands in`, which is the same vocabulary",
+     fence("sed -n '/## Lands in/,/^## /p' body.md"), 1),
+    ("repos: ...and the heading named in an error message is still a mention",
+     fence('echo "REFUSE: the ## Lands in section did not read"'), 0),
     ("settlement: a jq read of the verdict field", fence("gh issue view 1 --json stateReason | jq -r .stateReason"), 1),
     ("settlement: the REST spelling", fence("gh api issues/1 --jq .merged_at"), 1),
     ("settlement: `not planned` as a disposition, not a verdict", fence('gh issue close 1 --reason "not planned"'), 0),

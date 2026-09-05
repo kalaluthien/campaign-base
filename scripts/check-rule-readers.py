@@ -173,9 +173,14 @@ FORMS = [
     (
         "campaign-repos",
         "campaign-repos.py",
+        # `## Lands in` JOINED THE CLAIM in kalaluthien/campaign-base#217: it is
+        # the same vocabulary read by the same file, so a hand-rolled parse of
+        # it is the same defect and belongs under the same owner rather than in
+        # a row of its own.
         re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\brg\b|\bjq\b|--jq|re\.|readlines|splitlines)"
-                   r"[^|;&]*(##\s*Repos|owner/repo)|(##\s*Repos|owner/repo)[^|;&]*(\bgrep\b|\bawk\b|\bjq\b)"),
-        "the ## Repos parse",
+                   r"[^|;&]*(##\s*Repos|##\s*Lands in|owner/repo)"
+                   r"|(##\s*Repos|##\s*Lands in|owner/repo)[^|;&]*(\bgrep\b|\bawk\b|\bjq\b)"),
+        "the ## Repos / ## Lands in parse",
     ),
     (
         "campaign-settlement",

@@ -212,6 +212,23 @@ def _repos_module():
     return m
 
 
+def _tracker_module():
+    """`campaign-tracker.py`, imported for the one thing it owns that this file
+    also needs: the `backlog` label's spelling. It is imported and not restated
+    for the same reason `campaign-repos.py` is -- the LIST is still read by
+    running that script, and this is a constant, not a reading.
+
+    NO CYCLE: `campaign-tracker.py` imports THIS file only inside
+    `claim_reader()`, at call time, so a module-level import here resolves."""
+    src = HERE / "campaign-tracker.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_tracker", importlib.machinery.SourceFileLoader(
+            "campaign_tracker", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 REPOS = _repos_module()
 DEFAULT_REPO = REPOS.BASE_REPO
 
@@ -328,9 +345,6 @@ def matching_refs(repo, campaign_issue):
     return parse_refs(r.stdout)
 
 
-REPOSITORY_LINE = re.compile(r"^Repository:\s*(\S+)\s*$", re.MULTILINE)
-
-
 def issue_repo(issue, default_repo):
     """(repo, named, note) -- the repository a sub-issue's work lands in, read
     from the sub-issue's own body. `None` for repo means the reading did not
@@ -345,9 +359,16 @@ def issue_repo(issue, default_repo):
     is keyed on the issue and cannot see a disagreement about where the issue
     lives (spec/campaign/orchestration/scenarios.als, `claimOnTheIssuesRepo`,
     with `R8_ClaimCutOnAnotherRepo` for the cost of dropping it). The template
-    has carried a `Repository:` line since the sub-issue template existed and
+    has carried the destination since the sub-issue template existed and
     NOTHING read it, which is the shape a declared contract takes just before it
     drifts.
+
+    IT IS THE `## Lands in` SECTION SINCE kalaluthien/campaign-base#217, and was
+    a `Repository:` keyword line before. One purpose had two shapes -- that line
+    here, `## Repos` on the campaign issue -- and the section is the one
+    vocabulary; `campaign-repos.py`'s `lands_in` is its one reader and its
+    docstring says why it is not `## Repos` with a count of one. The three
+    outcomes below did not move.
 
     `none` is the answer for a repo-less sub-issue and means the base: with no
     member repository the only place a ref can be cut is the base, which is what
@@ -357,7 +378,7 @@ def issue_repo(issue, default_repo):
     THE BASE SPELLED OUT IS THE SAME DESTINATION AS `none`, and `named` is None
     for both. `## Repos` lists the MEMBER repositories a campaign clones when it
     opens; the base is a member of its own campaign by a different route and no
-    campaign lists it. So a sub-issue writing `Repository: <the base>` -- which
+    campaign lists it. So a sub-issue whose `## Lands in` names the base -- which
     every sub-issue landing in `spec/`, `scripts/` or `AGENTS.md` writes, and
     which the template invites -- is naming the base, not widening the scope,
     and the scope check below must not see it. #187 read only the literal
@@ -370,30 +391,28 @@ def issue_repo(issue, default_repo):
     if r.returncode != 0:
         return None, None, (f"could not read #{issue}'s body from {TRACKER} "
                             f"({r.stderr.strip()[:120]})")
-    m = REPOSITORY_LINE.search(r.stdout)
-    if not m:
+    raw, why = REPOS.lands_in(r.stdout)
+    if why:
+        # THE READER'S OWN WORDS, and not a second wording of them. `lands_in`
+        # names what it read -- a missing heading, a malformed line, two
+        # entries, an entry that is no repository -- and each of those is a
+        # different repair. Restating them here would be a second reader of one
+        # rule, which is the defect the section replaced.
         return None, None, (
-            f"#{issue}'s body has no `Repository:` line, so where its work "
-            f"lands is unstated. Fill it from "
+            f"#{issue}'s body: {why}. Fill it from "
             f".claude/skills/opening-campaign/assets/sub-issue.md")
-    raw = m.group(1)
-    if raw.strip(REPOS.WRAPPERS).lower() == "none":
+    if raw.strip(REPOS.WRAPPERS).lower() == REPOS.NONE:
         return default_repo, None, (
             f"#{issue} names no member repository, so its ref is cut on the "
             f"base ({default_repo})")
     # NORMALIZED BEFORE ANYTHING IS COMPARED, through campaign-repos.py's one
-    # reader (#205). `Repository:` is prose a person types, so the same
-    # repository arrives backticked, angle-bracketed, `.git`-suffixed or in
-    # another case; compared raw, every one of those came out as the SCOPE
-    # refusal, which says "this campaign is not for that repository" when the
-    # truth is "that line was not read as a slug". Those are different
-    # diagnoses and they now print apart.
+    # reader (#205). The entry is prose a person types, so the same repository
+    # arrives backticked, angle-bracketed, `.git`-suffixed or in another case;
+    # compared raw, every one of those came out as the SCOPE refusal, which
+    # says "this campaign is not for that repository" when the truth is "that
+    # line was not read as a slug". Those are different diagnoses and they now
+    # print apart -- the second is `lands_in`'s refusal above.
     named = REPOS.slug(raw)
-    if named is None:
-        return None, None, (
-            f"#{issue}'s `Repository:` line reads {raw!r}, which is not an "
-            f"owner/repo and not `none`. It is not a scope question: nothing "
-            f"was compared, because that line does not name a repository")
     note = (f"#{issue} says its work lands in {named}"
             + (f" (read from {raw!r})" if raw.strip() != named else ""))
     if REPOS.key(named) == REPOS.key(default_repo):
@@ -460,6 +479,36 @@ def issue_settled(issue):
         why = words[1] if len(words) > 1 else ""
         return True, f"#{issue} is CLOSED{(' as ' + why) if why else ''}"
     return False, f"#{issue} is {state}"
+
+
+# ONE SPELLING, IMPORTED. `campaign-tracker.py` reads the label to REPORT it
+# and this file reads it to REFUSE a claim on it; two string literals of one
+# label is the drift this campaign exists to remove.
+BACKLOG_LABEL = _tracker_module().BACKLOG_LABEL
+
+
+def backlog_labelled(issue):
+    """(is it parked, why_unreadable) -- whether this sub-issue carries
+    `backlog`. `None` for the first means the reading did not happen, which is
+    a refusal: a label listing that failed is not a sub-issue nobody parked.
+
+    THE LABEL IS THE WHOLE MECHANISM (kalaluthien/campaign-base#217). A sub-issue
+    without it is worked as soon as it is filed or reopened; one with it waits
+    for the owner's word, and only the owner takes the label off, because
+    nothing on this machine can observe that they changed their mind. It is a
+    label and not a section for the same reason `bound:` is: a label is read by
+    exact name, has no history, and does not cost a body edit to set."""
+    r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json",
+            "labels", "--jq", "[.labels[].name]")
+    if r.returncode != 0:
+        return None, (f"could not read #{issue}'s labels from {TRACKER} "
+                      f"({r.stderr.strip()[:120]})")
+    try:
+        names = json.loads(r.stdout or "[]")
+    except ValueError as e:
+        return None, (f"could not parse #{issue}'s labels "
+                      f"({e.__class__.__name__})")
+    return BACKLOG_LABEL in names, None
 
 
 def campaign_repos(campaign_issue):
@@ -627,12 +676,12 @@ def cmd_take(args):
     print(note)
     if repo_named(args) and args.repo != repo:
         print(f"refusing: --repo says {args.repo}, #{args.issue} says {repo}.\n"
-              f"  The sub-issue decides. Fix its `Repository:` line, or drop "
+              f"  The sub-issue decides. Fix its `## Lands in` section, or drop "
               f"--repo.", file=sys.stderr)
         return 1
 
-    # ...AND IT MUST BE A REPOSITORY THE CAMPAIGN IS FOR. `Repository:` is
-    # prose on one sub-issue; `## Repos` is the campaign's scope and the thing a
+    # ...AND IT MUST BE A REPOSITORY THE CAMPAIGN IS FOR. `## Lands in` is
+    # one sub-issue's; `## Repos` is the campaign's scope and the thing a
     # person signed up for. A sub-issue naming a repository outside it is a
     # scope change filed as a typo, and cutting the ref would make the campaign
     # silently wider than its charter. Only a MEMBER repository is checked, and
@@ -657,7 +706,7 @@ def cmd_take(args):
                   f"it.", file=sys.stderr)
             return 1
         # COMPARED THROUGH THE ONE KEY (#205), not as raw strings. `issue_repo`
-        # has already de-wrapped the `Repository:` line; the list entries come
+        # has already de-wrapped the `## Lands in` entry; the list entries come
         # from `campaign-repos.py`, which admits `owner/repo` and nothing else,
         # so the only difference left between two spellings of one repository
         # is case -- and GitHub does not tell `Web` from `web`.
@@ -669,6 +718,40 @@ def cmd_take(args):
             return 1
         print(f"{repos_note}, which includes {named}")
 
+    # ...AND THE BRIEF MUST BE A BRIEF. A claim is the moment a sub-issue
+    # becomes somebody's work, so it is the one moment at which its shape is
+    # worth refusing over -- title, ceiling, the sections its kind requires,
+    # `## Plan` among them, because the plan is written by whoever will prompt
+    # the work and not by the worker in a pane
+    # (kalaluthien/campaign-base#217). Through `campaign-tracker check`, which
+    # owns that reading; run as a subprocess and its refusal read back, for the
+    # same reason `campaign_repos` above is.
+    v = run(sys.executable, str(HERE / "campaign-tracker.py"), "check",
+            str(args.issue), TRACKER, "--plan")
+    for line in v.stdout.splitlines():
+        print(f"  {line}")
+    if v.returncode != 0:
+        print(f"refusing: #{args.issue}'s shape does not admit a claim.\n"
+              f"{v.stderr.rstrip()}\n"
+              f"  The escape: a PLANNER edits the body -- a worker's `gh issue "
+              f"edit {args.issue}` is narrowed to a claim on\n  #{args.issue}, "
+              f"which is the claim just refused. Ask one, or take the planner "
+              f"role yourself.", file=sys.stderr)
+        return 1
+    backlog, why_backlog = backlog_labelled(args.issue)
+    if backlog is None:
+        print(f"refusing: {why_backlog}\n  A label listing that did not happen "
+              f"is not a sub-issue nobody parked.", file=sys.stderr)
+        return 1
+    if backlog:
+        print(f"refusing: #{args.issue} carries `{BACKLOG_LABEL}`, so it is not "
+              f"worked until the owner says so.\n  The owner removes the label; "
+              f"nothing here does, because its premise -- that the owner has "
+              f"changed\n  their mind -- is not observable from this machine.",
+              file=sys.stderr)
+        return 1
+    print(f"#{args.issue} does not carry `{BACKLOG_LABEL}`, so it is worked as "
+          f"filed")
 
     # THE SUB-ISSUE IS WHAT IS CLAIMED, AND THE REF NAME CARRIES THE TOPIC TOO,
     # so create-ref alone serialises topics rather than sub-issues: `7-parser`
@@ -1320,7 +1403,7 @@ def cmd_live(args):
     mine, scope_note = scope_for(args.campaign_issue)
     print(scope_note)
     # `live` reads a whole campaign rather than one sub-issue, so it has no
-    # `Repository:` line to consult; the base is where it starts and the clones
+    # `## Lands in` section to consult; the base is where it starts and the clones
     # on disk widen it. `--repo` here is a starting point, not an assertion
     # about one sub-issue's home.
     repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine,
@@ -1536,7 +1619,7 @@ def cmd_release(args):
     print(scope_note)
     # WHERE, from the sub-issue and not the caller -- the same reading `take`
     # makes. The spec says "`take` and `release` read the sub-issue's own
-    # `Repository:` line"; before this, only `take` did, and `release` still
+    # `## Lands in` section"; before this, only `take` did, and `release` still
     # picked a repository out of the clones on disk. A delete aimed by the
     # wrong reader takes a ref that is not this sub-issue's.
     subject, _named, note = issue_repo(args.issue, DEFAULT_REPO)

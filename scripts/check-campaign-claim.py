@@ -75,6 +75,17 @@ needs a claim on `<n>`. `gh issue create` is exempt, the number being minted
 there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
+WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
+one campaign write whose CONTENT this can read, so it is read: the first line
+must be `KIND <session name|owner>: <one line>`, KIND one of REPORT, REVIEW,
+BLOCKED, DECISION, NOTE, and the whole body at most 2,000 characters. Read from
+all four spellings -- `-b`, `--body`, `--comment`, `--body-file` (a path
+resolved against the PAYLOAD's cwd, or `-` for the heredoc) -- because a check
+covering three of them refuses the careful and passes the careless. Asked
+BEFORE the role and the claim, since it is a different question and its
+diagnosis names one edit where the claim's names a claim. `gh api ... -f body=`
+posts a comment and is NOT read; that ceiling is stated in the refusal itself.
+
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
 it. A `gh` write from a cwd under no base is allowed as not in a campaign.
 """
@@ -647,7 +658,29 @@ def strip_heredocs(command):
 
 def segments(command):
     """The command's segments as token lists, or (None, why) when shlex will
-    not split it. `punctuation_chars` makes `;`, `|`, `&` their own tokens."""
+    not split it.
+
+    The pairing half is `paired_segments` below; this is the shape every caller
+    but the comment check wants, and it is a projection of that one rather than
+    a second walk."""
+    pairs, why = paired_segments(command)
+    return (None if pairs is None else [tokens for tokens, _ in pairs]), why
+
+
+def paired_segments(command):
+    """[(tokens, the heredoc bodies that segment opened)], or (None, why).
+
+    `punctuation_chars` makes `;`, `|`, `&` their own tokens.
+
+    THE BODIES COME BACK OUT (kalaluthien/campaign-base#217). `strip_heredocs`
+    has always RETURNED them and this walk has always paired them to the
+    segment that opened them, by counting `<<` tokens -- it just handed them on
+    to a shell and to nothing else. The comment check needs the same pairing
+    for a different reason: `gh issue comment -F- <<EOF` puts the comment's
+    text in a heredoc, and a check that could not see it would pass every
+    heredoc comment silently while refusing the `-b` spelling of the same
+    thing. Pairing on the LINE instead would read the commit message in
+    `bash x.sh && git commit -F - <<M` as a comment body."""
     command, heredocs = strip_heredocs(command)
     lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`")
     lex.whitespace_split = True
@@ -678,9 +711,11 @@ def segments(command):
     # own length and the parameter had no reader. Removed rather than given
     # one.
     taken = 0
+    paired = []
     for seg in list(out):
         mine = heredocs[taken:taken + seg.count("<<")]
         taken += seg.count("<<")
+        paired.append((seg, mine))
         word, rest = head(seg)
         if word is None:
             continue
@@ -693,10 +728,13 @@ def segments(command):
         elif word in EVALS:
             inners = [t for t in rest[1:] if not t.startswith("-")]
         for text in inners:
-            more, why = segments(text)
+            more, why = paired_segments(text)
             if more is None:
                 return None, why
-            out += more
+            # `out` is NOT extended here any more. `for seg in list(out)`
+            # takes its snapshot before the loop and `paired` is what this
+            # returns, so the append had no reader after #217 split the walk.
+            paired += more
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.
@@ -710,7 +748,7 @@ def segments(command):
     # both are the shape this design already declines: one more alternation
     # buys one more form and a new bypass. An operand handed to a shell is a
     # shell string, and a shell string is not read.
-    return out, None
+    return paired, None
 
 
 def is_dash_c(token):
@@ -781,6 +819,266 @@ def gh_write(tokens):
     if pair in WRITES:
         return True, "gh " + " ".join(pair)
     return False, "gh " + " ".join(pair) + ", not a write"
+
+
+# ---------------------------------------------------------- the comment shape
+#
+# WHY THE GUARD AND NOT A WRITER SCRIPT (kalaluthien/campaign-base#217). The
+# design this implements proposed `campaign-comment.py`, a script every comment
+# would be posted through, on the premise that the guard cannot see a heredoc
+# body. That premise was false: `strip_heredocs` RETURNS the bodies and
+# `paired_segments` already pairs them to their segment -- #193 removed them
+# from SPLITTING, not from reading. So the same guarantee is thirty lines in a
+# file that already parses these calls, against a new script, a new routing
+# rule, a second place to learn, and a refusal that would have broken the
+# `gh issue reopen --comment` that AGENTS.md itself prescribes.
+#
+# WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered:
+#
+#   `gh api repos/.../issues/N/comments -f body=...` posts a comment and is
+#   NOT read here. `gh_write` reads it as "a write requiring a claim" and never
+#   pairs it against a subcommand, so no kind and no ceiling is checked on that
+#   route. Closing it means a second grammar for `gh api`'s field syntax inside
+#   a hook every session runs, which is the cost this declines -- as
+#   `PLANNER_GH_EXCEPT` declines the matching hole on `gh issue develop`.
+#
+#   `--body-file` naming a file this cannot read comes back as unreadable and
+#   is refused, not allowed: a body that could not be read is not a body with a
+#   kind on it.
+COMMENT_KINDS = ("REPORT", "REVIEW", "BLOCKED", "DECISION", "NOTE")
+# The pairs whose whole purpose is to post a comment...
+COMMENT_WRITES = {("issue", "comment"), ("pr", "comment"), ("pr", "review")}
+# ...and the verbs that post one only when `--comment` is given. `gh issue
+# reopen --comment` is the form AGENTS.md prescribes for appending a discovery
+# to an existing sub-issue, so it is checked and never refused for existing.
+COMMENT_FLAG_WRITES = {("issue", "close"), ("issue", "reopen"),
+                       ("pr", "close"), ("pr", "reopen")}
+COMMENT_CEILING = 2000
+# `KIND <session-name|owner>: <one line>`. The name is the only attribution one
+# `gh` account leaves, and `owner` is the person's own word arriving through a
+# session. `name_pattern` is the session-name rule's one home, imported by this
+# file already, so the two cannot drift.
+_FIRST_LINE = None
+
+
+def comment_first_line():
+    """Built on first use and cached, not at import: `name_pattern` loads
+    another file, and this guard runs on every tool call of every session."""
+    global _FIRST_LINE
+    if _FIRST_LINE is None:
+        _FIRST_LINE = re.compile(
+            r"^(?:" + "|".join(COMMENT_KINDS) + r") (?:owner|"
+            + name_pattern().pattern.strip("^$") + r"): *\S")
+    return _FIRST_LINE
+
+
+# THE BODY FLAGS, and `--comment` IS NOT AMONG THEM. `gh`'s own example is
+# `gh pr review --comment -b "interesting"`, where `--comment` is the review's
+# KIND and takes no value; reading it as valued swallowed the `-b` and judged
+# the literal string `--body` as the comment's first line -- so a correctly
+# kinded REVIEW, the one comment this vocabulary exists to make machine-
+# readable, was refused with a diagnosis sending its author to fix a line that
+# was already right. `--comment` is valued only on the `COMMENT_FLAG_WRITES`
+# verbs, and `comment_body` reads it only there.
+BODY_VALUED = {"-b", "--body"}
+# `-c` IS `--comment`'s SHORTHAND on `gh issue close|reopen` and
+# `gh pr close|reopen` (`gh help issue close`: `-c, --comment string`), and
+# reading only the long spelling was the very hole this pair was narrowed to
+# close: the careless spelling passing while the careful one is checked. It is
+# read INSIDE the `COMMENT_FLAG_WRITES` branch only, because `-c` on
+# `gh pr review` is the boolean kind and carries no text.
+COMMENT_FLAG = {"-c", "--comment"}
+BODY_FILE_VALUED = {"-F", "--body-file"}
+# A GNU-style long option takes `--x=v`; a pflag SHORTHAND also takes `-bv`
+# with no separator, and `gh` uses pflag. Named here rather than derived, so
+# `--body` is never split as though it were `-b` + `ody`.
+SHORT_FLAGS = {"-b", "-F", "-c"}
+# Every flag this reader knows, so one is never mistaken for another's value.
+KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
+# What `flag_value` returns when the only candidate value was itself a flag of
+# this reader: distinct from None, which means "no such flag was given at all".
+SKIPPED = object()
+SKIPPED_NOTE = ("its body, or the path its body-file names, is one of this "
+                "reader's own flag words, so the value was skipped rather than "
+                "judged; the shape was not read")
+# WHAT MAKES A BODY UNJUDGEABLE. shlex expands nothing, so a token holding a
+# command substitution reaches this check as its SOURCE, not as its value, and
+# `--body "$(cat review.md)"` -- a form this campaign used four times on PR
+# kalaluthien/campaign-base#183 -- was refused for a first line reading
+# `$(cat review.md)`. This file's own doctrine is that a shell string is not
+# read; judging one anyway refuses correct work on text nobody wrote. So it is
+# ALLOWED and the allow says which text it could not see.
+#
+# `$(` AND NOTHING ELSE, and the cut is measured over THE SET THIS CONSTANT CAN
+# REACH -- which is the correction that matters, because the first measurement
+# of it was taken over a wider set; the numbers below are the cost over the set
+# this constant reaches. `_judgeable` is called on a body that arrived as a FLAG
+# TOKEN and on nothing else: a `--body-file` body returns before it, and so does
+# a heredoc. In the allow corpus, 23 bodies arrive by flag token and 44 by
+# `--body-file`; 43 of the 44 carry a backtick and were never affected either
+# way, and exactly ONE of the 23 did. So the first cut's backtick cost one
+# corpus row, not "most comments" -- and that row is still the reason to make
+# the cut, because its backticks are BACKSLASH-ESCAPED and so cannot be
+# substitution under any reading: it was judged and refused at e73ec4b and
+# allowed unjudged at 7804eaf. This cut leaves 7 corpus rows unjudged, all 7
+# holding a real `$(`.
+#
+# THE COST OF THE CUT, stated: a body holding a real `` `cmd` `` or `${VAR}` is
+# now judged on its SOURCE. That direction is a refusal, not a pass, and a
+# refusal is the direction to fail in. shlex has already resolved the quoting by
+# the time this runs, so a literal backtick and a substituting one are
+# indistinguishable here; reading the raw command instead is the fix that would
+# tell them apart, and it is not paid for by one hypothetical body.
+#
+# ...AND WHAT THE CUT DOES NOT CLOSE, in the ALLOW direction, which is the half
+# a cost paragraph usually omits: `$((1+2))` in a literal body still reads as a
+# substitution and is allowed unjudged, and so is a deliberately escaped `\$(`.
+# The escaped-literal class the backtick row demonstrated therefore survives for
+# `$(`; closing it needs the raw command, same as above.
+SUBSTITUTION = ("$(",)
+
+
+def flag_value(tokens, names):
+    """The value of the first of `names` present, or None.
+
+    Three spellings, and the reason all three are read is that a check covering
+    two of them refuses the careful and passes the careless: `--x V`, `--x=V`,
+    and for a shorthand in `SHORT_FLAGS` the attached `-xV` that pflag accepts
+    and this once let through unread.
+
+    Returns `SKIPPED` -- not None -- when the only candidate value was itself
+    one of this reader's flags. The caller must tell "there is no body here"
+    from "the body was a word I refused to read"."""
+    skipped = []
+    for j, t in enumerate(tokens):
+        # A FLAG OF THIS READER IS NOT ITS OWN NEIGHBOUR'S VALUE. `--comment` is
+        # scanned before `-b` and is valued on the close/reopen verbs, so
+        # `--comment -b '<text>'` returned the literal `-b` and refused on
+        # shape. Skipped only for the flags NAMED in `KNOWN_FLAGS` -- a body may
+        # perfectly well begin with `-`, as every bullet list does, and a
+        # blanket "starts with a dash" test would drop those.
+        #
+        # IT IS THIS READER'S FLAG SET AND NOT `gh`'s, stated because the two
+        # differ: `gh issue close 7 -c -R owner/repo` reads `-R` as the body and
+        # refuses on shape. `gh` rejects a value-less `-c` itself, so nothing
+        # reaches that in practice, and widening the set to `gh`'s whole grammar
+        # is the second grammar this file declines to keep.
+        #
+        # AND A BODY WHOSE TEXT *IS* ONE OF THEM IS NOT SILENTLY DROPPED. The
+        # first cut of this skip returned None for `--body '-b'`, which posts a
+        # comment nothing checked -- the absence-as-a-pass this file exists to
+        # refuse. It comes back as UNJUDGED instead, which is an allow that says
+        # so, because the alternative is asserting a shape nobody read.
+        if t in names and j + 1 < len(tokens):
+            if tokens[j + 1] not in KNOWN_FLAGS:
+                return tokens[j + 1]
+            skipped.append(tokens[j + 1])
+        if "=" in t and t.split("=", 1)[0] in names:
+            return t.split("=", 1)[1]
+        for short in names & SHORT_FLAGS:
+            if len(t) > len(short) and t.startswith(short) and t[len(short)] != "=":
+                return t[len(short):]
+    return SKIPPED if skipped else None
+
+
+def comment_body(tokens, heredocs, cwd=None):
+    """(text, why_unreadable, why_unjudged) for the comment this segment posts;
+    (None, None, None) when it posts none. At most one of the three is set.
+
+    THE THIRD IS AN ALLOW AND THE OTHER TWO ARE REFUSALS, and they are separate
+    because they are different readings: `why_unreadable` is "I could not look"
+    at a file that should have been there, and `why_unjudged` is "there is
+    nothing here to look AT" -- a body the shell will compose and this guard
+    never sees. Collapsing them would either refuse the second, which refuses
+    correct work, or allow the first, which is the absence-as-a-pass this whole
+    check exists to avoid.
+
+    FOUR SPELLINGS OF ONE THING, and the reason they are all read here is that
+    a check covering three of them refuses the careful and passes the careless.
+    `--body-file -` is stdin, which in every form this guard sees is the
+    heredoc; a `--body-file` naming a real path is opened.
+
+    `cwd` IS THE PAYLOAD'S AND NOT THIS PROCESS'S. A hook runs wherever the
+    harness starts it, so resolving a relative `--body-file` against
+    `os.getcwd()` would read a different file from the one the shell is about
+    to, or none -- and an absence indistinguishable from a body with no kind on
+    it is the whole failure mode this check exists to avoid. Unreadable is
+    therefore a REFUSAL that names the resolved path, never a silent pass."""
+    words = gh_words(tokens)
+    pair = tuple(words[:2])
+    if pair in COMMENT_WRITES:
+        pass
+    elif pair in COMMENT_FLAG_WRITES:
+        # THE GATE ADMITS `-c…` AS THE SHORTHAND, and says so rather than
+        # pretending to be narrower. A standalone `-c` is already caught by
+        # `t in COMMENT_FLAG`, so this clause exists for the ATTACHED `-cTEXT`
+        # alone -- and it therefore also admits any other `-c…` word on these
+        # four verbs, `-check` included, which `flag_value` then reads as the
+        # body `heck` and refuses on shape. No flag `gh` accepts on
+        # `issue close|reopen` or `pr close|reopen` collides today; the
+        # alternative is this guard keeping a second copy of `gh`'s grammar,
+        # which is the cost it declines everywhere else.
+        if not any(t in COMMENT_FLAG or t.startswith("--comment=")
+                   or (t.startswith("-c") and not t.startswith("--"))
+                   for t in tokens):
+            return None, None, None
+        # ...AND HERE ONLY IS IT VALUED. On these verbs `--comment` carries the
+        # text; on `gh pr review` it is the review's kind and carries nothing.
+        text = flag_value(tokens, BODY_VALUED | COMMENT_FLAG)
+        if text is SKIPPED:
+            return None, None, SKIPPED_NOTE
+        if text is not None:
+            return _judgeable(text)
+    else:
+        return None, None, None
+    text = flag_value(tokens, BODY_VALUED)
+    if text is SKIPPED:
+        return None, None, SKIPPED_NOTE
+    if text is not None:
+        return _judgeable(text)
+    path = flag_value(tokens, BODY_FILE_VALUED)
+    if path is SKIPPED:
+        return None, None, SKIPPED_NOTE
+    if path is not None and path != "-":
+        here = Path(cwd) if cwd is not None else Path.cwd()
+        resolved = Path(path) if Path(path).is_absolute() else here / path
+        try:
+            return resolved.read_text(encoding="utf-8"), None, None
+        except OSError as e:
+            return None, (f"`{path}` -> {resolved} could not be read "
+                          f"({e.__class__.__name__}), so the comment's shape "
+                          f"was not read either"), None
+    if heredocs:
+        return heredocs[0], None, None
+    # A `gh pr review --approve` with no body posts a review and no comment; a
+    # `gh issue comment` with neither is interactive. Neither has text to check
+    # and neither is a shape this can judge.
+    return None, None, None
+
+
+def _judgeable(text):
+    """The three-tuple for a body token: judged, or unjudged with the reason.
+
+    The one unjudged case is a command substitution: shlex expands nothing, so
+    what arrives here is the SOURCE and never the value."""
+    if any(x in text for x in SUBSTITUTION):
+        return None, None, (f"its body is composed by the shell "
+                            f"({text[:60]!r}), so this guard never sees the "
+                            f"text and did not judge it")
+    return text, None, None
+
+
+def comment_findings(text):
+    """Every way this comment's shape is wrong, as lines; empty when it holds."""
+    out = []
+    first = text.strip().splitlines()[0] if text.strip() else ""
+    if not comment_first_line().match(first):
+        out.append(f"its first line is {first[:80]!r}, which is not "
+                   f"`KIND <session name|owner>: <one line>`. KIND is one of "
+                   f"{', '.join(COMMENT_KINDS)}, one intent per comment")
+    if len(text) > COMMENT_CEILING:
+        out.append(f"it is {len(text)} characters, over {COMMENT_CEILING}")
+    return out
 
 
 def issue_target(tokens):
@@ -959,7 +1257,8 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
 
 
 def bash_call(command, cwd: Path, session_id=""):
-    segs, why = segments(command)
+    pairs, why = paired_segments(command)
+    segs = None if pairs is None else [t for t, _ in pairs]
     if segs is None:
         # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
         # call this cannot split is not read as harmless" for a command with no
@@ -1006,6 +1305,41 @@ def bash_call(command, cwd: Path, session_id=""):
     if root is None or not (root / BASE_MARKER).is_file():
         why = how if root is None else f"{how}, which is a repository and not a base"
         return allow([f"{what}: {why}, so this session is in no campaign."])
+    # THE COMMENT'S SHAPE, before the claim and before the role (#217). It is a
+    # different question from both: a session with every claim in the world may
+    # not post a comment with no kind on it, and a comment is the one campaign
+    # write whose CONTENT this guard can read. Refused here so the diagnosis is
+    # the shape, which names one edit, rather than the claim, which would send
+    # the reader to take a claim it may already hold.
+    shape, unread, unjudged = [], [], []
+    for tokens, heredocs in pairs:
+        word, rest = head(tokens)
+        if word != "gh":
+            continue
+        text, why_body, why_unjudged = comment_body(rest, heredocs, cwd)
+        if why_body:
+            unread.append(why_body)
+        elif why_unjudged:
+            unjudged.append(why_unjudged)
+        elif text is not None:
+            shape += comment_findings(text)
+    if shape or unread:
+        return refuse([f"{what}: a comment whose shape does not hold.",
+                       *[f"  {f}" for f in shape + unread],
+                       f"The five kinds are {', '.join(COMMENT_KINDS)}; "
+                       f"AGENTS.md § The four messages says which goes where. "
+                       f"A `gh api ... -f body=` posts a comment and is NOT "
+                       f"read here, which is this check's stated ceiling and "
+                       f"not a route around it."])
+    # CARRIED PAST THE CLAIM READING, not returned here: an unjudged comment is
+    # still a campaign-plane write and still needs its claim. Folded into
+    # `what`, which is the one string EVERY exit below prints -- three of them
+    # do not carry `fell_back`, so a second list would go silent on exactly the
+    # exits a reader is most likely to meet. An allow must never come back
+    # looking like a comment that was read and passed.
+    if unjudged:
+        what += " [" + "; ".join(
+            f"shape NOT checked: {u}" for u in unjudged) + "]"
     campaign, role, how_role = role_of(session_id)
     # Computed before the first exit that can use it: every exit of this
     # half that fell back says so, allows included. The allows used to be
@@ -1061,7 +1395,16 @@ def bash_call(command, cwd: Path, session_id=""):
         # root was resolved. #191 item 1 is the rule -- every exit says what it
         # read -- and an early return is exactly where it gets broken.
         if excepted:
-            return refuse([f"{what}: {how_role}.", how, *read_on, *[
+            # `how_role` IS NOT REPEATED HERE. Every entry of `read_on` already
+            # opens with it, and this header printed it a second time on a
+            # mixed write -- `gh pr merge 5 && gh issue develop 9` -- where
+            # both the header and the licence line fired
+            # (kalaluthien/campaign-base#213's review). `read_on or [how_role]`
+            # and not `read_on` alone: a bare `gh issue develop 9` leaves
+            # `read_on` EMPTY, since `issue` is in `PLANNER_GH` and only the
+            # pair is excepted, so dropping the header outright would have lost
+            # the role reading on exactly the command this branch is for.
+            return refuse([f"{what}.", how, *(read_on or [how_role]), *[
                 f"`gh {v}` cuts a branch in the sub-issue's own repository "
                 f"without reading the binding, the sub-issue's parent, or the "
                 f"campaign issue's `## Repos`, so the planner licence does not "

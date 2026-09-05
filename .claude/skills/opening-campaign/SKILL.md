@@ -9,7 +9,9 @@ Finished when all of these hold:
 
 - An open issue in `kalaluthien/campaign-base` carries the label `campaign`,
   no parent, and the sections of the campaign issue template `assets/README.md`, with a
-  `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on.
+  `## Repos` list that `scripts/campaign-repos.py` reads and exits 0 on, and
+  `scripts/campaign-tracker.py check <N>` exits 0 on its title, its length and
+  its sections.
 - The campaign issue carries exactly one `bound:` label, and it names this machine.
 - `<slug>-<YYMMDD>/` exists at the base root and holds `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that

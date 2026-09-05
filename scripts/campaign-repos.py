@@ -29,9 +29,15 @@ as exit strings in the code below.
                               second checkout. Prose said so in three files and
                               no reader enforced it (#205).
 
-`slug`, `key`, `WRAPPERS` and `BASE_REPO` are exported for `scripts/campaign-claim.py`, which
-compares a sub-issue's `Repository:` line to this list: one reader of what makes
-two spellings the same repository, rather than two that agree by both being exact.
+`slug`, `key`, `WRAPPERS`, `BASE_REPO` and `lands_in` are exported for
+`scripts/campaign-claim.py`, which compares a sub-issue's `## Lands in` entry to
+this list: one reader of what makes two spellings the same repository, rather
+than two that agree by both being exact.
+
+`lands_in` IS THE SECOND SECTION THIS FILE READS (kalaluthien/campaign-base#217),
+and its docstring says why it is not `## Repos` with a count of one. The command
+line still reads `## Repos` alone: a sub-issue's destination is read on the claim
+path, in process, and never as a subprocess whose refusals a caller re-reads.
 
 scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages a `grep`, `sed`, `awk`, `rg`, `jq` or Python
@@ -58,7 +64,8 @@ closing-campaign step 4 runs it over the README and over the body GitHub stored.
 import re
 import sys
 
-HEADING = re.compile(r"^## Repos\s*$")
+REPOS_HEADING = "Repos"
+LANDS_HEADING = "Lands in"
 NEXT_SECTION = re.compile(r"^## ")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 ITEM = re.compile(r"^- (\S.*)$")
@@ -77,13 +84,15 @@ BASE_REPO = "kalaluthien/campaign-base"
 # WHAT A SLUG IS ALLOWED TO ARRIVE WRAPPED IN. `## Repos` is authored from a
 # template and stays strict: `ENTRY` above admits `owner/repo` and nothing else,
 # and a list written any other way is refused where it is written. A
-# `Repository:` line on a sub-issue is prose a person types, and the same
+# `## Lands in` entry on a sub-issue is prose a person types, and the same
 # repository arrives there as `owner/repo`, in backticks, in angle brackets,
 # with a trailing slash, with a `.git`, or in another case. Those are one
 # repository, and comparing them raw made a scope refusal say "this campaign is
 # not for that repository" when the truth was "that line was not read as a slug"
 # (kalaluthien/campaign-base#205). `slug` and `key` are the ONE reader of that,
-# used by the base check here and by campaign-claim.py's `Repository:` reading.
+# used by the base check here and by `lands_in` below and its caller. The
+# section replaced a `Repository:` keyword line in #217; the leniency did not
+# move with it, because what a person types is what it was always about.
 #
 # ANGLE BRACKETS ARE NOT A WRAPPER, and this is the one entry that has to be
 # argued rather than listed: `<owner/repo>` is the sub-issue template's
@@ -123,11 +132,18 @@ def is_base(text):
     return key(text) is not None and key(text) == key(BASE_REPO)
 
 
-def section(text):
-    """The non-blank lines under `## Repos`, or None when there is no heading."""
+def section(text, heading=REPOS_HEADING):
+    """The non-blank lines under `## <heading>`, or None when there is none.
+
+    Parameterised by #217, when `## Lands in` joined `## Repos` as the second
+    section written in this vocabulary. One walker, because the two sections
+    differ in what their entries MEAN and not in how a section is found, and a
+    second copy of the walk would be the one that stopped honouring `<!-- -->`
+    or the next `## `."""
+    want = re.compile(rf"^## {re.escape(heading)}\s*$")
     out, inside = [], False
     for line in COMMENT.sub("", text).splitlines():
-        if HEADING.match(line):
+        if want.match(line):
             inside = True
             continue
         if inside:
@@ -136,6 +152,64 @@ def section(text):
             if line.strip():
                 out.append(line.rstrip())
     return out if inside else None
+
+
+def lands_in(text):
+    """(entry, why) -- the ONE repository a sub-issue's `## Lands in` names.
+
+    `entry` is the raw entry as written, and `why` is a refusal naming what was
+    read; exactly one of the two is None. The caller decides what the entry
+    MEANS -- `campaign-claim.py`'s `issue_repo` maps `none` and the base's own
+    slug to the base and everything else to a member repository -- because that
+    mapping is the claim's question and not this reader's.
+
+    WHY IT IS NOT `## Repos` WITH A COUNT OF ONE (kalaluthien/campaign-base#217).
+    The two sections ask different questions of one vocabulary: `## Repos` says
+    which repositories a campaign CLONES, a set, and refuses the base, because
+    the base reaches its campaign directory by another route; `## Lands in` says
+    where ONE sub-issue's work lands, a single value, and the base is its
+    commonest answer. A `--one` mode over the first would have to unlearn its
+    own base refusal, which is the collision this heading avoids by existing.
+
+    THE ENTRY IS NOT NORMALISED HERE. `slug` is the one reader of what makes two
+    spellings the same repository and the caller calls it, so this returns what
+    was written and a refusal quotes it verbatim -- a reader that had already
+    de-wrapped could not say which of the two diagnoses applied, "that is not a
+    repository" or "this campaign is not for it"."""
+    lines = section(text, LANDS_HEADING)
+    if lines is None:
+        return None, (f"no `## {LANDS_HEADING}` heading, so where the work "
+                      f"lands is unstated")
+    items = []
+    for line in lines:
+        m = ITEM.match(line)
+        if not m:
+            return None, (f"malformed line under ## {LANDS_HEADING}: {line}")
+        items.append(m.group(1).strip())
+    if not items:
+        return None, f"the ## {LANDS_HEADING} section is empty"
+    if len(items) != 1:
+        # A SUB-ISSUE LANDS IN ONE REPOSITORY, and two entries is not a wider
+        # sub-issue but an unanswered question: the claim cuts ONE ref, and
+        # picking the first would cut it wherever the list happened to be
+        # ordered. Work moving two repositories together is two sub-issues, or
+        # one whose second repository is named in `## Plan` and claimed there.
+        return None, (f"## {LANDS_HEADING} holds {len(items)} entries "
+                      f"({', '.join(items)}); a sub-issue lands in one "
+                      f"repository, because its claim is one ref")
+    entry = items[0]
+    # THE SENTINEL IS AS LENIENT AS A SLUG HERE, and exactly here. `## Repos`
+    # spells `- none` and nothing else, because that list is authored from a
+    # template and refused where it is written; this entry is a person's answer
+    # to "where does it land", and `` `none` `` and `None` are that answer. The
+    # caller re-tests the sentinel the same way, so a spelling this admits is
+    # one it can act on.
+    if entry.strip(WRAPPERS).lower() != NONE and slug(entry) is None:
+        return None, (f"## {LANDS_HEADING} reads {entry!r}, which is not an "
+                      f"owner/repo and not `{NONE}`. It is not a scope "
+                      f"question: nothing was compared, because that line does "
+                      f"not name a repository")
+    return entry, None
 
 
 def main():

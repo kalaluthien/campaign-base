@@ -573,6 +573,47 @@ def main():
         check("`backlog` is reported by check and does not fail it",
               r.returncode == 0 and "carries `backlog`" in r.stdout)
 
+        # `bind` REPORTS THE SHAPE AND NEVER GATES ON IT, which is the whole
+        # reason `check` is its own verb: `bind` is the ONLY repair for the
+        # two-`bound:`-label state, so a `bind` that refused an oversize body
+        # would refuse to run on exactly the campaign that needs repairing.
+        # Asserted on the LABEL EDIT having happened, not on the exit status,
+        # which a `bind` that quietly skipped the edit would share.
+        d = Path(tmp) / "bindbad"
+        d.mkdir()
+        (d / "calls").write_text("")
+        (d / "gh").write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            f"open({str(d / 'calls')!r}, 'a').write(' '.join(sys.argv[1:]) + chr(10))\n"
+            "if '--json' in sys.argv:\n"
+            "    if 'labels' == sys.argv[sys.argv.index('--json') + 1]:\n"
+            "        print(json.dumps([]))\n"
+            "    else:\n"
+            f"        print(json.dumps({{'title': 'x' * 120, 'body': 'no sections here',\n"
+            "                           'labels': [], 'parent': {'number': 1}}))\n"
+            "sys.exit(0)\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("bind", "5", env=dict(os.environ,
+                                          PATH=f"{d}:{os.environ['PATH']}"))
+        calls = (d / "calls").read_text()
+        check("bind sets the label even when the shape does not hold",
+              r.returncode == 0 and "--add-label bound:" in calls)
+        check("...and says so, naming the findings it did not act on",
+              "reported and not enforced here" in r.stdout
+              and "over 80" in r.stdout)
+        # AN UNREADABLE SHAPE IS A THIRD ANSWER, not a clean bill: `bind` must
+        # say it did not look rather than print a shape it never read.
+        d2 = Path(tmp) / "bindunread"
+        d2.mkdir()
+        (d2 / "gh").write_text(
+            "#!/bin/sh\ncase \"$*\" in *--json*) exit 1 ;; esac\nexit 0\n")
+        (d2 / "gh").chmod(0o755)
+        r = tracker("bind", "5", env=dict(os.environ,
+                                          PATH=f"{d2}:{os.environ['PATH']}"))
+        check("bind reports a shape it could not read as unread, and still binds",
+              r.returncode == 0 and "the shape was NOT read" in r.stdout)
+
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1

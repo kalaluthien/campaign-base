@@ -144,8 +144,9 @@ VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
 PLANNER_GH = {"issue", "label"}
 
 # THE ONE `gh issue` VERB THE LICENCE DOES NOT COVER
-# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch on the
-# campaign's own remote, and with `--name campaign-<N>/<issue>-<topic>` that
+# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch in the
+# sub-issue's own repository, and with `--name campaign-<N>/<issue>-<topic>`
+# that
 # branch IS a claim -- the same object `campaign-claim take` cuts. Bare, it
 # names the branch `<issue>-<slug>`, which no reader here treats as a claim;
 # the flag is one word away and this guard reads no flags, so the verb is
@@ -1053,10 +1054,16 @@ def bash_call(command, cwd: Path, session_id=""):
         # state. A licence removal that leaves the write allowed is not a
         # removal, and the sentence in scenarios.als saying so was false. Found
         # by the review of 48dd5fc.
+        #
+        # IT CARRIES `how` AND `read_on` OUT WITH IT, which the first cut of
+        # the return dropped: a refusal on `gh pr merge 5 && gh issue develop 9`
+        # named the develop and went silent about the merge and about how the
+        # root was resolved. #191 item 1 is the rule -- every exit says what it
+        # read -- and an early return is exactly where it gets broken.
         if excepted:
-            return refuse([f"{what}: {how_role}.", *[
-                f"`gh {v}` cuts a branch on the campaign's own remote without "
-                f"reading the binding, the sub-issue's parent, or the "
+            return refuse([f"{what}: {how_role}.", how, *read_on, *[
+                f"`gh {v}` cuts a branch in the sub-issue's own repository "
+                f"without reading the binding, the sub-issue's parent, or the "
                 f"campaign issue's `## Repos`, so the planner licence does not "
                 f"cover it. This reads no flags, so a `--list` is refused with "
                 f"it." for v in excepted], TAKE])

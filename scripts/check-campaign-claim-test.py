@@ -757,8 +757,8 @@ def main():
         # keyed on rc=2 alone passes with the exception deleted.
         r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
         check("the planner licence does not cover `gh issue develop`",
-              r.returncode == 2 and "cuts a branch on the campaign's own "
-              "remote" in r.stderr
+              r.returncode == 2 and "cuts a branch in the sub-issue's "
+              "own repository" in r.stderr
               and "not the campaign plane" not in r.stderr, out(r)[:400])
         # ...and one develop hidden among covered verbs sinks the whole call,
         # which is the shape a set-membership test on the SUBCOMMAND missed.
@@ -766,8 +766,8 @@ def main():
                 command="gh issue comment 9 --body x && gh issue develop 9",
                 env=planner)
         check("...and a develop beside a covered verb is not carried by it",
-              r.returncode == 2 and "cuts a branch on the campaign's own "
-              "remote" in r.stderr, out(r)[:400])
+              r.returncode == 2 and "cuts a branch in the sub-issue's "
+              "own repository" in r.stderr, out(r)[:400])
         # THE REFUSAL IS A REFUSAL AND NOT A SENTENCE, which the first cut of
         # this got wrong and a review caught. Appending to `read_on` and
         # falling through left the claim reading to decide, and it ALLOWS a
@@ -782,7 +782,7 @@ def main():
             r = ask(f9.base, tool="Bash", command="gh issue develop 9", env=p9)
             check("...and a live claim on the very issue does not carry it "
                   "either", r.returncode == 2
-                  and "cuts a branch on the campaign's own remote" in r.stderr,
+                  and "cuts a branch in the sub-issue's own repository" in r.stderr,
                   out(r)[:400])
             # ALLOW beside it: the same claim, the same planner, an ordinary
             # campaign-plane verb -- so the refusal is the verb and not the
@@ -791,6 +791,19 @@ def main():
                     env=p9)
             check("...and the same planner still comments on that issue",
                   r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+
+        # AND THE REFUSAL STILL SAYS WHAT ELSE IT READ. An early return is
+        # where #191 item 1 gets broken: the first cut of it named the develop
+        # and went silent about the other write in the same command and about
+        # how the root was resolved.
+        r = ask(f.base, tool="Bash",
+                command="gh pr merge 5 --merge && gh issue develop 9",
+                env=planner)
+        check("...and the develop refusal still names the other write beside it",
+              r.returncode == 2
+              and "`gh pr` is not the campaign plane" in r.stderr
+              and "cuts a branch in the sub-issue's own repository" in r.stderr,
+              out(r)[:500])
 
         # THE FALLBACK SENTENCE, which had no case. `read_on` is empty when a
         # planner's command holds no gh WRITE the guard can read but does hold

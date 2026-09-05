@@ -241,6 +241,24 @@ def corpus_rows():
     return [json.loads(l) for l in CORPUS.read_text().splitlines() if l.strip()]
 
 
+def row_posts_comment(mod, row):
+    """Whether this corpus row posts a comment, read by the guard's own reader.
+
+    Asked through `comment_body` and not by grepping the command for
+    `gh issue comment`: a second reader of which calls post a comment would
+    disagree with the one under test on exactly the forms this file exists to
+    measure."""
+    pairs, _why = mod.paired_segments(row["command"])
+    for tokens, heredocs in pairs or []:
+        word, rest = mod.head(tokens)
+        if word != "gh":
+            continue
+        text, why = mod.comment_body(rest, heredocs)
+        if text is not None or why:
+            return True
+    return False
+
+
 def corpus_issues(mod, rows):
     """Every sub-issue number a corpus command names. The replay fixture holds
     a claim on each, because the corpus is the calls sessions made WHILE
@@ -297,7 +315,7 @@ def main():
         plain.mkdir()
         subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
         for cmd in ("gh issue close 9", "gh pr merge 9 --merge",
-                    "gh pr comment 9 --body x"):
+                    "gh pr comment 9 --body 'NOTE campaign-1-worker-1: x'"):
             r = ask(plain, tool="Bash", command=cmd)
             check(f"`{cmd}` from an ordinary git repository that is no base is "
                   f"allowed, naming why",
@@ -478,7 +496,7 @@ def main():
             ("gh issue transfer 5 o/r", "gh issue transfer"),
             ("gh issue delete 5 --yes", "gh issue delete"),
             ("gh issue edit 5 --body x", "gh issue edit"),
-            ("gh issue comment 5 --body x", "gh issue comment"),
+            ("gh issue comment 5 --body 'NOTE campaign-1-worker-1: x'", "gh issue comment"),
             ("gh api repos/o/r/issues -f title=x", "gh api with a field"),
             ("gh api -X PATCH repos/o/r/issues/5 --input body.json", "gh api PATCH"),
             ("gh api --method=DELETE repos/o/r/issues/5", "gh api DELETE"),
@@ -513,8 +531,12 @@ def main():
         # A PATH IS NOT AN ISSUE NUMBER. Reading the tail of any token holding
         # a slash made `--body-file /tmp/123` name #123 and refuse the write
         # for a claim nobody could hold.
+        # The body file is REAL and kinded, so the comment check has nothing
+        # to say and the diagnosis under test is the only one printed. Its
+        # name still ends in digits after a slash, which is the whole shape.
+        (f.base / "123").write_text("NOTE campaign-1-worker-1: x\n")
         r = ask(f.base, tool="Bash",
-                command="gh issue comment --body-file /tmp/123 7")
+                command=f"gh issue comment --body-file {f.base}/123 7")
         check("a file path operand is not read as the issue number",
               r.returncode == 2 and "a write to #7" in r.stderr
               and "#123" not in r.stderr, out(r)[:300])
@@ -524,6 +546,7 @@ def main():
         # And a flag's value that IS a bare number must not be read as the
         # issue either -- which the path rule alone cannot catch, since the
         # value has no slash. VALUED is what skips it.
+        (f.base / "9").write_text("NOTE campaign-1-worker-1: x\n")
         r = ask(f.base, tool="Bash",
                 command="gh issue comment --body-file 9 7")
         check("a valued flag's numeric value is not the issue the write names",
@@ -642,7 +665,7 @@ def main():
         r = ask(f.base, tool="Bash", command="gh issue edit 9 --body x")
         check("every gh issue write naming a number is narrowed to it, not only close",
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:300])
-        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body x")
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body 'NOTE campaign-1-worker-1: x'")
         check("...and one naming the held claim's issue is allowed",
               r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
         # EVERY ISSUE NAMED MUST BE COVERED. Collapsing two to "any claim at
@@ -653,13 +676,127 @@ def main():
         check("a claim on one issue does not admit a write to another beside it",
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
         r = ask(f.base, tool="Bash",
-                command="gh issue close 7; gh issue comment 7 --body x")
+                command="gh issue close 7; gh issue comment 7 --body 'NOTE campaign-1-worker-1: x'")
         check("...and two writes to the SAME claimed issue are allowed",
               r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
-        r = ask(f.base, tool="Bash", command="gh pr comment 5 --body hi")
+        r = ask(f.base, tool="Bash",
+                command="gh pr comment 5 --body 'NOTE campaign-1-worker-1: hi'")
         check("a gh write that names no issue is covered by any held claim",
               r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
               out(r)[:300])
+
+        # ------ #217: THE COMMENT'S SHAPE, read from all four spellings ------
+        # A DIFFERENT QUESTION FROM THE CLAIM, so every case here runs on the
+        # fixture that HOLDS the claim: a refusal below is the shape and can be
+        # nothing else, and an allow is not the shape being skipped.
+        ok = "NOTE campaign-1-worker-1: x"
+        for kind in ("REPORT", "REVIEW", "BLOCKED", "DECISION", "NOTE"):
+            r = ask(f.base, tool="Bash",
+                    command=f"gh issue comment 7 --body '{kind} "
+                            f"campaign-1-worker-1: x'")
+            check(f"a comment kinded `{kind}` is allowed",
+                  r.returncode == 0, out(r)[:300])
+        # A SIXTH WORD IS NOT A KIND. Without this the kind list is decoration:
+        # a check accepting any leading capitalised word passes all five above.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'SUMMARY "
+                        "campaign-1-worker-1: x'")
+        check("...and a word that is not one of the five is refused",
+              r.returncode == 2 and "which is not `KIND" in r.stderr,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'a review of the change'")
+        check("an unkinded comment is refused, quoting its first line",
+              r.returncode == 2 and "a review of the change" in r.stderr,
+              out(r)[:300])
+        # THE NAME IS THE ONLY ATTRIBUTION one `gh` account leaves, so it is
+        # read against the session-name rule's own pattern and `owner` beside.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'DECISION owner: x'")
+        check("`owner` is a name a comment may carry", r.returncode == 0,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'NOTE somebody: x'")
+        check("...and a name the session-name rule does not admit is refused",
+              r.returncode == 2 and "which is not `KIND" in r.stderr,
+              out(r)[:300])
+        # THE CEILING, AT IT AND OVER IT. A case only over it passes with the
+        # comparison written `>=`, which would refuse a comment at exactly the
+        # number the rule names.
+        at = ok + "y" * (2000 - len(ok))
+        r = ask(f.base, tool="Bash", command=f"gh issue comment 7 --body '{at}'")
+        check("a comment at exactly the ceiling is allowed",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue comment 7 --body '{at}y'")
+        check("...and one character over it is refused, with both numbers",
+              r.returncode == 2 and "it is 2001 characters, over 2000" in r.stderr,
+              out(r)[:300])
+        # THE HEREDOC, which is the finding that overturned the writer-script
+        # design: `strip_heredocs` returns the bodies and `paired_segments`
+        # pairs them, so the text IS in hand. Without this case the check
+        # refuses the `-b` spelling and passes the heredoc spelling of the
+        # same comment, which is worse than no check.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body-file - <<'EOF'\n"
+                        "a review of the change\nEOF\n")
+        check("an unkinded heredoc comment is refused like the -b spelling",
+              r.returncode == 2 and "a review of the change" in r.stderr,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body-file - <<'EOF'\n"
+                        f"{ok}\nEOF\n")
+        check("...and a kinded heredoc comment is allowed", r.returncode == 0,
+              out(r)[:300])
+        # A HEREDOC THAT IS NOT A COMMENT'S is not read as one: the pairing is
+        # per SEGMENT, and reading it per line would judge this commit message.
+        r = ask(f.base, tool="Bash",
+                command="git commit -F - <<'M'\nfix the parser\nM\n")
+        check("a heredoc a commit message sits in is not a comment body",
+              r.returncode == 0, out(r)[:300])
+        # `--body-file`, READ FROM DISK and resolved against the PAYLOAD's cwd.
+        (f.base / "c.md").write_text("a review of the change\n")
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body-file c.md")
+        check("a relative --body-file is read against the payload's cwd",
+              r.returncode == 2 and "a review of the change" in r.stderr,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body-file no-such.md")
+        check("...and one that will not read is refused as unread, naming the "
+              "resolved path",
+              r.returncode == 2 and "could not be read" in r.stderr
+              and str(f.base / "no-such.md") in r.stderr, out(r)[:300])
+        # `gh issue reopen --comment` IS THE FORM AGENTS.md PRESCRIBES for
+        # appending a discovery, so it is checked and must stay usable.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue reopen 7 --comment '{ok}'")
+        check("`gh issue reopen --comment` is checked and a kinded one passes",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue reopen 7 --comment 'found it again'")
+        check("...and an unkinded one is refused", r.returncode == 2
+              and "found it again" in r.stderr, out(r)[:300])
+        # ...AND A CLOSE WITH NO `--comment` POSTS NONE, so it is untouched.
+        r = ask(f.base, tool="Bash", command="gh issue close 7")
+        check("a close with no --comment is not judged as a comment",
+              r.returncode == 0 and "shape does not hold" not in r.stderr,
+              out(r)[:300])
+        # ...NOR IS AN ISSUE BODY. `gh issue edit --body` writes the brief,
+        # whose shape is `campaign-tracker check`'s, not this one's.
+        r = ask(f.base, tool="Bash",
+                command="gh issue edit 7 --body 'a new brief'")
+        check("an issue body is not judged by the comment rule",
+              r.returncode == 0 and "shape does not hold" not in r.stderr,
+              out(r)[:300])
+        # THE STATED CEILING, PINNED. `gh api ... -f body=` posts a comment and
+        # is NOT read here. A ceiling nothing asserts is a ceiling that has
+        # quietly closed or quietly widened; this says which it is today.
+        r = ask(f.base, tool="Bash",
+                command="gh api repos/o/r/issues/7/comments -f body=unkinded")
+        check("the `gh api` comment route is not read, which is stated and "
+              "not hidden", r.returncode == 0
+              and "shape does not hold" not in r.stderr, out(r)[:300])
         # A worktree directory that is gone is a claim git itself calls
         # prunable, and clause 2 must not stand on it.
         shutil.rmtree(f.trees["campaign-1/7-x"])
@@ -716,7 +853,7 @@ def main():
         # THE CASE THAT PROMPTED #185, from a planner session that really was
         # refused this write on 2026-09-05: a comment on the campaign issue,
         # which no claim can ever cover because #1 is nobody's sub-issue.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
                 env=planner)
         check("a planner comments on the campaign issue, which no claim covers",
               r.returncode == 0 and "planner writes the campaign plane" in r.stdout,
@@ -725,7 +862,7 @@ def main():
         # campaign may comment on its campaign issue, which no claim can cover.
         # The contrast the planner row is here for is the CAMPAIGN, not the
         # claim -- so the refusal case is a worker of another one.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
                 env=stranger)
         check("...and the same write from a worker of another campaign is "
               "refused", r.returncode == 2, out(r)[:400])
@@ -763,7 +900,7 @@ def main():
         # ...and one develop hidden among covered verbs sinks the whole call,
         # which is the shape a set-membership test on the SUBCOMMAND missed.
         r = ask(f.base, tool="Bash",
-                command="gh issue comment 9 --body x && gh issue develop 9",
+                command="gh issue comment 9 --body 'NOTE campaign-1-worker-1: x' && gh issue develop 9",
                 env=planner)
         check("...and a develop beside a covered verb is not carried by it",
               r.returncode == 2 and "cuts a branch in the sub-issue's "
@@ -787,7 +924,7 @@ def main():
             # ALLOW beside it: the same claim, the same planner, an ordinary
             # campaign-plane verb -- so the refusal is the verb and not the
             # fixture.
-            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body x",
+            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body 'NOTE campaign-1-worker-1: x'",
                     env=p9)
             check("...and the same planner still comments on that issue",
                   r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
@@ -802,8 +939,29 @@ def main():
         check("...and the develop refusal still names the other write beside it",
               r.returncode == 2
               and "`gh pr` is not the campaign plane" in r.stderr
-              and "cuts a branch in the sub-issue's own repository" in r.stderr,
+              and "cuts a branch in the sub-issue's own repository" in r.stderr
+              # ...AND HOW THE ROOT WAS RESOLVED. `how` was the third thing
+              # that early return dropped, and the two conjuncts above are both
+              # satisfied without it -- so deleting `how,` from this refusal
+              # left the suite green (#213's REPORT, item 1). One conjunct per
+              # half, or the half with no conjunct is documentation.
+              and "cwd " in r.stderr and "-> " in r.stderr,
               out(r)[:500])
+        # THE ROLE READING, ONCE. It came out twice on exactly this shape: the
+        # header printed `how_role` and every `read_on` entry opens with it
+        # (#213's REPORT, item 2). Asserted as a COUNT, because a case
+        # asserting presence passes on one copy and on five.
+        check("...and the role reading is printed exactly once",
+              r.stderr.count("is campaign-1-planner-") == 1,
+              f"{r.stderr.count('is campaign-1-planner-')} copies: {out(r)[:500]}")
+        # ...AND THE BARE develop STILL CARRIES IT. `read_on` is EMPTY there --
+        # `issue` is a planner's subcommand and only the pair is excepted -- so
+        # a header that simply dropped `how_role` would have lost the role
+        # reading on the very command this branch exists for.
+        r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
+        check("a bare develop refusal still names the role it read",
+              r.stderr.count("is campaign-1-planner-") == 1,
+              f"{r.stderr.count('is campaign-1-planner-')} copies: {out(r)[:500]}")
 
         # THE FALLBACK SENTENCE, which had no case. `read_on` is empty when a
         # planner's command holds no gh WRITE the guard can read but does hold
@@ -830,7 +988,7 @@ def main():
               in r.stderr, out(r)[:400])
 
         # ALLOW beside it: the campaign-plane verbs the licence is FOR.
-        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
+        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body 'NOTE campaign-1-worker-1: x'",
                     "gh issue close 9", "gh issue reopen 9",
                     "gh label create x"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
@@ -1002,12 +1160,12 @@ def main():
         # #207: THE CAMPAIGN ISSUE IS NOBODY'S SUB-ISSUE, so no claim can ever
         # cover it and every worker was refused a comment on the campaign it
         # works. Its own campaign's number comes from its name.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
                 env=worker)
         check("a worker comments on its OWN campaign's issue",
               r.returncode == 0 and "campaign issue of the campaign this "
               "session is of" in r.stdout, out(r)[:400])
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
                 env=stranger)
         check("...and a worker of another campaign may not",
               r.returncode == 2, out(r)[:400])
@@ -1024,13 +1182,13 @@ def main():
                   r.returncode == 2, out(r)[:400])
         # ...and it covers its own write and nothing standing beside it.
         r = ask(f.base, tool="Bash",
-                command="gh issue comment 1 --body x && gh pr merge 12 --merge",
+                command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x' && gh pr merge 12 --merge",
                 env=worker)
         check("the carve-out carries no other write in the same command",
               r.returncode == 2 and "covers no other write" in r.stderr,
               out(r)[:400])
         # ALLOW beside all of it: the one verb the carve-out is for, and a read.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body x",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
                 env=worker)
         check("ALLOW beside it: the comment the carve-out is for",
               r.returncode == 0, out(r)[:400])
@@ -1147,7 +1305,7 @@ def main():
         check("a quoted `<<` does not swallow the write on the next line",
               r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
         r = ask(wt7, tool="Bash",
-                command='gh issue comment 7 --body "line one\n'
+                command='gh issue comment 7 --body "NOTE campaign-1-worker-1: line one\n'
                         'mentions <<EOF in passing\nline three"')
         check("...and a quote a `<<` sits inside is not eaten either, so a "
               "multi-line body still splits",
@@ -1454,8 +1612,8 @@ def main():
             # reaches reads exactly like a slot that passed.
             where = {"base": f.base, "campaign": f.camp, "worktree": wt,
                      "member": member}
-            refused, replayed = [], 0
-            for row in rows:
+            refused, refused_at, replayed = {}, [], 0
+            for i, row in enumerate(rows):
                 if row["tool"] == "Bash":
                     ti = {"command": row["command"]}
                     subject = row["command"]
@@ -1471,14 +1629,40 @@ def main():
                 rc, _o, err = ask_inproc(mod, payload, env)
                 replayed += 1
                 if rc != 0:
-                    refused.append(f"{subject[:120]}\n         -> "
-                                   f"{' '.join(err.split())[:200]}")
+                    refused_at.append(i)
+                    refused[i] = (f"{subject[:120]}\n         -> "
+                                  f"{' '.join(err.split())[:200]}")
             # The count is asserted, not printed: a loop whose body never ran
             # prints the same clean line as one that replayed everything.
             check("the corpus replay ran over every entry",
                   replayed == len(rows), f"{replayed} of {len(rows)}")
-            check(f"the guard refuses none of the {replayed} recorded allows",
-                  not refused, "\n      ".join(refused[:8]))
+            # THE ONE DELIBERATE BREAK IN THE RECORD (#217). The corpus is the
+            # calls this campaign actually made, and every comment among them
+            # predates the five kinds -- so the comment check refuses them, and
+            # that is the rule working rather than a false positive. The
+            # assertion is therefore not "nothing is refused" but "the refusals
+            # are EXACTLY the comment writes": a comment row that slipped
+            # through and any other row that started failing are both findings,
+            # and a blanket exemption would have hidden the second.
+            posts = {i for i, row in enumerate(rows)
+                     if row["tool"] == "Bash" and row_posts_comment(mod, row)}
+            check("the corpus holds comment writes to measure this against",
+                  len(posts) > 5, f"{len(posts)} of {len(rows)}")
+            other = sorted(set(refused_at) - posts)
+            check(f"of the {replayed} recorded allows the guard refuses only "
+                  f"comment writes, whose shape #217 changed",
+                  not other, "\n      ".join(refused[i] for i in other[:8]))
+            check("...and it does refuse some of them, so the rule bites on "
+                  "the record rather than passing it",
+                  len(refused_at) > 5, f"{len(refused_at)} refused")
+            # THE CONTROL, and it is not decoration: without it the two above
+            # are equally satisfied by a check that refuses EVERY comment. A
+            # handful of this campaign's own `REPORT campaign-1-worker-3: ...`
+            # comments already carry a kind and a name, and they must still
+            # pass -- which is what says this reads the SHAPE and not the verb.
+            already = sorted(posts - set(refused_at))
+            check("...while the comments that already carry a kind still pass",
+                  len(already) > 1, f"{len(already)} of {len(posts)} passed")
 
             # THE REPLAY IS IN-PROCESS, so something must show that the
             # in-process reading is the shipped script's. A sample of the

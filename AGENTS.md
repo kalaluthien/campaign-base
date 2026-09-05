@@ -82,8 +82,9 @@ planner's own state, where every session and every machine can read it; a design
 a file was the only copy of dies with the directory. What may stay there is what
 no issue can hold — a pid, a log, a lock — and what is DERIVED from an issue and
 re-derivable at any time: `runtime/repos` and
-`runtime/campaign-issue-body-derived.md`, which `opening-campaign` writes and
-which `opening-campaign`, `closing-campaign` and `campaign-claim` read back.
+`runtime/campaign-issue-body-derived.md`, both written by `opening-campaign`;
+the first is read back by `opening-campaign`, the second by `closing-campaign`
+and by `campaign-claim`.
 
 **Resolve the base root one way, everywhere:**
 

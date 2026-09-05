@@ -846,9 +846,11 @@ def main():
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
 
         # ------ the fix round on 7804eaf's review ------
-        # A BACKTICK IS NOT A SUBSTITUTION MARKER, and treating it as one turned
-        # the check off for most `--body` comments this repository writes: 43 of
-        # the 58 judged corpus bodies carry one. The case uses BACKSLASH-ESCAPED
+        # A BACKTICK IS NOT A SUBSTITUTION MARKER. Treating it as one switched
+        # the check off for a flag-token body carrying one -- 1 of the 23 such
+        # bodies in the allow corpus, the cost re-derived in fix round 3 after
+        # the first measurement was taken over every judged body rather than
+        # over the set the constant can reach. The case uses BACKSLASH-ESCAPED
         # backticks, which cannot be substitution under any reading.
         r = ask(f.base, tool="Bash",
                 command=r"""gh pr comment 5 --body "see \`x.py\` line 3" """)
@@ -908,6 +910,15 @@ def main():
         # the `--comment` test survived a green suite until this was written.
         r = ask(f.base, tool="Bash", command="gh issue close 7 -c --body")
         check("...and on the --comment path, which is a second SKIPPED test",
+              r.returncode == 0 and "shape NOT checked" in r.stdout
+              and "flag words" in r.stdout, out(r)[:400])
+        # ...AND ON THE `--body-file` PATH, THE THIRD. Its `is SKIPPED` test was
+        # pinned by nothing: removed, the suite stayed at 278/278 while a live
+        # `gh issue comment 7 -F -b` raised `TypeError: argument should be a str
+        # … not 'object'` INSIDE the PreToolUse hook, which is a crash in a
+        # guard every session runs. Three call sites, three cases.
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 -F -b")
+        check("...and on the --body-file path, which is the third SKIPPED test",
               r.returncode == 0 and "shape NOT checked" in r.stdout
               and "flag words" in r.stdout, out(r)[:400])
 

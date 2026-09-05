@@ -898,8 +898,9 @@ KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
 # What `flag_value` returns when the only candidate value was itself a flag of
 # this reader: distinct from None, which means "no such flag was given at all".
 SKIPPED = object()
-SKIPPED_NOTE = ("its body is one of this reader's own flag words, so the value "
-                "was skipped rather than judged; the shape was not read")
+SKIPPED_NOTE = ("its body, or the path its body-file names, is one of this "
+                "reader's own flag words, so the value was skipped rather than "
+                "judged; the shape was not read")
 # WHAT MAKES A BODY UNJUDGEABLE. shlex expands nothing, so a token holding a
 # command substitution reaches this check as its SOURCE, not as its value, and
 # `--body "$(cat review.md)"` -- a form this campaign used four times on PR
@@ -910,7 +911,8 @@ SKIPPED_NOTE = ("its body is one of this reader's own flag words, so the value "
 #
 # `$(` AND NOTHING ELSE, and the cut is measured over THE SET THIS CONSTANT CAN
 # REACH -- which is the correction that matters, because the first measurement
-# of it was over a wider set and overstated the case tenfold. `_judgeable` is
+# of it was over a wider set, and the numbers below say by how much rather than
+# a multiplier standing in for them. `_judgeable` is
 # called on a body that arrived as a FLAG TOKEN and on nothing else: a
 # `--body-file` body returns before it, and so does a heredoc. In the allow
 # corpus, 23 bodies arrive by flag token and 44 by `--body-file`; 43 of the 44

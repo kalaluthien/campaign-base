@@ -75,6 +75,15 @@ two of them drift.
 The campaign directory holds no plane of its own: git-ignored scratch, and
 **nothing durable may live only there** — a repo-less campaign lands its results
 in the campaign issue and its sub-issues, the memory pool, or a repository by hand.
+**No RECORD OF THE WORK lives only in `runtime/`** — a sub-issue's plan, a
+session's state at a stop, the campaign's progress. Each of those belongs on the
+issue it is about, a comment on the sub-issue or on the campaign issue for a
+planner's own state, where every session and every machine can read it; a design
+a file was the only copy of dies with the directory. What may stay there is what
+no issue can hold — a pid, a log, a lock — and what is DERIVED from an issue and
+re-derivable at any time: `runtime/repos` and
+`runtime/campaign-issue-body-derived.md` are caches `opening-campaign` writes and
+`closing-campaign` reads back.
 
 **Resolve the base root one way, everywhere:**
 
@@ -257,7 +266,34 @@ pull request body closes the sub-issue with the keyword and the full name,
 reads `closedByPullRequestsReferences`, which a keyword populates and a bare
 mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the
-template's `Repository:` line, since the issue's own location no longer says.
+template's `## Lands in` section, since the issue's own location no longer says.
+
+**One shape per kind, decided by structure and read by one script.** An issue is
+a campaign issue by its `campaign` label, a sub-issue by its parent, both at once
+by neither — a defect, reported — and the third kind by neither, which every
+reader leaves alone. The third kind is exempt from the SECTIONS, not from the
+ceilings: a title is a title. A title is a verb-first mission under the title
+ceiling; a body is bullets or tables under the body ceiling; the sections are `##
+Intent`, `## Scope`, `## Done when`, `## Plan`, `## Repos`, `## Lands in`, and a
+kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
+reader: `bind` calls it and prints what it said, `campaign-claim take` calls it
+with `--plan` and refuses on it. Both templates are in
+`.claude/skills/opening-campaign/assets/`.
+
+**A `backlog` sub-issue is not worked until the owner says so**, and only the
+owner takes the label off — nothing here can observe that they changed their
+mind. `take` refuses a claim on one. A sub-issue **without** the label is worked
+as soon as it is filed or reopened.
+
+**Every comment carries its kind on its first line**, `KIND <session
+name|owner>: <one line>`, one intent per comment, under the comment ceiling, and
+the guard reads it. **The three ceilings are numbers in two scripts and nowhere
+else** — `campaign-tracker.py`'s `TITLE_CEILING` and `BODY_CEILING`, the guard's
+`COMMENT_CEILING` — and each check prints the number beside what it measured, so
+a document repeating one would be the copy that drifts. The five are `REPORT`, `REVIEW`, `BLOCKED`, `DECISION` and
+`NOTE`; § The four messages says which goes where, and states once that the
+comment is the durable record while the message of the same name is its
+notification, carrying no fact the comment does not.
 
 **A discovery is recorded the moment it is found**, by whoever can file it: one
 held in a session's memory dies with its pane. **Look for the sub-issue it
@@ -363,8 +399,8 @@ what survives the session that opened it.
 
 ## The campaign issue body
 
-**The campaign issue body is a charter, not a status board.** Intent, Scope and
-Requirements say what a person signed up for and change only when the scope
+**The campaign issue body is a charter, not a status board.** `## Intent`,
+`## Scope` and `## Done when` say what a person signed up for and change only when the scope
 genuinely changes; the sub-issue index is the decomposition, and
 `campaign-tracker settlement <N>` derives progress from it. So the body is written
 at exactly two moments — a scope change, and the close. Adding work is neither,
@@ -444,6 +480,17 @@ form. `ListAgents` resolves the address; herdr's pane label is not one.
 Four messages between sessions, carrying **only what the agent alone knows**:
 anything about finished work duplicates a GitHub fact, and the copy is what goes
 stale. **The claim is not among them** — it is a ref, not an announcement.
+
+**`REPORT` and `BLOCKED` are also comment kinds, and the relation is stated
+here once: the comment is the durable record, the message is its
+notification.** The message carries no fact the comment does not, so a peer that
+missed it loses nothing but the timing. Which is why the comment goes where its
+reader is — a `REPORT` on the pull request, beside the `REVIEW` it answers, so
+one round is one thread and the disposition can be checked against the findings
+mechanically; a `BLOCKED`, a `DECISION` and a `NOTE` on the sub-issue.
+`STATUS` and `STAND DOWN` have no comment kind at all: they are prompts into a
+pane, by the two-channel criterion below, and there is nothing durable in
+either.
 **A finished peer leaves the campaign by fact, not by saying so**: it stops its
 pane, or leaves the base tree. **A rename alone does not**, unless the new name
 is another campaign's — `campaign-claim live` believes a name that says whose

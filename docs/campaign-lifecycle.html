@@ -227,7 +227,7 @@ gh api repos/kalaluthien/campaign-base/git/refs \
 
 <p>하위 과제 하나는 GitHub 이슈 하나다. 이슈는 코드가 어느 저장소에 있든 베이스 트래커에 산다. 멤버 저장소는 브랜치와 풀 리퀘스트만 받으므로 그 저장소의 이슈 관례를 건드리지 않고, 이 계정 소유가 아닌 저장소도 두 저장소를 한꺼번에 움직이는 과제도 예외가 되지 않는다. <code>--parent</code> 가 이슈를 하나의 색인으로 묶고, 풀 리퀘스트 본문의 <code>Closes kalaluthien/campaign-base#&lt;issue&gt;</code> 가 이슈를 저장소 너머에서 닫는다. 짧은 <code>#&lt;issue&gt;</code> 는 멤버 저장소의 같은 번호 이슈를 닫는다.</p>
 
-<p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/campaign-base/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문의 <code>Campaign: kalaluthien/campaign-base#6</code> 줄은 사람이 읽는 산문이고, 색인이 아니다. <span class="src">AGENTS.md @ 24cb850</span></p>
+<p>색인은 한 번의 호출로 되읽는다. <code>gh api --paginate repos/kalaluthien/campaign-base/issues/6/sub_issues</code> 는 캠페인 <code>#6</code> 의 구성원을 정확히 돌려준다. 저장소가 비공개여도 공개 부모 아래에서 올바르게 나열된다. 이 끝점은 서른 개에서 쪽을 나누고, 잘린 색인은 온전한 색인과 똑같이 읽히므로 <code>--paginate</code> 는 선택 사항이 아니다. 본문에는 <code>Campaign:</code> 줄이 없다. 아무도 읽지 않는 산문이었고, 색인은 <code>--parent</code> 하나뿐이므로 #217에서 지웠다. <span class="src">AGENTS.md @ 24cb850, kalaluthien/campaign-base#217</span></p>
 
 <details>
   <summary><span class="ct">4&times; 색인 방식</span> 중 서브이슈 링크만 도달 가능한 모든 상태에서 색인과 실제 구성원이 같았다</summary>

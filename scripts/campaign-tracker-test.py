@@ -445,6 +445,201 @@ def main():
               m.cmd_settlement.__code__.co_names.count("fetch_index") == 1
               and m.cmd_index.__code__.co_names.count("fetch_index") == 1)
 
+    # ------------------------------------------------------------ check (#217)
+    # PURE, so every branch has a case that spends no request. `kind_of` and
+    # `shape_findings` are the whole reading; `cmd_check` only prints it and
+    # turns it into an exit, and the two shell cases below pin that half.
+    check("the `campaign` label with no parent is a campaign issue",
+          m.kind_of(True, False) == m.CAMPAIGN)
+    check("a parent with no label is a sub-issue",
+          m.kind_of(False, True) == m.SUB_ISSUE)
+    check("both is a stray, which is a defect and not a kind",
+          m.kind_of(True, True) == m.STRAY)
+    check("neither is the third kind, which every reader leaves alone",
+          m.kind_of(False, False) == m.THIRD_KIND)
+
+    good_sub = ("## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n"
+                "\n## Lands in\n- none\n")
+    good_campaign = ("## Intent\n- x\n\n## Scope\nIn:\n- x\n\n## Done when\n"
+                     "- x\n\n## Repos\n- none\n")
+    check("a well-shaped sub-issue has no finding, plan required",
+          m.shape_findings(m.SUB_ISSUE, "Do the thing", good_sub, True) == [])
+    check("a well-shaped campaign issue has no finding",
+          m.shape_findings(m.CAMPAIGN, "Do the thing", good_campaign, False) == [])
+    # THE THIRD KIND HAS NO SHAPE, so a body that would fail every section test
+    # passes here. It is the row a body-text classifier could not express.
+    check("the third kind is not judged on sections at all",
+          m.shape_findings(m.THIRD_KIND, "anything at all", "prose", False) == [])
+    # ...BUT THE CEILINGS ARE NOT A KIND'S. A title is a title.
+    check("...and still on the ceilings",
+          any("over 80" in f for f in m.shape_findings(
+              m.THIRD_KIND, "x" * 81, "prose", False)))
+
+    # ONE MISSING SECTION AT A TIME, named. A case that removed two would pass
+    # while either branch was deleted.
+    for want, body in (
+            ("Intent", good_sub.replace("## Intent\n- x\n\n", "")),
+            ("Done when", good_sub.replace("## Done when\n- x\n\n", "")),
+            ("Plan", good_sub.replace("## Plan\n- x\n\n", ""))):
+        found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
+        check(f"a sub-issue with no `## {want}` is refused by that name",
+              any(f"no `## {want}` section" in f for f in found))
+    # `## Lands in` IS THE ONE ROW THIS FILE DOES NOT DECIDE. It is delegated to
+    # `campaign-repos.py`'s `lands_in`, because a presence test here and a real
+    # reader there disagreed on four bodies and `check` printed "the shape
+    # holds" on each one the claim path then refused. The case is on the
+    # DELEGATE's own words, so a copy re-derived here would fail it.
+    missing = good_sub.replace("\n## Lands in\n- none\n", "\n")
+    found = m.shape_findings(m.SUB_ISSUE, "t", missing, True)
+    check("a missing `## Lands in` is refused in the delegate's own words",
+          any("no `## Lands in` heading" in f for f in found))
+    for label, body in (
+            ("inside an HTML comment",
+             good_sub.replace("## Lands in\n- none\n",
+                              "<!--\n## Lands in\n- none\n-->\n")),
+            ("empty", good_sub.replace("## Lands in\n- none\n",
+                                       "## Lands in\n\n## Z\n- q\n")),
+            ("two entries", good_sub.replace("## Lands in\n- none\n",
+                                             "## Lands in\n- a/b\n- c/d\n"))):
+        # THE FOUR BODIES THE TWO READERS DISAGREED ON. Each passed the
+        # presence test and was refused at the claim; a case per body, because
+        # a single one of them passes with any three of the delegate's
+        # refusals deleted.
+        found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
+        check(f"a `## Lands in` {label} is a finding, as it is at the claim",
+              len(found) == 1 and "`## Lands in`:" in found[0])
+    for want, body in (
+            ("Scope", good_campaign.replace("## Scope\nIn:\n- x\n\n", "")),
+            ("Repos", good_campaign.replace("\n## Repos\n- none\n", "\n"))):
+        found = m.shape_findings(m.CAMPAIGN, "t", body, False)
+        check(f"a campaign issue with no `## {want}` is refused by that name",
+              any(f"no `## {want}` section" in f for f in found))
+    # A CAMPAIGN ISSUE OMITS A SECTION; IT DOES NOT RENAME ONE. `## Plan` and
+    # `## Lands in` are a sub-issue's, and requiring them of a campaign would
+    # be the vocabulary drifting back apart.
+    check("a campaign issue is not asked for `## Plan` or `## Lands in`",
+          m.shape_findings(m.CAMPAIGN, "t", good_campaign, True) == [])
+    # THE TWO MOMENTS. `## Plan` is due at the claim and not at the filing, so
+    # the same body must pass one and fail the other; a case asserting only one
+    # of the two passes with the flag ignored.
+    no_plan = good_sub.replace("## Plan\n- x\n\n", "")
+    check("a sub-issue with no plan passes at filing",
+          m.shape_findings(m.SUB_ISSUE, "t", no_plan, False) == [])
+    check("...and fails at the claim, which is the same body read twice",
+          m.shape_findings(m.SUB_ISSUE, "t", no_plan, True) != [])
+
+    check("a title one character over the ceiling is refused, with both numbers",
+          m.shape_findings(m.SUB_ISSUE, "x" * 81, good_sub, True)
+          == ["the title is 81 characters, over 80"])
+    check("...and a title at the ceiling exactly is not",
+          m.shape_findings(m.SUB_ISSUE, "x" * 80, good_sub, True) == [])
+    # PADDED UNDER ITS OWN HEADING, not appended: appended, the padding became a
+    # SECOND `## Lands in` entry and the body carried two faults, so the "two
+    # findings" case below counted three.
+    over = good_sub + "\n## Pad\n- " + "y" * 2000
+    check("a body over the ceiling is refused, with both numbers",
+          any(f"the body is {len(over)} characters, over 2000" in f
+              for f in m.shape_findings(m.SUB_ISSUE, "t", over, True)))
+    # EVERY FINDING, NOT THE FIRST. A body both too long and missing a section
+    # needs two edits, and a checker naming one sends its reader back.
+    both = m.shape_findings(m.SUB_ISSUE, "x" * 90, over, True)
+    check("a title and a body both over the ceiling give two findings",
+          len(both) == 2 and any("title" in f for f in both)
+          and any("body" in f for f in both))
+    # A STRAY IS ONE FINDING AND NOT A PILE, because the repair is one edit and
+    # the sections it should carry are exactly what nobody can say.
+    stray_found = m.shape_findings(m.STRAY, "x" * 90, "", True)
+    check("a stray is reported as a stray and not as a heap of missing sections",
+          len(stray_found) == 1 and "not a kind" in stray_found[0])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # THE SHELL HALF: what `check` exits with, and what it prints beside the
+        # verdict. A bare exit code is satisfied by every other cause that
+        # shares it, so both cases assert the reading too.
+        def shim(body, title="Do the thing", labels=(), parent=True):
+            src = ('#!/usr/bin/env python3\nimport json, sys\n'
+                   f'print(json.dumps({{"title": {title!r}, "body": {body!r}, '
+                   f'"labels": [{{"name": n}} for n in {list(labels)!r}], '
+                   f'"parent": {({"number": 1} if parent else None)!r}}}))\n')
+            d = Path(tmp) / f"shim{abs(hash(src))}"
+            d.mkdir()
+            (d / "gh").write_text(src)
+            (d / "gh").chmod(0o755)
+            env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}")
+            return env
+
+        r = tracker("check", "5", "--plan", env=shim(good_sub))
+        check("check exits 0 on a well-shaped sub-issue",
+              r.returncode == 0 and "RESULT   the shape holds" in r.stdout)
+        check("...and prints what it read, not only its verdict",
+              "title  12 chars" in r.stdout and "body   " in r.stdout
+              and "sections found: Intent, Done when, Plan, Lands in" in r.stdout)
+        check("...and names what it did NOT check",
+              "NOT checked:" in r.stdout and "verb-first" in r.stdout)
+        r = tracker("check", "5", "--plan", env=shim(no_plan))
+        check("check exits 1 and puts the finding on stderr",
+              r.returncode == 1 and "REFUSING" in r.stderr
+              and "no `## Plan` section" in r.stderr)
+        # AN ISSUE THAT DID NOT READ IS NOT AN ISSUE WITH NO SHAPE, and it gets
+        # its own exit so a caller cannot read one as the other.
+        d = Path(tmp) / "unread"
+        d.mkdir()
+        (d / "gh").write_text("#!/bin/sh\nexit 1\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("check", "5", env=dict(os.environ,
+                                           PATH=f"{d}:{os.environ['PATH']}"))
+        check("an unreadable issue exits 2, not 1",
+              r.returncode == 2 and "could not read" in r.stderr
+              and "is not an issue with no shape" in r.stderr)
+        # THE PARKED ROW IS REPORTED AND NOT REFUSED HERE: `backlog` is a
+        # claim's question, and a `check` that failed on it could not be used
+        # to read a parked issue's shape at all.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, labels=("backlog",)))
+        check("`backlog` is reported by check and does not fail it",
+              r.returncode == 0 and "carries `backlog`" in r.stdout)
+
+        # `bind` REPORTS THE SHAPE AND NEVER GATES ON IT, which is the whole
+        # reason `check` is its own verb: `bind` is the ONLY repair for the
+        # two-`bound:`-label state, so a `bind` that refused an oversize body
+        # would refuse to run on exactly the campaign that needs repairing.
+        # Asserted on the LABEL EDIT having happened, not on the exit status,
+        # which a `bind` that quietly skipped the edit would share.
+        d = Path(tmp) / "bindbad"
+        d.mkdir()
+        (d / "calls").write_text("")
+        (d / "gh").write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            f"open({str(d / 'calls')!r}, 'a').write(' '.join(sys.argv[1:]) + chr(10))\n"
+            "if '--json' in sys.argv:\n"
+            "    if 'labels' == sys.argv[sys.argv.index('--json') + 1]:\n"
+            "        print(json.dumps([]))\n"
+            "    else:\n"
+            f"        print(json.dumps({{'title': 'x' * 120, 'body': 'no sections here',\n"
+            "                           'labels': [], 'parent': {'number': 1}}))\n"
+            "sys.exit(0)\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("bind", "5", env=dict(os.environ,
+                                          PATH=f"{d}:{os.environ['PATH']}"))
+        calls = (d / "calls").read_text()
+        check("bind sets the label even when the shape does not hold",
+              r.returncode == 0 and "--add-label bound:" in calls)
+        check("...and says so, naming the findings it did not act on",
+              "reported and not enforced here" in r.stdout
+              and "over 80" in r.stdout)
+        # AN UNREADABLE SHAPE IS A THIRD ANSWER, not a clean bill: `bind` must
+        # say it did not look rather than print a shape it never read.
+        d2 = Path(tmp) / "bindunread"
+        d2.mkdir()
+        (d2 / "gh").write_text(
+            "#!/bin/sh\ncase \"$*\" in *--json*) exit 1 ;; esac\nexit 0\n")
+        (d2 / "gh").chmod(0o755)
+        r = tracker("bind", "5", env=dict(os.environ,
+                                          PATH=f"{d2}:{os.environ['PATH']}"))
+        check("bind reports a shape it could not read as unread, and still binds",
+              r.returncode == 0 and "the shape was NOT read" in r.stdout)
+
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1

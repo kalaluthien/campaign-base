@@ -74,6 +74,53 @@ def listing(*agents):
 GH = """#!/bin/sh
 # Every endpoint this suite needs, and a refusal for anything else, so a call
 # that escaped a gate is visible as a different failure rather than as silence.
+
+# WHERE ONE SUB-ISSUE'S WORK LANDS, as its `## Lands in` section (#217). One
+# function, because the body is now asked for TWICE per claim -- once as raw
+# text by `issue_repo`, once as JSON by `campaign-tracker check` -- and two
+# copies of a fixture body would drift into two different sub-issues wearing
+# one number. It emits `\\n` escapes so the JSON arm can embed it unchanged.
+lands_body() {
+  case "$1" in
+    404) printf 'no Lands in heading here' ;;
+    502|512) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- outside/scope' ;;
+    500) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- other/elsewhere' ;;
+    # THE BASE SPELLED OUT, which `none` cannot stand in for: `## Repos` never
+    # holds the base, so this is the one entry whose two readings differ.
+    503|513) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base' ;;
+    # #205: THE SPELLINGS PROSE ARRIVES IN. Each names a repository the campaign
+    # already holds, so anything but a clean claim is the raw comparison talking.
+    504) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- `other/elsewhere`' ;;
+    505) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base.git' ;;
+    506) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- Other/Elsewhere' ;;
+    # ...and the one that names no repository: the template's own placeholder.
+    507) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- <owner/repo>' ;;
+    # THE SHAPE CASES (#217), each wrong in exactly one way and right in the
+    # rest, so the finding a refusal names is the one the fixture carries.
+    520) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Lands in\\n- none' ;;
+    521) printf '%s' '## Intent\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
+    # Padded with a shell BUILTIN, not `awk` or `tr`: this shim runs on a PATH
+    # holding only the shim directory, and an external tool that is not there
+    # emits nothing, which reads exactly like a body under the ceiling.
+    523) printf '%s' '## Intent\\n- '; printf '%2100s' ''; printf '%s' '\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
+    *) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
+  esac
+}
+# The title the shape check reads. 522 is the one over the ceiling.
+lands_title() {
+  case "$1" in
+    522) printf '%s' 'A title that runs past eighty characters because it is a sentence about the situation rather than a mission' ;;
+    *) printf '%s' 'Do the thing' ;;
+  esac
+}
+# The word after `view`, which is the number every arm below is about. Read
+# from the real argv rather than from the `$*` pattern, because the pattern
+# says WHICH arm and this says which issue.
+num=''; prev=''
+for a in "$@"; do
+  if [ "$prev" = view ]; then num="$a"; fi
+  prev="$a"
+done
 case "$*" in
   # IS IT SETTLED. Matched before the body arms and on `--json state`, or the
   # body answer would come back as a state word and every sub-issue would read
@@ -100,6 +147,26 @@ case "$*" in
   # The two sub-issues of campaign 8888, whose `## Repos` will not read.
   *"--json parent"*"issue view 51"*|*"issue view 51"*"--json parent"*) echo '8888'; exit 0 ;;
   *"--json parent"*) echo '9999'; exit 0 ;;
+  # WHICH LABELS, for the `backlog` gate (#217). 530 is the parked one.
+  *"--json labels"*"issue view 531 "*|*"issue view 531 "*"--json labels"*) exit 1 ;;
+  *"--json labels"*"issue view 530 "*|*"issue view 530 "*"--json labels"*) echo '["backlog"]'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # THE SHAPE READING (#217): title, body, labels and parent in one call. It is
+  # the same body the raw arm below answers with, through `lands_body`, so a
+  # fixture cannot be well-shaped to one reader and not to the other.
+  *"--json title,body,labels,parent"*)
+    case "$num" in
+      501) exit 1 ;;
+      530) lbl='[{"name":"backlog"}]' ;;
+      *) lbl='[]' ;;
+    esac
+    case "$num" in
+      703) par=null ;;
+      *) par='{"number":9999}' ;;
+    esac
+    printf '{"title":"%s","body":"%s","labels":%s,"parent":%s}\n' \
+      "$(lands_title "$num")" "$(lands_body "$num")" "$lbl" "$par"
+    exit 0 ;;
   # WHERE A CLAIM IS CUT, read from the sub-issue since #187. `none` is the
   # ordinary answer here: these cases claim on the base, which is what a
   # repo-less sub-issue resolves to.
@@ -107,26 +174,8 @@ case "$*" in
   # sub-issue may only name a repository this list holds.
   *"issue view 9999 "*) printf '## Repos\n- other/elsewhere\n'; exit 0 ;;
   *"issue view 8888 "*) printf 'no Repos heading at all\n'; exit 0 ;;
-  *"issue view 404 "*) echo 'no Repository line here'; exit 0 ;;
-  *"issue view 502 "*) echo 'Repository: outside/scope'; exit 0 ;;
-  *"issue view 500 "*) echo 'Repository: other/elsewhere'; exit 0 ;;
-  # THE BASE SPELLED OUT, which `none` above cannot stand in for: `## Repos`
-  # never holds the base, so this is the one line whose two readings differ.
-  *"issue view 503 "*) echo 'Repository: kalaluthien/campaign-base'; exit 0 ;;
-  # #205: THE SPELLINGS PROSE ARRIVES IN. Each names a repository the campaign
-  # already holds, so anything but a clean claim is the raw comparison talking.
-  *"issue view 504 "*) echo 'Repository: `other/elsewhere`'; exit 0 ;;
-  *"issue view 505 "*) echo 'Repository: kalaluthien/campaign-base.git'; exit 0 ;;
-  *"issue view 506 "*) echo 'Repository: Other/Elsewhere'; exit 0 ;;
-  # ...and the one that names no repository: the template's own placeholder.
-  *"issue view 507 "*) echo 'Repository: <owner/repo>'; exit 0 ;;
-  # 512 and 513 are 502 and 503 again, as sub-issues of campaign 8888: the
-  # scope cases take under 8888, and since #206 a sub-issue must hang from the
-  # campaign it is claimed under.
-  *"issue view 512 "*) echo 'Repository: outside/scope'; exit 0 ;;
-  *"issue view 513 "*) echo 'Repository: kalaluthien/campaign-base'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"issue view"*) printf '%b\n' "$(lands_body "$num")"; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   # `2-beta` landed; `1-alpha` never did. The two answers are what `live`'s
@@ -451,8 +500,8 @@ def take_cases(m):
               f"exit {r.returncode}: {out[:200]}")
         r = claim(["take", "9999", "404", "x"], path)
         out = r.stdout + r.stderr
-        check("...and a body with no Repository line refuses differently",
-              r.returncode == 1 and "no `Repository:` line" in out,
+        check("...and a body with no `## Lands in` section refuses differently",
+              r.returncode == 1 and "no `## Lands in` heading" in out,
               f"exit {r.returncode}: {out[:200]}")
         check("...naming the template the line comes from",
               "sub-issue.md" in out, out[:300])
@@ -466,7 +515,7 @@ def take_cases(m):
               f"exit {r.returncode}: {out[:200]}")
         check("...and the refusal names both repositories it read",
               "someone/other" in out and "other/elsewhere" in out, out[:300])
-        # A REPOSITORY OUTSIDE THE CAMPAIGN'S SCOPE. `Repository:` is prose on
+        # A REPOSITORY OUTSIDE THE CAMPAIGN'S SCOPE. `## Lands in` is prose on
         # one sub-issue; `## Repos` is what a person signed up for, so a
         # sub-issue naming a repository outside it is a scope change filed as a
         # typo. Cutting the ref would make the campaign wider than its charter.
@@ -505,7 +554,7 @@ def take_cases(m):
               out[:300])
         # ------ #203: THE BASE SPELLED OUT IS NOT OUT OF SCOPE ------
         # The case the #187 scope check shipped without, and the one value for
-        # which the two readings differ: `Repository: <the base>`. `## Repos`
+        # which the two readings differ: `## Lands in` naming the base. `## Repos`
         # lists the MEMBER repositories a campaign clones, so it never holds
         # the base, and reading only the literal `none` as "the base" refused
         # every sub-issue of every campaign whose work lands here. Campaign
@@ -540,7 +589,7 @@ def take_cases(m):
         for issue, spelling in (("504", "backticked"), ("506", "in another case")):
             r = claim(["take", "9999", issue, "x"], path)
             out = r.stdout + r.stderr
-            check(f"a `Repository:` line {spelling} names the same repository",
+            check(f"a `## Lands in` entry {spelling} names the same repository",
                   "cut from" in out and "belongs in the campaign issue" not in out,
                   out[:300])
         # ...and when the text was CHANGED to read it, the note says so. Only
@@ -562,11 +611,57 @@ def take_cases(m):
         # literally named `owner/repo`.
         r = claim(["take", "9999", "507", "x"], path)
         out = r.stdout + r.stderr
-        check("an unfilled `Repository:` placeholder is refused by its own name",
+        check("an unfilled `## Lands in` placeholder is refused by its own name",
               r.returncode == 1 and "is not an owner/repo" in out
               and "nothing was compared" in out, f"exit {r.returncode}: {out[:300]}")
         check("...and it is not the scope refusal",
               "belongs in the campaign issue" not in out, out[:300])
+
+        # ------ #217: THE BRIEF MUST BE A BRIEF, AND THE PARKED ARE PARKED ---
+        # ONE CASE PER BRANCH, each fixture wrong in exactly one way and right
+        # in the rest, so a refusal that names the wrong finding fails here
+        # rather than reading as the right one. The control is every other take
+        # case above: each claims a well-shaped sub-issue and must go on
+        # passing, which is what says this gate refuses the shape and not the
+        # claim.
+        for issue, want, name in (
+                ("520", "no `## Plan` section", "a sub-issue with no `## Plan` "
+                 "is refused at the claim, where the plan is due"),
+                ("521", "no `## Done when` section", "a sub-issue with no "
+                 "`## Done when` is refused"),
+                ("522", "the title is 107 characters, over 80", "a title over "
+                 "the ceiling is refused, printing both numbers"),
+                ("523", "characters, over 2000", "a body over the ceiling is "
+                 "refused, printing both numbers")):
+            r = claim(["take", "9999", issue, "x"], path)
+            out = r.stdout + r.stderr
+            check(name, r.returncode == 1 and want in out,
+                  f"exit {r.returncode}: {out[:400]}")
+            # THE REFUSAL NAMES ITS EXIT. A worker's `gh issue edit <n>` is
+            # narrowed to a claim on <n>, which is the claim just refused, so a
+            # refusal that did not say who can repair it is a dead end.
+            check(f"...and #{issue}'s refusal names the escape",
+                  "a PLANNER edits the body" in out, out[:400])
+            # ...AND IT SAYS WHAT IT READ. A bare refusal is the shape that
+            # gets trusted while checking nothing.
+            check(f"...and #{issue}'s refusal carries the reading",
+                  "sections found:" in out and "NOT checked:" in out,
+                  out[:400])
+        r = claim(["take", "9999", "530", "x"], path)
+        out = r.stdout + r.stderr
+        check("a sub-issue carrying `backlog` is refused the claim",
+              r.returncode == 1 and "carries `backlog`" in out
+              and "until the owner says so" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        # A LISTING THAT DID NOT HAPPEN IS NOT A SUB-ISSUE NOBODY PARKED, and
+        # this is the branch that distinguishes them: the same refusal for both
+        # would be an absence dressed as a reading.
+        r = claim(["take", "9999", "531", "x"], path)
+        out = r.stdout + r.stderr
+        check("...and labels that would not read refuse differently",
+              r.returncode == 1 and "could not read #531's labels" in out
+              and "carries `backlog`" not in out,
+              f"exit {r.returncode}: {out[:400]}")
 
         # ------ #206: WHOSE SUB-ISSUE IT IS, READ AND NOT TYPED ------
         # A mistyped campaign number cut a real ref under a campaign the
@@ -643,7 +738,11 @@ def take_cases(m):
 case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
   *"--json parent"*) echo '9999'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/3-gamma"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *"pr list"*) echo "the merge question failed" >&2; exit 1 ;;
@@ -669,7 +768,11 @@ exit 1
 case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
   *"--json parent"*) echo '9999'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   # Stateful, or the survey sees the ref this run is about to cut and refuses
   # before the re-check -- the branch under test -- is ever reached.
   *matching-refs*)
@@ -710,7 +813,11 @@ exit 1
 STATE=RACEDIR/n
 case "$*" in
   *"--json parent"*) echo '9999'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   # Neither racing ref ever merged, so both are live claims and the yield is
   # what settles them. Without this arm the merge question comes back unread
@@ -762,7 +869,11 @@ exit 1
 STATE=NODELDIR/n
 case "$*" in
   *"--json parent"*) echo '9999'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
@@ -787,7 +898,11 @@ exit 1
         blind = shims(Path(d) / "blind", gh="""#!/bin/sh
 case "$*" in
   *"--json parent"*) echo '9999'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac
 exit 1
@@ -888,7 +1003,11 @@ def release_cases(m):
             return """#!/bin/sh
 case "$*" in
   *"--json state"*) echo '%s'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
@@ -933,7 +1052,7 @@ exit 1
 
         # ------ FINDINGS 2 AND 7: release reads the sub-issue too ------
         # The spec says "`take` and `release` read the sub-issue's own
-        # `Repository:` line"; only `take` did, and `release` picked a
+        # `## Lands in` section"; only `take` did, and `release` picked a
         # repository out of the clones on disk. A delete aimed by the wrong
         # reader takes a ref that is not this sub-issue's.
         r = claim(["release", "9999", "501"], empty)
@@ -1533,7 +1652,11 @@ def compact_cases(m):
     rel_gh = """#!/bin/sh
 case "$*" in
   *"--json state"*) echo 'CLOSED completed'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
@@ -1630,7 +1753,11 @@ exit 1
         gone_gh = """#!/bin/sh
 case "$*" in
   *"--json state"*) echo 'CLOSED completed'; exit 0 ;;
-  *"issue view"*) echo 'Repository: none'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  # The shape reading (#217): one well-shaped sub-issue, so these shims go on
+  # exercising what they were written for rather than the new gate.
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;

@@ -111,9 +111,20 @@ var sig Filed  in Campaign {}
    It is therefore not the taker's to choose, which is what `claimOnTheIssuesRepo`
    in orchestration/scenarios.als says and what `R8_ClaimCutOnAnotherRepo` shows
    the cost of dropping. The script agrees since #187: `take` and `release` read
-   the sub-issue's own `Repository:` line and `--repo` may only confirm it, where
-   before `--repo` alone decided and two takers naming different repositories
-   both succeeded on one sub-issue. */
+   the sub-issue's own `## Lands in` section and `--repo` may only confirm it,
+   where before `--repo` alone decided and two takers naming different
+   repositories both succeeded on one sub-issue.
+
+   `## Lands in` REPLACED THE `Repository:` LINE in kalaluthien/campaign-base#217,
+   and the replacement is a shape change and not a reading change: one purpose
+   had two shapes -- a keyword line on a sub-issue, a heading on a campaign
+   issue -- and two readers that agreed only by both being exact. It is one
+   heading holding one entry, `- owner/repo` or `- none`, read through the same
+   slug reader `## Repos` uses. `- none` and the base's own slug are the same
+   destination, which is why `campaign-repos.py` may refuse the base in
+   `## Repos` and admit it here: the two sections ask different questions --
+   which repositories to CLONE, and where ONE sub-issue's work lands -- of one
+   vocabulary. */
 var sig Claimed in Issue {}
 
 fact WellFormed {

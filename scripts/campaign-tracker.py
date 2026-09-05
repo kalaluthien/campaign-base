@@ -4,10 +4,11 @@
     campaign-tracker.py campaign-issues [--repo owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py bind <N> [owner/repo]
+    campaign-tracker.py check <N> [owner/repo] [--plan]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo]
 
-Four readings of one plane -- GitHub issues, plus `hostname -s` for `bound`,
+Five readings of one plane -- GitHub issues, plus `hostname -s` for `bound`,
 and the one write that changes what `bound` answers.
 They were four scripts, and every one of them carried the same lesson in its own
 words: a listing that stopped early reads exactly like a complete one, and a
@@ -49,6 +50,35 @@ bind        The write `bound` reads. It adds `bound:<this machine>` and removes
             and by nothing here: AGENTS.md names the two cases a session binds
             in, and neither has a premise anything mechanical can observe.
 
+check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
+            except its destination, which `campaign-repos.py`'s `lands_in`
+            owns and this asks:
+            its title length, its body length, and the sections its kind
+            requires. The kind is decided by structure alone -- the `campaign`
+            label and the parent link, the two facts GitHub itself holds --
+            because the reading it replaces classified by BODY TEXT, so an
+            issue that happened to contain `## Repos` was a campaign to one
+            reader and not to another.
+
+            IT IS ITS OWN VERB AND NOT PART OF `bind`. `bind` is the only
+            repair for the two-`bound:`-label state, and a `bind` that refused
+            an oversize body would refuse to run on exactly the campaign that
+            needs repairing. So `bind` calls this and prints what it said, and
+            never gates on it; `campaign-claim take` calls it and does gate,
+            because a claim is the moment a brief becomes somebody's work.
+
+            `--plan` adds `## Plan` to what a sub-issue must carry. Two moments,
+            one shape: a sub-issue is FILED with the intent, the destination and
+            the definition of done, and gains its plan before anybody is
+            prompted onto it, so a worker reads one issue and nobody plans in a
+            pane. `take` passes the flag; a bare `check` does not.
+
+            WHAT IT DOES NOT CHECK, printed on every run: whether a title is
+            verb-first, whether a body is bullets rather than prose, whether a
+            `Done when` is checkable. Those are judgement and stay prose. Nor
+            does it reach issues nobody claims or binds -- the ceiling is a cut
+            applied at two moments, not a property of the tracker.
+
 index       The sub-issue index -- the whole of it. `gh issue create --parent` is
             the only write that records a campaign's membership and this endpoint
             is the only read. It pages at thirty, and the close is the one place
@@ -89,11 +119,16 @@ bound                       0 for any verdict, 2 when the reading itself failed
                             -- two `bound:` labels included, since that is a
                             question this refuses to answer, not a verdict.
 bind                        0 when the label was set, 1 when it was not.
+check                       0 when the shape holds (a third-kind issue included,
+                            which is asked for no SECTION -- both ceilings still
+                            apply to it), 1 when it does not, 2 when the issue
+                            could not be read at all.
 """
 import argparse
 import importlib.machinery
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -312,7 +347,200 @@ def cmd_bind(args):
     print(f"{'kept' if already else 'added'} {want}")
     for n in drop:
         print(f"removed {n}")
+    # THE SHAPE READING, PRINTED AND NOT OBEYED. `bind` is the only repair for
+    # the two-`bound:`-label state, so gating it on the body would refuse to run
+    # on exactly the campaign that needs repairing. Saying nothing at all was
+    # the other wrong answer: the campaign issue's shape is nobody else's to
+    # notice, and the moment a person binds is the moment they can fix it. So
+    # the label edit above has already happened, and this is a report.
+    title, body, names, parented, why = issue_shape(args.repo,
+                                                    args.campaign_issue)
+    if why:
+        print(f"the shape was NOT read ({why}); the label above is set "
+              f"regardless, which is what this command is for")
+        return 0
+    kind = kind_of(CAMPAIGN_LABEL in names, parented)
+    findings = shape_findings(kind, title, body, want_plan=False)
+    if findings:
+        print(f"shape ({kind}), reported and not enforced here -- "
+              f"`campaign-tracker check {args.campaign_issue}` for the full "
+              f"reading:")
+        for f in findings:
+            print(f"  {f}")
+    else:
+        print(f"shape ({kind}): title {len(title)}, body {len(body)}, and "
+              f"every required section present")
     return 0
+
+
+# ----------------------------------------------------------------------- check
+
+# ONE NUMBER FOR BOTH KINDS, and it is measured rather than chosen. Over the 127
+# issues on this tracker at 2026-09-05, with the boilerplate section and the
+# prose paragraphs cut -- the two rules this shape adds -- the body length
+# distribution is median 1,013, p75 2,028, p90 3,519. 2,000 sits on that p75 and
+# keeps 74% of what is already written; 1,500 would keep 65% and push a third of
+# routine sub-issues into a linked file on day one, and a rule broken routinely
+# stops being read. A second number per kind was rejected for the same reason a
+# second reader is: it needs an explanation beside it.
+BODY_CEILING = 2000
+TITLE_CEILING = 80
+BACKLOG_LABEL = "backlog"
+
+# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two
+# ceilings below are stated once each as a constant, and the templates and
+# AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS a section; it never
+# renames one, which is what `## Requirements` beside a sub-issue's `Done when`
+# was doing -- two names for one purpose. `## Plan` is conditional on the
+# moment and so is not in either tuple; see `required_sections`.
+CAMPAIGN_SECTIONS = ("Intent", "Scope", "Done when", "Repos")
+LANDS_SECTION = "Lands in"
+SUB_ISSUE_SECTIONS = ("Intent", "Done when", LANDS_SECTION)
+PLAN_SECTION = "Plan"
+
+SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
+
+
+def repos_module():
+    """`campaign-repos.py`, imported for `lands_in`.
+
+    THE DESTINATION HAS ONE READER AND THIS IS NOT IT. `SECTION` above finds a
+    heading; `lands_in` decides whether the SECTION under it is an answer, and
+    the two disagreed on four bodies -- a `## Lands in` inside an HTML comment,
+    `##  Lands in` with two spaces, an empty section, and two entries. On each,
+    `check` printed "the shape holds" and `campaign-claim take` then refused the
+    claim, which is the drift a second reader always produces. So this row is
+    delegated rather than re-derived, and `check` and the claim path can no
+    longer answer differently (kalaluthien/campaign-base#217, review of
+    e73ec4b)."""
+    src = Path(__file__).resolve().parent / "campaign-repos.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_repos", importlib.machinery.SourceFileLoader(
+            "campaign_repos", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
+    "campaign issue", "sub-issue", "stray", "third kind")
+
+
+def kind_of(labelled, parented):
+    """The issue's kind from the two structural facts, and nothing else.
+
+    Four outcomes, not three: `stray` -- labelled AND parented -- is the row
+    `classify` above already names, and it is a defect reported rather than a
+    kind, because no reader can say whether it is a campaign somebody filed
+    under a parent or a sub-issue somebody labelled."""
+    if labelled and parented:
+        return STRAY
+    if labelled:
+        return CAMPAIGN
+    if parented:
+        return SUB_ISSUE
+    return THIRD_KIND
+
+
+def required_sections(kind, want_plan):
+    """The sections this kind must carry at this moment, or () for a kind with
+    no shape."""
+    if kind == CAMPAIGN:
+        return CAMPAIGN_SECTIONS
+    if kind == SUB_ISSUE:
+        return SUB_ISSUE_SECTIONS + ((PLAN_SECTION,) if want_plan else ())
+    return ()
+
+
+def shape_findings(kind, title, body, want_plan):
+    """Every way this issue's shape is wrong, as a list of lines; empty when it
+    holds. Pure, so each finding has a case that does not spend a request.
+
+    IT REPORTS ALL OF THEM, not the first. A body that is both too long and
+    missing a section needs two edits, and a checker that names one sends its
+    reader back for the other."""
+    out = []
+    if kind == STRAY:
+        return [f"it carries the `{CAMPAIGN_LABEL}` label AND a parent. That is "
+                f"not a kind: no reader can say whether it is a campaign filed "
+                f"under a parent or a sub-issue wearing the label. Remove one."]
+    if len(title) > TITLE_CEILING:
+        out.append(f"the title is {len(title)} characters, over {TITLE_CEILING}")
+    if len(body) > BODY_CEILING:
+        out.append(f"the body is {len(body)} characters, over {BODY_CEILING}. "
+                   f"Design longer than that is a file on the claim's branch, "
+                   f"linked from `## {PLAN_SECTION}`")
+    found = SECTION.findall(body)
+    for want in required_sections(kind, want_plan):
+        # THE DESTINATION IS NOT A PRESENCE TEST. Every other section here is
+        # judged by its heading alone -- what belongs under `## Intent` is
+        # judgement and stays prose. `## Lands in` is the one row a script
+        # already decides in full, and it is asked rather than approximated.
+        if want == LANDS_SECTION:
+            try:
+                _entry, why = repos_module().lands_in(body)
+            except Exception as e:                 # noqa: BLE001 -- any of them
+                out.append(f"the `## {want}` reader would not load "
+                           f"({e.__class__.__name__}), so this section was not "
+                           f"read; that is not a section that is right")
+                continue
+            if why:
+                out.append(f"`## {want}`: {why}")
+            continue
+        if want not in found:
+            out.append(f"no `## {want}` section, which a {kind} requires"
+                       + (" at a claim" if want == PLAN_SECTION else ""))
+    return out
+
+
+def issue_shape(repo, number):
+    """(title, body, labels, has a parent, why_unreadable)."""
+    text, why = gh_read(["gh", "issue", "view", str(number), "-R", repo,
+                         "--json", "title,body,labels,parent"])
+    if why:
+        return None, None, None, None, why
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        return None, None, None, None, f"could not parse gh's output ({e})"
+    names = [l.get("name") for l in data.get("labels") or []]
+    return (data.get("title") or "", data.get("body") or "", names,
+            bool(data.get("parent")), None)
+
+
+def cmd_check(args):
+    repo, number = args.repo, args.campaign_issue
+    title, body, names, parented, why = issue_shape(repo, number)
+    if why:
+        print(f"campaign-tracker check: could not read {repo}#{number} -- {why}\n"
+              f"  An issue that did not read is not an issue with no shape.",
+              file=sys.stderr)
+        return 2
+    kind = kind_of(CAMPAIGN_LABEL in names, parented)
+    found = SECTION.findall(body)
+    # WHAT WAS READ, ALWAYS, and before the verdict. A bare pass is the shape
+    # that gets trusted for months while checking nothing.
+    print(f"read {repo}#{number}: {kind}"
+          f" (label `{CAMPAIGN_LABEL}`: {'yes' if CAMPAIGN_LABEL in names else 'no'},"
+          f" parent: {'yes' if parented else 'no'})")
+    print(f"  title  {len(title)} chars (ceiling {TITLE_CEILING})")
+    print(f"  body   {len(body)} chars (ceiling {BODY_CEILING})")
+    print(f"  sections found: {', '.join(found) or '<none>'}")
+    want = required_sections(kind, args.plan)
+    print(f"  sections required: {', '.join(want) or '<none: this kind has no shape>'}")
+    if BACKLOG_LABEL in names:
+        print(f"  carries `{BACKLOG_LABEL}`: not worked until the owner removes "
+              f"it; `campaign-claim take` refuses a claim on it")
+    print("  NOT checked: whether the title is verb-first, whether the body is "
+          "bullets rather than prose, whether `## Done when` is checkable. "
+          "Those are judgement.")
+    findings = shape_findings(kind, title, body, args.plan)
+    if not findings:
+        print("RESULT   the shape holds" if want else
+              "RESULT   no shape to hold: every reader leaves this kind alone")
+        return 0
+    for f in findings:
+        print(f"REFUSING {f}", file=sys.stderr)
+    return 1
 
 
 # ----------------------------------------------------------------------- index
@@ -605,11 +833,17 @@ def main():
     for name, fn, help_text in (
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
             ("bind", cmd_bind, "set this machine's `bound:` label, dropping any other"),
+            ("check", cmd_check, "an issue's title, body length and sections"),
             ("index", cmd_index, "the sub-issue index"),
             ("settlement", cmd_settlement, "every sub-issue's verdict")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("campaign_issue")
         p.add_argument("repo", nargs="?", default=DEFAULT_REPO)
+        if name == "check":
+            p.add_argument("--plan", action="store_true",
+                           help="require `## Plan` too, which a sub-issue gains "
+                                "before anybody is prompted onto it; "
+                                "`campaign-claim take` passes it")
         # Only settlement reads it, and only settlement is given it: a flag the
         # other two accept and ignore reads as though naming a directory
         # changed what they answer.
@@ -620,7 +854,7 @@ def main():
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()
-    if args.cmd in ("bound", "bind"):
+    if args.cmd in ("bound", "bind", "check"):
         args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 

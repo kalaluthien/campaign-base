@@ -157,6 +157,57 @@ def main():
     check("BASE_REPO is a slug this file's own reader admits",
           m.slug(m.BASE_REPO) == m.BASE_REPO)
 
+    # ------ `## Lands in`, the sub-issue's destination (#217) ------
+    # ONE REFUSAL PER WAY OF BEING WRONG, asserted on the sentence, because the
+    # repairs are different: write the heading, fix the bullet, delete an
+    # entry, name a repository. `entry` and `why` are exclusive, and each case
+    # asserts BOTH halves -- a reader returning an entry beside a refusal would
+    # have the caller cut a ref on the strength of a line it had just rejected.
+    lands = m.lands_in
+
+    entry, why = lands("## Intent\n- x\n\n## Lands in\n- other/elsewhere\n")
+    check("a `## Lands in` naming one repository reads as that repository",
+          entry == "other/elsewhere" and why is None, f"{entry!r} {why!r}")
+    entry, why = lands("## Lands in\n- none\n")
+    check("...and `- none` reads as the sentinel, not as a refusal",
+          entry == "none" and why is None, f"{entry!r} {why!r}")
+    entry, why = lands("## Lands in\n- `none`\n")
+    check("...and a wrapped sentinel is the same answer, as a slug would be",
+          entry == "`none`" and why is None, f"{entry!r} {why!r}")
+    entry, why = lands("## Intent\n- x\n")
+    check("no `## Lands in` heading is refused by that name",
+          entry is None and "no `## Lands in` heading" in (why or ""), repr(why))
+    entry, why = lands("## Lands in\n\n## Next\n- x\n")
+    check("an empty `## Lands in` is refused as empty and not as missing",
+          entry is None and "is empty" in (why or ""), repr(why))
+    entry, why = lands("## Lands in\n* other/elsewhere\n")
+    check("a line that is not a `- ` bullet is refused as malformed",
+          entry is None and "malformed line" in (why or ""), repr(why))
+    entry, why = lands("## Lands in\n- a/b\n- c/d\n")
+    check("two entries are refused, because a claim is one ref",
+          entry is None and "2 entries" in (why or "")
+          and "one ref" in (why or ""), repr(why))
+    entry, why = lands("## Lands in\n- <owner/repo>\n")
+    check("the template's own placeholder is refused as naming no repository",
+          entry is None and "is not an owner/repo" in (why or "")
+          and "nothing was compared" in (why or ""), repr(why))
+    # THE BASE IS THE COMMONEST ANSWER HERE and the one `## Repos` refuses.
+    # The two sections asking different questions is the whole reason this is a
+    # second heading rather than `## Repos` with a count of one, so the case
+    # that pins it is the one where they disagree.
+    entry, why = lands(f"## Lands in\n- {m.BASE_REPO}\n")
+    check("`## Lands in` admits the base, which `## Repos` refuses",
+          entry == m.BASE_REPO and why is None, f"{entry!r} {why!r}")
+    status, out, err = read(f"## Repos\n- {m.BASE_REPO}\n")
+    check("...and the same slug in `## Repos` is still refused",
+          status == 1 and "names the base" in err, f"{status}: {err[:120]}")
+    # THE WALK IS ONE WALK, so a comment and the next heading bound both
+    # sections alike. A second copy of it is what would stop honouring these.
+    entry, why = lands("## Lands in\n<!-- - a/b -->\n- other/elsewhere\n"
+                       "\n## Plan\n- z\n")
+    check("a comment is not an entry and the next `## ` ends the section",
+          entry == "other/elsewhere" and why is None, f"{entry!r} {why!r}")
+
     if not RAN:
         print("FAIL  the suite ran no case at all")
         return 1

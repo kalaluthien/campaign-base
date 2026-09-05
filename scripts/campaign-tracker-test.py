@@ -519,9 +519,13 @@ def main():
             ("with two spaces in the heading",
              good_sub.replace("## Lands in\n", "##  Lands in\n"))):
         # THE FOUR BODIES THE TWO READERS DISAGREED ON. Each passed the
-        # presence test and was refused at the claim; a case per body, because
-        # a single one of them passes with any three of the delegate's
-        # refusals deleted.
+        # presence test and was refused at the claim, so each is a case -- but
+        # four bodies here exercise THREE refusals, not four: the missing
+        # heading, the HTML-commented one and the two-space one all reach
+        # `section()`'s one `return`, since its pattern pins the single space
+        # and strips comments before it walks. Kept apart anyway, because what
+        # they document is a disagreement that was real per body; do not read
+        # the count as coverage of four branches.
         found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
         check(f"a `## Lands in` {label} is a finding, as it is at the claim",
               len(found) == 1 and "`## Lands in`:" in found[0])

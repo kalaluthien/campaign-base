@@ -895,6 +895,21 @@ def main():
                 command="gh issue comment 7 --body '- a bullet, unkinded'")
         check("...and a body opening with a dash is still read",
               r.returncode == 2 and "a bullet" in r.stderr, out(r)[:300])
+        # ...AND A BODY THAT *IS* ONE OF THIS READER'S FLAG WORDS COMES BACK AS
+        # UNJUDGED, not as no comment at all. The first cut of the skip returned
+        # None there, which posts a comment nothing checked -- the
+        # absence-as-a-pass this file exists to refuse.
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body '-b'")
+        check("a body that is itself a flag word is unjudged, not invisible",
+              r.returncode == 0 and "shape NOT checked" in r.stdout
+              and "flag words" in r.stdout, out(r)[:400])
+        # ...ON THE `--comment` PATH TOO. That path has its own SKIPPED test,
+        # and the case above reaches only the `--body` one: a mutation removing
+        # the `--comment` test survived a green suite until this was written.
+        r = ask(f.base, tool="Bash", command="gh issue close 7 -c --body")
+        check("...and on the --comment path, which is a second SKIPPED test",
+              r.returncode == 0 and "shape NOT checked" in r.stdout
+              and "flag words" in r.stdout, out(r)[:400])
 
         # THE STATED CEILING, PINNED. `gh api ... -f body=` posts a comment and
         # is NOT read here. A ceiling nothing asserts is a ceiling that has

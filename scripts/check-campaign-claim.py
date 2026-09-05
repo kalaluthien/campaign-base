@@ -895,6 +895,11 @@ BODY_FILE_VALUED = {"-F", "--body-file"}
 SHORT_FLAGS = {"-b", "-F", "-c"}
 # Every flag this reader knows, so one is never mistaken for another's value.
 KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
+# What `flag_value` returns when the only candidate value was itself a flag of
+# this reader: distinct from None, which means "no such flag was given at all".
+SKIPPED = object()
+SKIPPED_NOTE = ("its body is one of this reader's own flag words, so the value "
+                "was skipped rather than judged; the shape was not read")
 # WHAT MAKES A BODY UNJUDGEABLE. shlex expands nothing, so a token holding a
 # command substitution reaches this check as its SOURCE, not as its value, and
 # `--body "$(cat review.md)"` -- a form this campaign used four times on PR
@@ -903,14 +908,18 @@ KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
 # read; judging one anyway refuses correct work on text nobody wrote. So it is
 # ALLOWED and the allow says which text it could not see.
 #
-# `$(` AND NOTHING ELSE, and the cut is measured rather than chosen. The first
-# cut of this held a BACKTICK and `${` too, and a backtick is this repository's
-# dominant comment idiom -- 43 of the 58 judged bodies in the allow corpus carry
-# one -- so it switched the check off for most `--body` comments ever written
-# here. One corpus row proves it: a `--body` whose backticks are BACKSLASH-
-# ESCAPED, and so cannot be substitution at all, was judged and refused at
-# e73ec4b and allowed unjudged at 7804eaf. Of the 8 corpus rows this now leaves
-# unjudged, 7 hold a real `$(`; that one held only backticks.
+# `$(` AND NOTHING ELSE, and the cut is measured over THE SET THIS CONSTANT CAN
+# REACH -- which is the correction that matters, because the first measurement
+# of it was over a wider set and overstated the case tenfold. `_judgeable` is
+# called on a body that arrived as a FLAG TOKEN and on nothing else: a
+# `--body-file` body returns before it, and so does a heredoc. In the allow
+# corpus, 23 bodies arrive by flag token and 44 by `--body-file`; 43 of the 44
+# carry a backtick and were never affected either way, and exactly ONE of the 23
+# did. So the first cut's backtick cost one corpus row, not "most comments" --
+# and that row is still the reason to make the cut, because its backticks are
+# BACKSLASH-ESCAPED and so cannot be substitution under any reading: it was
+# judged and refused at e73ec4b and allowed unjudged at 7804eaf. This cut leaves
+# 7 corpus rows unjudged, all 7 holding a real `$(`.
 #
 # THE COST OF THE CUT, stated: a body holding a real `` `cmd` `` or `${VAR}` is
 # now judged on its SOURCE. That direction is a refusal, not a pass, and a
@@ -918,6 +927,12 @@ KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
 # the time this runs, so a literal backtick and a substituting one are
 # indistinguishable here; reading the raw command instead is the fix that would
 # tell them apart, and it is not paid for by one hypothetical body.
+#
+# ...AND WHAT THE CUT DOES NOT CLOSE, in the ALLOW direction, which is the half
+# a cost paragraph usually omits: `$((1+2))` in a literal body still reads as a
+# substitution and is allowed unjudged, and so is a deliberately escaped `\$(`.
+# The escaped-literal class the backtick row demonstrated therefore survives for
+# `$(`; closing it needs the raw command, same as above.
 SUBSTITUTION = ("$(",)
 
 
@@ -927,22 +942,41 @@ def flag_value(tokens, names):
     Three spellings, and the reason all three are read is that a check covering
     two of them refuses the careful and passes the careless: `--x V`, `--x=V`,
     and for a shorthand in `SHORT_FLAGS` the attached `-xV` that pflag accepts
-    and this once let through unread."""
+    and this once let through unread.
+
+    Returns `SKIPPED` -- not None -- when the only candidate value was itself
+    one of this reader's flags. The caller must tell "there is no body here"
+    from "the body was a word I refused to read"."""
+    skipped = []
     for j, t in enumerate(tokens):
         # A FLAG OF THIS READER IS NOT ITS OWN NEIGHBOUR'S VALUE. `--comment` is
         # scanned before `-b` and is valued on the close/reopen verbs, so
         # `--comment -b '<text>'` returned the literal `-b` and refused on
-        # shape. Skipped only for the flags NAMED here -- a body may perfectly
-        # well begin with `-`, as every bullet list does, and a blanket
-        # "starts with a dash" test would drop those.
-        if t in names and j + 1 < len(tokens) and tokens[j + 1] not in KNOWN_FLAGS:
-            return tokens[j + 1]
+        # shape. Skipped only for the flags NAMED in `KNOWN_FLAGS` -- a body may
+        # perfectly well begin with `-`, as every bullet list does, and a
+        # blanket "starts with a dash" test would drop those.
+        #
+        # IT IS THIS READER'S FLAG SET AND NOT `gh`'s, stated because the two
+        # differ: `gh issue close 7 -c -R owner/repo` reads `-R` as the body and
+        # refuses on shape. `gh` rejects a value-less `-c` itself, so nothing
+        # reaches that in practice, and widening the set to `gh`'s whole grammar
+        # is the second grammar this file declines to keep.
+        #
+        # AND A BODY WHOSE TEXT *IS* ONE OF THEM IS NOT SILENTLY DROPPED. The
+        # first cut of this skip returned None for `--body '-b'`, which posts a
+        # comment nothing checked -- the absence-as-a-pass this file exists to
+        # refuse. It comes back as UNJUDGED instead, which is an allow that says
+        # so, because the alternative is asserting a shape nobody read.
+        if t in names and j + 1 < len(tokens):
+            if tokens[j + 1] not in KNOWN_FLAGS:
+                return tokens[j + 1]
+            skipped.append(tokens[j + 1])
         if "=" in t and t.split("=", 1)[0] in names:
             return t.split("=", 1)[1]
         for short in names & SHORT_FLAGS:
             if len(t) > len(short) and t.startswith(short) and t[len(short)] != "=":
                 return t[len(short):]
-    return None
+    return SKIPPED if skipped else None
 
 
 def comment_body(tokens, heredocs, cwd=None):
@@ -973,6 +1007,15 @@ def comment_body(tokens, heredocs, cwd=None):
     if pair in COMMENT_WRITES:
         pass
     elif pair in COMMENT_FLAG_WRITES:
+        # THE GATE ADMITS `-c…` AS THE SHORTHAND, and says so rather than
+        # pretending to be narrower. A standalone `-c` is already caught by
+        # `t in COMMENT_FLAG`, so this clause exists for the ATTACHED `-cTEXT`
+        # alone -- and it therefore also admits any other `-c…` word on these
+        # four verbs, `-check` included, which `flag_value` then reads as the
+        # body `heck` and refuses on shape. No flag `gh` accepts on
+        # `issue close|reopen` or `pr close|reopen` collides today; the
+        # alternative is this guard keeping a second copy of `gh`'s grammar,
+        # which is the cost it declines everywhere else.
         if not any(t in COMMENT_FLAG or t.startswith("--comment=")
                    or (t.startswith("-c") and not t.startswith("--"))
                    for t in tokens):
@@ -980,14 +1023,20 @@ def comment_body(tokens, heredocs, cwd=None):
         # ...AND HERE ONLY IS IT VALUED. On these verbs `--comment` carries the
         # text; on `gh pr review` it is the review's kind and carries nothing.
         text = flag_value(tokens, BODY_VALUED | COMMENT_FLAG)
+        if text is SKIPPED:
+            return None, None, SKIPPED_NOTE
         if text is not None:
             return _judgeable(text)
     else:
         return None, None, None
     text = flag_value(tokens, BODY_VALUED)
+    if text is SKIPPED:
+        return None, None, SKIPPED_NOTE
     if text is not None:
         return _judgeable(text)
     path = flag_value(tokens, BODY_FILE_VALUED)
+    if path is SKIPPED:
+        return None, None, SKIPPED_NOTE
     if path is not None and path != "-":
         here = Path(cwd) if cwd is not None else Path.cwd()
         resolved = Path(path) if Path(path).is_absolute() else here / path

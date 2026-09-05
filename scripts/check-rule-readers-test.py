@@ -115,8 +115,8 @@ FORM_CASES = [
     ("local-work: diff --quiet asks the same thing", fence("git diff --quiet"), 1),
     ("local-work: unmerged branches", fence("git branch --no-merged main"), 1),
     ("local-work: for-each-ref over campaign refs", fence("git for-each-ref refs/heads/campaign-1/"), 1),
-    ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-executor-1"), 1),
-    ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-executor-1"'), 1),
+    ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-worker-1"), 1),
+    ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-worker-1"'), 1),
 ]
 
 # How far the pinning goes, stated because a reader would otherwise infer more:

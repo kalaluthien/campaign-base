@@ -19,7 +19,7 @@
 # check-cross-references, and check-commit-claim -- the commit half of the
 # claim gate, whose pre-tool-use half is the harness hook below.
 # post-commit pushes a campaign-*/ branch as soon as it has a commit, so an
-# executor never sits on a finished commit unpushed; it touches no other branch.
+# worker never sits on a finished commit unpushed; it touches no other branch.
 #
 # Refuses rather than overwrites: an existing hook not written by this script, a
 # symlinked hook slot (writing through it would edit a file outside this
@@ -294,7 +294,7 @@ name = os.path.basename(guard)
 path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
 # The matcher is the tool list the guard has an opinion about. Bash is on it
-# because a changing shell command is most of what an executor does; the guard
+# because a changing shell command is most of what a worker does; the guard
 # itself decides which Bash calls count, so widening the matcher costs a process
 # and never a false refusal.
 MATCHER = "Edit|Write|NotebookEdit|Bash"

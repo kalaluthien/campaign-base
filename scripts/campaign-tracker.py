@@ -455,7 +455,7 @@ def claim_column(repo, campaign_issue):
     # member-repo sub-issue's branch is on that member's remote, and reading the
     # base alone printed `unclaimed` for it under a note saying the reading
     # succeeded -- which is how a planner hands a claimed sub-issue to a second
-    # executor. Same reader as `campaign-claim live`, so the two cannot drift.
+    # worker. Same reader as `campaign-claim live`, so the two cannot drift.
     root, _ = module.base_root()
     repos, repo_note = module.claim_repos(repo, root)
     found_map, unread = module.all_refs(repos, campaign_issue)

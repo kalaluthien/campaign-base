@@ -17,7 +17,7 @@
  *             README and in the campaign issue body as it last read that body,
  *             and the sub-issues it has claimed.
  *   Role      what a session is for, read from its name: a Planner writes the
- *             campaign plane and never code; an Executor works its own
+ *             campaign plane and never code; a Worker works its own
  *             campaign's sub-issues, and only the ones it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
  *   Binding   the campaign issue's `bound:<machine>` label.
@@ -47,7 +47,7 @@ one sig Request { covers: set Campaign }
 
    `lone`, not `one`: a session with no name, or a name of another shape, has no
    role, and that is the last row of #185's table -- refused on both planes,
-   which `mayAct` in orchestration/scenarios.als states. An executor is bounded
+   which `mayAct` in orchestration/scenarios.als states. A worker is bounded
    to its own campaign's sub-issues it has claimed, PLUS that campaign's own
    issue, which is no sub-issue and which no claim can cover (#207).
 
@@ -59,8 +59,8 @@ one sig Request { covers: set Campaign }
    Not `var`. A session that renames itself is out of scope here: nothing in this
    model reads a rename, and the records already written keep the old name. */
 abstract sig Role {}
-one sig Planner  extends Role {}
-one sig Executor extends Role {}
+one sig Planner extends Role {}
+one sig Worker  extends Role {}
 
 /* WHETHER A SESSION SITS UNDER THE BASE TREE, and nothing more. Added by #187
    question 6 for the same reason `campaignNamed` was: a close gate reads
@@ -280,7 +280,7 @@ pred sessionAcquire[s: Session] {
    A CLAIM IS A CAMPAIGN-PLANE WRITE, so #185's rule reaches it: a planner writes
    the campaign plane of any campaign, and the claim it cuts for a delegate may
    name a sub-issue of any campaign BOUND TO ITS OWN MACHINE -- the delegate then
-   works that campaign under that campaign's name. An executor's claim stays
+   works that campaign under that campaign's name. A worker's claim stays
    pinned to the campaign it works on, and so does a session with no role, since
    `s.role != Planner` holds of an empty role. Q10/Q10b/Q10c are the witnesses.
    The binding conjunct is not decoration: it is the one campaign, one machine

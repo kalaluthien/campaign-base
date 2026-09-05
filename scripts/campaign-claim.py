@@ -35,7 +35,7 @@ against this machine on 2026-09-04 it found nothing, for two reasons that are
 the ordinary case and not an edge:
 
   * herdr reports where a session was STARTED, not where it is working. An
-    executor on the base works in a worktree (AGENTS.md, Execution mode) and
+    worker on the base works in a worktree (AGENTS.md, Execution mode) and
     its herdr `cwd` stays at the clone it launched from, on `main`.
   * that worktree belongs to the BASE ROOT's repository, while the clone the
     session sits in is a different repository with its own `.git`, so
@@ -54,7 +54,7 @@ WHAT create-ref SERIALISES, AND WHAT `take` HAS TO ADD
 
 The ref name carries the topic as well as the sub-issue, so create-ref's
 server-side refusal separates `7-parser` from `7-parse-fix` and admits both --
-two executors on one sub-issue, which is the thing a claim exists to stop. The
+two workers on one sub-issue, which is the thing a claim exists to stop. The
 record this replaced was keyed on the sub-issue and gave that for free. So
 `take` lists `campaign-<N>/` first and refuses on any ref already naming the
 sub-issue, whatever its topic -- and then lists AGAIN after its own create-ref.
@@ -170,7 +170,7 @@ name, and the write that follows is where it is caught.
 
 Two readers took the name up, and they ask different questions. #185's
 check-campaign-claim.py resolves the ROLE from it on every write, so an
-executor named for another campaign is refused that campaign's issues and a
+worker named for another campaign is refused that campaign's issues and a
 name of no shape is refused both planes -- that is the enforcement of AGENTS.md
 'The session name'. `OTHER_CAMPAIGN` below is #187's, and is only a shape: it
 answers "does this name say whose it is at all", which `classify` needs to
@@ -799,7 +799,7 @@ def cmd_take(args):
         #
         # Yielding has no such state. Its worst case is that both delete and the
         # sub-issue is left unclaimed, which the next `take` fixes; two
-        # executors on one sub-issue is the thing that cannot be fixed after the
+        # workers on one sub-issue is the thing that cannot be fixed after the
         # fact. Do not "improve" this back into a tiebreak: the property is
         # never two holders, not always one.
         others = ", ".join(r for r in rivals if r != branch)
@@ -928,7 +928,7 @@ def compact_own_pane(sessions, session_id):
     """Enqueue `/compact` into the releasing session's own pane, and print what
     was read either way. Returns the pane it prompted, or None.
 
-    WHY HERE. An executor's release is the last thing it does on a sub-issue,
+    WHY HERE. A worker's release is the last thing it does on a sub-issue,
     and the context it is holding at that instant is the finished sub-issue's
     whole transcript, carried into the next one turn after turn. herdr queues a
     prompt against a working pane, so a prompt sent from inside the release
@@ -1641,7 +1641,7 @@ def cmd_release(args):
         # shortcut -- but it used to leave no exit at all. When the record was
         # the claim, a confirmed absence retired the record and KEPT the ref;
         # now the ref IS the claim, so the same situation -- a sub-issue closed
-        # `not planned` after its executor pushed -- left a ref standing that
+        # `not planned` after its worker pushed -- left a ref standing that
         # `take`'s sibling sweep then refused forever, and the sub-issue could
         # never be re-taken. Deleting it silently is the one thing worse. So
         # this says what the two ways out are and makes the destructive one a
@@ -1664,7 +1664,7 @@ def cmd_release(args):
     # A claim is cut BEFORE its delegate is launched (AGENTS.md § The binding),
     # so between the create-ref and the delegate's first checkout every claim on
     # this campaign is in exactly that state -- and deleting one there lets a
-    # second `take` succeed and puts two executors on one sub-issue. A merged
+    # second `take` succeed and puts two workers on one sub-issue. A merged
     # pull request whose head was this branch is what tells the two apart; with
     # none, a person has to say the holder is gone, which is what
     # `--confirmed-absent` is. This is the proof the record's `session` field

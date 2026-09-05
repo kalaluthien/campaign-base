@@ -164,7 +164,7 @@ def build(tmp):
     prose = ("the branch is campaign-1/306-topic and issue 305 and "
              "kalaluthien/campaign-base#305 -- none of this is a place")
     write(root / "proj" / "s1.jsonl", [
-        {"type": "agent-name", "sessionId": "s1", "agentName": "campaign-1-executor-9"},
+        {"type": "agent-name", "sessionId": "s1", "agentName": "campaign-1-worker-9"},
         *folded,
         {"type": "user", "timestamp": day + "01:00:03Z", "cwd": wt,
          "gitBranch": "main", "sessionId": "s1", "uuid": "r1",
@@ -326,7 +326,7 @@ def main():
         # SESSIONS NAME THE SUBAGENT BY ITS PARENT, which is the only place the
         # name is written.
         check("a subagent's row names the session that started it",
-              "(subagent of campaign-1-executor-9)" in sessions, sessions)
+              "(subagent of campaign-1-worker-9)" in sessions, sessions)
 
         # REVIEWS READ THE LEVEL AND THE PULL REQUEST FROM THE BRIEF.
         check("a review round is one row, with its pull request and level",

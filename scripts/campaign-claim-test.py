@@ -260,9 +260,9 @@ def pure_cases(m):
         check(f"the binding refuses on {word!r}", bool(m.binding_verdict(word)))
 
     # --- the herdr half ---
-    rows, why = m.parse_agents(listing(agent("s1", "campaign-1-executor-1", "/x")))
+    rows, why = m.parse_agents(listing(agent("s1", "campaign-1-worker-1", "/x")))
     check("a herdr row is read by its session id",
-          why is None and rows["s1"]["name"] == "campaign-1-executor-1")
+          why is None and rows["s1"]["name"] == "campaign-1-worker-1")
     rows, why = m.parse_agents(listing({"name": "n", "cwd": "/x", "pane_id": "p"}))
     check("a row herdr cannot identify is counted, never dropped",
           why is None and len(rows) == 1
@@ -286,9 +286,9 @@ def pure_cases(m):
     # --- the join ---
     stood = {"campaign-1/7-a": ["/w/7"]}
     sessions = {
-        "s1": {"name": "campaign-1-executor-1", "cwd": "/x", "pane": "p1",
+        "s1": {"name": "campaign-1-worker-1", "cwd": "/x", "pane": "p1",
                "status": "working"},
-        "s2": {"name": "campaign-2-executor-1", "cwd": "/y", "pane": "p2",
+        "s2": {"name": "campaign-2-worker-1", "cwd": "/y", "pane": "p2",
                "status": "idle"},
     }
     occupied, vacant, ours = m.classify(
@@ -298,10 +298,10 @@ def pure_cases(m):
     check("a claim with no checkout is vacant",
           vacant == [("campaign-1/8-b", [])])
     check("only sessions of THIS campaign are listed",
-          [n for _, r in ours for n in [r["name"]]] == ["campaign-1-executor-1"])
+          [n for _, r in ours for n in [r["name"]]] == ["campaign-1-worker-1"])
     # A campaign whose number is a prefix of another's must not collect it.
     check("campaign 1 does not collect campaign 11's sessions",
-          not m.classify([], {}, {"s": {"name": "campaign-11-executor-1"}},
+          not m.classify([], {}, {"s": {"name": "campaign-11-worker-1"}},
                          "1")[2])
 
     check("occupants names every workspace holding the branch",
@@ -367,7 +367,7 @@ def live_cases(m):
     lands in is then a property of the fixture and not of the day."""
     with tempfile.TemporaryDirectory() as d:
         path = shims(d, herdr=listing(
-            agent("s1", "campaign-9999-executor-1", d),
+            agent("s1", "campaign-9999-worker-1", d),
             agent("s2", "campaign-1-planner-9", d)))
         r = claim(["live", "9999"], path)
         out = r.stdout + r.stderr
@@ -386,14 +386,14 @@ def live_cases(m):
               "campaign-9999/1-alpha" in out
               and "claims checked out nowhere on this machine (2)" in out)
         check("a live session of this campaign is listed",
-              "campaign-9999-executor-1" in out)
+              "campaign-9999-worker-1" in out)
         check("...and a session of another campaign is not",
               "campaign-1-planner-9" not in out)
         check("live reaches no verdict", "No verdict" in out and r.returncode == 0)
 
         # A reading that did not happen must deny every count below it.
         broken = shims(Path(d) / "broken", gh="#!/bin/sh\nexit 1\n",
-                       herdr=listing(agent("s1", "campaign-9999-executor-1", d)))
+                       herdr=listing(agent("s1", "campaign-9999-worker-1", d)))
         r = claim(["live", "9999"], broken)
         out = r.stdout + r.stderr
         check("a failed ref listing denies the counts and exits 1",
@@ -814,7 +814,7 @@ def release_cases(m):
         # somebody's workspace right now. The herdr row's cwd is the worktree's
         # OWNING repository, which is how the sweep reaches a worktree at all.
         path = shims(d, herdr=listing(
-            agent("s1", "campaign-9999-executor-1", str(repo))))
+            agent("s1", "campaign-9999-worker-1", str(repo))))
         r = claim(["release", "9999", "1"], path)
         out = r.stdout + r.stderr
         check("release refuses a branch a workspace is standing in",
@@ -829,7 +829,7 @@ def release_cases(m):
               r.returncode == 1 and "herdr" in (r.stdout + r.stderr))
 
         # A BRANCH WITH COMMITS IS NEVER DELETED -- and used to leave no exit
-        # at all, so a sub-issue closed `not planned` after its executor pushed
+        # at all, so a sub-issue closed `not planned` after its worker pushed
         # kept a ref that `take`'s sweep then refused forever.
         ahead = shims(Path(d) / "ahead", herdr=listing(), gh=GH.replace(
             "*compare/main*) echo 0; exit 0 ;;",
@@ -1426,13 +1426,13 @@ def repos_cases(m):
 def peer_cases(m):
     """Who a close is told to ask -- and who it is not."""
     sessions = {
-        "me": {"name": "campaign-9-executor-1", "cwd": "/base/x", "pane": "p",
+        "me": {"name": "campaign-9-worker-1", "cwd": "/base/x", "pane": "p",
                "status": "idle"},
         "peer": {"name": "campaign-9-planner-2", "cwd": "/base", "pane": "p",
                  "status": "idle"},
         "unnamed": {"name": "<unnamed>", "cwd": "/base/y", "pane": "p",
                     "status": "idle"},
-        "other": {"name": "campaign-3-executor-1", "cwd": "/elsewhere",
+        "other": {"name": "campaign-3-worker-1", "cwd": "/elsewhere",
                   "pane": "p", "status": "idle"},
     }
     _, _, ours = m.classify([], {}, sessions, "9", root="/base", caller="me")
@@ -1506,13 +1506,13 @@ def compact_cases(m):
     pane are the two failures, and only one of them is visible in the exit
     status -- neither, in fact, which is why release's exit is asserted to be
     0 in all five."""
-    rows = {"S1": {"name": "campaign-9999-executor-1", "status": "idle",
+    rows = {"S1": {"name": "campaign-9999-worker-1", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p1"},
-            "S2": {"name": "campaign-9999-executor-2", "status": "idle",
+            "S2": {"name": "campaign-9999-worker-2", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p2"}}
     pane, note = m.own_pane(rows, "S2")
     check("own_pane joins the session id to its own row, not the first row",
-          pane == "w1:p2" and "w1:p2" in note and "executor-2" in note,
+          pane == "w1:p2" and "w1:p2" in note and "worker-2" in note,
           f"{pane!r} {note!r}")
     pane, note = m.own_pane(rows, None)
     check("no session id in the environment is a could-not-look, not a pane",
@@ -1546,8 +1546,8 @@ exit 1
         # TWO ROWS, and the releasing session is the SECOND. A shim that
         # prompted the first pane would pass a one-row fixture, which is the
         # bug "never prompts a pane that is not its own" names.
-        two = listing(agent("S1", "campaign-9999-executor-1", d, pane="w1:p1"),
-                      agent("S2", "campaign-9999-executor-2", d, pane="w1:p2"))
+        two = listing(agent("S1", "campaign-9999-worker-1", d, pane="w1:p1"),
+                      agent("S2", "campaign-9999-worker-2", d, pane="w1:p2"))
 
         ok = shims(Path(d) / "ok", gh=rel_gh, herdr=two)
         r = claim(["release", "9999", "4"], ok,

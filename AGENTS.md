@@ -82,8 +82,8 @@ planner's own state, where every session and every machine can read it; a design
 a file was the only copy of dies with the directory. What may stay there is what
 no issue can hold — a pid, a log, a lock — and what is DERIVED from an issue and
 re-derivable at any time: `runtime/repos` and
-`runtime/campaign-issue-body-derived.md` are caches `opening-campaign` writes and
-`closing-campaign` reads back.
+`runtime/campaign-issue-body-derived.md`, which `opening-campaign` writes and
+which `opening-campaign` and `closing-campaign` respectively read back.
 
 **Resolve the base root one way, everywhere:**
 
@@ -290,8 +290,8 @@ name|owner>: <one line>`, one intent per comment, under the comment ceiling, and
 the guard reads it. **The three ceilings are numbers in two scripts and nowhere
 else** — `campaign-tracker.py`'s `TITLE_CEILING` and `BODY_CEILING`, the guard's
 `COMMENT_CEILING` — and each check prints the number beside what it measured, so
-a document repeating one would be the copy that drifts. The five are `REPORT`, `REVIEW`, `BLOCKED`, `DECISION` and
-`NOTE`; § The four messages says which goes where, and states once that the
+a document repeating one would be the copy that drifts. The five kinds are
+`REPORT`, `REVIEW`, `BLOCKED`, `DECISION` and `NOTE`; § The four messages says which goes where, and states once that the
 comment is the durable record while the message of the same name is its
 notification, carrying no fact the comment does not.
 
@@ -400,8 +400,8 @@ what survives the session that opened it.
 ## The campaign issue body
 
 **The campaign issue body is a charter, not a status board.** `## Intent`,
-`## Scope` and `## Done when` say what a person signed up for and change only when the scope
-genuinely changes; the sub-issue index is the decomposition, and
+`## Scope` and `## Done when` say what a person signed up for and change only
+when the scope genuinely changes; the sub-issue index is the decomposition, and
 `campaign-tracker settlement <N>` derives progress from it. So the body is written
 at exactly two moments — a scope change, and the close. Adding work is neither,
 and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding a

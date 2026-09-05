@@ -881,12 +881,20 @@ def comment_first_line():
 # was already right. `--comment` is valued only on the `COMMENT_FLAG_WRITES`
 # verbs, and `comment_body` reads it only there.
 BODY_VALUED = {"-b", "--body"}
-COMMENT_FLAG = {"--comment"}
+# `-c` IS `--comment`'s SHORTHAND on `gh issue close|reopen` and
+# `gh pr close|reopen` (`gh help issue close`: `-c, --comment string`), and
+# reading only the long spelling was the very hole this pair was narrowed to
+# close: the careless spelling passing while the careful one is checked. It is
+# read INSIDE the `COMMENT_FLAG_WRITES` branch only, because `-c` on
+# `gh pr review` is the boolean kind and carries no text.
+COMMENT_FLAG = {"-c", "--comment"}
 BODY_FILE_VALUED = {"-F", "--body-file"}
 # A GNU-style long option takes `--x=v`; a pflag SHORTHAND also takes `-bv`
 # with no separator, and `gh` uses pflag. Named here rather than derived, so
 # `--body` is never split as though it were `-b` + `ody`.
-SHORT_FLAGS = {"-b", "-F"}
+SHORT_FLAGS = {"-b", "-F", "-c"}
+# Every flag this reader knows, so one is never mistaken for another's value.
+KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
 # WHAT MAKES A BODY UNJUDGEABLE. shlex expands nothing, so a token holding a
 # command substitution reaches this check as its SOURCE, not as its value, and
 # `--body "$(cat review.md)"` -- a form this campaign used four times on PR
@@ -894,7 +902,23 @@ SHORT_FLAGS = {"-b", "-F"}
 # `$(cat review.md)`. This file's own doctrine is that a shell string is not
 # read; judging one anyway refuses correct work on text nobody wrote. So it is
 # ALLOWED and the allow says which text it could not see.
-SUBSTITUTION = ("$(", "`", "${")
+#
+# `$(` AND NOTHING ELSE, and the cut is measured rather than chosen. The first
+# cut of this held a BACKTICK and `${` too, and a backtick is this repository's
+# dominant comment idiom -- 43 of the 58 judged bodies in the allow corpus carry
+# one -- so it switched the check off for most `--body` comments ever written
+# here. One corpus row proves it: a `--body` whose backticks are BACKSLASH-
+# ESCAPED, and so cannot be substitution at all, was judged and refused at
+# e73ec4b and allowed unjudged at 7804eaf. Of the 8 corpus rows this now leaves
+# unjudged, 7 hold a real `$(`; that one held only backticks.
+#
+# THE COST OF THE CUT, stated: a body holding a real `` `cmd` `` or `${VAR}` is
+# now judged on its SOURCE. That direction is a refusal, not a pass, and a
+# refusal is the direction to fail in. shlex has already resolved the quoting by
+# the time this runs, so a literal backtick and a substituting one are
+# indistinguishable here; reading the raw command instead is the fix that would
+# tell them apart, and it is not paid for by one hypothetical body.
+SUBSTITUTION = ("$(",)
 
 
 def flag_value(tokens, names):
@@ -905,7 +929,13 @@ def flag_value(tokens, names):
     and for a shorthand in `SHORT_FLAGS` the attached `-xV` that pflag accepts
     and this once let through unread."""
     for j, t in enumerate(tokens):
-        if t in names and j + 1 < len(tokens):
+        # A FLAG OF THIS READER IS NOT ITS OWN NEIGHBOUR'S VALUE. `--comment` is
+        # scanned before `-b` and is valued on the close/reopen verbs, so
+        # `--comment -b '<text>'` returned the literal `-b` and refused on
+        # shape. Skipped only for the flags NAMED here -- a body may perfectly
+        # well begin with `-`, as every bullet list does, and a blanket
+        # "starts with a dash" test would drop those.
+        if t in names and j + 1 < len(tokens) and tokens[j + 1] not in KNOWN_FLAGS:
             return tokens[j + 1]
         if "=" in t and t.split("=", 1)[0] in names:
             return t.split("=", 1)[1]
@@ -943,7 +973,8 @@ def comment_body(tokens, heredocs, cwd=None):
     if pair in COMMENT_WRITES:
         pass
     elif pair in COMMENT_FLAG_WRITES:
-        if not any(t == "--comment" or t.startswith("--comment=")
+        if not any(t in COMMENT_FLAG or t.startswith("--comment=")
+                   or (t.startswith("-c") and not t.startswith("--"))
                    for t in tokens):
             return None, None, None
         # ...AND HERE ONLY IS IT VALUED. On these verbs `--comment` carries the

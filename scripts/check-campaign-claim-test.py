@@ -845,6 +845,57 @@ def main():
         check("...while the claim reading still refuses it on another issue",
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
 
+        # ------ the fix round on 7804eaf's review ------
+        # A BACKTICK IS NOT A SUBSTITUTION MARKER, and treating it as one turned
+        # the check off for most `--body` comments this repository writes: 43 of
+        # the 58 judged corpus bodies carry one. The case uses BACKSLASH-ESCAPED
+        # backticks, which cannot be substitution under any reading.
+        r = ask(f.base, tool="Bash",
+                command=r"""gh pr comment 5 --body "see \`x.py\` line 3" """)
+        check("a body with backticks is judged, not waved through",
+              r.returncode == 2 and "x.py" in r.stderr, out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command=r"""gh pr comment 5 --body "NOTE campaign-1-worker-1: see \`x.py\`" """)
+        check("...and a kinded one with backticks passes",
+              r.returncode == 0, out(r)[:400])
+        # ...AND `${` IS NOT ONE EITHER. Its own case, or the two above pass
+        # with it still in the set.
+        r = ask(f.base, tool="Bash",
+                command="gh pr comment 5 --body 'a ${PLACEHOLDER} in prose'")
+        check("...nor is `${`", r.returncode == 2
+              and "PLACEHOLDER" in r.stderr, out(r)[:400])
+        # `-c` IS `--comment`'s SHORTHAND on the verbs where it carries text --
+        # the careless spelling the narrowing of `--comment` had left unread.
+        r = ask(f.base, tool="Bash", command="gh issue close 7 -c 'unkinded'")
+        check("`gh issue close -c TEXT` is read like `--comment`",
+              r.returncode == 2 and "unkinded" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue reopen 7 -cunkinded")
+        check("...and the attached `-cTEXT` too", r.returncode == 2
+              and "unkinded" in r.stderr, out(r)[:300])
+        # THE CONTROL: `-c` on `gh pr review` is the boolean KIND and carries no
+        # text, so the `-b` beside it must still be what is read.
+        r = ask(f.base, tool="Bash",
+                command=f"gh pr review 5 -c -b '{ok}'")
+        check("`gh pr review -c -b` still reads the -b", r.returncode == 0,
+              out(r)[:300])
+        # `-F` HAD NO CASE, so its half of the shorthand set could be deleted
+        # green while `-b`'s stayed pinned.
+        (f.base / "d.md").write_text("a review of the change\n")
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 -Fd.md")
+        check("the attached `-FPATH` is read as a body file",
+              r.returncode == 2 and "a review of the change" in r.stderr,
+              out(r)[:300])
+        # A FLAG IS NOT ITS NEIGHBOUR'S VALUE, and a body that BEGINS with a
+        # dash still is -- every bullet list does.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue close 7 --comment -b '{ok}'")
+        check("`--comment -b TEXT` reads the text, not the literal `-b`",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body '- a bullet, unkinded'")
+        check("...and a body opening with a dash is still read",
+              r.returncode == 2 and "a bullet" in r.stderr, out(r)[:300])
+
         # THE STATED CEILING, PINNED. `gh api ... -f body=` posts a comment and
         # is NOT read here. A ceiling nothing asserts is a ceiling that has
         # quietly closed or quietly widened; this says which it is today.

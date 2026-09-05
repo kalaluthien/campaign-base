@@ -493,6 +493,21 @@ def main():
     found = m.shape_findings(m.SUB_ISSUE, "t", missing, True)
     check("a missing `## Lands in` is refused in the delegate's own words",
           any("no `## Lands in` heading" in f for f in found))
+    # A DELEGATE THAT WILL NOT LOAD IS NOT A SECTION THAT IS RIGHT. The branch
+    # fires whenever `campaign-repos.py` is missing or unimportable, and it was
+    # declared dead when it is merely unreached: an absence read as a pass is
+    # what this whole file exists to refuse.
+    was = m.repos_module
+    try:
+        def boom():
+            raise ImportError("no campaign-repos.py")
+        m.repos_module = boom
+        found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True)
+    finally:
+        m.repos_module = was
+    check("a `## Lands in` reader that will not load is a finding, not a pass",
+          len(found) == 1 and "would not load" in found[0]
+          and "not a section that is right" in found[0])
     for label, body in (
             ("inside an HTML comment",
              good_sub.replace("## Lands in\n- none\n",
@@ -500,7 +515,9 @@ def main():
             ("empty", good_sub.replace("## Lands in\n- none\n",
                                        "## Lands in\n\n## Z\n- q\n")),
             ("two entries", good_sub.replace("## Lands in\n- none\n",
-                                             "## Lands in\n- a/b\n- c/d\n"))):
+                                             "## Lands in\n- a/b\n- c/d\n")),
+            ("with two spaces in the heading",
+             good_sub.replace("## Lands in\n", "##  Lands in\n"))):
         # THE FOUR BODIES THE TWO READERS DISAGREED ON. Each passed the
         # presence test and was refused at the claim; a case per body, because
         # a single one of them passes with any three of the delegate's

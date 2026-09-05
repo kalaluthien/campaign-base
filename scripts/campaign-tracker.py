@@ -389,9 +389,9 @@ BACKLOG_LABEL = "backlog"
 
 # THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two
 # ceilings below are stated once each as a constant, and the templates and
-# AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS a section; it never
-# renames one, which is what `## Requirements` beside a sub-issue's `Done when`
-# was doing -- two names for one purpose. `## Plan` is conditional on the
+# AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS
+# a section; it never renames one, which is what `## Requirements` beside a
+# sub-issue's `Done when` was doing -- two names for one purpose. `## Plan` is conditional on the
 # moment and so is not in either tuple; see `required_sections`.
 CAMPAIGN_SECTIONS = ("Intent", "Scope", "Done when", "Repos")
 LANDS_SECTION = "Lands in"

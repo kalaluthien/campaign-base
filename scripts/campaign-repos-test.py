@@ -107,7 +107,7 @@ def main():
           f"exit {rc}: {out!r}")
 
     # ---- slug / key: the one reader of what makes two spellings the
-    # same repository. campaign-claim.py's `Repository:` line goes through
+    # same repository. campaign-claim.py's `## Lands in` entry goes through
     # these, so each spelling that reaches it in prose has a row.
     sys.path.insert(0, str(HERE))
     import importlib.machinery

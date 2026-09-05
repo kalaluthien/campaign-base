@@ -686,7 +686,7 @@ def cmd_take(args):
                   f"it.", file=sys.stderr)
             return 1
         # COMPARED THROUGH THE ONE KEY (#205), not as raw strings. `issue_repo`
-        # has already de-wrapped the `Repository:` line; the list entries come
+        # has already de-wrapped the `## Lands in` entry; the list entries come
         # from `campaign-repos.py`, which admits `owner/repo` and nothing else,
         # so the only difference left between two spellings of one repository
         # is case -- and GitHub does not tell `Web` from `web`.
@@ -1383,7 +1383,7 @@ def cmd_live(args):
     mine, scope_note = scope_for(args.campaign_issue)
     print(scope_note)
     # `live` reads a whole campaign rather than one sub-issue, so it has no
-    # `Repository:` line to consult; the base is where it starts and the clones
+    # `## Lands in` section to consult; the base is where it starts and the clones
     # on disk widen it. `--repo` here is a starting point, not an assertion
     # about one sub-issue's home.
     repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine,
@@ -1599,7 +1599,7 @@ def cmd_release(args):
     print(scope_note)
     # WHERE, from the sub-issue and not the caller -- the same reading `take`
     # makes. The spec says "`take` and `release` read the sub-issue's own
-    # `Repository:` line"; before this, only `take` did, and `release` still
+    # `## Lands in` section"; before this, only `take` did, and `release` still
     # picked a repository out of the clones on disk. A delete aimed by the
     # wrong reader takes a ref that is not this sub-issue's.
     subject, _named, note = issue_repo(args.issue, DEFAULT_REPO)

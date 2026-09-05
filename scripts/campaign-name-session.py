@@ -41,18 +41,19 @@ queued before the turn ends into one input line: three `/rename` prompts sent
 to one working pane landed as the single name
 `campaign-1-executor-3/rename campaign-1-planner-1/rename campaign-1-executor-3`
 (2026-09-04, #169 -- `executor` was the role word that day, and a dated
-observation is quoted as it was observed). A session naming itself is always mid-turn, so refusing a
-working pane would refuse the ordinary case. Instead this sends at most one
-prompt per pane per call -- a pane named twice is refused before anything is
-applied -- and reads the pane's `agent_status` from `herdr agent list` before
-sending. `idle` and `done` (herdr's own help calls `done` the same underlying
-idle state) are reported as `sent`; `working` and any other status as `queued`,
-so the caller knows not to send that pane anything else until `ListAgents`
-shows the name; a status this could not read is said as such, and the prompt
-is still sent. A BLOCKED pane -- one sitting at a dialog -- gets no prompt at
-all: herdr would reject it with `agent_blocked` before any input is sent, and
-the dialog is a person's to clear, so this reports the herdr name as applied
-and the harness half as not sent, exit 2.
+observation is quoted as it was observed). A session naming itself is always
+mid-turn, so refusing a working pane would refuse the ordinary case. Instead
+this sends at most one prompt per pane per call -- a pane named twice is
+refused before anything is applied -- and reads the pane's `agent_status` from
+`herdr agent list` before sending. `idle` and `done` (herdr's own help calls
+`done` the same underlying idle state) are reported as `sent`; `working` and
+any other status as `queued`, so the caller knows not to send that pane
+anything else until `ListAgents` shows the name; a status this could not read
+is said as such, and the prompt is still sent. A BLOCKED pane -- one sitting
+at a dialog -- gets no prompt at all: herdr would reject it with
+`agent_blocked` before any input is sent, and the dialog is a person's to
+clear, so this reports the herdr name as applied and the harness half as not
+sent, exit 2.
 """
 import json
 import re

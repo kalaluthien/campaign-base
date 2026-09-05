@@ -212,6 +212,23 @@ def _repos_module():
     return m
 
 
+def _tracker_module():
+    """`campaign-tracker.py`, imported for the one thing it owns that this file
+    also needs: the `backlog` label's spelling. It is imported and not restated
+    for the same reason `campaign-repos.py` is -- the LIST is still read by
+    running that script, and this is a constant, not a reading.
+
+    NO CYCLE: `campaign-tracker.py` imports THIS file only inside
+    `claim_reader()`, at call time, so a module-level import here resolves."""
+    src = HERE / "campaign-tracker.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_tracker", importlib.machinery.SourceFileLoader(
+            "campaign_tracker", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 REPOS = _repos_module()
 DEFAULT_REPO = REPOS.BASE_REPO
 
@@ -464,7 +481,10 @@ def issue_settled(issue):
     return False, f"#{issue} is {state}"
 
 
-BACKLOG_LABEL = "backlog"
+# ONE SPELLING, IMPORTED. `campaign-tracker.py` reads the label to REPORT it
+# and this file reads it to REFUSE a claim on it; two string literals of one
+# label is the drift this campaign exists to remove.
+BACKLOG_LABEL = _tracker_module().BACKLOG_LABEL
 
 
 def backlog_labelled(issue):

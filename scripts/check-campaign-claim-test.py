@@ -253,8 +253,8 @@ def row_posts_comment(mod, row):
         word, rest = mod.head(tokens)
         if word != "gh":
             continue
-        text, why = mod.comment_body(rest, heredocs)
-        if text is not None or why:
+        text, why, unjudged = mod.comment_body(rest, heredocs)
+        if text is not None or why or unjudged:
             return True
     return False
 
@@ -789,6 +789,62 @@ def main():
         check("an issue body is not judged by the comment rule",
               r.returncode == 0 and "shape does not hold" not in r.stderr,
               out(r)[:300])
+        # ------ the fix round on e73ec4b's review ------
+        # `--comment` IS THE REVIEW'S KIND ON `gh pr review`, not its body.
+        # gh's own example is `gh pr review --comment -b "..."`; reading
+        # `--comment` as valued swallowed the `-b` and judged the literal
+        # `--body` as the first line, refusing a correctly kinded REVIEW -- the
+        # one comment this vocabulary exists to make machine-readable.
+        r = ask(f.base, tool="Bash",
+                command=f"gh pr review 5 --comment -b '{ok}'")
+        check("`gh pr review --comment -b` reads the -b, not the --comment",
+              r.returncode == 0, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh pr review 5 --comment -b 'a review of the change'")
+        check("...and the same form unkinded is still refused",
+              r.returncode == 2 and "a review of the change" in r.stderr,
+              out(r)[:300])
+        # ...AND `--comment` IS VALUED ON THE VERBS WHERE IT CARRIES THE TEXT.
+        # The control for the line above: narrowing it must not stop reading
+        # `gh issue close --comment "..."`.
+        r = ask(f.base, tool="Bash",
+                command="gh issue close 7 --comment 'closing it'")
+        check("`gh issue close --comment` still reads its text",
+              r.returncode == 2 and "closing it" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh pr close 5 --comment 'closing it'")
+        check("...and so does `gh pr close --comment`",
+              r.returncode == 2 and "closing it" in r.stderr, out(r)[:300])
+        # ATTACHED SHORTHAND. pflag takes `-bTEXT` with no separator, and this
+        # went through UNREAD and allowed -- the careless spelling passing while
+        # the careful one was checked, which the header claims it does not.
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 -bunkinded")
+        check("`-bTEXT` is read, not passed through as no comment at all",
+              r.returncode == 2 and "unkinded" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash", command=f"gh issue comment 7 -b'{ok}'")
+        check("...and a kinded `-bTEXT` passes", r.returncode == 0, out(r)[:300])
+        # `--body=V` HAD NO CASE EITHER, so the branch could be deleted green.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body=unkinded")
+        check("the `--body=V` spelling is read too", r.returncode == 2
+              and "unkinded" in r.stderr, out(r)[:300])
+        # A BODY THE SHELL COMPOSES IS NOT READ, AND THAT IS AN ALLOW. shlex
+        # expands nothing, so the token arriving here is the SOURCE; judging it
+        # refused a correctly kinded REPORT for a first line reading
+        # `$(cat review.md)`, a form the allow corpus holds four times.
+        r = ask(f.base, tool="Bash",
+                command='gh pr comment 5 --body "$(cat review.md)"')
+        check("a comment body the shell composes is allowed, not judged",
+              r.returncode == 0, out(r)[:400])
+        check("...and the allow SAYS it did not check the shape",
+              "shape NOT checked" in r.stdout, out(r)[:400])
+        # ...AND IT IS STILL A CAMPAIGN-PLANE WRITE. Unjudged is not exempt:
+        # the claim reading below must still refuse it on an unclaimed issue.
+        r = ask(f.base, tool="Bash",
+                command='gh issue comment 9 --body "$(cat review.md)"')
+        check("...while the claim reading still refuses it on another issue",
+              r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
+
         # THE STATED CEILING, PINNED. `gh api ... -f body=` posts a comment and
         # is NOT read here. A ceiling nothing asserts is a ceiling that has
         # quietly closed or quietly widened; this says which it is today.
@@ -1646,8 +1702,18 @@ def main():
             # and a blanket exemption would have hidden the second.
             posts = {i for i, row in enumerate(rows)
                      if row["tool"] == "Bash" and row_posts_comment(mod, row)}
-            check("the corpus holds comment writes to measure this against",
-                  len(posts) > 5, f"{len(posts)} of {len(rows)}")
+            # THE EXEMPT SET IS FROZEN TO A NUMBER, because it is computed by
+            # the reader under test: any row the comment check MISCLASSIFIES as
+            # a comment has its refusal excused by the very mistake that caused
+            # it, and the `already` control below cannot see a narrow false
+            # positive. Frozen, a row newly entering the set is itself a
+            # failure. 611 rows, 64 of them comment writes, at the corpus as
+            # `guard-corpus.py` last wrote it; re-bless both numbers when the
+            # corpus is regenerated, and read a change here as a question about
+            # `comment_body` before reading it as a question about the corpus.
+            check("the corpus's comment rows are the 64 last blessed",
+                  len(rows) == 611 and len(posts) == 64,
+                  f"{len(posts)} of {len(rows)}")
             other = sorted(set(refused_at) - posts)
             check(f"of the {replayed} recorded allows the guard refuses only "
                   f"comment writes, whose shape #217 changed",

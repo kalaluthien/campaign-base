@@ -731,7 +731,9 @@ def paired_segments(command):
             more, why = paired_segments(text)
             if more is None:
                 return None, why
-            out += [t for t, _ in more]
+            # `out` is NOT extended here any more. `for seg in list(out)`
+            # takes its snapshot before the loop and `paired` is what this
+            # returns, so the append had no reader after #217 split the walk.
             paired += more
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
@@ -870,25 +872,60 @@ def comment_first_line():
     return _FIRST_LINE
 
 
-BODY_VALUED = {"-b", "--body", "--comment"}
+# THE BODY FLAGS, and `--comment` IS NOT AMONG THEM. `gh`'s own example is
+# `gh pr review --comment -b "interesting"`, where `--comment` is the review's
+# KIND and takes no value; reading it as valued swallowed the `-b` and judged
+# the literal string `--body` as the comment's first line -- so a correctly
+# kinded REVIEW, the one comment this vocabulary exists to make machine-
+# readable, was refused with a diagnosis sending its author to fix a line that
+# was already right. `--comment` is valued only on the `COMMENT_FLAG_WRITES`
+# verbs, and `comment_body` reads it only there.
+BODY_VALUED = {"-b", "--body"}
+COMMENT_FLAG = {"--comment"}
 BODY_FILE_VALUED = {"-F", "--body-file"}
+# A GNU-style long option takes `--x=v`; a pflag SHORTHAND also takes `-bv`
+# with no separator, and `gh` uses pflag. Named here rather than derived, so
+# `--body` is never split as though it were `-b` + `ody`.
+SHORT_FLAGS = {"-b", "-F"}
+# WHAT MAKES A BODY UNJUDGEABLE. shlex expands nothing, so a token holding a
+# command substitution reaches this check as its SOURCE, not as its value, and
+# `--body "$(cat review.md)"` -- a form this campaign used four times on PR
+# kalaluthien/campaign-base#183 -- was refused for a first line reading
+# `$(cat review.md)`. This file's own doctrine is that a shell string is not
+# read; judging one anyway refuses correct work on text nobody wrote. So it is
+# ALLOWED and the allow says which text it could not see.
+SUBSTITUTION = ("$(", "`", "${")
 
 
 def flag_value(tokens, names):
-    """The value of the first of `names` present, as `--x V` or `--x=V`, or
-    None. Read over ALL tokens, because the attached spelling can be last where
-    the separated one cannot."""
+    """The value of the first of `names` present, or None.
+
+    Three spellings, and the reason all three are read is that a check covering
+    two of them refuses the careful and passes the careless: `--x V`, `--x=V`,
+    and for a shorthand in `SHORT_FLAGS` the attached `-xV` that pflag accepts
+    and this once let through unread."""
     for j, t in enumerate(tokens):
         if t in names and j + 1 < len(tokens):
             return tokens[j + 1]
         if "=" in t and t.split("=", 1)[0] in names:
             return t.split("=", 1)[1]
+        for short in names & SHORT_FLAGS:
+            if len(t) > len(short) and t.startswith(short) and t[len(short)] != "=":
+                return t[len(short):]
     return None
 
 
 def comment_body(tokens, heredocs, cwd=None):
-    """(the comment this segment posts, why_unreadable), or (None, None) when
-    it posts none.
+    """(text, why_unreadable, why_unjudged) for the comment this segment posts;
+    (None, None, None) when it posts none. At most one of the three is set.
+
+    THE THIRD IS AN ALLOW AND THE OTHER TWO ARE REFUSALS, and they are separate
+    because they are different readings: `why_unreadable` is "I could not look"
+    at a file that should have been there, and `why_unjudged` is "there is
+    nothing here to look AT" -- a body the shell will compose and this guard
+    never sees. Collapsing them would either refuse the second, which refuses
+    correct work, or allow the first, which is the absence-as-a-pass this whole
+    check exists to avoid.
 
     FOUR SPELLINGS OF ONE THING, and the reason they are all read here is that
     a check covering three of them refuses the careful and passes the careless.
@@ -908,28 +945,45 @@ def comment_body(tokens, heredocs, cwd=None):
     elif pair in COMMENT_FLAG_WRITES:
         if not any(t == "--comment" or t.startswith("--comment=")
                    for t in tokens):
-            return None, None
+            return None, None, None
+        # ...AND HERE ONLY IS IT VALUED. On these verbs `--comment` carries the
+        # text; on `gh pr review` it is the review's kind and carries nothing.
+        text = flag_value(tokens, BODY_VALUED | COMMENT_FLAG)
+        if text is not None:
+            return _judgeable(text)
     else:
-        return None, None
+        return None, None, None
     text = flag_value(tokens, BODY_VALUED)
     if text is not None:
-        return text, None
+        return _judgeable(text)
     path = flag_value(tokens, BODY_FILE_VALUED)
     if path is not None and path != "-":
         here = Path(cwd) if cwd is not None else Path.cwd()
         resolved = Path(path) if Path(path).is_absolute() else here / path
         try:
-            return resolved.read_text(encoding="utf-8"), None
+            return resolved.read_text(encoding="utf-8"), None, None
         except OSError as e:
             return None, (f"`{path}` -> {resolved} could not be read "
                           f"({e.__class__.__name__}), so the comment's shape "
-                          f"was not read either")
+                          f"was not read either"), None
     if heredocs:
-        return heredocs[0], None
+        return heredocs[0], None, None
     # A `gh pr review --approve` with no body posts a review and no comment; a
     # `gh issue comment` with neither is interactive. Neither has text to check
     # and neither is a shape this can judge.
-    return None, None
+    return None, None, None
+
+
+def _judgeable(text):
+    """The three-tuple for a body token: judged, or unjudged with the reason.
+
+    The one unjudged case is a command substitution: shlex expands nothing, so
+    what arrives here is the SOURCE and never the value."""
+    if any(x in text for x in SUBSTITUTION):
+        return None, None, (f"its body is composed by the shell "
+                            f"({text[:60]!r}), so this guard never sees the "
+                            f"text and did not judge it")
+    return text, None, None
 
 
 def comment_findings(text):
@@ -1175,14 +1229,16 @@ def bash_call(command, cwd: Path, session_id=""):
     # write whose CONTENT this guard can read. Refused here so the diagnosis is
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
-    shape, unread = [], []
+    shape, unread, unjudged = [], [], []
     for tokens, heredocs in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue
-        text, why_body = comment_body(rest, heredocs, cwd)
+        text, why_body, why_unjudged = comment_body(rest, heredocs, cwd)
         if why_body:
             unread.append(why_body)
+        elif why_unjudged:
+            unjudged.append(why_unjudged)
         elif text is not None:
             shape += comment_findings(text)
     if shape or unread:
@@ -1193,6 +1249,15 @@ def bash_call(command, cwd: Path, session_id=""):
                        f"A `gh api ... -f body=` posts a comment and is NOT "
                        f"read here, which is this check's stated ceiling and "
                        f"not a route around it."])
+    # CARRIED PAST THE CLAIM READING, not returned here: an unjudged comment is
+    # still a campaign-plane write and still needs its claim. Folded into
+    # `what`, which is the one string EVERY exit below prints -- three of them
+    # do not carry `fell_back`, so a second list would go silent on exactly the
+    # exits a reader is most likely to meet. An allow must never come back
+    # looking like a comment that was read and passed.
+    if unjudged:
+        what += " [" + "; ".join(
+            f"shape NOT checked: {u}" for u in unjudged) + "]"
     campaign, role, how_role = role_of(session_id)
     # Computed before the first exit that can use it: every exit of this
     # half that fell back says so, allows included. The allows used to be

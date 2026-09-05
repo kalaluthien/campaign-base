@@ -50,7 +50,9 @@ bind        The write `bound` reads. It adds `bound:<this machine>` and removes
             and by nothing here: AGENTS.md names the two cases a session binds
             in, and neither has a premise anything mechanical can observe.
 
-check       The ONE reader of an issue's SHAPE (kalaluthien/campaign-base#217):
+check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
+            except its destination, which `campaign-repos.py`'s `lands_in`
+            owns and this asks:
             its title length, its body length, and the sections its kind
             requires. The kind is decided by structure alone -- the `campaign`
             label and the parent link, the two facts GitHub itself holds --
@@ -118,8 +120,9 @@ bound                       0 for any verdict, 2 when the reading itself failed
                             question this refuses to answer, not a verdict.
 bind                        0 when the label was set, 1 when it was not.
 check                       0 when the shape holds (a third-kind issue included,
-                            which has no shape to hold), 1 when it does not,
-                            2 when the issue could not be read at all.
+                            which is asked for no SECTION -- both ceilings still
+                            apply to it), 1 when it does not, 2 when the issue
+                            could not be read at all.
 """
 import argparse
 import importlib.machinery
@@ -384,15 +387,39 @@ BODY_CEILING = 2000
 TITLE_CEILING = 80
 BACKLOG_LABEL = "backlog"
 
-# THE SECTION VOCABULARY, stated once, here. A kind OMITS a section; it never
+# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two
+# ceilings below are stated once each as a constant, and the templates and
+# AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS a section; it never
 # renames one, which is what `## Requirements` beside a sub-issue's `Done when`
 # was doing -- two names for one purpose. `## Plan` is conditional on the
 # moment and so is not in either tuple; see `required_sections`.
 CAMPAIGN_SECTIONS = ("Intent", "Scope", "Done when", "Repos")
-SUB_ISSUE_SECTIONS = ("Intent", "Done when", "Lands in")
+LANDS_SECTION = "Lands in"
+SUB_ISSUE_SECTIONS = ("Intent", "Done when", LANDS_SECTION)
 PLAN_SECTION = "Plan"
 
 SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
+
+
+def repos_module():
+    """`campaign-repos.py`, imported for `lands_in`.
+
+    THE DESTINATION HAS ONE READER AND THIS IS NOT IT. `SECTION` above finds a
+    heading; `lands_in` decides whether the SECTION under it is an answer, and
+    the two disagreed on four bodies -- a `## Lands in` inside an HTML comment,
+    `##  Lands in` with two spaces, an empty section, and two entries. On each,
+    `check` printed "the shape holds" and `campaign-claim take` then refused the
+    claim, which is the drift a second reader always produces. So this row is
+    delegated rather than re-derived, and `check` and the claim path can no
+    longer answer differently (kalaluthien/campaign-base#217, review of
+    e73ec4b)."""
+    src = Path(__file__).resolve().parent / "campaign-repos.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_repos", importlib.machinery.SourceFileLoader(
+            "campaign_repos", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
 
 CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
     "campaign issue", "sub-issue", "stray", "third kind")
@@ -444,6 +471,21 @@ def shape_findings(kind, title, body, want_plan):
                    f"linked from `## {PLAN_SECTION}`")
     found = SECTION.findall(body)
     for want in required_sections(kind, want_plan):
+        # THE DESTINATION IS NOT A PRESENCE TEST. Every other section here is
+        # judged by its heading alone -- what belongs under `## Intent` is
+        # judgement and stays prose. `## Lands in` is the one row a script
+        # already decides in full, and it is asked rather than approximated.
+        if want == LANDS_SECTION:
+            try:
+                _entry, why = repos_module().lands_in(body)
+            except Exception as e:                 # noqa: BLE001 -- any of them
+                out.append(f"the `## {want}` reader would not load "
+                           f"({e.__class__.__name__}), so this section was not "
+                           f"read; that is not a section that is right")
+                continue
+            if why:
+                out.append(f"`## {want}`: {why}")
+            continue
         if want not in found:
             out.append(f"no `## {want}` section, which a {kind} requires"
                        + (" at a claim" if want == PLAN_SECTION else ""))

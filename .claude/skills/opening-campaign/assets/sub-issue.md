@@ -1,7 +1,9 @@
-<!-- The sub-issue. Title: a verb-first mission, at most 80 characters, carrying
-     the words a search would use -- `Refuse a heredoc body the guard cannot
-     split`, never a sentence about the situation. Body at most 2,000
-     characters, bullets or tables, no prose paragraphs.
+<!-- The sub-issue. Title: a verb-first mission carrying the words a search
+     would use -- `Refuse a heredoc body the guard cannot split`, never a
+     sentence about the situation. Body: bullets or tables, no prose
+     paragraphs. Both ceilings are numbers in `scripts/campaign-tracker.py`
+     and are not repeated here; `campaign-tracker.py check <N>` prints each
+     one beside what it measured.
 
      NO `Campaign:` LINE. The `--parent` link is the index and
      `campaign-tracker index` reads it back; a line nothing read is the shape a

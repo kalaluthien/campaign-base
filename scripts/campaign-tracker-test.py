@@ -480,11 +480,34 @@ def main():
     for want, body in (
             ("Intent", good_sub.replace("## Intent\n- x\n\n", "")),
             ("Done when", good_sub.replace("## Done when\n- x\n\n", "")),
-            ("Lands in", good_sub.replace("\n## Lands in\n- none\n", "\n")),
             ("Plan", good_sub.replace("## Plan\n- x\n\n", ""))):
         found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
         check(f"a sub-issue with no `## {want}` is refused by that name",
               any(f"no `## {want}` section" in f for f in found))
+    # `## Lands in` IS THE ONE ROW THIS FILE DOES NOT DECIDE. It is delegated to
+    # `campaign-repos.py`'s `lands_in`, because a presence test here and a real
+    # reader there disagreed on four bodies and `check` printed "the shape
+    # holds" on each one the claim path then refused. The case is on the
+    # DELEGATE's own words, so a copy re-derived here would fail it.
+    missing = good_sub.replace("\n## Lands in\n- none\n", "\n")
+    found = m.shape_findings(m.SUB_ISSUE, "t", missing, True)
+    check("a missing `## Lands in` is refused in the delegate's own words",
+          any("no `## Lands in` heading" in f for f in found))
+    for label, body in (
+            ("inside an HTML comment",
+             good_sub.replace("## Lands in\n- none\n",
+                              "<!--\n## Lands in\n- none\n-->\n")),
+            ("empty", good_sub.replace("## Lands in\n- none\n",
+                                       "## Lands in\n\n## Z\n- q\n")),
+            ("two entries", good_sub.replace("## Lands in\n- none\n",
+                                             "## Lands in\n- a/b\n- c/d\n"))):
+        # THE FOUR BODIES THE TWO READERS DISAGREED ON. Each passed the
+        # presence test and was refused at the claim; a case per body, because
+        # a single one of them passes with any three of the delegate's
+        # refusals deleted.
+        found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
+        check(f"a `## Lands in` {label} is a finding, as it is at the claim",
+              len(found) == 1 and "`## Lands in`:" in found[0])
     for want, body in (
             ("Scope", good_campaign.replace("## Scope\nIn:\n- x\n\n", "")),
             ("Repos", good_campaign.replace("\n## Repos\n- none\n", "\n"))):
@@ -510,7 +533,10 @@ def main():
           == ["the title is 81 characters, over 80"])
     check("...and a title at the ceiling exactly is not",
           m.shape_findings(m.SUB_ISSUE, "x" * 80, good_sub, True) == [])
-    over = good_sub + "- " + "y" * 2000
+    # PADDED UNDER ITS OWN HEADING, not appended: appended, the padding became a
+    # SECOND `## Lands in` entry and the body carried two faults, so the "two
+    # findings" case below counted three.
+    over = good_sub + "\n## Pad\n- " + "y" * 2000
     check("a body over the ceiling is refused, with both numbers",
           any(f"the body is {len(over)} characters, over 2000" in f
               for f in m.shape_findings(m.SUB_ISSUE, "t", over, True)))

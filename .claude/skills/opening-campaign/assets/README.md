@@ -1,13 +1,13 @@
-<!-- The campaign issue. Title: a verb-first mission, at most 80 characters,
-     carrying the words a search would use. No `Campaign:` prefix -- the
-     `campaign` label says which kind this is, and structure is what every
-     reader classifies by.
+<!-- The campaign issue. Title: a verb-first mission carrying the words a
+     search would use. No `Campaign:` prefix -- the `campaign` label says which
+     kind this is, and structure is what every reader classifies by.
 
-     Body at most 2,000 characters, bullets or tables, no prose paragraphs.
-     `scripts/campaign-tracker.py check <N>` reads the title, the ceiling and
-     the sections; `campaign-tracker bind` prints that reading and never gates
-     on it. Design longer than the ceiling is a file in `spec/` or `docs/`,
-     linked from here. -->
+     Body: bullets or tables, no prose paragraphs. Both ceilings are numbers in
+     `scripts/campaign-tracker.py` and are not repeated here;
+     `campaign-tracker.py check <N>` prints each one beside what it measured,
+     and `campaign-tracker bind` prints that reading and never gates on it.
+     Design over the body ceiling is a file in `spec/` or `docs/`, linked from
+     here. -->
 
 ## Intent
 

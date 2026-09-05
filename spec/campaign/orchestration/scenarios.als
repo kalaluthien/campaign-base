@@ -100,7 +100,7 @@ pred claimAtomic       { always (Now.event = Claim  implies Now.issue not in Cla
    by a world in which two workers are working the same sub-issue. The repair
    is not a wider sweep, which would still be a survey of a set the takers do
    not agree about; it is that the destination is a FACT ABOUT THE SUB-ISSUE
-   (`Issue.repo`, read from its `Repository:` line) that no taker supplies. */
+   (`Issue.repo`, read from its `## Lands in` section) that no taker supplies. */
 pred claimOnTheIssuesRepo {
   always (Now.event = Claim implies Now.repo = Now.issue.repo)
 }

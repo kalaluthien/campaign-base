@@ -48,7 +48,7 @@ from cwd -- or a campaign directory at a base root. Anything else is outside.
 
 WHO MAY WRITE WHAT. A session's ROLE decides, read from its name through
 `herdr agent list` and the pattern `campaign-name-session.py` owns: a PLANNER
-writes the campaign plane of any campaign and changes no code, an EXECUTOR
+writes the campaign plane of any campaign and changes no code, a WORKER
 writes its own campaign and the sub-issue it claimed, and a name that pattern
 does not admit is refused on both. A campaign directory is campaign-plane
 scratch, but a CHECKOUT under one -- a member clone, a linked worktree -- is
@@ -135,7 +135,7 @@ VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
 # `codePlaneEvents` in spec/campaign/orchestration/system.als puts the first on
 # the code plane while the three merge conditions -- not a role -- hold the
 # second. A planner allowed every WRITES row could open and merge pull
-# requests and delete another executor's claim ref through `gh api`, which is
+# requests and delete another worker's claim ref through `gh api`, which is
 # the opposite of "a planner changes no code".
 #
 # Read as the SUBCOMMAND alone, because that is what the plane is a property
@@ -175,7 +175,7 @@ PLANNER_GH = {"issue", "label"}
 # the cost #213 weighed and did not pay.
 PLANNER_GH_EXCEPT = {("issue", "develop")}
 
-# WHAT AN EXECUTOR MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
+# WHAT A WORKER MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
 # can ever cover the campaign issue -- it is nobody's sub-issue -- so #207
 # carved it out. Keyed on the VERB and not on the issue number, which is the
 # conjunct the first cut was missing: `edit` is the charter body, which only
@@ -217,7 +217,7 @@ def role_of(session_id):
     license different things:
 
       * a name of the shape the pattern admits -- the role decides, per #185's
-        table, and the campaign number bounds an executor;
+        table, and the campaign number bounds a worker;
       * a row found whose name is absent or of another shape -- LOOKED AND
         FOUND NOTHING, which the table's last row refuses;
       * herdr or the pattern unreadable -- COULD NOT LOOK, which falls back to
@@ -272,7 +272,7 @@ def role_of(session_id):
             return None, NO_ROLE, (f"session {session_id} is named "
                                    f"{name or 'nothing'}, which the campaign "
                                    f"name pattern does not admit")
-        role = "planner" if "-planner-" in name else "executor"
+        role = "planner" if "-planner-" in name else "worker"
         return m.group(1), role, f"session {session_id} is {name}"
     return None, None, (f"no herdr row names session {session_id}, has no role here")
 
@@ -910,7 +910,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
             return refuse(read + [
                 f"a planner may not change code, and {target} is in the "
                 f"checkout {top}.",
-                "Hand it to an executor: a session of its own on this "
+                "Hand it to a worker: a session of its own on this "
                 "machine, or a herdr delegate in the repository clone.",
             ])
         return allow(read + ["a planner writes the campaign plane, and a "
@@ -920,11 +920,11 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         branch, is_claim, source = claim_on(top)
         # ITS OWN CAMPAIGN, HERE TOO. Clause 1 asks only whether the target's
         # checkout is on SOME claim, and #185's bound was added to clause 2 and
-        # to the gh loop but not here -- so an executor of another campaign,
+        # to the gh loop but not here -- so a worker of another campaign,
         # with its role read correctly, edited this campaign's worktree. The
         # docstring said otherwise, which is what makes it a finding rather
         # than a gap.
-        if is_claim and role == "executor" and campaign is not None \
+        if is_claim and role == "worker" and campaign is not None \
                 and CLAIM_BRANCH.match(branch).group(1) != campaign:
             return refuse(read + [
                 f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
@@ -938,7 +938,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
     if root is None:
         return refuse(read + [how, "No checkout to read a claim from.", TAKE])
     holders, detail = held(root)
-    if role == "executor" and campaign is not None:
+    if role == "worker" and campaign is not None:
         # ITS OWN CAMPAIGN AND NO OTHER. The clauses ask whether SOME claim
         # covers the target; the name says which campaign this session is of,
         # so a claim of another campaign is not this session's to stand on.
@@ -1092,31 +1092,31 @@ def bash_call(command, cwd: Path, session_id=""):
         holders, d = held(root, i)
         if (not holders and own is not None
                 and CLAIM_BRANCH.match(own[1]).group(2) == i
-                and (role != "executor" or campaign is None
+                and (role != "worker" or campaign is None
                      or CLAIM_BRANCH.match(own[1]).group(1) == campaign)):
             holders = [own]
         # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
         # cover it: the campaign issue is nobody's sub-issue, so `held` finds
-        # nothing there for anyone and every executor was refused a comment on
+        # nothing there for anyone and every worker was refused a comment on
         # the campaign it works. What licenses it is the session's NAME, which
         # carries that campaign's number -- the same fact the rest of this
         # branch reads. A planner reaches the same write through its own row,
-        # on any campaign; this is the executor's, on one (#207).
-        if (role == "executor" and campaign is not None and i == campaign
+        # on any campaign; this is the worker's, on one (#207).
+        if (role == "worker" and campaign is not None and i == campaign
                 and all((sub, verb) in OWN_CAMPAIGN_GH
                         for j, sub, verb in per_write if j == i)):
             covering.append((i, [("its own campaign", f"campaign-{campaign}",
                                   "the session name")]))
             carved = True
             continue
-        # AN EXECUTOR STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
+        # A WORKER STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
         # belongs HERE, per issue. Applied once to the whole root instead, it
-        # refused only when EVERY claim was foreign -- so an executor of #1
+        # refused only when EVERY claim was foreign -- so a worker of #1
         # with any claim of its own under the root was admitted to write
         # another campaign's sub-issue, the foreign claim named as the cover.
         # `file_call` filtered per call from the start; this half did not, and
         # the two disagreed on exactly that shape.
-        if role == "executor" and campaign is not None:
+        if role == "worker" and campaign is not None:
             foreign = [h for h in holders
                        if CLAIM_BRANCH.match(h[1]).group(1) != campaign]
             holders = [h for h in holders if h not in foreign]
@@ -1151,11 +1151,11 @@ def bash_call(command, cwd: Path, session_id=""):
                        *detail, TAKE])
     if unreadable:
         holders, d = held(root)
-        if role == "executor" and campaign is not None:
+        if role == "worker" and campaign is not None:
             holders = [h for h in holders
                        if CLAIM_BRANCH.match(h[1]).group(1) == campaign]
         if (not holders and own is not None
-                and (role != "executor" or campaign is None
+                and (role != "worker" or campaign is None
                      or CLAIM_BRANCH.match(own[1]).group(1) == campaign)):
             holders = [own]
         if not holders:

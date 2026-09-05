@@ -312,7 +312,7 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <dt>sigs</dt>
       <dd><ul>
         <li><code>Agent { role, task, host, launcher, branch, peer }</code></li>
-        <li><code>abstract sig Role</code>, 그리고 <code>one sig Executor extends Role</code>, <code>one sig Planner extends Role</code></li>
+        <li><code>abstract sig Role</code>, 그리고 <code>one sig Worker extends Role</code>, <code>one sig Planner extends Role</code></li>
       </ul></dd>
       <dt>var</dt>
       <dd><code>Agent</code> 의 부분집합 <span class="ct">11&times; 부분집합</span> — <code>Launched</code> <code>Live</code> <code>LocalOnly</code> <code>PushedToRemote</code> <code>Reported</code> <code>Asked</code> <code>Answered</code> <code>Waiting</code> <code>Confirmed</code> <code>StandDownTaken</code> <code>Retired</code>. 그리고 <code>Reviewed in PullRequest</code>.</dd>
@@ -448,7 +448,7 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <text x="180" y="83" font-size="10.5" font-family="ui-monospace, Menlo, monospace">launcher · branch · peer</text>
       <text x="180" y="152" font-size="14" font-weight="bold" font-family="ui-monospace, Menlo, monospace">Role</text>
       <text x="180" y="170" font-size="10.5" font-family="ui-monospace, Menlo, monospace">abstract</text>
-      <text x="105" y="240" font-size="13" font-weight="bold" font-family="ui-monospace, Menlo, monospace">Executor</text>
+      <text x="105" y="240" font-size="13" font-weight="bold" font-family="ui-monospace, Menlo, monospace">Worker</text>
       <text x="105" y="258" font-size="10.5" font-family="ui-monospace, Menlo, monospace">one sig</text>
       <text x="255" y="240" font-size="13" font-weight="bold" font-family="ui-monospace, Menlo, monospace">Planner</text>
       <text x="255" y="258" font-size="10.5" font-family="ui-monospace, Menlo, monospace">one sig · some peer</text>
@@ -470,8 +470,8 @@ scripts/alloy-check.py --commands spec/campaign</pre>
   <ol class="keys">
     <li><span class="k">1</span><p><strong><code>Agent</code></strong> — 하위 이슈 하나를 붙든 참가자 하나. 세션이 자기 청구를 직접 하는 경우이거나, 그 세션이 띄운 위임이다. <code>peer</code> 는 앞쪽에서만 채워진다. 위임은 띄울 때 이름을 받지만, 세션 자신의 청구는 남이 고른 이름이 없어 기록이 필요하기 때문이다.</p></li>
     <li><span class="k">2</span><p><strong><code>Role</code></strong> — 에이전트가 무엇을 위한 것인가. <code>abstract</code> 이므로 자기 원자를 갖지 않는다.</p></li>
-    <li><span class="k">3</span><p><strong><code>Executor</code></strong> — 하위 이슈 하나를 그 브랜치 위에서 작업하는 종류. <code>work</code> 와 <code>report</code> 는 이 역할만 밟는다.</p></li>
-    <li><span class="k">4</span><p><strong><code>Planner</code></strong> — 요청을 받아 하위 이슈를 파일하고 나누어 주는 종류. 세션 자신의 원자이므로 <code>peer</code> 가 늘 채워지고, <code>work</code> 를 밟지 않으니 <code>LocalOnly</code>·<code>PushedToRemote</code>·<code>Reported</code> 를 나누어 갖지 않고 나머지 상태는 나누어 갖는다. 위임 하나를 띄우는 <code>Launch</code> 는 띄우는 세션에 그 하위 이슈의 살아 있는 <code>Planner</code> 원자가 있어야 하고, 세션이 자기 청구를 직접 하는 한 실행자 모양에는 <code>Planner</code> 원자가 하나도 없다. <span class="src">spec/campaign/orchestration/system.als</span></p></li>
+    <li><span class="k">3</span><p><strong><code>Worker</code></strong> — 하위 이슈 하나를 그 브랜치 위에서 작업하는 종류. <code>work</code> 와 <code>report</code> 는 이 역할만 밟는다.</p></li>
+    <li><span class="k">4</span><p><strong><code>Planner</code></strong> — 요청을 받아 하위 이슈를 파일하고 나누어 주는 종류. 세션 자신의 원자이므로 <code>peer</code> 가 늘 채워지고, <code>work</code> 를 밟지 않으니 <code>LocalOnly</code>·<code>PushedToRemote</code>·<code>Reported</code> 를 나누어 갖지 않고 나머지 상태는 나누어 갖는다. 위임 하나를 띄우는 <code>Launch</code> 는 띄우는 세션에 그 하위 이슈의 살아 있는 <code>Planner</code> 원자가 있어야 하고, 세션이 자기 청구를 직접 하는 한 작업자 모양에는 <code>Planner</code> 원자가 하나도 없다. <span class="src">spec/campaign/orchestration/system.als</span></p></li>
   </ol>
 </figure>
 

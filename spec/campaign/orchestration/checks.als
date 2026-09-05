@@ -52,7 +52,7 @@ assert SilenceResolutionStaysSafe {
 }
 
 /* The three claims the Role docstring makes, one command each, since a fact
-   or a guard deleted is invisible to the snapshot. Dropping `a.role = Executor`
+   or a guard deleted is invisible to the snapshot. Dropping `a.role = Worker`
    from `work` reddens the first, from `report` the second; deleting the
    `some a.peer` fact in AgentWellFormed reddens the third. */
 assert PlannerNeverLocalOnly { always no plannerAgents & LocalOnly }

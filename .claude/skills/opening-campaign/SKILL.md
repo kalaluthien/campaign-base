@@ -122,7 +122,7 @@ read back as `AGENTS.md` § The binding says.
 this campaign while named for another keeps that name until something sets it,
 and nothing later does: every peer message and every `live` sweep would then
 read it as another campaign's. `<role>` is `planner` when this session
-will file the sub-issues and hand them out, `executor` when it will work the
+will file the sub-issues and hand them out, `worker` when it will work the
 one it files (`AGENTS.md` § The binding); `<n>` is the next free one among the
 sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
 § The session name says.

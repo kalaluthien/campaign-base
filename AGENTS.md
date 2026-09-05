@@ -110,7 +110,7 @@ wrongly, and only `campaign-tracker bind <N>` repairs that.
 
 | the word | this session is |
 | --- | --- |
-| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take the shape the request calls for — an executor takes a sub-issue, a planner files them and distributes. |
+| `here` | **a session of this campaign.** Name this session first (§ The session name), then work the directory if there is one, scaffold it if there is none (`opening-campaign` steps 2 and 4), and take the shape the request calls for — a worker takes a sub-issue, a planner files them and distributes. |
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
@@ -140,21 +140,21 @@ itself, and when a person tells it to — migration, and the person's call becau
 nothing here can observe its premise. Bind, then read it back with `bound`; a
 label naming somebody else means the campaign was migrated out from under you.
 
-**A session of a campaign is a planner or an executor, and the request decides
-which shape it takes.** A simple request has an executor only: the session files
+**A session of a campaign is a planner or a worker, and the request decides
+which shape it takes.** A simple request has a worker only: the session files
 the sub-issue and works it. A request that needs decomposition has a **planner**,
 which takes the request, files the sub-issues and distributes them, and separate
-**executors**, each **a session of its own on this machine**: another session
+**workers**, each **a session of its own on this machine**: another session
 that takes a sub-issue, or a herdr delegate the planner launches (§ Execution
 mode chooses between them, by the repository first and then by cost — a delegate
 is the ordinary shape for a member repository and the mode of last resort for the
 base, and a repo-less campaign has the first form and not the second; the launch
 itself is `.claude/skills/opening-campaign/references/launching.md`). A
-separate executor is never the planner's subagent — a subagent shares the
+separate worker is never the planner's subagent — a subagent shares the
 planner's pane and dies with it, and carries the planner's session id, so the
 guard reads the PLANNER's role for everything it does. **A planner changes no
 code**, by its own hands or through a subagent — its code modes are a herdr
-delegate or a separate executor session. **#185 enforces that over a FILE
+delegate or a separate worker session. **#185 enforces that over a FILE
 TOOL's writes and no further**: a shell command is read only for the `gh`
 writes in it, never for what it does to a file, and `check-commit-claim.py`
 reads no role — so `sed -i` and `git commit` from a planner are refused by
@@ -175,7 +175,7 @@ branch the delegate's.
 ## The session name
 
 **`campaign-<campaign issue>-<role>-<n>`**, the role being `planner` or
-`executor`, for every session on this machine; `<n>` is one counter across both
+`worker`, for every session on this machine; `<n>` is one counter across both
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
 this sentence is that counting rule's one home. **The role word is not a
 label**: since #185 `check-campaign-claim.py` resolves it from `herdr agent
@@ -203,7 +203,7 @@ something sets it. The one pattern lives in `scripts/campaign-name-session.py`, 
 **Nothing refuses a stale name at the CLAIM**, which the record used to do by
 carrying the name into a place later readers trusted; with no record there is no
 such place. What reads the name instead is the guard, on every write: a name of
-another campaign gets an executor refused that campaign's issues, and a name of
+another campaign gets a worker refused that campaign's issues, and a name of
 no shape gets both planes refused.
 
 **The sub-issue is deliberately not in the name**, because a session works
@@ -289,7 +289,7 @@ a repo-less campaign. **Work that lands no commit is claimed all the same**,
 with `campaign-claim take`: one ref, cut on the base. **Two readers make that
 true rather than remembered, one rule read at two moments.**
 `scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "may this
-session make this change" — the claim for an executor, and since #185 the
+session make this change" — the claim for a worker, and since #185 the
 session's ROLE for both — for what has an unambiguous
 target — a file tool's path and a `gh` write — and allowing every other shell
 command unread, saying so. Since #196 it writes **one line per verdict** to
@@ -316,12 +316,12 @@ every shell write there landed unjudged.
 **Do it here, hand it to a subagent, or hand it to a delegate.** The session
 the request arrived at chooses the mode before the work starts, **first by the
 repository and only then by cost**. It is the planner only in the second shape
-(§ The binding). **The three modes are an EXECUTOR's**: since #185 a planner
+(§ The binding). **The three modes are a WORKER's**: since #185 a planner
 changes no code by its own hands and none through a subagent, which carries its
 session id and so its role, so a planner's only shape here is the third —
-a delegate, or a separate executor session that takes the sub-issue.
+a delegate, or a separate worker session that takes the sub-issue.
 
-An executor that *changes* a repository runs in a process started in that
+A worker that *changes* a repository runs in a process started in that
 repository's checkout: a herdr delegate in `<campaign>/repos/<repo>/` for a member
 repository, and a session or an in-process subagent on a worktree for the
 base. Reading any repository, and writing under `<campaign>/`, may run in any
@@ -333,7 +333,7 @@ skills of the session or directory they were *started in*, and a skill marked
 Then, within what the repository allows, choose by cost:
 
 - **your own hands** for one small edit needing nothing from the build loop
-  (an executor's hands: a planner's FILE-TOOL writes are refused and the
+  (a worker's hands: a planner's FILE-TOOL writes are refused and the
   refusal says so, while a shell write is caught by nothing — § The binding);
 - **a subagent on a worktree** when several sub-issues can run at once, or the work
   would eat the session's turns;
@@ -417,7 +417,7 @@ Three readings, and never answer one with another.
   on the branch name, which a restart and a rename both leave alone; it
   concludes nothing, a close reads its counts.
   **Attribution names a WORKSPACE, not a session, and that is measured rather
-  than conceded**: herdr reports where a session was *started*, an executor on
+  than conceded**: herdr reports where a session was *started*, a worker on
   the base works in a worktree, and that worktree's owning repository is not
   even the clone the session sits in — so no fact on this machine ties a session
   to a branch. Which is fine, because the two readers ask a different question:
@@ -507,8 +507,8 @@ round costs and how the narrowed brief is written are
 `.claude/skills/opening-campaign/references/reviewing.md`, which keeps the
 measurement.
 
-**A fix round is: findings on the pull request, one executor, one `REPORT`.** The
-executor verifies each finding at the site it names before touching anything.
+**A fix round is: findings on the pull request, one worker, one `REPORT`.** The
+worker verifies each finding at the site it names before touching anything.
 Follow-ups fold into the same round, whose boundary is the `REPORT` and never a
 push, and which ends in one `REPORT` carrying the sha and a per-finding
 disposition. **Check that disposition against the findings list mechanically**: a
@@ -538,7 +538,7 @@ prompt is still listed and never proceeds, and clearing it is the person's
 decision. **Do not trust the absence of that reading either**: a usage-limit menu
 and the folder-trust dialog both report `idle`; silence is a liveness question.
 
-**A release compacts the releasing session's own pane**, so a reused executor
+**A release compacts the releasing session's own pane**, so a reused worker
 does not carry a finished sub-issue's transcript into the next one:
 `campaign-claim release` enqueues it, and says so when it could not.
 

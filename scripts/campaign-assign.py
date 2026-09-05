@@ -13,7 +13,7 @@ applies; a message is a peer's word, which AGENTS.md says is never the
 authority -- which is exactly why an instruction must not travel as one.
 
 Stated in prose alone it had already drifted: the rule appeared in two sections
-with no criterion between them, and a later assignment to a reused executor,
+with no criterion between them, and a later assignment to a reused worker,
 the answer to a BLOCKED, and a slash command fell between them and were sent
 whichever way the sender guessed. This is that rule with a machine behind it.
 
@@ -115,7 +115,7 @@ def rendered(line):
     """A pane line with the transcript's gutter taken off, so a marker or an
     anchor can be matched against what the line IS rather than what it holds.
 
-    CONTAINMENT WAS FORGEABLE, and by the most ordinary thing an executor does.
+    CONTAINMENT WAS FORGEABLE, and by the most ordinary thing a worker does.
     `compacted` needed only some line CONTAINING MARKER after the last release;
     MARKER's own definition is a line of this file, so a session that `cat`s or
     `grep`s `campaign-assign.py` in its pane -- which is what working on this

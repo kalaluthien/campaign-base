@@ -83,7 +83,7 @@ other way.
 review is commissioned once, on the pull request as a whole, when the work is
 what the author means to land. Every fix round after it is reviewed on that
 round's diff only — `/code-review <level> <PR#>` with the brief naming the diff
-range, launched by the executor that made the fixes. A narrowed review does not
+range, launched by the worker that made the fixes. A narrowed review does not
 re-run a measurement the full review already made and reported, **unless the fix
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.

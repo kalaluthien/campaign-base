@@ -66,7 +66,7 @@ sig Agent {
 }
 
 /* `Role` is session/system.als's now: it is what a SESSION is for, read from
-   its name, and an agent inherits it. An Executor works a sub-issue on its
+   its name, and an agent inherits it. A Worker works a sub-issue on its
    branch. A Planner is a session's own atom (`some peer`, pinned by
    PlannerIsASession) on a sub-issue it filed and distributes: it never takes
    `work` or `report`, so of the state below it does not share LocalOnly,
@@ -79,9 +79,9 @@ sig Agent {
    and takes whatever of the state below it turns out not to share.
 
    WHAT #185 RETIRED: a planner working a sub-issue by its own hands used to be
-   "an Executor atom of the same session". AgentInheritsSessionRole below forbids
+   a Worker atom of the same session. AgentInheritsSessionRole below forbids
    that, so a planner session reaches `work` along no edge at all, and its code
-   modes are a delegate or a separate executor session. */
+   modes are a delegate or a separate worker session. */
 
 /* Which half of the work an event writes. The two are disjoint and do not
    cover: an event on NEITHER plane is one no role rule speaks to.
@@ -208,7 +208,7 @@ fact AgentWellFormed {
   /* AgentInheritsSessionRole. An agent that IS a session has that session's
      role; a delegate has no session and its role is free. This is what makes
      "a planner never touches code" a fact of the model rather than a
-     discipline: `work` and `report` require `a.role = Executor`, so a session
+     discipline: `work` and `report` require `a.role = Worker`, so a session
      whose role is Planner has no atom that can take either. Q2c measures which
      of the two forbids it. */
   all a: Agent | some a.peer implies a.role = a.peer.role
@@ -229,7 +229,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    NOT herdr's cwd, which is what a first cut of this read and what #176's body
    said before it was corrected. Measured on this machine 2026-09-04: that join
    found ZERO claims, because herdr reports where a session was STARTED, a base
-   executor works in a worktree, and the repository owning that worktree is not
+   worker works in a worktree, and the repository owning that worktree is not
    even the clone the session sits in. So `campaign-claim live` reads checkouts
    instead -- `git worktree list` over the base root, every campaign clone, and
    each session's own repo root -- and this `fun` is that sweep: a holder is an
@@ -242,7 +242,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    for the derivation or the reason. `Claimed` is a fact about GitHub and
    `checkedOut` is a fact about a workspace, and deriving one from the other
    would assert a join this machine cannot make: measured 2026-09-04, herdr
-   reports where a session STARTED, a base executor works in a worktree, and the
+   reports where a session STARTED, a base worker works in a worktree, and the
    repository owning that worktree is not even the clone the session sits in.
    So `holder` names a workspace and not a session, and the two facts stay
    separate because nothing observable connects them. #181 putting the campaign
@@ -376,7 +376,7 @@ pred launch[a: Agent] {
   no a.peer implies a.task in Claimed
   /* A delegate is the planner's act: the launching session holds a live
      Planner atom on this sub-issue, the one that filed and distributes it. A
-     session working its own claim needs none -- the one-executor shape. */
+     session working its own claim needs none -- the one-worker shape. */
   no a.peer implies (some p: plannerAgents | p.peer = Who.session and p.task = a.task and p in Live)
   campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
@@ -411,11 +411,11 @@ pred launch[a: Agent] {
 }
 
 /* Clears an earlier confirmation here rather than at the point it is read.
-   The executor's edge: no Planner atom is ever LocalOnly, and after #185 no
+   The worker's edge: no Planner atom is ever LocalOnly, and after #185 no
    Planner SESSION reaches this edge either -- AgentInheritsSessionRole leaves it
-   no Executor atom to take it with. */
+   no Worker atom to take it with. */
 pred work[a: Agent] {
-  a in Live and a not in Waiting and a.role = Executor
+  a in Live and a not in Waiting and a.role = Worker
   LocalOnly' = LocalOnly + a
   Confirmed' = Confirmed - a
   Live' = Live and PushedToRemote' = PushedToRemote and keepContext
@@ -477,9 +477,9 @@ pred answer[a: Agent] {
 
 /* A prompt to verify, never the verification, so this event writes NOTHING
    but the claim itself. A REPORT names a pull request, so it is the
-   executor's. */
+   worker's. */
 pred report[a: Agent] {
-  a in Live and a.role = Executor
+  a in Live and a.role = Worker
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext

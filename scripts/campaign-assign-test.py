@@ -125,13 +125,13 @@ def assign(args, path_dir):
 
 
 def pure_cases(m):
-    rows = {"S1": {"name": "campaign-1-executor-1", "status": "idle",
+    rows = {"S1": {"name": "campaign-1-worker-1", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p1"},
-            "S2": {"name": "campaign-1-executor-2", "status": "working",
+            "S2": {"name": "campaign-1-worker-2", "status": "working",
                    "cwd": "/tmp", "pane": "w1:p2"}}
     row, note = m.row_for(rows, "w1:p2")
     check("row_for finds the row by pane, not by position",
-          row is not None and row["name"] == "campaign-1-executor-2", note)
+          row is not None and row["name"] == "campaign-1-worker-2", note)
     row, note = m.row_for(rows, "w9:p9")
     check("a pane no row names lists the panes that were there",
           row is None and "w1:p1" in note and "w1:p2" in note, note)
@@ -286,8 +286,8 @@ def pure_cases(m):
 
 
 def end_to_end_cases():
-    rows = [agent("S1", "campaign-1-executor-1", "w1:p1"),
-            agent("S2", "campaign-1-executor-2", "w1:p2")]
+    rows = [agent("S1", "campaign-1-worker-1", "w1:p1"),
+            agent("S2", "campaign-1-worker-2", "w1:p2")]
 
     with tempfile.TemporaryDirectory() as d:
         # ALLOW: idle, compacted since its last release.
@@ -431,8 +431,8 @@ def end_to_end_cases():
         # REFUSE: not idle. Asserted on the pane's own status, and the read arm
         # is left working so a pass cannot come from an unreadable screen.
         busy = shims(Path(d) / "busy",
-                     [agent("S1", "campaign-1-executor-1", "w1:p1"),
-                      agent("S2", "campaign-1-executor-2", "w1:p2",
+                     [agent("S1", "campaign-1-worker-1", "w1:p1"),
+                      agent("S2", "campaign-1-worker-2", "w1:p2",
                             status="working")],
                      screen=f"{RELEASED}\n{MARKER}\n")
         r = assign(["w1:p2", "198"], busy)

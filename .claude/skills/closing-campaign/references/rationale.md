@@ -24,7 +24,7 @@ passed. The soundness argument is that they have nothing to find: an agent of
 this campaign is launched into `<campaign>/repos/<repo>/` and a session working
 one of its sub-issues checks the claim out under the same tree, and both need a
 directory that did not exist — so a campaign never worked on this machine can
-have no local executor to miss.
+have no local worker to miss.
 The residue is the one case that breaks the premise: a directory that existed
 here and was deleted by hand without a close, leaving agents alive with their
 tree gone. Nothing local can see that, and step 5's announcement on the campaign issue
@@ -36,7 +36,7 @@ is what covers it. Step 1 reports "not applicable" on this path rather than
 There is no holder to read. The holding session is retired (`AGENTS.md`
 § The binding), so this step asks what is live under the tree and whether it
 has agreed the campaign is over, and it asks `campaign-claim live` because
-either of its first two readings alone is blind to half the executors.
+either of its first two readings alone is blind to half the workers.
 
 **The workspace is the evidence, and leaving is a fact rather than a claim.**
 A peer used to pass this gate by posting `STOOD DOWN <name> <session-id>` on the
@@ -54,7 +54,7 @@ is the safe direction to be wrong in here: leaving a claim standing costs a
 question, deleting a live session's tree costs its work.
 
 **`live` cannot say which session holds which claim, and the gate does not need
-it to.** herdr reports where a session was *started*, an executor on the base
+it to.** herdr reports where a session was *started*, a worker on the base
 works in a worktree, and that worktree's owning repository may not even be the
 clone the session sits in — measured 2026-09-04, and it is why attribution names
 a workspace. The gate asks two existence questions, "is any claim occupied" and
@@ -66,8 +66,8 @@ happens to match and misses the rest. Ask the session instead.
 
 ## Step 2 — work only on this machine
 
-Step 1's two unenumerable cases land here: an agent herdr has forgotten and an
-executor nothing recorded both still leave their work in a checkout. The delete
+Step 1's two unenumerable cases land here: an agent herdr has forgotten and a
+worker nothing recorded both still leave their work in a checkout. The delete
 spares the base checkout, but step 5 closes the campaign issue indexing it, so it is
 read here too.
 
@@ -100,7 +100,7 @@ written at all is `AGENTS.md` § The campaign issue body.
 ## Step 5 — announce, close, delete
 
 **Why announce at all.** Step 1's gate is local, and under one campaign, one
-machine that covers everything legitimate: every agent and every executor session
+machine that covers everything legitimate: every agent and every worker session
 is on the bound machine, step 1 reads every claim ref on the remote and where
 each is checked out here, and step 2 read the base and `repos/` for work in no
 claim at all. A machine working this
@@ -122,9 +122,9 @@ hand: an intact one always lists at least `AGENTS.md`, `CLAUDE.md`, `README.md`
 and `scripts/`.
 
 **What makes the claim-ref release sighted is step 3, not step 1.** Every sub-issue
-is settled or disposed of by then, so no claim ref can be an executor's live
+is settled or disposed of by then, so no claim ref can be a worker's live
 workspace — and step 3 runs on the no-directory path too, where step 1 was
-skipped, and it sees hands and subagent executors that no `herdr agent list` row
+skipped, and it sees hands and subagent workers that no `herdr agent list` row
 would. `AGENTS.md` forbids deleting a claim ref while an agent on your machine
 works it; this is the one place where that has been established for every ref at
 once. Reaching into a member repository's refs from a close would be the

@@ -40,18 +40,20 @@ A prompt sent to a WORKING pane is QUEUED, and the harness merges every prompt
 queued before the turn ends into one input line: three `/rename` prompts sent
 to one working pane landed as the single name
 `campaign-1-executor-3/rename campaign-1-planner-1/rename campaign-1-executor-3`
-(2026-09-04, #169). A session naming itself is always mid-turn, so refusing a
-working pane would refuse the ordinary case. Instead this sends at most one
-prompt per pane per call -- a pane named twice is refused before anything is
-applied -- and reads the pane's `agent_status` from `herdr agent list` before
-sending. `idle` and `done` (herdr's own help calls `done` the same underlying
-idle state) are reported as `sent`; `working` and any other status as `queued`,
-so the caller knows not to send that pane anything else until `ListAgents`
-shows the name; a status this could not read is said as such, and the prompt
-is still sent. A BLOCKED pane -- one sitting at a dialog -- gets no prompt at
-all: herdr would reject it with `agent_blocked` before any input is sent, and
-the dialog is a person's to clear, so this reports the herdr name as applied
-and the harness half as not sent, exit 2.
+(2026-09-04, #169 -- `executor` was the role word that day, and a dated
+observation is quoted as it was observed). A session naming itself is always
+mid-turn, so refusing a working pane would refuse the ordinary case. Instead
+this sends at most one prompt per pane per call -- a pane named twice is
+refused before anything is applied -- and reads the pane's `agent_status` from
+`herdr agent list` before sending. `idle` and `done` (herdr's own help calls
+`done` the same underlying idle state) are reported as `sent`; `working` and
+any other status as `queued`, so the caller knows not to send that pane
+anything else until `ListAgents` shows the name; a status this could not read
+is said as such, and the prompt is still sent. A BLOCKED pane -- one sitting
+at a dialog -- gets no prompt at all: herdr would reject it with
+`agent_blocked` before any input is sent, and the dialog is a person's to
+clear, so this reports the herdr name as applied and the harness half as not
+sent, exit 2.
 """
 import json
 import re
@@ -62,11 +64,11 @@ import sys
 # several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
 # sharing a campaign.
-# Two roles: a planner files the sub-issues and distributes them, an executor
+# Two roles: a planner files the sub-issues and distributes them, a worker
 # works one. A review has no session to name -- it runs as a subagent of the
 # session that wants the merge. How <n> is counted across the two roles is
 # AGENTS.md § The session name's rule, stated there and nowhere else.
-NAME = re.compile(r"^campaign-([0-9]+)-(?:planner|executor)-[0-9]+$")   # group 1: the campaign issue
+NAME = re.compile(r"^campaign-([0-9]+)-(?:planner|worker)-[0-9]+$")   # group 1: the campaign issue
 
 
 def refuse(why):
@@ -111,7 +113,7 @@ def main():
     for pane, name in pairs:
         if not NAME.match(name):
             refuse(f"{name!r} is not campaign-<campaign issue>-<role>-<n> "
-                   "(role: planner or executor); nothing was applied")
+                   "(role: planner or worker); nothing was applied")
     # One prompt per pane per call: two queued at a working pane merge into
     # one name, and only the last name asked for could have been meant.
     panes = [pane for pane, _ in pairs]

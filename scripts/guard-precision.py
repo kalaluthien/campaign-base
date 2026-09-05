@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Read the claim guard's precision off its own verdict log.
 
-    scripts/guard-precision.py [LOG ...] [--minutes N] [--base PATH] [--pairs N]
+    scripts/guard-precision.py [LOG ...] [--minutes N] [--base PATH]
+                               [--pairs N] [--sessions ID,...] [--all]
 
 WHY THIS EXISTS. Every false positive `check-campaign-claim.py` has had was
 found by whoever it hit, after the fact, and filed by hand. The guard runs on
@@ -9,6 +10,25 @@ every `Bash`, `Edit` and `Write` of every session on this machine, so its
 precision is the campaign's running cost, and nothing measured it: a refusal
 left no record, the session retried in another shape, and the next session paid
 the same refusal again (kalaluthien/campaign-base#196).
+
+WHOSE ROWS ARE COUNTED, AND IT IS NOT ALL OF THEM
+(kalaluthien/campaign-base#213, carried from #209). This log is written by the
+guard, and the guard runs under `scripts/check-campaign-claim-test.py` and
+under every hand probe of it as well as under a real session. Those rows are
+not a smaller sample of the same population -- they are a different one, made
+of shapes chosen BECAUSE they refuse. Folding them in does not blur a rate, it
+measures the wrong thing while looking exactly like a measurement. Over the log
+on this machine on 2026-09-06 it read 33% and 100% suspected false positives on
+two sentences, every pair of which was a probe (#1, issuecomment-5553260109).
+
+The separator is the session id, which the guard copies from the harness
+payload. A real session's is a UUID; a suite run has none at all (the payload
+it feeds the guard carries no `session_id`, so the field is empty) and a hand
+probe has whatever the prober typed -- `s`, `s1`, `sid-x`. So the default keeps
+UUID-shaped ids and drops the rest, `--sessions` keeps a named list instead,
+and `--all` keeps everything. **What was dropped is counted and grouped by id
+beside the table**, because a filter that reports nothing is how a filtered
+population becomes an unfiltered claim.
 
 THE METHOD, WRITTEN BEFORE ANY NUMBER.
 
@@ -76,6 +96,28 @@ LOG_NAME = os.path.join("runtime", "guard.log")
 # a quoted fragment. Replaced so the grouping is by the SENTENCE and not by the
 # call that happened to trigger it.
 VARYING = [(re.compile(r"/\S+"), "<path>"), (re.compile(r"#?\b\d+\b"), "N")]
+# A REAL SESSION'S ID IS A UUID. Nothing else that writes this log has one:
+# the suite drives the guard with a payload carrying no `session_id` at all,
+# and a hand probe types a short string. Shape and not a list, because the list
+# would need one entry per prober.
+UUID_RE = re.compile(r"(?i)\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                     r"[0-9a-f]{4}-[0-9a-f]{12}\Z")
+
+
+def select(rows, keep):
+    """(kept, dropped-by-session-id). `keep` is a set of ids, or None for the
+    UUID shape, or True for everything."""
+    if keep is True:
+        return list(rows), collections.Counter()
+    kept, dropped = [], collections.Counter()
+    for r in rows:
+        sid = r.get("session") or ""
+        ok = sid in keep if keep is not None else bool(UUID_RE.match(sid))
+        if ok:
+            kept.append(r)
+        else:
+            dropped[sid or "<no session id>"] += 1
+    return kept, dropped
 
 
 def guard():
@@ -195,6 +237,13 @@ def main(argv=None):
     p.add_argument("--base", default=str(Path.home() / "campaign-base"))
     p.add_argument("--pairs", type=int, default=5,
                    help="how many pairs to print verbatim per refusal sentence")
+    p.add_argument("--sessions", default=None,
+                   help="comma-separated session ids to keep, instead of the "
+                        "default UUID shape")
+    p.add_argument("--all", action="store_true",
+                   help="count every row, suite runs and probes included; the "
+                        "rate it prints is then over a population that is not "
+                        "a real session's")
     a = p.parse_args(argv)
 
     base = Path(os.path.expanduser(a.base))
@@ -202,15 +251,34 @@ def main(argv=None):
         {str(base / LOG_NAME)}
         | set(glob.glob(str(base / "*-[0-9][0-9][0-9][0-9][0-9][0-9]" / LOG_NAME))))
     rows, notes = read_logs(paths)
-    print(f"guard-precision: read {len(rows)} verdict(s) from "
+    keep = (True if a.all else
+            {x.strip() for x in a.sessions.split(",") if x.strip()}
+            if a.sessions is not None else None)
+    read = len(rows)
+    rows, dropped = select(rows, keep)
+    which = ("every session, filter off (--all)" if keep is True else
+             f"sessions {', '.join(sorted(keep))}" if keep is not None else
+             "sessions whose id is a UUID, which is a real session's")
+    print(f"guard-precision: read {read} verdict(s) from "
           f"{len(paths)} log(s), pairing window {a.minutes} minute(s)")
     for n in notes:
         print(f"  {n}")
-    if not rows:
+    print(f"  counting {which}: {len(rows)} row(s) kept, "
+          f"{sum(dropped.values())} dropped")
+    for sid, n in dropped.most_common():
+        print(f"    dropped {n:>4}  session {sid}")
+    if not read:
         # A REPORT OVER NOTHING IS NOT A CLEAN REPORT. Exiting 0 here would put
         # "0 suspected false positives" in front of a reader who would take it
         # for a measurement.
         print("  nothing to measure: no verdict has been logged yet")
+        return 1
+    if not rows:
+        # AND THE TWO ABSENCES ARE DIFFERENT. A log full of suite rows is not
+        # an empty log, and saying so is what stops the next reader repeating
+        # the run that produced the contaminated table.
+        print(f"  nothing to measure: all {read} verdict(s) were dropped by "
+              f"the filter, so no real session has been logged yet")
         return 1
 
     g = guard()

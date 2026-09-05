@@ -148,7 +148,26 @@ pred claimOnTheIssuesRepo {
    `S20_TheBaseIsNeverListed`, and refused by `campaign-repos.py`. R14d's own
    `Base not in c.reposInBody` is therefore a statement of the world rather
    than a constraint, and removing it moves no verdict -- it is kept because
-   the command's comment argues from it. */
+   the command's comment argues from it.
+
+   A RULE WITH ONE READER IS A RULE WITH ONE ROUTE, and there was a second
+   (kalaluthien/campaign-base#213). `campaign-claim take` is the reader of this
+   rule; `gh issue develop --name campaign-<N>/<issue>-<topic>` cuts the same
+   ref and reads none of it -- not this scope, not the parent `campaignOf`
+   names, not the binding. Nothing in the model separates the two, and nothing
+   can: a `Claim` is a `Claim` whichever command made it, which is the point.
+   So the separation is the guard's, and `PLANNER_GH_EXCEPT` in
+   check-campaign-claim.py is where it is written: the one `gh issue` verb a
+   planner's campaign-plane licence does not carry, kept out for the route it
+   is and not for the plane it is on -- `Claim` is in `campaignPlaneEvents` in
+   system.als, so a plane reading admits it.
+
+   WHAT IS ENFORCED IS THE PLANNER'S ROUTE AND ONLY IT, and the first cut of
+   this paragraph claimed more than the code did. The guard REFUSES the verb in
+   its planner branch; every other session still reaches it through the claim
+   reading, so one already holding a claim on an issue may cut a second,
+   unscoped branch for that issue and this rule does not see it. Narrower --
+   it needs a claim on the very issue named -- and unenforced all the same. */
 pred claimWithinScope {
   always (Now.event = Claim implies
             (Now.issue.repo = Base

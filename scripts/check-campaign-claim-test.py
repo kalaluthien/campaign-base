@@ -748,8 +748,90 @@ def main():
             check(f"the planner licence does not cover `{cmd[:34]}`",
                   r.returncode == 2 and "not the campaign plane" in r.stderr,
                   out(r)[:400])
+        # #213: `gh issue develop` IS the campaign plane -- `Claim` is in
+        # `campaignPlaneEvents` -- and is still out of the licence, because it
+        # is a SECOND ROUTE to the object `campaign-claim take` cuts and it
+        # reads neither the binding nor the campaign's `## Repos`. Asserted on
+        # the sentence and not on the exit status: a planner holds no claim, so
+        # the claim reading below refuses it with rc=2 either way, and a case
+        # keyed on rc=2 alone passes with the exception deleted.
+        r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
+        check("the planner licence does not cover `gh issue develop`",
+              r.returncode == 2 and "cuts a branch in the sub-issue's "
+              "own repository" in r.stderr
+              and "not the campaign plane" not in r.stderr, out(r)[:400])
+        # ...and one develop hidden among covered verbs sinks the whole call,
+        # which is the shape a set-membership test on the SUBCOMMAND missed.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 9 --body x && gh issue develop 9",
+                env=planner)
+        check("...and a develop beside a covered verb is not carried by it",
+              r.returncode == 2 and "cuts a branch in the sub-issue's "
+              "own repository" in r.stderr, out(r)[:400])
+        # THE REFUSAL IS A REFUSAL AND NOT A SENTENCE, which the first cut of
+        # this got wrong and a review caught. Appending to `read_on` and
+        # falling through left the claim reading to decide, and it ALLOWS a
+        # planner `gh issue develop 9` outright whenever any worktree on this
+        # machine sits on a claim for #9 -- the state the planner's own
+        # `campaign-claim take` before a delegate launch creates. So the case
+        # needs a fixture where that claim EXISTS, or it passes over the one
+        # world the exception has to cover.
+        with tempfile.TemporaryDirectory() as d9:
+            f9 = Fixture(d9, claims=("campaign-1/9-topic",))
+            p9 = herdr_stub(d9, {"sid-1": "campaign-1-planner-3"})
+            r = ask(f9.base, tool="Bash", command="gh issue develop 9", env=p9)
+            check("...and a live claim on the very issue does not carry it "
+                  "either", r.returncode == 2
+                  and "cuts a branch in the sub-issue's own repository" in r.stderr,
+                  out(r)[:400])
+            # ALLOW beside it: the same claim, the same planner, an ordinary
+            # campaign-plane verb -- so the refusal is the verb and not the
+            # fixture.
+            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body x",
+                    env=p9)
+            check("...and the same planner still comments on that issue",
+                  r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+
+        # AND THE REFUSAL STILL SAYS WHAT ELSE IT READ. An early return is
+        # where #191 item 1 gets broken: the first cut of it named the develop
+        # and went silent about the other write in the same command and about
+        # how the root was resolved.
+        r = ask(f.base, tool="Bash",
+                command="gh pr merge 5 --merge && gh issue develop 9",
+                env=planner)
+        check("...and the develop refusal still names the other write beside it",
+              r.returncode == 2
+              and "`gh pr` is not the campaign plane" in r.stderr
+              and "cuts a branch in the sub-issue's own repository" in r.stderr,
+              out(r)[:500])
+
+        # THE FALLBACK SENTENCE, which had no case. `read_on` is empty when a
+        # planner's command holds no gh WRITE the guard can read but does hold
+        # a `gh` it cannot read as a call -- `stray`. Without it the refusal
+        # printed the role line and then nothing about why the licence did not
+        # apply.
+        r = ask(f.base, tool="Bash", command="echo 9 | xargs gh issue close",
+                env=planner)
+        check("a planner's unreadable `gh` is refused saying the licence does "
+              "not cover it", r.returncode == 2
+              and "a gh call this cannot read is not covered by the planner "
+                  "licence" in r.stderr, out(r)[:400])
+
+        # THE COST, PINNED RATHER THAN LEFT TO BE FOUND. `-l` is `--list` for
+        # `gh issue develop`, so this is a READ, and `WRITES` holds the verb
+        # unconditionally -- so a planner is now over-refused on it. The
+        # direction this guard fails in on purpose (see VALUED), and the price
+        # of not putting a per-verb flag grammar in a PreToolUse hook.
+        r = ask(f.base, tool="Bash", command="gh issue develop -l 11",
+                env=planner)
+        check("...and a planner's `gh issue develop --list` is over-refused "
+              "with it, which is the cost", r.returncode == 2
+              and "This reads no flags, so a `--list` is refused with it."
+              in r.stderr, out(r)[:400])
+
         # ALLOW beside it: the campaign-plane verbs the licence is FOR.
         for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body x",
+                    "gh issue close 9", "gh issue reopen 9",
                     "gh label create x"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
             check(f"ALLOW beside it: `{cmd[:30]}` is the campaign plane",

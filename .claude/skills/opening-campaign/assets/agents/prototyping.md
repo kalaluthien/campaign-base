@@ -37,3 +37,18 @@ an argument, not a product, and it is expected to be deleted.
 - Polishing anything before the unknown is answered.
 - Quietly reporting a prototype as production-ready. Say what is hardcoded, what
   is unhandled, and what would have to be rewritten.
+
+## Every session
+
+What a session of this campaign does that the `assuming-role` skill does not
+already say. The skill carries the lifecycle every campaign shares; this section
+carries only the difference, and empty is the ordinary state.
+
+## Planner
+
+What this campaign's planner decides, files, or refuses beyond that lifecycle.
+
+## Worker
+
+What this campaign's worker owes beyond that lifecycle -- the checks its pull
+requests must pass, and what it leaves behind when a sub-issue closes.

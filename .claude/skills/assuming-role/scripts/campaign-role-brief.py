@@ -36,10 +36,17 @@ beside reports a link it never verified, and two silent successes read exactly
 like a repair; a mechanised rule that cannot say what it observed is worse than
 the unenforced rule it replaced.
 
+IT DOES NOT WRITE `guard.log`. That log is the claim guard's own verdict stream
+and `guard-precision.py` counts every non-REFUSED row in it as an allow, so a
+brief line there would inflate the denominator of the one measurement the log
+exists for. What is durable here is the record file, whose path every line
+prints.
+
 EXIT. Always 0, and never a traceback: a hook that fails must not wall the
 session it was meant to help. Every path prints one line to stderr saying what
-was read and which branch was taken, and one line to the guard log.
+was read and which branch was taken.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -182,7 +189,9 @@ def main():
         return 0
 
     text = brief(role, campaign)
-    stamp = f"{role} {campaign} {len(text)}"
+    # (role, campaign, the brief's sha) -- a length would let a same-length
+    # edit to any briefed file pass as already read.
+    stamp = f"{role} {campaign} {hashlib.sha256(text.encode()).hexdigest()[:12]}"
     record = record_path(session_id)
     # SessionStart always emits: every source of it is a context this session
     # has not been briefed in, compaction included. UserPromptSubmit is the

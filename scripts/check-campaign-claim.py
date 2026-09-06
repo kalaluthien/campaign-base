@@ -47,22 +47,20 @@ delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
 from cwd -- or a campaign directory at a base root. Anything else is outside.
 
 WHO MAY WRITE WHAT. A session's ROLE decides, read from its name through
-`herdr agent list` and the pattern `campaign-name-session.py` owns: a PLANNER
-writes the campaign plane of any campaign and changes no code, a WORKER
-writes its own campaign and the sub-issue it claimed, and a name that pattern
-does not admit is refused on both. A campaign directory is campaign-plane
+`herdr agent list` and the pattern `campaign-name-session.py` owns. What each
+role may write is `campaign-roles.py`'s table, imported below and restated
+nowhere, here included; a name that pattern does not admit is refused on both
+planes. A campaign directory is campaign-plane
 scratch, but a CHECKOUT under one -- a member clone, a linked worktree -- is
 code like any other. The role being unreadable is not the same as a name that
 is not a campaign name: the first falls back to the claim reading below and
 says so, because this guard runs for every session on this machine and a
 failed read must not wall them all.
 
-THE ROLE IS NOT A SECURITY BOUNDARY. A session can rename itself, so it can
-name itself a planner; every session here also shares one `gh` account, so one
-that renames itself already holds the power the name would grant. What this
-buys is that the role is EXPLICIT and the mistake is LOUD, which is what the
-guard is for. #194 is the sub-issue for tying the name to something the named
-session did not choose.
+THE ROLE IS NOT A SECURITY BOUNDARY, and is not meant to be: `AGENTS.md`
+§ The session name says why, and #194 is the sub-issue for tying the name to
+something the named session did not choose. What this guard buys is that the
+role is EXPLICIT and the mistake is LOUD.
 
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload

@@ -106,6 +106,11 @@ change the running campaign**. Commands: `.claude/skills/opening-campaign/refere
 
 # Session identity
 
+**The role a session holds, what it licenses, and the moments of its lifecycle
+are the `assuming-role` skill's**, and its brief hook pushes them into every
+session start. What stays here is what no skill answers: which campaign a
+session is in, what it calls itself, and where its work lives.
+
 ## The binding
 
 **A campaign runs on one machine at a time, and every session on that machine is
@@ -152,29 +157,23 @@ label naming somebody else means the campaign was migrated out from under you.
 
 **A session of a campaign is a planner or a worker, and the request decides
 which shape it takes.** A simple request has a worker only: the session files
-the sub-issue and works it. A request that needs decomposition has a **planner**,
-which takes the request, files the sub-issues and distributes them, and separate
-**workers**, each **a session of its own on this machine**: another session
-that takes a sub-issue, or a herdr delegate the planner launches (§ Execution
-mode chooses between them, by the repository first and then by cost — a delegate
-is the ordinary shape for a member repository and the mode of last resort for the
-base, and a repo-less campaign has the first form and not the second; the launch
-itself is `.claude/skills/opening-campaign/references/launching.md`). A
-separate worker is never the planner's subagent — a subagent shares the
-planner's pane and dies with it, and carries the planner's session id, so the
-guard reads the PLANNER's role for everything it does. **A planner changes no
-code**, by its own hands or through a subagent — its code modes are a herdr
-delegate or a separate worker session. **#185 enforces that over a FILE
-TOOL's writes and no further**: a shell command is read only for the `gh`
-writes in it, never for what it does to a file, and `check-commit-claim.py`
-reads no role — so `sed -i` and `git commit` from a planner are refused by
-nothing today. What it does keep is
-the campaign plane of *any* campaign — a comment, a sub-issue, a close, a claim
-cut for a delegate — which is the row the claim reading had no passing form for.
-**A planner holds no claim of its own**: the branch it cuts at a delegate launch
-is the delegate's workspace. The model is `Planner` in
-`spec/campaign/orchestration/system.als`, and it requires a planner only of a
-delegate launch.
+the sub-issue and works it. A request that needs decomposition has a **planner**
+and separate **workers**, each **a session of its own on this machine**: another
+session that takes a sub-issue, or a herdr delegate the planner launches
+(§ Execution mode chooses between them, by the repository first and then by cost
+— a delegate is the ordinary shape for a member repository and the mode of last
+resort for the base, and a repo-less campaign has the first form and not the
+second; the launch itself is
+`.claude/skills/opening-campaign/references/launching.md`). What each role may
+write is `.claude/skills/assuming-role/scripts/campaign-roles.py`, and the
+moments of each lifecycle are that skill's two references; neither is restated
+here. The model is `Planner` in `spec/campaign/orchestration/system.als`, and it
+requires a planner only of a delegate launch.
+
+**#185 enforces the code-plane bar over a FILE TOOL's writes and no further**: a
+shell command is read only for the `gh` writes in it, never for what it does to
+a file, and `check-commit-claim.py` reads no role — so `sed -i` and `git commit`
+from a planner are refused by nothing today.
 
 **No role licenses a write, nor does asking**: a session that cannot satisfy a
 guard does not make the write. **The planner claims the branch before it
@@ -190,9 +189,9 @@ roles, assigned in the order sessions appear, so two do not both pick `-1` —
 this sentence is that counting rule's one home. **The role word is not a
 label**: since #185 `check-campaign-claim.py` resolves it from `herdr agent
 list` and decides both planes by it, so a name of the wrong shape is refused
-every campaign write and a session named `planner` may change no code. It is
-also what a person reads in `herdr agent list`, which is how the two used to be
-confused. It is per-session, where the `role` on the model's Agent
+every campaign write; what a well-formed one licenses is
+`campaign-roles.py`'s. It is also what a person reads in `herdr agent list`,
+which is how the two used to be confused. It is per-session, where the `role` on the model's Agent
 atom is per launch and records the shape one sub-issue was worked in.
 
 **The name is not a security boundary, and is not meant to be.** A session can
@@ -201,10 +200,7 @@ renames itself a planner already holds the power the name would grant. What the
 role buys is that it is explicit and that the mistake is loud; #194 is the
 sub-issue for tying the name to something the named session did not choose.
 
-Choose the role by what the
-session will do when it names itself; one that turns out to be the other role
-renames itself with the same script, and nothing durable carries the old name —
-a rename touches no claim, because a claim is a ref and a checkout. **Set it at
+**Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until

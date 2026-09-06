@@ -291,9 +291,17 @@ def resolve_slug(args):
     word = r.stdout.strip()
     if word and word != "none":
         return word, f"slug {word}, from #{args.campaign}'s campaign: label"
-    return None, (f"#{args.campaign} has no readable slug (campaign-tracker "
-                  f"exited {r.returncode}); only campaign-{args.campaign}/ "
-                  f"branches are attributed")
+    # THE TWO ABSENCES, KEPT APART, as `campaign-local-work.py` keeps them: exit
+    # 1 is the tracker having READ the campaign issue and found no `campaign:`
+    # label, and any other exit is a reading that did not happen. The fix
+    # differs -- a label to add against a reading to retry -- so one sentence
+    # for both sends the reader to the wrong one.
+    if r.returncode == 1:
+        why = f"#{args.campaign} carries no `campaign:` label, so it has no slug"
+    else:
+        why = (f"campaign-tracker slug {args.campaign} exited {r.returncode} "
+               f"without a verdict: {r.stderr.strip()[:120] or 'no message'}")
+    return None, f"{why}; only campaign-{args.campaign}/ branches are attributed"
 
 
 class Corpus:

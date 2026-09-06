@@ -1720,6 +1720,61 @@ def main():
         check("...and the branch must be claim-SHAPED",
               r.returncode == 2, out(r)[:400])
 
+    # THE SAME REACH, FOR A SLUG BRANCH, OUTSIDE EVERY BASE. #181 narrowed a
+    # slug token to one this machine holds a campaign directory for, and with no
+    # base above the checkout there are no directories to hold one -- so reading
+    # that absence as "not a claim" re-imposed #192's rejected narrowing for one
+    # name form while `campaign-<N>/` went on being admitted beside it. No base
+    # root at all is `base is None`, not an empty set.
+    with tempfile.TemporaryDirectory() as d:
+        sandbox = Path(d).resolve() / "outside"
+        sandbox.mkdir()
+        remote = Path(d) / "s.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(sandbox)],
+                       check=True)
+        git(sandbox, "remote", "add", "origin", str(remote))
+        (sandbox / "f").write_text("x\n")
+        git(sandbox, "add", "-A")
+        git(sandbox, "commit", "-qm", "c")
+        git(sandbox, "push", "-q", "origin", "HEAD")
+        git(sandbox, "switch", "-qc", "demo/888-x")
+        git(sandbox, "push", "-q", "origin", "demo/888-x")
+        git(sandbox, "fetch", "-q", "origin")
+        # ASKED OF THE READING, not of a whole verdict: a target outside every
+        # base is not campaign work, so the end-to-end call allows it before any
+        # claim is read and would pass with this branch deleted.
+        mod = guard_module()
+        # THE SENTINEL, READ DIRECTLY. No call site can reach `claim_match`'s
+        # None today -- each already matched the same branch against a narrower
+        # base -- so the accessors' contract is checked here rather than left as
+        # an argument about call order. `""` is what makes every `!=` refuse and
+        # every `==` drop the holder and then refuse.
+        check("claim_token is the empty string for a branch that is no claim",
+              mod.claim_token("main") == "" and mod.claim_token("") == ""
+              and mod.claim_issue("main") == "")
+        check("...and no campaign token or issue number can be empty, so the "
+              "sentinel equals neither",
+              mod.claim_token("demo/7-x") == "demo"
+              and mod.claim_issue("demo/7-x") == "7")
+        check("outside every base there is no slug set at all, which is not an "
+              "empty one", mod.known_slugs(sandbox) is None)
+        check("...so a SLUG claim is admitted there like any other, and "
+              "own_claim's #192 reach covers both name forms",
+              mod.claim_match("demo/888-x", sandbox) == ("demo", "888")
+              and (mod.own_claim(sandbox) or (None, None))[1] == "demo/888-x")
+
+    # ...AND A BASE THAT HOLDS NO CAMPAIGN DIRECTORY IS THE OTHER ANSWER: this
+    # machine holds no campaign of any slug, so it narrows. The pair is what
+    # separates "nothing to compare against" from "compared, and no".
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/12-x",))
+        (f.camp / ".campaign").unlink()
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("in a base holding no campaign directory, a slug claim is not one",
+              r.returncode == 2, out(r)[:400])
+
     # ---------------------------------------------------------------- #196
     # EVERY VERDICT IS DURABLE. Asserted on the FILE, not on the sentence the
     # guard prints about it: a guard that says "logged to ..." and writes

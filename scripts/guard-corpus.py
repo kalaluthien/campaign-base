@@ -87,7 +87,12 @@ PATH_KEYS = ("file_path", "notebook_path", "path")
 # NOT `.gitignore`'s allowlist, which this looks like and is not: that admits
 # what is TRACKED, and `runtime/` is the base's own and ignored. Adding a
 # top-level directory to the base means adding it here too, and the case per
-# entry below is what says so.
+# entry in the suite is what says so.
+#
+# The other half of keeping these apart is on the slug side: `RESERVED` in
+# campaign-name-session.py bars these four words from a slug, so no campaign can
+# be named for a directory the base already owns and the exclusion cannot
+# swallow a real campaign's tree.
 #
 # NOT the `.campaign` marker check-campaign-claim.py owns: this reads paths
 # RECORDED IN A TRANSCRIPT, most of which no longer exist on any disk, so there

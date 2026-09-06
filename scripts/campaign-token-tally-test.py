@@ -380,6 +380,38 @@ def main():
               worse.returncode == 2 and "not an ISO timestamp" in worse.stderr,
               worse.stderr)
 
+        # WHICH BRANCH FORMS ARE ATTRIBUTED, and where the slug came from. Every
+        # case above runs `--offline`, the one mode where `resolve_slug` returns
+        # before it asks anything, so its three answers were covered by nothing.
+        # A `campaign-tracker.py` shim on PATH is what makes the other two reachable
+        # without a network.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as d:
+            shim = Path(d) / "scripts"
+            shim.mkdir()
+            (shim / "campaign-token-tally.py").write_text(SCRIPT.read_text())
+            for name, body, want in (
+                    ("read", "print('demo')\n", "slug demo, from #1's campaign: label"),
+                    ("none", "print('none')\nraise SystemExit(1)\n",
+                     "carries no `campaign:` label"),
+                    ("failed", "import sys\nprint('boom', file=sys.stderr)\n"
+                               "raise SystemExit(2)\n",
+                     "without a verdict")):
+                (shim / "campaign-tracker.py").write_text("#!/usr/bin/env python3\n" + body)
+                r = subprocess.run(
+                    [sys.executable, str(shim / "campaign-token-tally.py"), "issues",
+                     "--root", str(root), "--base", str(base), "--pr-map", str(pr_map)],
+                    capture_output=True, text=True)
+                check(f"the branch attribution says where the slug came from ({name})",
+                      want in r.stdout, r.stdout[:400] + r.stderr[:200])
+            # ...and `--offline` says it asked nothing, rather than saying nothing.
+            r = subprocess.run(
+                [sys.executable, str(shim / "campaign-token-tally.py"), "issues",
+                 "--root", str(root), "--base", str(base), "--pr-map", str(pr_map),
+                 "--offline"], capture_output=True, text=True)
+            check("...and --offline says it read no slug at all",
+                  "--offline, so no slug was read" in r.stdout, r.stdout[:400])
+
     for name in FAILED:
         print(f"FAIL  {name}")
     print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")

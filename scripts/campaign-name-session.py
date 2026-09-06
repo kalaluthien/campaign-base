@@ -79,14 +79,20 @@ ROLES = ("planner", "worker")
 #   * at most SLUG_CEILING characters, so the longest name this file admits,
 #     `<slug>-worker-99`, stays inside herdr's 32-character limit on a session
 #     name -- 20 + len("-worker-99") is 30;
-#   * no segment in RESERVED. `planner` and `worker` are barred so that
-#     `<slug>-<role>-<n>` has exactly one reading: with the role words absent
-#     from the slug, a name holds one `-planner-` or `-worker-` and NAME's
-#     group 1 cannot be anything but the slug. `campaign` is barred so that the
-#     retired `campaign-<N>` form stays distinguishable from a slug for as long
-#     as both are read; see OLD_CAMPAIGN.
+#   * no segment in RESERVED, for three reasons in one list. `planner` and
+#     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:
+#     with the role words absent from the slug, a name holds one `-planner-` or
+#     `-worker-` and NAME's group 1 cannot be anything but the slug. `campaign`
+#     is barred so that the retired `campaign-<N>` form stays distinguishable
+#     from a slug for as long as both are read; see OLD_CAMPAIGN. And the last
+#     four are the base's own directories at its root, which is where a
+#     campaign's directory is created: a campaign slugged `docs` or `runtime`
+#     would name a directory the base already owns, and `scripts/guard-corpus.py`
+#     -- which classifies a RECORDED path it cannot stat -- would read that
+#     campaign's whole tree as the base's own.
 SLUG_CEILING = 20
-RESERVED = ("campaign", "planner", "worker")
+RESERVED = ("campaign", "planner", "worker",
+            "scripts", "spec", "docs", "runtime")
 SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 # The retired campaign token, still admitted. Branches cut before #181 are named

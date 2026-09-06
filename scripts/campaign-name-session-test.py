@@ -117,7 +117,13 @@ def main():
             ("a-slug-that-is-far-too-long-worker-6",
              "over the ceiling: 28 characters of slug"),
             ("campaign-machinery-worker-6", "a `campaign` segment"),
-            ("machinery-planner-worker-6", "a `planner` segment")]:
+            ("machinery-planner-worker-6", "a `planner` segment"),
+            # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `docs` would
+            # name a directory the base already owns, and guard-corpus -- which
+            # classifies a recorded path it cannot stat -- would read that
+            # campaign's whole tree as the base's own.
+            ("docs-worker-6", "a `docs` segment"),
+            ("runtime-worker-6", "a `runtime` segment")]:
         r, calls = run(["w1:p1", name])
         check(f"a slug with {why} is refused",
               r.returncode == 1 and not calls and name in r.stderr,

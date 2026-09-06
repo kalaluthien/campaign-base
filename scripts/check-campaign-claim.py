@@ -307,8 +307,17 @@ def claim_match(branch, base=None):
     # to be one THIS MACHINE holds a campaign directory for. Where none is
     # (a repository outside every base, which #192 item 1 admits on purpose),
     # the rule is all there is and the reading is wider, as it was then.
-    return (token, m.group(2)) if base is None or token in known_slugs(base) \
-        else None
+    # NO BASE ROOT IS `base is None`, NOT AN EMPTY SLUG SET. Outside every base
+    # `base_roots_for` returns nothing, and reading that as "this machine holds
+    # no campaign of that slug" narrowed `own_claim` for slug branches alone --
+    # re-imposing, for one name form, the narrowing #192 item 1 rejected on
+    # purpose, while `campaign-<N>/` went on being admitted there. The three
+    # callers were promised the wide reading two paragraphs up; this is that
+    # promise kept.
+    known = known_slugs(base) if base is not None else None
+    if known is None:
+        return token, m.group(2)
+    return (token, m.group(2)) if token in known else None
 
 
 def claim_token(branch):
@@ -511,21 +520,21 @@ def base_roots_for(path: Path):
     THE RETIRED FORM NEEDS NONE OF THIS, which is why the gap was invisible: a
     `campaign-<N>/` branch carries its campaign in the name and never reaches
     a marker."""
-    starts = [path]
     main, _top, _note = checkout_of(path)
-    if main is not None:
-        starts.append(main)
-    roots = []
-    for start in starts:
-        for d in [start, *start.parents]:
-            if (d / BASE_MARKER).is_file() and d not in roots:
-                roots.append(d)
-    return roots
+    # ONE START, CHOSEN, not a union. `main` is right in every shape git can
+    # answer for -- a worktree resolves to its main checkout, and a clone is its
+    # own -- and the parents of that answer reach the outer base where there is
+    # one. A union with the path walk beside it pinned nothing: removing the
+    # path half left every case green, which is a branch nothing tests. `path`
+    # is the floor for the one case git cannot answer, where there is nothing
+    # else to walk from.
+    start = main if main is not None else path
+    return [d for d in [start, *start.parents] if (d / BASE_MARKER).is_file()]
 
 
 def known_slugs(base):
-    """The slugs of the campaign directories at `base` and at every base above
-    it, from their markers.
+    """The slugs of the campaign directories at the base root above `base`, from
+    their markers -- or None when there is no base root above it at all.
 
     Cached per starting path, and read at most once per process: this guard runs
     on every tool call, and a campaign directory does not appear mid-call. A
@@ -533,8 +542,9 @@ def known_slugs(base):
     falls back to the retired form alone, which refuses rather than admits."""
     key = str(base)
     if key not in _KNOWN_SLUGS:
+        roots = base_roots_for(Path(base))
         found = set()
-        for root in base_roots_for(Path(base)):
+        for root in roots:
             try:
                 entries = sorted(root.iterdir())
             except OSError:
@@ -543,7 +553,12 @@ def known_slugs(base):
                 fields = marker_fields(d)
                 if fields and len(fields) >= 2:
                     found.add(fields[1])
-        _KNOWN_SLUGS[key] = found
+        # NONE IS NOT THE EMPTY SET. No base root above the checkout at all is
+        # "there is nothing here to compare a slug against", and #192 item 1
+        # admits that checkout on the branch name and its ref alone. A base root
+        # that exists and holds no campaign directory is a different answer --
+        # this machine holds no campaign of any slug -- and it narrows.
+        _KNOWN_SLUGS[key] = found if roots else None
     return _KNOWN_SLUGS[key]
 
 

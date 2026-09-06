@@ -122,7 +122,7 @@ pred S11_MergedButIssueLeftOpen {
   }
 }
 
-/* What the campaign-<N>/ branch prefix buys. */
+/* What a per-campaign branch prefix buys. */
 pred S12_TwoCampaignsOneRepo {
   #Campaign = 2
   all c: Campaign | #c.memberIssues = 1

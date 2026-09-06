@@ -316,7 +316,7 @@ pred liveUnderLocally[c: Campaign, m: Machine] {
 pred closableWithAgents[c: Campaign]          { closable[c] and not liveUnder[c] }
 pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.machine] }
 
-/* campaign-<N>/<issue>-<topic>: two agents share a branch only when
+/* <slug>/<issue>-<topic>: two agents share a branch only when
    campaign, sub-issue and topic all match. That it separates two SUB-ISSUES is
    definitional and is not run; R4e is what it leaves. */
 pred sameBranch[a1, a2: Agent] {

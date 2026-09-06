@@ -92,6 +92,26 @@ sig Issue {
   var pullRequest: lone PullRequest
 }
 
+/* A campaign has TWO names, and they answer different questions. The campaign
+   issue's NUMBER is the identity: it is what `gh` is given, what `--parent`
+   links, and what `bound` and `settlement` are asked about. The SLUG is what a
+   person reads: every session name, claim branch and directory is built from
+   it, and none of them carries the number any more (#181).
+
+   The slug is not modelled as a value, for the same reason the session name is
+   not: `scripts/campaign-name-session.py` owns its shape, and a second
+   statement here would admit words that script refuses. What IS normative is
+   where it lives and that it is one -- a single `campaign:<slug>` label on the
+   campaign issue, so a slug cannot be minted twice (GitHub keeps label names
+   unique per repository) and a campaign wearing two of them is a question no
+   reader may answer. `campaign-tracker.py`'s `slug`, `issue` and `slugs` are
+   the readers; `campaign-issues` refuses an open campaign that has none.
+
+   `campaignIssue` stays `one`, and the slug hangs off nothing: adding it as a
+   field would put an atom per campaign into the composed universe, which the
+   note on `CampaignDir` in directory/system.als says is exactly what this model
+   cannot afford, and it would buy no check -- uniqueness is GitHub's, and every
+   comparison the model makes is between Campaign atoms already. */
 sig Campaign {
   campaignIssue:      one Issue,       -- the campaign issue; its number is the campaign ID
   var memberIssues: set Issue,       -- ground truth
@@ -316,7 +336,7 @@ pred writeBody[c: Campaign] {
 
    AND `claimAtomic` IS NOT create-ref ALONE, which is what this comment used to
    say. `Claimed` is a set of ISSUES, so the discipline is per sub-issue; the
-   ref that carries a claim is named `campaign-<N>/<issue>-<topic>`, so
+   ref that carries a claim is named `<slug>/<issue>-<topic>`, so
    create-ref's server-side refusal serialises ref NAMES and admits two topics
    on one sub-issue. Nothing here models a topic, which is exactly why the
    model could not see that gap. What closes it is in the script: `take` reads

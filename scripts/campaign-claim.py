@@ -6,6 +6,13 @@
                                           [--repo owner/repo]
     campaign-claim.py live <N> [--repo owner/repo]
 
+A claim is cut as `<slug>/<issue>-<topic>`, the slug being the campaign's own,
+read from its `campaign:<slug>` label by `campaign-tracker.py slug`. Branches
+cut before #181 are named `campaign-<N>/<issue>-<topic>`; every READING command
+here reads both prefixes until the last of those pull requests has landed, and
+`take` mints only the first, which is what closes the window. `prefixes` is the
+one place the pair is spelled.
+
 THE CLAIM IS THE BRANCH, AND NOTHING ELSE
 
 A claim used to be two things that had to agree: a branch on the remote, and a
@@ -56,7 +63,7 @@ The ref name carries the topic as well as the sub-issue, so create-ref's
 server-side refusal separates `7-parser` from `7-parse-fix` and admits both --
 two workers on one sub-issue, which is the thing a claim exists to stop. The
 record this replaced was keyed on the sub-issue and gave that for free. So
-`take` lists `campaign-<N>/` first and refuses on any ref already naming the
+`take` lists both prefixes first and refuses on any ref already naming the
 sub-issue, whatever its topic -- and then lists AGAIN after its own create-ref.
 The first read is a narrowing and is not atomic on its own: two takers on two
 topics both see no sibling and both create. The second read is what settles it,
@@ -83,7 +90,7 @@ ref on the base, which is what `R4_RepolessCampaign` in
 `release` FINDS THE BRANCH RATHER THAN BEING TOLD IT
 
 The record used to carry the branch, so `release <issue>` knew which ref to
-delete. The remote carries it too: refs under `campaign-<N>/` whose segment
+delete. The remote carries it too: refs under either prefix whose segment
 after the slash opens with the sub-issue number. Two refs matching one
 sub-issue is a refusal, not a guess. `--branch` names one directly, for the
 case where the naming rule was broken and the sweep finds nothing.
@@ -135,7 +142,7 @@ claim one of the binding's mechanically gated writes.
 
 `live` MAKES BOTH READINGS AND CONCLUDES FROM NEITHER
 
-    remote refs under campaign-<N>/      every claim, readable from anywhere
+    remote refs under <slug>/            every claim, readable from anywhere
     git worktree list                    where each one is checked out, here
     herdr agent list                     what is still running, here
 
@@ -172,10 +179,11 @@ Two readers took the name up, and they ask different questions. #185's
 check-campaign-claim.py resolves the ROLE from it on every write, so a
 worker named for another campaign is refused that campaign's issues and a
 name of no shape is refused both planes -- that is the enforcement of AGENTS.md
-'The session name'. `OTHER_CAMPAIGN` below is #187's, and is only a shape: it
-answers "does this name say whose it is at all", which `classify` needs to
-leave another campaign's sessions out of a close, and it decides nothing about
-permission.
+'The session name'. `NAMES.campaign_of` below is #187's reading: it answers
+"does this name say whose it is at all", which `classify` needs to leave
+another campaign's sessions out of a close, and it decides nothing about
+permission. It replaced a regex local to this file, because with slugs no shape
+here could tell a campaign's name from any other word.
 
 EXIT
 
@@ -229,6 +237,22 @@ def _tracker_module():
     return m
 
 
+def _name_rule_module():
+    """`campaign-name-session.py`, imported for `campaign_of` and `slug_ok`.
+
+    NOT RESTATED, for the reason its own header gives: the slug's conditions are
+    not all regular, and a regex spelling them here would admit names that
+    script refuses. `check-campaign-claim.py` reaches the same file the same
+    way."""
+    src = HERE / "campaign-name-session.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_name_session", importlib.machinery.SourceFileLoader(
+            "campaign_name_session", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 REPOS = _repos_module()
 DEFAULT_REPO = REPOS.BASE_REPO
 
@@ -241,16 +265,45 @@ DEFAULT_REPO = REPOS.BASE_REPO
 TRACKER = DEFAULT_REPO
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
-# A session name that names SOME campaign. Only the shape matters here -- which
-# campaign is compared by the caller -- and `campaign-name-session.py` owns the
-# rule itself; this is the loose reading that answers "does this name say whose
-# it is at all", which is a different question from "is it well formed".
-OTHER_CAMPAIGN = re.compile(r"^campaign-\d+-")
+# The session-name rule, imported for `campaign_of`: which campaign a name says
+# it is of, or None when it says nothing. It replaced a local `OTHER_CAMPAIGN`
+# shape -- the loose reading that answered "does this name say whose it is at
+# all" -- because with slugs a name says whose it is by carrying a slug, and no
+# regex here could tell a slug from any other word. `campaign-name-session.py`
+# owns the rule; this asks it.
+NAMES = _name_rule_module()
 
-# `<slug>-<YYMMDD>` -- the campaign directory shape, read as a shape. Nothing
-# derives the list from GitHub, because the question is which directories are on
-# THIS machine. The same regex the claim guard uses.
-CAMPAIGN_DIR = re.compile(r"-\d{6}$")
+# THE MARKER THAT MAKES A DIRECTORY A CAMPAIGN'S, relative to the directory.
+# Until #181 a campaign directory was recognised by a `-YYMMDD` suffix and
+# nothing on disk said WHICH campaign it was; the slug dropped the date, and no
+# shape can tell an arbitrary slug from `scripts/`. So the directory says so
+# itself, in a file `opening-campaign` writes at scaffold: one line, `<N>
+# <slug>`, derived from the campaign issue and re-derivable at any time. It sits
+# at the directory root rather than under `runtime/`, which is scratch sessions
+# rewrite and sweep; check-campaign-claim.py, which owns this reading, says why.
+#
+# Nothing here derives the list from GitHub, because the question is which
+# directories are on THIS machine. The same marker the claim guard reads.
+CAMPAIGN_MARKER = Path(".campaign")
+
+
+def is_campaign_dir(path):
+    """Whether `path` is a campaign directory on this machine, read as the
+    marker's presence and not as the name's shape.
+
+    ONE RULE, TWO READERS, and the other one owns it: `check-campaign-claim.py`
+    asks the same question of the same file and is the PreToolUse hook, so it
+    cannot afford to exec this file's `gh` plumbing to ask. This is the same
+    two-line predicate over `CAMPAIGN_MARKER`, which is imported from there.
+
+    A directory that cannot be stat'd is not a campaign directory rather than a
+    refusal, and that is deliberate: this is asked of every entry at the base
+    root, where an unreadable one is somebody else's problem and refusing would
+    deny every reading on the machine."""
+    try:
+        return (Path(path) / CAMPAIGN_MARKER).is_file()
+    except OSError:
+        return False
 
 
 def run(*args, **kw):
@@ -301,22 +354,36 @@ def binding_refusal(campaign_issue):
 # ---------------------------------------------------------- branches as claims
 
 
-def branch_name(campaign_issue, issue, topic):
-    return f"campaign-{campaign_issue}/{issue}-{topic}"
+def branch_name(slug, issue, topic):
+    """The one branch a claim is cut as. ONE FORM IS MINTED, the slug's, even
+    while two are read: nothing new is ever named `campaign-<N>/`, which is what
+    makes the window close instead of lingering."""
+    return f"{slug}/{issue}-{topic}"
 
 
-def issue_of_branch(branch, campaign_issue):
+def prefixes(campaign_issue, slug):
+    """Every ref prefix that carries a claim of this campaign, newest first.
+
+    TWO, FOR ONE WINDOW. `campaign-<N>/` is the form branches were cut as before
+    #181; they are read until the last of those pull requests has landed, and
+    then this returns one prefix and its second element goes. A `slug` that
+    could not be read leaves only the retired form, which is a narrower reading
+    said out loud by the caller rather than a wrong one made quietly."""
+    return ([f"{slug}/"] if slug else []) + [f"campaign-{campaign_issue}/"]
+
+
+def issue_of_branch(branch, campaign_issue, slug=None):
     """The sub-issue number a claim branch names, or None. Pure.
 
-    `campaign-<N>/<issue>-<topic>`: the number is what stands between the slash
-    and the first hyphen after it. A branch whose second segment does not open
-    with digits and a hyphen claims no sub-issue this can name, and it comes
-    back None rather than guessed at."""
-    prefix = f"campaign-{campaign_issue}/"
-    if not branch.startswith(prefix):
-        return None
-    m = re.match(r"(\d+)-", branch[len(prefix):])
-    return m.group(1) if m else None
+    `<slug>/<issue>-<topic>`: the number is what stands between the slash and
+    the first hyphen after it. A branch whose second segment does not open with
+    digits and a hyphen claims no sub-issue this can name, and it comes back
+    None rather than guessed at."""
+    for prefix in prefixes(campaign_issue, slug):
+        if branch.startswith(prefix):
+            m = re.match(r"(\d+)-", branch[len(prefix):])
+            return m.group(1) if m else None
+    return None
 
 
 def parse_refs(text):
@@ -331,18 +398,59 @@ def parse_refs(text):
                   if isinstance(x, str) and x.startswith("refs/heads/")), None
 
 
-def matching_refs(repo, campaign_issue):
-    """Every claim branch of this campaign on the remote.
+def matching_refs(repo, campaign_issue, slug=None):
+    """Every claim branch of this campaign on the remote, under either prefix.
 
     `git/matching-refs/` answers a prefix in one request and 200s with an empty
     array when nothing matches, so an empty campaign and an unreachable
-    repository do not come back looking the same."""
-    r = run("gh", "api", f"repos/{repo}/git/matching-refs/heads/"
-            f"campaign-{campaign_issue}/", "--jq", "[.[].ref]")
-    if r.returncode != 0:
-        return None, (f"could not list {repo}'s campaign-{campaign_issue}/ "
-                      f"refs: {' '.join(r.stderr.split())[:160]}")
-    return parse_refs(r.stdout)
+    repository do not come back looking the same.
+
+    ONE PREFIX THAT WOULD NOT LIST DENIES THE WHOLE READING, and does not come
+    back as the other prefix's branches alone: a short listing of claims reads
+    exactly like a campaign with fewer of them, and `release` deletes refs off
+    this."""
+    found = []
+    for prefix in prefixes(campaign_issue, slug):
+        r = run("gh", "api", f"repos/{repo}/git/matching-refs/heads/{prefix}",
+                "--jq", "[.[].ref]")
+        if r.returncode != 0:
+            return None, (f"could not list {repo}'s {prefix} refs: "
+                          f"{' '.join(r.stderr.split())[:160]}")
+        branches, why = parse_refs(r.stdout)
+        if why:
+            return None, why
+        found += branches
+    return sorted(set(found)), None
+
+
+def campaign_slug(campaign_issue):
+    """(slug or None, note) -- the campaign's slug, from the one reader of the
+    `campaign:<slug>` label.
+
+    Delegated to `campaign-tracker.py` rather than read here, so the label's
+    two states that are refusals rather than verdicts -- two labels, and a slug
+    the name rule will not admit -- come back the same way to every caller. It
+    exits 2 on a `gh` that would not run, which reaches here as SystemExit and
+    is turned back into a note: a slug that could not be read narrows what
+    `prefixes` returns, and the caller says so.
+
+    None is a real answer twice over, and the note is what separates them: a
+    campaign filed before #181 has no slug, and a `gh` that would not run read
+    nothing at all."""
+    t = _tracker_module()
+    try:
+        slug, why = t.slug_of(t.labels_of(TRACKER, campaign_issue))
+    except SystemExit as e:
+        return None, (f"the slug of #{campaign_issue} could not be read "
+                      f"(campaign-tracker exited {e.code}); only "
+                      f"campaign-{campaign_issue}/ refs are read")
+    if why:
+        return None, f"the slug of #{campaign_issue} is unreadable: {why}"
+    if slug is None:
+        return None, (f"#{campaign_issue} carries no `campaign:` label, so it "
+                      f"has no slug; only campaign-{campaign_issue}/ refs are "
+                      f"read")
+    return slug, f"#{campaign_issue} is `{slug}`"
 
 
 def issue_repo(issue, default_repo):
@@ -442,7 +550,7 @@ def issue_parent(issue):
 
     TAKE ONLY, AND ON PURPOSE. `release` and `live` are keyed on the typed
     campaign number too, and they must stay that way: they read refs that are
-    ALREADY cut under `campaign-<N>/`, so a parentage check there would refuse
+    ALREADY cut, so a parentage check there would refuse
     to list or release exactly the mis-cut ref this check exists to prevent.
     `take` is the one command that creates the ref, so it is the one place the
     premise can still be tested before anything durable exists."""
@@ -544,11 +652,12 @@ def campaign_repos(campaign_issue):
                     f"{', '.join(listed)}")
 
 
-def refs_for_issue(branches, campaign_issue, issue):
-    """The claim branches of one sub-issue. Pure, so none, one and two each
-    have a case; two is what `release` refuses on rather than picking."""
+def refs_for_issue(branches, campaign_issue, issue, slug=None):
+    """The claim branches of one sub-issue, under either prefix. Pure, so none,
+    one and two each have a case; two is what `release` refuses on rather than
+    picking, and one sub-issue holding a ref under EACH form is one of the twos."""
     return [b for b in branches
-            if issue_of_branch(b, campaign_issue) == str(issue)]
+            if issue_of_branch(b, campaign_issue, slug) == str(issue)]
 
 
 # ------------------------------------------------------------------------ take
@@ -630,7 +739,21 @@ def partition_refs(repo, branches):
 
 
 def cmd_take(args):
-    branch = branch_name(args.campaign_issue, args.issue, args.topic)
+    # THE SLUG BEFORE THE BRANCH, and a refusal when it cannot be read: `take`
+    # is the one command that MINTS a name, and a claim cut under a name this
+    # could not derive is a claim no reader finds. Every other command here
+    # narrows its reading instead, because they only read.
+    slug, slug_note = campaign_slug(args.campaign_issue)
+    if slug is None:
+        print(f"refusing: {slug_note}\n  A claim is cut as `<slug>/"
+              f"<issue>-<topic>`, so a campaign with no readable slug has no "
+              f"branch\n  name to cut. Give it one: "
+              f"`gh issue edit {args.campaign_issue} --add-label "
+              f"campaign:<slug>`, minting from `campaign-tracker.py slugs`.",
+              file=sys.stderr)
+        return 1
+    print(slug_note)
+    branch = branch_name(slug, args.issue, args.topic)
     # The binding, read before a ref is cut: a claim is one of the writes only
     # the bound machine makes. Read from the one reader, never re-derived.
     refusal = binding_refusal(args.campaign_issue)
@@ -642,7 +765,7 @@ def cmd_take(args):
     # WHOSE SUB-ISSUE, read from GitHub and not from the number typed (#206).
     # Before this, a mistyped campaign number cut a real ref under a campaign
     # the sub-issue does not belong to, and nobody could see it: `live` and
-    # `release` list refs by the `campaign-<N>/` prefix, so the claim was
+    # `release` list refs by the campaign's own prefix, so the claim was
     # invisible to the campaign that owns the work and unreachable from the one
     # that does not. The model already says the right thing --
     # `claimWithinScope` reads `campaignOf[Now.issue]`, the sub-issue's actual
@@ -762,12 +885,12 @@ def cmd_take(args):
     # that is the honest ceiling, not a bug hidden here: the binding already
     # limits a campaign to one machine, and this window is narrower than the
     # one `O_EXCL` on a record closed only for this machine anyway.
-    existing, why = matching_refs(repo, args.campaign_issue)
+    existing, why = matching_refs(repo, args.campaign_issue, slug)
     if why:
         print(f"refusing: {why}\n  A ref listing that did not happen is not "
               f"proof the sub-issue is free.", file=sys.stderr)
         return 1
-    siblings = refs_for_issue(existing, args.campaign_issue, args.issue)
+    siblings = refs_for_issue(existing, args.campaign_issue, args.issue, slug)
     if siblings:
         # A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM (#187 question 3,
         # spec/campaign/orchestration/scenarios.als `settledLeavesNoClaim`).
@@ -849,7 +972,7 @@ def cmd_take(args):
     # block below; a smallest-name tiebreak is what this replaced and must not
     # come back. Do not replace this with a longer survey before the create: no
     # amount of looking first makes a read-then-write atomic.
-    after, why = matching_refs(repo, args.campaign_issue)
+    after, why = matching_refs(repo, args.campaign_issue, slug)
     if why:
         print(f"refusing: {branch} WAS cut, but the re-check that makes the "
               f"claim atomic did not\n  happen ({why}). Read "
@@ -860,7 +983,7 @@ def cmd_take(args):
     # THE SAME PARTITION AS THE SURVEY, and this is the whole of finding 1.
     # Counting residue here made a reopened sub-issue's `take` delete the ref it
     # had just cut and report a race against a branch merged weeks ago.
-    all_after = refs_for_issue(after, args.campaign_issue, args.issue)
+    all_after = refs_for_issue(after, args.campaign_issue, args.issue, slug)
     rivals, after_residue, after_unread = partition_refs(repo, all_after)
     if after_unread:
         print(f"refusing: {branch} WAS cut, but whether "
@@ -1098,13 +1221,14 @@ def base_root():
     directory at all, which comes back as a clean sweep of nothing and lets
     `release` delete a ref somebody is standing in.
 
-    So: if any ancestor of this file is a `<slug>-<YYMMDD>` campaign directory,
-    the base root is that directory's parent, whichever checkout is running.
+    So: if any ancestor of this file is a campaign directory -- one carrying
+    the marker `.campaign` -- the base root is that directory's parent,
+    whichever checkout is running.
     Only when none is -- the ordinary case, the base's own `scripts/` -- does
     the git rule apply, and there it is AGENTS.md's one form, which returns the
     main checkout even from a linked worktree."""
     for parent in HERE.parents:
-        if CAMPAIGN_DIR.search(parent.name):
+        if is_campaign_dir(parent):
             return str(parent.parent), None
     r = run("git", "-C", str(HERE), "rev-parse", "--path-format=absolute",
             "--git-common-dir")
@@ -1131,19 +1255,18 @@ def own_campaign_dir(start=None):
     """This session's own campaign directory, or None when it is not under one.
 
     THE SAME WALK `base_root` MAKES, kept rather than thrown away. `base_root`
-    already looks for a `<slug>-<YYMMDD>` ancestor of this file and returns its
+    already looks for a marker-bearing ancestor of this file and returns its
     PARENT; the directory it walked past is the one campaign this invocation is
     actually about, and #187 question 4 is what it cost to discard it.
 
     None is a real answer, not a failure: run from the base's own `scripts/`
-    there is no campaign ancestor, and nothing on disk says which campaign a
-    directory belongs to until #181 puts the number in the name.
+    there is no campaign ancestor.
 
     `start` is a parameter so the walk is a calculation a case can drive. Read
     from `HERE` alone it could only be tested by where this file happens to
     sit, which is a different answer in a worktree, in a clone, and on CI."""
     for parent in (start or HERE).parents:
-        if CAMPAIGN_DIR.search(parent.name):
+        if is_campaign_dir(parent):
             return parent
     return None
 
@@ -1162,9 +1285,9 @@ def campaign_clones(root, only=None):
 
     The residual, named because it does not go away here: run from the base's
     own `scripts/` there is no campaign ancestor, `only` is None, and the sweep
-    is machine-wide again. Nothing on disk attributes a directory to a campaign
-    until #181 puts the number in the name, so the wide sweep says so rather
-    than pretending to be scoped.
+    is machine-wide again. What #181 did close is the other half -- the marker
+    each directory carries names its campaign, so a reader that HAS a directory
+    no longer has to guess whose it is. The wide sweep still says it is wide.
 
     UNCONDITIONAL WITHIN WHAT IT SWEEPS, and that is the older fix: deriving
     the roots from live herdr rows
@@ -1180,7 +1303,7 @@ def campaign_clones(root, only=None):
     else:
         try:
             dirs = [d for d in sorted(Path(root).iterdir())
-                    if d.is_dir() and CAMPAIGN_DIR.search(d.name)]
+                    if is_campaign_dir(d)]
         except OSError as e:
             return [], [f"{root}: could not list campaign directories "
                         f"({e.__class__.__name__})"]
@@ -1257,7 +1380,7 @@ def claim_repos(default_repo, root, only=None, campaign_issue=None):
                    f"{listed_note}")
 
 
-def all_refs(repos, campaign_issue):
+def all_refs(repos, campaign_issue, slug=None):
     """({branch: repo}, unread) across every repository.
 
     THE REPOSITORY TRAVELS WITH THE REF, because `release` deletes by name and a
@@ -1267,7 +1390,7 @@ def all_refs(repos, campaign_issue):
     could not be read is not an absent one."""
     out, unread = {}, []
     for repo in repos:
-        branches, why = matching_refs(repo, campaign_issue)
+        branches, why = matching_refs(repo, campaign_issue, slug)
         if why:
             unread.append(why)
             continue
@@ -1317,7 +1440,8 @@ def checkouts(roots):
     return {b: sorted(set(p)) for b, p in out.items()}, unread
 
 
-def classify(branches, where, sessions, campaign_issue, root=None, caller=None):
+def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
+             caller=None):
     """(occupied, vacant, ours) -- the join, on the branch name and on nothing
     else.
 
@@ -1343,7 +1467,11 @@ def classify(branches, where, sessions, campaign_issue, root=None, caller=None):
     campaign it is closing, so a gate that refuses on any live session of the
     campaign refuses on the closer itself and can never pass. The caller is the
     one session whose intent is known."""
-    mine = f"campaign-{campaign_issue}-"
+    # THE TWO TOKENS THIS CAMPAIGN ANSWERS TO, for one window: its slug and the
+    # `campaign-<N>` the names carried before #181. A session renamed to one
+    # while its peers still carry the other is still this campaign's, and a
+    # close that missed it would sweep past a live session.
+    mine = {f"campaign-{campaign_issue}"} | ({slug} if slug else set())
     occupied, vacant = [], []
     for b in branches:
         paths = where.get(b, [])
@@ -1353,9 +1481,10 @@ def classify(branches, where, sessions, campaign_issue, root=None, caller=None):
         if sid == caller:
             continue
         name = row.get("name", "") or ""
-        if name.startswith(mine):
+        named = NAMES.campaign_of(name)
+        if named in mine:
             ours.append((sid, row))
-        elif OTHER_CAMPAIGN.match(name):
+        elif named is not None:
             continue                      # it says whose it is, and it is not ours
         elif root and under(row.get("cwd", ""), root):
             ours.append((sid, row))
@@ -1408,10 +1537,12 @@ def cmd_live(args):
     # about one sub-issue's home.
     repos, repo_note = claim_repos(args.repo or DEFAULT_REPO, root, mine,
                                    args.campaign_issue)
-    found, unread1 = all_refs(repos, args.campaign_issue)
+    slug, slug_note = campaign_slug(args.campaign_issue)
+    print(f"           {slug_note}")
+    found, unread1 = all_refs(repos, args.campaign_issue, slug)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
-    print(f"reading 1  refs under campaign-{args.campaign_issue}/ in "
+    print(f"reading 1  refs under {' and '.join(prefixes(args.campaign_issue, slug))} in "
           f"{', '.join(repos)} -- "
           f"{'FAILED: ' + why1 if why1 else str(len(branches)) + ' claim(s)'}")
     print(f"           {repo_note}")
@@ -1450,7 +1581,7 @@ def cmd_live(args):
     print(f"           this session is "
           f"{caller or '<$CLAUDE_CODE_SESSION_ID unset: not excluded below>'}")
     occupied, vacant, ours = classify(
-        branches, where, sessions, args.campaign_issue, root=root,
+        branches, where, sessions, args.campaign_issue, slug, root=root,
         caller=caller)
 
     print(f"\nclaims checked out on this machine ({len(occupied)}) -- joined "
@@ -1523,7 +1654,7 @@ def delete_path(repo, branch):
     return f"repos/{repo}/git/refs/heads/{branch}"
 
 
-def which_branch(branches, campaign_issue, issue, branch_arg):
+def which_branch(branches, campaign_issue, issue, branch_arg, slug=None):
     """(branch, refusal) -- which ref this release is about. Pure.
 
     `--branch` wins, because it is the caller naming one directly for the case
@@ -1532,11 +1663,13 @@ def which_branch(branches, campaign_issue, issue, branch_arg):
     holds the work, and deleting the wrong one costs a branch."""
     if branch_arg:
         return branch_arg, None
-    found = refs_for_issue(branches, campaign_issue, issue)
+    found = refs_for_issue(branches, campaign_issue, issue, slug)
     if not found:
-        return None, (f"no ref under campaign-{campaign_issue}/ names sub-issue "
-                      f"#{issue}, so there is no claim here to release. Pass "
-                      f"--branch if the branch was named some other way.")
+        return None, (f"no ref under "
+                      f"{' or '.join(prefixes(campaign_issue, slug))} names "
+                      f"sub-issue #{issue}, so there is no claim here to "
+                      f"release. Pass --branch if the branch was named some "
+                      f"other way.")
     if len(found) > 1:
         return None, (f"{len(found)} refs name sub-issue #{issue} "
                       f"({', '.join(found)}). Nothing here can tell which holds "
@@ -1634,13 +1767,26 @@ def cmd_release(args):
         return 1
     repos, repo_note = claim_repos(subject, root, mine,
                                    args.campaign_issue)
-    found, unread1 = all_refs(repos, args.campaign_issue)
+    slug, slug_note = campaign_slug(args.campaign_issue)
+    print(slug_note)
+    # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and `release`
+    # DELETES. With the slug unread the sweep narrows to the retired prefix, so
+    # a claim cut under `<slug>/` is invisible and comes back as "no ref names
+    # sub-issue #N" -- an absence dressed as a reading, one step before the
+    # caller passes `--branch` and deletes something else. `live` may narrow and
+    # say so because it only reads; this may not.
+    if slug is None and not args.branch:
+        print(f"refusing: {slug_note}\n  A ref cut under the campaign's slug "
+              f"would not be listed, and this command deletes.\n  Pass --branch "
+              f"to name one directly.", file=sys.stderr)
+        return 1
+    found, unread1 = all_refs(repos, args.campaign_issue, slug)
     if unread1 and not args.branch:
         print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "
               f"happen is not an absence of claims.", file=sys.stderr)
         return 1
     branch, refusal = which_branch(sorted(found), args.campaign_issue,
-                                   args.issue, args.branch)
+                                   args.issue, args.branch, slug)
     if refusal:
         print(f"refusing: {refusal}", file=sys.stderr)
         return 1

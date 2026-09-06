@@ -12,8 +12,11 @@
  *                 event touched.
  *
  * A campaign directory holds no fact another machine reads, which is what lets
- * it be optional and lets two machines hold one campaign under directory names
- * differing only in date.
+ * it be optional. Its name is the campaign's slug, and what makes a directory
+ * one is a `.campaign` marker inside it naming the campaign -- since #181 the
+ * name is a word, and no shape can tell a slug from the base's own `scripts/`.
+ * The marker is derived from the campaign issue and re-derivable, so it is
+ * still no fact another machine reads.
  *
  * CampaignDir is keyed by an atom rather than carried as two columns on a
  * holder. Keep it that way: Kodkod cannot represent the five-column varying

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Read the campaign plane: its campaign issues, its binding, its index, its settlement.
+"""Read the campaign plane: its campaign issues, its slugs, its binding, its index, its settlement.
 
     campaign-tracker.py campaign-issues [--repo owner/repo] [--limit N]
+    campaign-tracker.py slug <N> [owner/repo]
+    campaign-tracker.py issue <slug> [owner/repo]
+    campaign-tracker.py slugs [owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py bind <N> [owner/repo]
     campaign-tracker.py check <N> [owner/repo] [--plan]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo]
 
-Five readings of one plane -- GitHub issues, plus `hostname -s` for `bound`,
-and the one write that changes what `bound` answers.
+Eight readings of one plane -- GitHub issues and their labels, plus `hostname -s`
+for `bound`, and the one write that changes what `bound` answers.
 They were four scripts, and every one of them carried the same lesson in its own
 words: a listing that stopped early reads exactly like a complete one, and a
 reading that did not happen reads exactly like an empty tracker. One script means
@@ -30,6 +33,30 @@ campaign-issues     The open-campaign issue survey, and the two ways its reading
             raised past `gh`'s default of thirty because campaign issues are the oldest
             issues here, and a listing that comes back *at* the limit refuses
             rather than printing rows that are wrong rather than merely short.
+
+slug        The one reader of the `campaign:<slug>` LABEL, from the campaign
+            issue's side. The slug is what every name a person reads is built
+            from -- `<slug>-<role>-<n>`, `<slug>/<issue>-<topic>`, `<slug>/` --
+            so a campaign without one cannot be worked, and `campaign-issues`
+            refuses on exactly that. It prints `none` and exits 1 for a campaign
+            that has no slug, which is a reading; 2 is the read that failed.
+
+            THE SLUG'S RULE IS NOT HERE. `campaign-name-session.py` owns it,
+            because the PreToolUse guard reads a session name on every tool call
+            and must reach the rule without exec'ing this script's `gh`
+            plumbing. This file owns only where the slug is STORED.
+
+issue       The same label read from the other side: which campaign issue a slug
+            names, over every state, because a closed campaign's slug is still
+            spent. Two issues wearing one `campaign:` label is refused rather
+            than resolved -- it is the only duplication GitHub does not already
+            stop, since it keeps label NAMES unique by itself.
+
+slugs       Every slug ever spent, read off the LABEL list and not off the
+            issues wearing them: a label outlives its campaign, so this is what
+            a planner minting a fresh slug must not collide with. Uniqueness
+            needs no survey after that -- `gh label create` refuses a name that
+            exists.
 
 bound       The one reader of the `bound:<machine>` LABEL. A label set is read
             by exact name and carries no history, so the four things the comment
@@ -91,7 +118,7 @@ settlement  The observable spec/campaign/ scenarios are judged by. Verdicts matc
             merged pull request only says which kind.
 
             Each OPEN row also carries whether its claim branch exists,
-            read off the remote's `campaign-<N>/` refs through campaign-claim's
+            read off the remote's claim-branch prefixes through campaign-claim's
             own reader: `claimed: <branch>`, or `unclaimed`. That column is what
             an open sub-issue nobody had started was missing -- it read exactly
             like one somebody was three hours into. When the ref listing does
@@ -115,6 +142,13 @@ It catches a pasted copy, not a re-implementation that names nothing.
 EXIT
 
 campaign-issues, index, settlement  0 when the reading was made, 1 when it was not.
+campaign-issues exits 3 -- not 1 -- when the listing was read and an open
+                            campaign issue has no readable slug: a reading that
+                            did not happen and an answer must not share a status.
+slug, issue                 0 with the answer on stdout, 1 for `none`, which is
+                            a reading, and 2 when the reading itself failed.
+slugs                       0 when the label listing was read, 2 when it was not
+                            or came back at the limit.
 bound                       0 for any verdict, 2 when the reading itself failed
                             -- two `bound:` labels included, since that is a
                             question this refuses to answer, not a verdict.
@@ -136,6 +170,11 @@ from pathlib import Path
 DEFAULT_REPO = "kalaluthien/campaign-base"
 CAMPAIGN_LABEL = "campaign"
 BOUND_LABEL_PREFIX = "bound:"
+# The campaign's slug, the same shape as the binding's label and for the same
+# reasons: read by exact name, no history to page through, one edit to change.
+# `campaign` and `campaign:` do not collide -- the plain label has no colon --
+# and `startswith` is not how the kind is decided, `==` is.
+SLUG_LABEL_PREFIX = "campaign:"
 
 NOT_EMPTY = "An index that did not read is not an empty campaign."
 
@@ -186,6 +225,41 @@ def classify(issues):
     return campaign_issues, stray, bare
 
 
+def slugs_in(campaign_issues):
+    """({number: slug}, {number: why}) over one listing's campaign issues.
+
+    A calculation over labels already fetched, so it costs no second request
+    and every case -- no slug, two slugs, a slug the rule refuses, two issues
+    sharing one -- is reachable without a network.
+
+    THE SHARED SLUG IS READ HERE and nowhere else on this side. GitHub keeps
+    label NAMES unique, so a slug cannot be minted twice; what it does not stop
+    is one label put on two issues, and this is the reading that sees it from
+    the issues' side. `issue <slug>` is the same state read from the label's."""
+    read, bad = {}, {}
+    for i in campaign_issues:
+        names = [l.get("name") for l in i.get("labels") or []
+                 if isinstance(l.get("name"), str)]
+        slug, why = slug_of(names)
+        if why:
+            bad[i["number"]] = why
+        elif slug is None:
+            bad[i["number"]] = ("no `campaign:` label; the planner mints the "
+                                "slug at open from `slugs`")
+        else:
+            read[i["number"]] = slug
+    shared = {s: [n for n, v in read.items() if v == s] for s in set(read.values())}
+    for slug, numbers in shared.items():
+        if len(numbers) > 1:
+            for n in numbers:
+                read.pop(n, None)
+                bad[n] = (f"`{SLUG_LABEL_PREFIX}{slug}` is on "
+                          f"{len(numbers)} campaign issues "
+                          f"({', '.join('#' + str(x) for x in sorted(numbers))}); "
+                          f"a slug names one campaign")
+    return read, bad
+
+
 def rows(title, items, note=""):
     print(f"\n{title} ({len(items)})" + (f" -- {note}" if note else ""))
     for i in sorted(items, key=lambda x: x["number"]):
@@ -210,6 +284,13 @@ def cmd_campaign_issues(args):
     rows("open campaign issues", campaign_issues, "labelled `campaign`, and with no parent")
     if not campaign_issues:
         print("  (none: this is a reading, not a failed one)")
+    read, bad = slugs_in(campaign_issues)
+    print(f"\nslugs ({len(read)}/{len(campaign_issues)} open campaign issue(s) "
+          f"name themselves)")
+    for number, slug in sorted(read.items()):
+        print(f"  #{number:<5} {slug}")
+    if not read:
+        print("  (none)")
     if stray:
         rows("!! labelled but has a parent", stray,
              "a sub-issue wearing the label; say so rather than joining it")
@@ -217,6 +298,18 @@ def cmd_campaign_issues(args):
         rows("!! no parent and not labelled", bare,
              "a campaign issue whose label was forgotten, or the third kind of issue "
              "this\n   tracker holds. Read the body against the campaign issue template")
+    if bad:
+        # EXIT 3, NOT 1. `1` here means the listing did not happen; this is a
+        # listing that DID happen and found a campaign that cannot be worked.
+        # One status for both would put "I could not look" and an answer behind
+        # the same number, which is the confusion every reader in this file is
+        # written to avoid.
+        print(f"\nREFUSING: {len(bad)} open campaign issue(s) have no readable "
+              f"slug. Every name a\n  person reads is built from one, so a "
+              f"campaign without one cannot be worked.", file=sys.stderr)
+        for number, why in sorted(bad.items()):
+            print(f"  #{number}  {why}", file=sys.stderr)
+        return 3
     return 0
 
 
@@ -296,6 +389,153 @@ def cmd_bound(args):
         print("here")
     else:
         print(f"elsewhere {machine}")
+    return 0
+
+
+# ------------------------------------------------------------------------ bind
+
+
+# ------------------------------------------------------------------------ slug
+
+
+def name_rule():
+    """`campaign-name-session.py`, imported for `slug_ok` and `SLUG_CEILING`.
+
+    THE LEAF OWNS THE SLUG RULE, not this file, although this file owns the
+    label the slug is stored on. `check-campaign-claim.py` is a PreToolUse hook
+    that reads a session name on every tool call and reaches the rule by
+    exec'ing that leaf; were the rule here instead, that path would exec this
+    script's `gh` plumbing on every call. Its header says the same from the
+    other side."""
+    src = Path(__file__).resolve().parent / "campaign-name-session.py"
+    spec = importlib.util.spec_from_loader(
+        "campaign_name_session", importlib.machinery.SourceFileLoader(
+            "campaign_name_session", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def slug_labels(names):
+    """Every `campaign:` label on the issue, sorted. A calculation, so none,
+    one and two are each a case with no network in it."""
+    return sorted(n for n in names if n.startswith(SLUG_LABEL_PREFIX))
+
+
+def slug_of(names):
+    """(slug, why_unreadable) from a label list.
+
+    `None, None` is a campaign with no slug -- one filed before #181, or one
+    whose planner did not mint one. `None, <why>` is TWO slugs, which is not a
+    verdict for the same reason two `bound:` labels is not: a label set has no
+    latest, so nothing here can choose.
+
+    A slug the rule does not admit is `None, <why>` too and not a slug that
+    merely reads oddly: it cannot appear in a session name, so a session of
+    that campaign could not name itself, and a reader that returned it would
+    hand out a name `campaign-name-session.py` then refuses."""
+    found = slug_labels(names)
+    if not found:
+        return None, None
+    if len(found) > 1:
+        return None, (f"the campaign issue carries {len(found)} `campaign:` "
+                      f"labels ({', '.join(found)}). A label set has no latest, "
+                      f"so which slug names this campaign is unanswerable from "
+                      f"here. Remove all but one.")
+    slug = found[0][len(SLUG_LABEL_PREFIX):].strip()
+    rule = name_rule()
+    if not rule.slug_ok(slug):
+        return None, (f"the label is `{found[0]}`, and {slug!r} is not a slug: "
+                      f"kebab-case starting with a letter, at most "
+                      f"{rule.SLUG_CEILING} characters, no segment "
+                      f"{' or '.join(rule.RESERVED)}. No session could be named "
+                      f"for it, so it is refused rather than returned.")
+    return slug, None
+
+
+def cmd_slug(args):
+    """The one campaign's slug, as a word on stdout."""
+    slug, why = slug_of(labels_of(args.repo, args.campaign_issue))
+    if why:
+        print(f"campaign-tracker slug: {why}", file=sys.stderr)
+        return 2
+    if slug is None:
+        print("none")
+        return 1
+    print(slug)
+    return 0
+
+
+def cmd_issue(args):
+    """The campaign issue number a slug names, as a word on stdout.
+
+    Read over EVERY state, not the open ones: a slug names its campaign for as
+    long as the label exists, and a closed campaign's slug is still spent. Two
+    issues wearing one label is the state this refuses rather than resolves --
+    GitHub keeps label NAMES unique, so this is the only duplication left, and
+    it is the one `campaign-issues` reads from the other side."""
+    label = f"{SLUG_LABEL_PREFIX}{args.slug}"
+    text, why = gh_read(["gh", "issue", "list", "-R", args.repo, "--state", "all",
+                         "--label", label, "--limit", "100",
+                         "--json", "number,title,state"])
+    if why:
+        print(f"campaign-tracker issue: could not read {args.repo} -- {why}\n"
+              f"  A reading that did not happen is not an unspent slug.",
+              file=sys.stderr)
+        return 2
+    try:
+        found = json.loads(text)
+    except ValueError as e:
+        print(f"campaign-tracker issue: could not parse gh's output "
+              f"({e.__class__.__name__})", file=sys.stderr)
+        return 2
+    if len(found) > 1:
+        print(f"campaign-tracker issue: {len(found)} issues carry `{label}` "
+              f"({', '.join('#' + str(i['number']) for i in found)}). A slug "
+              f"names one campaign; take the label off all but one.",
+              file=sys.stderr)
+        return 2
+    if not found:
+        print("none")
+        return 1
+    print(found[0]["number"])
+    return 0
+
+
+def cmd_slugs(args):
+    """Every slug this tracker has ever spent, read off the LABELS and not off
+    the issues wearing them.
+
+    A label outlives the campaign it was minted for and a closed campaign's
+    slug stays spent, so this is what a planner minting a fresh one reads. It
+    is also the reason nothing here has to survey issues for uniqueness: GitHub
+    refuses a second label of one name."""
+    text, why = gh_read(["gh", "label", "list", "-R", args.repo, "--limit",
+                         str(args.limit), "--json", "name"])
+    if why:
+        print(f"campaign-tracker slugs: could not read {args.repo}'s labels -- "
+              f"{why}\n  A reading that did not happen is not an empty pool.",
+              file=sys.stderr)
+        return 2
+    try:
+        labels = [l["name"] for l in json.loads(text)]
+    except (ValueError, KeyError, TypeError) as e:
+        print(f"campaign-tracker slugs: could not parse gh's output "
+              f"({e.__class__.__name__})", file=sys.stderr)
+        return 2
+    if len(labels) >= args.limit:
+        print(f"campaign-tracker slugs: the label listing came back at --limit "
+              f"{args.limit}, so it may be truncated, and a truncated listing "
+              f"reads exactly like a complete one. Raise --limit and re-run.",
+              file=sys.stderr)
+        return 2
+    spent = sorted(n[len(SLUG_LABEL_PREFIX):] for n in labels
+                   if n.startswith(SLUG_LABEL_PREFIX))
+    print(f"read {args.repo}: {len(labels)} label(s), {len(spent)} spent slug(s)")
+    for s in spent:
+        print(f"  {s}")
+    if not spent:
+        print("  (none: this is a reading, not a failed one)")
     return 0
 
 
@@ -666,7 +906,7 @@ def verdict(repo, number):
 def claim_column(repo, campaign_issue):
     """(a function issue -> claim word, a note saying what was read).
 
-    Read off the REMOTE's `campaign-<N>/` refs since #176: a claim is a branch
+    Read off the REMOTE's claim refs since #176: a claim is a branch
     and there is no record to import. That also drops the `--dir` this used to
     need -- the answer is the same from any machine now, which is the point of
     moving the claim onto a ref.
@@ -827,10 +1067,23 @@ def main():
     a.add_argument("--limit", type=int, default=200)
     a.set_defaults(fn=cmd_campaign_issues)
 
+    # `issue` and `slugs` take no campaign issue number, so neither joins the
+    # loop below: one is keyed by the slug and the other by nothing.
+    a = sub.add_parser("issue", help="the campaign issue a slug names")
+    a.add_argument("slug")
+    a.add_argument("repo", nargs="?", default=DEFAULT_REPO)
+    a.set_defaults(fn=cmd_issue)
+
+    a = sub.add_parser("slugs", help="every slug this tracker has spent")
+    a.add_argument("repo", nargs="?", default=DEFAULT_REPO)
+    a.add_argument("--limit", type=int, default=200)
+    a.set_defaults(fn=cmd_slugs)
+
     # The optional positional repository is the override seam these three share.
     # One spelling across all three: `campaign-issues` takes `--repo` because it takes
     # `--limit` beside it, and a positional there would read as the campaign issue.
     for name, fn, help_text in (
+            ("slug", cmd_slug, "the campaign's slug, or `none`"),
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
             ("bind", cmd_bind, "set this machine's `bound:` label, dropping any other"),
             ("check", cmd_check, "an issue's title, body length and sections"),
@@ -854,7 +1107,7 @@ def main():
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()
-    if args.cmd in ("bound", "bind", "check"):
+    if args.cmd in ("slug", "bound", "bind", "check"):
         args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 

@@ -79,9 +79,9 @@ under a delegate already working in it. Without it,
 
 ## Filing a sub-issue
 
-**The branch name's parts** — what each of `campaign-<N>/<issue>-<topic>` keeps
+**The branch name's parts** — what each of `<slug>/<issue>-<topic>` keeps
 apart, and why the branch's existence is the claim — are the Branch bullet of
-`AGENTS.md` § ID, directory, branch.
+`AGENTS.md` § ID, slug, directory, branch.
 
 **Why the addition syncs immediately** is `AGENTS.md` § The campaign issue body:
 adding a repository is a scope change, and holding it back to the close loses

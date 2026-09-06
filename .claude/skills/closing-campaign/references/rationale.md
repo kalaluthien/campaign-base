@@ -46,7 +46,7 @@ the gate reads now is whether a claim branch is **checked out** anywhere on this
 machine, which is the same durability the comment had — a checkout survives a
 restart and a rename exactly as a comment does — with nothing to write and
 nothing to forget to write. A peer finishes by stopping its pane or renaming off
-`campaign-<N>-*`, both facts. `spec/campaign/orchestration/system.als` carries
+this campaign's own `<slug>-*`, both facts. `spec/campaign/orchestration/system.als` carries
 the reading as `holder`.
 
 A claim checked out in a workspace whose session is gone reads as occupied. That

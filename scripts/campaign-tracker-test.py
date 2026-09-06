@@ -142,6 +142,48 @@ def main():
     check("an empty tracker yields empty lists rather than an error",
           m.classify([]) == ([], [], []))
 
+    # ------------------------------------------------------------ the slug
+    # The `campaign:<slug>` label is read by exact prefix off a list of names,
+    # so every case here is a calculation with no network in it -- including the
+    # two states that are refusals rather than verdicts.
+    def islug(n, *labels):
+        return {"number": n, "title": f"t{n}",
+                "labels": [{"name": x} for x in ("campaign", *labels)],
+                "parent": None}
+
+    slug, why = m.slug_of(["campaign", "bound:alpha"])
+    check("no campaign: label is no slug, and neither `campaign` nor `bound:` "
+          "is one", slug is None and why is None)
+    slug, why = m.slug_of(["campaign", "campaign:machinery"])
+    check("one campaign: label names its slug",
+          slug == "machinery" and why is None)
+    slug, why = m.slug_of(["campaign:one", "campaign:two"])
+    check("two campaign: labels are a refusal, not a verdict",
+          slug is None and why and "campaign:one" in why and "campaign:two" in why)
+    # A SLUG THE NAME RULE REFUSES IS NOT A SLUG. Returning it would hand out a
+    # session name `campaign-name-session.py` then refuses, which is the drift a
+    # second reader of one rule always produces; this one imports the rule.
+    slug, why = m.slug_of(["campaign:Machinery"])
+    check("a slug the name rule refuses is a refusal, naming the rule",
+          slug is None and why and "Machinery" in why)
+    slug, why = m.slug_of(["campaign:"])
+    check("an empty slug is refused rather than returned as the empty string",
+          slug is None and why)
+    check("slug_labels ignores the plain `campaign` label, which has no colon",
+          m.slug_labels(["campaign", "campaign:x"]) == ["campaign:x"])
+
+    read, bad = m.slugs_in([islug(1, "campaign:machinery"), islug(2)])
+    check("a campaign issue with no slug is a finding, and its neighbour reads",
+          read == {1: "machinery"} and list(bad) == [2]
+          and "no `campaign:` label" in bad[2])
+    # THE ONE DUPLICATION GITHUB DOES NOT STOP. Label names are unique per
+    # repository, so a slug cannot be minted twice; one label on two issues can.
+    read, bad = m.slugs_in([islug(1, "campaign:same"), islug(2, "campaign:same"),
+                            islug(3, "campaign:other")])
+    check("one slug on two campaign issues is a finding on both, not a slug",
+          read == {3: "other"} and sorted(bad) == [1, 2]
+          and "#1, #2" in bad[1])
+
     # ------------------------------------------------------ index: the parse
     one = json.dumps([{"number": 1}, {"number": 2}])
     items, why = m.parse_index(one)
@@ -248,6 +290,26 @@ def main():
               r.returncode == 1 and "REFUSING" in r.stdout + r.stderr)
         r = tracker("campaign-issues", "--limit", "9", env=env)
         check("...and a listing under the limit does not", r.returncode == 0)
+
+        # A MISSING SLUG IS AN ANSWER, AND A FAILED LISTING IS NOT. Both used to
+        # exit 1, so a caller could not tell "I read the tracker and a campaign
+        # cannot be worked" from "I could not read the tracker". Two cases, one
+        # per status, because either alone passes with the other's branch gone.
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":"
+            "[{\"name\":\"campaign\"}],\"parent\":null}]'\n")
+        (shim / "gh").chmod(0o755)
+        r = tracker("campaign-issues", env=env)
+        check("a campaign issue with no slug is exit 3: read, and unworkable",
+              r.returncode == 3 and "no `campaign:` label" in r.stdout + r.stderr)
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":"
+            "[{\"name\":\"campaign\"},{\"name\":\"campaign:demo\"}],"
+            "\"parent\":null}]'\n")
+        (shim / "gh").chmod(0o755)
+        r = tracker("campaign-issues", env=env)
+        check("...and with one it is exit 0, the slug printed beside its issue",
+              r.returncode == 0 and "demo" in r.stdout)
 
         (shim / "gh").write_text(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\necho '[]'\n")

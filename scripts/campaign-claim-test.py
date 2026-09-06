@@ -176,13 +176,14 @@ case "$*" in
   *"issue view 8888 "*) printf 'no Repos heading at all\n'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
   *"issue view"*) printf '%b\n' "$(lands_body "$num")"; exit 0 ;;
-  *matching-refs*) echo '["refs/heads/campaign-9999/1-alpha","refs/heads/campaign-9999/2-beta"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/probe/1-alpha","refs/heads/probe/2-beta"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   # `2-beta` landed; `1-alpha` never did. The two answers are what `live`'s
   # vacant group and `release`'s fresh-claim gate each turn on.
-  *"--head campaign-9999/2-beta"*) echo '[{"number": 162}]'; exit 0 ;;
+  *"--head probe/2-beta"*) echo '[{"number": 162}]'; exit 0 ;;
   *"pr list"*|*--state*merged*) echo '[]'; exit 0 ;;
-  *"issues/9999"*|*"issues/8888"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*|*"issues/8888"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
   *git/refs*) echo 'Reference already exists' >&2; exit 1 ;;
 esac
@@ -281,6 +282,28 @@ def pure_cases(m):
           m.issue_of_branch("campaign-1/topic-only", "1") is None)
     check("a branch outside the campaign prefix is not ours",
           m.issue_of_branch("main", "1") is None)
+
+    # --- the slug form, and the one it replaces ---
+    # TWO PREFIXES FOR ONE WINDOW, and each has its own case: a case passing on
+    # either would pin neither, and the second is what reddens when the retired
+    # form goes.
+    check("a slug branch names its sub-issue",
+          m.issue_of_branch("demo/176-x", "1", "demo") == "176")
+    check("...and the retired form still does, beside it",
+          m.issue_of_branch("campaign-1/176-x", "1", "demo") == "176")
+    check("...and another campaign's slug names none here",
+          m.issue_of_branch("other/176-x", "1", "demo") is None)
+    check("a campaign with no readable slug reads only the retired prefix",
+          m.prefixes("1", None) == ["campaign-1/"])
+    check("...and with one, the slug's prefix comes first",
+          m.prefixes("1", "demo") == ["demo/", "campaign-1/"])
+    # ONE FORM IS MINTED. Nothing is ever named `campaign-<N>/` again, which is
+    # what closes the window rather than letting it linger.
+    check("a claim is cut as <slug>/<issue>-<topic>",
+          m.branch_name("demo", "176", "x") == "demo/176-x")
+    check("one sub-issue holding a ref under each form is two refs, not one",
+          m.refs_for_issue(["demo/7-a", "campaign-1/7-b"], "1", "7", "demo")
+          == ["demo/7-a", "campaign-1/7-b"])
 
     refs, why = m.parse_refs('["refs/heads/campaign-1/7-a","refs/tags/v1"]')
     check("a tag in the ref listing is not a claim branch",
@@ -385,11 +408,11 @@ def pure_cases(m):
 def git_cases(m):
     """The half that runs real git, so what is proved is git's own shape."""
     with tempfile.TemporaryDirectory() as d:
-        repo, trees = a_repo(d, "campaign-9999/1-alpha")
+        repo, trees = a_repo(d, "probe/1-alpha")
         where, unread = m.checkouts([str(repo)])
         check("a real linked worktree is found on its branch",
-              not unread and where.get("campaign-9999/1-alpha")
-              == [trees["campaign-9999/1-alpha"]])
+              not unread and where.get("probe/1-alpha")
+              == [trees["probe/1-alpha"]])
         check("...and the main worktree's own branch is found beside it",
               where.get("main") == [str(repo)])
 
@@ -398,9 +421,9 @@ def git_cases(m):
         where, unread = m.checkouts([str(repo), str(Path(d) / "nothing")])
         check("a root git will not answer for is reported as unread",
               len(unread) == 1 and "nothing" in unread[0]
-              and where.get("campaign-9999/1-alpha"))
+              and where.get("probe/1-alpha"))
 
-        root, why = m.repo_root(trees["campaign-9999/1-alpha"])
+        root, why = m.repo_root(trees["probe/1-alpha"])
         check("a linked worktree resolves to the repository that owns it",
               why is None and root == str(repo))
         root, why = m.repo_root(str(Path(d) / "nothing"))
@@ -424,15 +447,15 @@ def live_cases(m):
         # makes the group actionable: this tracker leaves merged branches
         # standing, so a close told to refuse on the whole group can never pass.
         check("a vacant claim whose pull request merged is marked landed",
-              "campaign-9999/2-beta" in out and "landed as #162" in out)
+              "probe/2-beta" in out and "landed as #162" in out)
         check("...and one that never merged is marked so",
-              "campaign-9999/1-alpha" in out and "never merged" in out)
+              "probe/1-alpha" in out and "never merged" in out)
         check("live names all three readings before any count",
               "reading 1" in out and "reading 2" in out and "reading 3" in out)
         check("...and reads the campaign's refs off the remote",
               "2 claim(s)" in out)
         check("a claim nothing has checked out is in the vacant group",
-              "campaign-9999/1-alpha" in out
+              "probe/1-alpha" in out
               and "claims checked out nowhere on this machine (2)" in out)
         check("a live session of this campaign is listed",
               "campaign-9999-worker-1" in out)
@@ -478,7 +501,7 @@ def take_cases(m):
               r.returncode == 3
               and "one claim whatever the topic" in out)
         check("...and it names the ref that already holds the sub-issue",
-              "campaign-9999/1-alpha" in out)
+              "probe/1-alpha" in out)
 
         # ...and the sweep does not refuse a sub-issue nobody has claimed: it
         # gets as far as the create, which the shim answers "already exists".
@@ -666,7 +689,7 @@ def take_cases(m):
         # ------ #206: WHOSE SUB-ISSUE IT IS, READ AND NOT TYPED ------
         # A mistyped campaign number cut a real ref under a campaign the
         # sub-issue does not belong to, and nobody could see it: `live` and
-        # `release` list by the `campaign-<N>/` prefix. Three outcomes, three
+        # `release` list by the campaign's own prefixes. Three outcomes, three
         # cases, because a parent that could not be read is not a parent that
         # disagrees.
         r = claim(["take", "9999", "700", "x"], path)
@@ -730,6 +753,34 @@ def take_cases(m):
               r.returncode == 1 and "not a sub-issue known to be open" in out,
               f"exit {r.returncode}: {out[:250]}")
 
+        # A CAMPAIGN WITH NO SLUG HAS NO BRANCH NAME TO CUT. `take` is the one
+        # command here that MINTS a name, so it refuses where every reading
+        # command narrows instead. Its own shim: the campaign issue carries the
+        # binding and no `campaign:` label, which is every campaign filed before
+        # #181. Asserted on the wording, since a bad `## Lands in` exits 1 too.
+        slugless = shims(Path(d) / "slugless", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *matching-refs*) echo '[]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+  *git/refs*) exit 0 ;;
+esac
+exit 1
+""")
+        r = claim(["take", "9999", "3", "delta"], slugless)
+        out = r.stdout + r.stderr
+        check("a campaign with no `campaign:` label cannot have a claim cut",
+              r.returncode == 1 and "carries no `campaign:` label" in out,
+              f"exit {r.returncode}: {out[:250]}")
+        check("...and the refusal names the edit that fixes it",
+              "--add-label campaign:" in out, out[:400])
+
         # ...and a merge question that could not be ANSWERED is neither. Its
         # own shim, because the answer has to fail for one branch while the ref
         # listing still succeeds, and widening the shared shim's ref list would
@@ -743,8 +794,9 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *matching-refs*) echo '["refs/heads/campaign-9999/3-gamma"]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/probe/3-gamma"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *"pr list"*) echo "the merge question failed" >&2; exit 1 ;;
 esac
 exit 1
@@ -755,7 +807,7 @@ exit 1
               r.returncode == 1 and "whether it is a live claim or" in out,
               f"exit {r.returncode}: {out[:250]}")
         check("...and names the ref it could not settle",
-              "campaign-9999/3-gamma" in out, out[:300])
+              "probe/3-gamma" in out, out[:300])
 
         # ------ FINDING 1: REOPEN-THEN-TAKE, THE ONLY PATH Q3 DELIVERS ON ---
         # A settled sub-issue is refused while it is closed, so re-working one
@@ -775,16 +827,17 @@ case "$*" in
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   # Stateful, or the survey sees the ref this run is about to cut and refuses
   # before the re-check -- the branch under test -- is ever reached.
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*)
       if [ -f REOPENDIR/n ]; then
-        echo '["refs/heads/campaign-9999/8-old","refs/heads/campaign-9999/8-new"]'
+        echo '["refs/heads/probe/8-old","refs/heads/probe/8-new"]'
       else
-        : > REOPENDIR/n; echo '["refs/heads/campaign-9999/8-old"]'
+        : > REOPENDIR/n; echo '["refs/heads/probe/8-old"]'
       fi
       exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
-  *"--head campaign-9999/8-old"*) echo '[{"number": 162}]'; exit 0 ;;
+  *"--head probe/8-old"*) echo '[{"number": 162}]'; exit 0 ;;
   *"pr list"*) echo '[]'; exit 0 ;;
   *"-X DELETE"*) echo "$*" >> REOPENDIR/deleted; exit 0 ;;
   *git/refs*) exit 0 ;;
@@ -800,7 +853,7 @@ exit 1
               not deleted.exists(),
               deleted.read_text() if deleted.exists() else "")
         check("...and it claims the sub-issue",
-              r.returncode == 0 and "claimed campaign-9999/8-new" in out,
+              r.returncode == 0 and "claimed probe/8-new" in out,
               f"exit {r.returncode}: {out[:250]}")
         check("...naming the merged ref as residue rather than as a rival",
               "not a rival" in out and "#162" in out, out[:300])
@@ -818,14 +871,15 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   # Neither racing ref ever merged, so both are live claims and the yield is
   # what settles them. Without this arm the merge question comes back unread
   # and the re-check refuses instead, which is a different branch.
   *"pr list"*) echo '[]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
-        echo '["refs/heads/campaign-9999/5-aaa","refs/heads/campaign-9999/5-zzz"]'
+        echo '["refs/heads/probe/5-aaa","refs/heads/probe/5-zzz"]'
       else
         : > "$STATE"; echo '[]'
       fi
@@ -840,7 +894,7 @@ exit 1
         out = r.stdout + r.stderr
         check("a taker that sees a rival after its own create yields",
               r.returncode == 3 and "in the same moment" in out
-              and "campaign-9999/5-aaa" in out)
+              and "probe/5-aaa" in out)
         check("...and deletes the ref it just cut", "has been deleted again" in out)
         check("...and says the sub-issue may now be free, since the rival "
               "yields too", "may now be free" in out)
@@ -859,7 +913,7 @@ exit 1
         # rule this replaced.
         check("the lexicographically smaller name yields too, and its ref goes",
               r.returncode == 3 and deleted.exists()
-              and "campaign-9999/5-aaa" in deleted.read_text())
+              and "probe/5-aaa" in deleted.read_text())
         # A delete that FAILED must not be reported as done: the orphan then
         # refuses every later take on the sub-issue while the message says it
         # is gone.
@@ -874,10 +928,11 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*)
       if [ -f "$STATE" ]; then
-        echo '["refs/heads/campaign-9999/6-a","refs/heads/campaign-9999/6-b"]'
+        echo '["refs/heads/probe/6-a","refs/heads/probe/6-b"]'
       else
         : > "$STATE"; echo '[]'
       fi
@@ -903,7 +958,7 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *"issues/9999"*) echo '["bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac
 exit 1
 """)
@@ -924,7 +979,7 @@ exit 1
 
 def release_cases(m):
     with tempfile.TemporaryDirectory() as d:
-        repo, trees = a_repo(d, "campaign-9999/1-alpha")
+        repo, trees = a_repo(d, "probe/1-alpha")
         # The refusal only a derived attribution can make: the branch is
         # somebody's workspace right now. The herdr row's cwd is the worktree's
         # OWNING repository, which is how the sweep reaches a worktree at all.
@@ -935,13 +990,14 @@ def release_cases(m):
         check("release refuses a branch a workspace is standing in",
               r.returncode == 1 and "checked out in 1 workspace" in out)
         check("...and names the path, so the reader knows where to look",
-              trees["campaign-9999/1-alpha"] in out)
+              trees["probe/1-alpha"] in out)
 
         # herdr unreadable: an unread occupant is not an absent one.
         no_herdr = shims(Path(d) / "noherdr")
         r = claim(["release", "9999", "1"], no_herdr)
         check("release refuses when the occupancy reading did not happen",
               r.returncode == 1 and "herdr" in (r.stdout + r.stderr))
+
 
         # A BRANCH WITH COMMITS IS NEVER DELETED -- and used to leave no exit
         # at all, so a sub-issue closed `not planned` after its worker pushed
@@ -960,7 +1016,7 @@ def release_cases(m):
         # aimed the compare, the merged-pull-request question and the DELETE at
         # a repository that may carry the same branch name.
         r = claim(["release", "9999", "1", "--branch",
-                   "campaign-9999/1-somewhere-else"], path)
+                   "probe/1-somewhere-else"], path)
         out = r.stdout + r.stderr
         check("release refuses a --branch whose repository was never read",
               r.returncode == 1 and "which repository it is on is unknown" in out)
@@ -970,7 +1026,7 @@ def release_cases(m):
         # A sub-issue with no ref of its own is a refusal, never a silent pass.
         r = claim(["release", "9999", "7"], path)
         check("release refuses a sub-issue no ref names",
-              r.returncode == 1 and "no ref under campaign-9999/" in r.stderr)
+              r.returncode == 1 and "no ref under probe/" in r.stderr)
 
         # THE FRESH CLAIM. `2-beta` is 0 ahead of main, was never merged, and no
         # workspace holds it -- which is exactly a claim cut for a delegate that
@@ -1008,8 +1064,9 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   *"pr list"*) echo '[]'; exit 0 ;;
 esac
@@ -1112,21 +1169,68 @@ exit 1
               and "--confirmed-absent" not in out)
 
 
+    # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and this command
+    # DELETES. Narrowed to the retired prefix, a ref cut under `<slug>/` is
+    # invisible and comes back as "no ref names sub-issue #N" -- an absence
+    # dressed as a reading. Its own shim: the campaign issue carries the binding
+    # and no `campaign:` label.
+    with tempfile.TemporaryDirectory() as d:
+        slugless = shims(Path(d) / "slugless", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *matching-refs*) echo '[]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+esac
+exit 1
+""")
+        r = claim(["release", "9999", "1"], slugless)
+        out = r.stdout + r.stderr
+        check("release refuses when the campaign's slug did not read",
+              r.returncode == 1 and "this command deletes" in out,
+              f"exit {r.returncode}: {out[:300]}")
+        check("...and --branch is still the way through, since it names one "
+              "directly",
+              "--branch" in out, out[:300])
+
 def scope_cases(m):
     """#187 Q4: which campaign directory a reading is about."""
     # The walk, as a calculation. Driven by a path rather than by where this
     # file sits, which differs in a worktree, in a clone, and on CI.
-    root = Path("/b")
-    check("the campaign directory is the `<slug>-<YYMMDD>` ancestor",
-          m.own_campaign_dir(Path("/b/demo-260905/repos/acme/scripts/x.py"))
-          == Path("/b/demo-260905"))
-    check("...and a path under no campaign directory has none",
-          m.own_campaign_dir(Path("/b/scripts/x.py")) is None)
-    # The nearest one wins: a campaign directory inside another is still the
-    # one this invocation is about.
-    check("...and the nearest ancestor wins",
-          m.own_campaign_dir(Path("/b/outer-260901/x/inner-260905/s/x.py"))
-          == Path("/b/outer-260901/x/inner-260905"))
+    # ON DISK, not on the name: since #181 a campaign directory is one carrying
+    # the `.campaign` marker, because the slug dropped the date and no
+    # name shape can tell an arbitrary slug from `scripts/`. So these paths have
+    # to exist, where the shape reading could be asked of any string.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+
+        def campaign_dir(*parts):
+            p = root.joinpath(*parts)
+            (p / m.CAMPAIGN_MARKER).parent.mkdir(parents=True, exist_ok=True)
+            (p / m.CAMPAIGN_MARKER).write_text("9999 demo\n")
+            return p
+
+        demo = campaign_dir("demo")
+        (root / "scripts").mkdir(exist_ok=True)
+        check("the campaign directory is the marker-bearing ancestor",
+              m.own_campaign_dir(demo / "repos/acme/scripts/x.py") == demo)
+        # THE MARKER AND NOT THE NAME. A directory named exactly as one was
+        # before #181 is not a campaign directory without it, which is the case
+        # that reddens if the date shape comes back as a second reader.
+        (root / "demo-260905" / "repos").mkdir(parents=True)
+        check("...and a dated name alone is not one",
+              m.own_campaign_dir(root / "demo-260905/repos/x.py") is None)
+        check("...and a path under no campaign directory has none",
+              m.own_campaign_dir(root / "scripts/x.py") is None)
+        # The nearest one wins: a campaign directory inside another is still the
+        # one this invocation is about.
+        inner = campaign_dir("outer", "x", "inner")
+        campaign_dir("outer")
+        check("...and the nearest ancestor wins",
+              m.own_campaign_dir(inner / "s/x.py") == inner)
 
     # ------ FINDING 3: THE SCOPE MUST BE THE SUBJECT'S, NOT THE INVOKER'S ---
     # `own_campaign_dir` answers "which directory is this script under", which
@@ -1189,7 +1293,10 @@ def scope_cases(m):
         m.scope_for = lambda ci: (Path("/the-scope-260905"),
                                   "SCOPE-NOTE-FOR-THE-READER")
         m.base_root = lambda: ("/b", None)
-        m.matching_refs = lambda repo, ci: ([], None)
+        m.matching_refs = lambda repo, ci, slug=None: ([], None)
+        # STUBBED, or this unit case reaches the network for the slug label of a
+        # campaign that does not exist, and the 404 comes back as "no slug read".
+        m.campaign_slug = lambda ci: ("probe", f"#{ci} is `probe`")
         m.herdr_sessions = lambda: ({}, None)
         m.checkouts = lambda roots: ({}, [])
         def claim_repos_spy(r, root, only=None, ci=None):
@@ -1237,7 +1344,7 @@ def scope_cases(m):
         real_ir, real_ar = m.issue_repo, m.all_refs
         try:
             m.issue_repo = lambda i, d: (d, None, "note")
-            m.all_refs = lambda repos, ci: ({}, [])
+            m.all_refs = lambda repos, ci, slug=None: ({}, [])
             class RArgs:
                 campaign_issue, issue, repo = "9999", "7", None
                 branch, confirmed_absent = None, None
@@ -1326,13 +1433,20 @@ def sweep_cases(m):
         (root / "demo-260904" / "repos" / "acme").mkdir(parents=True)
         (root / "repoless-260904" / "runtime").mkdir(parents=True)
         (root / "not-a-campaign").mkdir()
+        # THE MARKER IS WHAT MAKES EACH A CAMPAIGN'S since #181; the dated names
+        # are kept only so the rest of this case reads as it was written.
+        # `not-a-campaign` gets none, which is the row it exists for.
+        for name in ("demo-260904", "repoless-260904"):
+            (root / name / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+                                                           exist_ok=True)
+            (root / name / m.CAMPAIGN_MARKER).write_text("1 demo\n")
         clones, unread = m.campaign_clones(str(root))
         check("a member clone under a campaign directory is a sweep root",
               clones == [str(root / "demo-260904" / "repos" / "acme")]
               and not unread)
         check("...found with no session alive anywhere, which is the point",
               not unread)
-        check("a directory that is not <slug>-<YYMMDD> is not a campaign",
+        check("a directory carrying no marker is not a campaign",
               str(root / "not-a-campaign") not in " ".join(clones))
         check("a repo-less campaign is not a failed reading",
               not unread)
@@ -1342,6 +1456,9 @@ def sweep_cases(m):
         # reads as standing in no workspace.
         bad = root / "locked-260904" / "repos"
         bad.mkdir(parents=True)
+        (root / "locked-260904" / m.CAMPAIGN_MARKER).parent.mkdir(
+            parents=True, exist_ok=True)
+        (root / "locked-260904" / m.CAMPAIGN_MARKER).write_text("2 locked\n")
         bad.chmod(0o000)
         real = m.base_root
         try:
@@ -1358,6 +1475,9 @@ def sweep_cases(m):
             # every campaign on the machine; scoped, it is not read at all.
             mine = root / "mine-260905" / "repos" / "acme"
             mine.mkdir(parents=True)
+            (root / "mine-260905" / m.CAMPAIGN_MARKER).parent.mkdir(
+                parents=True, exist_ok=True)
+            (root / "mine-260905" / m.CAMPAIGN_MARKER).write_text("3 mine\n")
             clones, unread = m.campaign_clones(str(root), root / "mine-260905")
             check("a neighbour's unreadable repos/ does not deny this campaign",
                   not unread, str(unread))
@@ -1405,7 +1525,8 @@ def verdict_cases(m, capsys=None):
     real = (m.matching_refs, m.herdr_sessions, m.sweep_roots, m.checkouts,
             m.base_root)
     try:
-        m.matching_refs = lambda r, n: (["campaign-9/1-a"], None)
+        m.matching_refs = lambda r, n, slug=None: (["nine/1-a"], None)
+        m.campaign_slug = lambda ci: ("nine", f"#{ci} is `nine`")
         m.herdr_sessions = lambda: ({}, None)
         m.base_root = lambda: ("/nowhere", None)
         m.sweep_roots = lambda s, only=None: (["/a"], ["/b: would not enumerate"], None)
@@ -1476,6 +1597,9 @@ def root_cases(m):
         root = Path(d).resolve()
         here = root / "demo-260904" / "repos" / "campaign-base" / "scripts"
         here.mkdir(parents=True)
+        (root / "demo-260904" / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+                                                                exist_ok=True)
+        (root / "demo-260904" / m.CAMPAIGN_MARKER).write_text("1 demo\n")
         real = m.HERE
         try:
             m.HERE = here
@@ -1505,6 +1629,9 @@ def repos_cases(m):
         root = Path(d).resolve()
         clone = root / "demo-260904" / "repos" / "acme"
         clone.mkdir(parents=True)
+        (root / "demo-260904" / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+                                                                exist_ok=True)
+        (root / "demo-260904" / m.CAMPAIGN_MARKER).write_text("1 demo\n")
         subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(clone), "remote", "add", "origin",
                         "git@github.com:o/acme.git"], check=True)
@@ -1526,7 +1653,7 @@ def repos_cases(m):
     try:
         answers = {"o/base": (["campaign-1/7-a"], None),
                    "o/acme": (["campaign-1/8-b"], None)}
-        m.matching_refs = lambda repo, n: answers[repo]
+        m.matching_refs = lambda repo, n, slug=None: answers[repo]
         found, unread = m.all_refs(["o/base", "o/acme"], "1")
         check("all_refs keys each branch to the repository it was found on",
               found == {"campaign-1/7-a": "o/base",
@@ -1579,6 +1706,31 @@ def peer_cases(m):
     check("...and it IS its own campaign's",
           len(m.classify([], {}, under_base, "1", root="/base",
                          caller=None)[2]) == 1)
+
+    # BOTH NAME FORMS ARE THIS CAMPAIGN'S, for the window in which both are
+    # worn. A session renamed to the slug while its peers still carry
+    # `campaign-<N>` is still a peer, and a close that missed either would sweep
+    # past a live session. One case per form, so neither covers the other.
+    mixed = {"old": {"name": "campaign-9-worker-1", "cwd": "/elsewhere",
+                     "pane": "p", "status": "idle"},
+             "new": {"name": "nine-worker-2", "cwd": "/elsewhere",
+                     "pane": "p", "status": "idle"},
+             "alien": {"name": "other-worker-1", "cwd": "/elsewhere",
+                       "pane": "p", "status": "idle"}}
+    got = sorted(sid for sid, _ in
+                 m.classify([], {}, mixed, "9", "nine", root="/base",
+                            caller=None)[2])
+    check("a peer named for the slug and one named campaign-<N> are both ours",
+          got == ["new", "old"], str(got))
+    check("...and a peer named for another slug is not, wherever it sits",
+          "alien" not in got)
+    # A campaign whose slug could not be read still knows its retired token, so
+    # the reading narrows rather than emptying.
+    got = sorted(sid for sid, _ in
+                 m.classify([], {}, mixed, "9", None, root="/base",
+                            caller=None)[2])
+    check("with no slug read, the retired name form is still this campaign's",
+          got == ["old"], str(got))
 
     # `under` answers about absolute paths only: `Path.resolve()` resolves a
     # relative one against the PROCESS cwd, so herdr's `"?"` placeholder counted
@@ -1657,8 +1809,9 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 0; exit 0 ;;
   *"pr list"*) echo '[]'; exit 0 ;;
   *"-X DELETE"*) exit 0 ;;
@@ -1678,7 +1831,7 @@ exit 1
         out = r.stdout + r.stderr
         sent = prompts(ok)
         check("release deletes the ref and then compacts its own pane",
-              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              r.returncode == 0 and "deleted probe/4-done" in out
               and "sent /compact to w1:p2" in out,
               f"exit {r.returncode}: {out[:300]}")
         # THE ANCHOR A LATER READER KEYS ON, printed BEFORE the compaction is
@@ -1687,7 +1840,7 @@ exit 1
         # success line instead, a release that could not compact read as a pane
         # that never released and was assigned.
         check("...and prints the release anchor, naming branch AND pane",
-              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:300])
+              f"{m.RELEASED} probe/4-done in w1:p2" in out, out[:300])
         check("...sending exactly one /compact, to its own pane, guarded",
               len(sent) == 1 and "pane=w1:p2" in sent[0]
               and "prompt=/compact" in sent[0] and "HERDR_ENV=1" in sent[0],
@@ -1703,7 +1856,7 @@ exit 1
                   {"CLAUDE_CODE_SESSION_ID": "S404"})
         out = r.stdout + r.stderr
         check("a session no row names still releases, and says it did not compact",
-              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              r.returncode == 0 and "deleted probe/4-done" in out
               and "not compacting" in out and "no herdr row names it" in out,
               f"exit {r.returncode}: {out[:300]}")
         # THE CASE THE ANCHOR EXISTS FOR. A release that could not compact must
@@ -1714,7 +1867,7 @@ exit 1
         # to `campaign-assign.py`, which refuses -- the right direction, since
         # the compaction was not sent either.
         check("...and the anchor is there, saying the pane is unknown",
-              f"{m.RELEASED} campaign-9999/4-done in <pane unknown>" in out,
+              f"{m.RELEASED} probe/4-done in <pane unknown>" in out,
               out[:400])
         check("...and sends nothing at all",
               prompts(miss) == [], repr(prompts(miss)))
@@ -1726,7 +1879,7 @@ exit 1
                   {"CLAUDE_CODE_SESSION_ID": ""})
         out = r.stdout + r.stderr
         check("no session id releases too, naming the variable it looked for",
-              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              r.returncode == 0 and "deleted probe/4-done" in out
               and "no CLAUDE_CODE_SESSION_ID in the environment" in out,
               f"exit {r.returncode}: {out[:300]}")
         check("...and sends nothing",
@@ -1740,7 +1893,7 @@ exit 1
                   {"CLAUDE_CODE_SESSION_ID": "S2"})
         out = r.stdout + r.stderr
         check("a prompt that exited non-zero is reported, and still releases",
-              r.returncode == 0 and "deleted campaign-9999/4-done" in out
+              r.returncode == 0 and "deleted probe/4-done" in out
               and "exited 3" in out and "only the compaction did not happen" in out,
               f"exit {r.returncode}: {out[:300]}")
 
@@ -1758,8 +1911,9 @@ case "$*" in
   # exercising what they were written for rather than the new gate.
   *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
   *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
-  *matching-refs*) echo '["refs/heads/campaign-9999/4-done"]'; exit 0 ;;
-  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
+  *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *compare/main*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
   *"git/ref/heads"*) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
   *"pr list"*) echo '[{"number": 208}]'; exit 0 ;;
@@ -1778,7 +1932,7 @@ exit 1
               len(prompts(noref)) == 1 and "pane=w1:p2" in prompts(noref)[0],
               repr(prompts(noref)))
         check("...and printing the release anchor, with the pane, there too",
-              f"{m.RELEASED} campaign-9999/4-done in w1:p2" in out, out[:400])
+              f"{m.RELEASED} probe/4-done in w1:p2" in out, out[:400])
 
         # HERDR ABSENT: `release` refuses long before this on the occupancy
         # sweep, so the compaction is not what is being read here -- and that

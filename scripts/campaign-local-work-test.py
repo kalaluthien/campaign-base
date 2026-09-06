@@ -83,6 +83,41 @@ def main():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
 
+    # WHICH BRANCH PREFIXES ARE SWEPT, and why the reading narrowed when it
+    # did. A slug that did not read means a `<slug>/` branch is invisible below,
+    # so the two ways it can fail are kept apart: exit 1 is the tracker having
+    # READ the campaign issue and found no `campaign:` label, and any other exit
+    # is a reading that did not happen. One sentence for both sends the reader
+    # to the wrong fix.
+    with tempfile.TemporaryDirectory() as d:
+        shim = Path(d) / "scripts"
+        shim.mkdir()
+        (shim / "campaign-local-work.py").write_text(SCRIPT.read_text())
+        spec2 = importlib.util.spec_from_loader(
+            "clw2", importlib.machinery.SourceFileLoader(
+                "clw2", str(shim / "campaign-local-work.py")))
+        m2 = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(m2)
+        for body, want, prefixes in (
+                ("print('demo')\n", None, ["demo/", "campaign-9/"]),
+                ("print('none')\nraise SystemExit(1)\n",
+                 "carries no `campaign:` label", ["campaign-9/"]),
+                ("import sys\nprint('boom', file=sys.stderr)\n"
+                 "raise SystemExit(2)\n",
+                 "without a verdict", ["campaign-9/"])):
+            (shim / "campaign-tracker.py").write_text(
+                "#!/usr/bin/env python3\n" + body)
+            rep = Rep()
+            got = m2.campaign_prefixes("9", rep)
+            check(f"campaign_prefixes sweeps {prefixes}",
+                  got == prefixes, f"{got} {rep.lines}")
+            if want is None:
+                check("...and a slug that read reports nothing",
+                      not rep.lines, str(rep.lines))
+            else:
+                check(f"...and says {want!r} when it could not use one",
+                      any(want in l for l in rep.lines), str(rep.lines))
+
     with tempfile.TemporaryDirectory() as d:
         runtime = Path(d) / "runtime"
         runtime.mkdir()

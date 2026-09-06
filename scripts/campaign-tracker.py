@@ -118,7 +118,7 @@ settlement  The observable spec/campaign/ scenarios are judged by. Verdicts matc
             merged pull request only says which kind.
 
             Each OPEN row also carries whether its claim branch exists,
-            read off the remote's `campaign-<N>/` refs through campaign-claim's
+            read off the remote's claim-branch prefixes through campaign-claim's
             own reader: `claimed: <branch>`, or `unclaimed`. That column is what
             an open sub-issue nobody had started was missing -- it read exactly
             like one somebody was three hours into. When the ref listing does
@@ -899,7 +899,7 @@ def verdict(repo, number):
 def claim_column(repo, campaign_issue):
     """(a function issue -> claim word, a note saying what was read).
 
-    Read off the REMOTE's `campaign-<N>/` refs since #176: a claim is a branch
+    Read off the REMOTE's claim refs since #176: a claim is a branch
     and there is no record to import. That also drops the `--dir` this used to
     need -- the answer is the same from any machine now, which is the point of
     moving the claim onto a ref.

@@ -689,7 +689,7 @@ def take_cases(m):
         # ------ #206: WHOSE SUB-ISSUE IT IS, READ AND NOT TYPED ------
         # A mistyped campaign number cut a real ref under a campaign the
         # sub-issue does not belong to, and nobody could see it: `live` and
-        # `release` list by the `campaign-<N>/` prefix. Three outcomes, three
+        # `release` list by the campaign's own prefixes. Three outcomes, three
         # cases, because a parent that could not be read is not a parent that
         # disagrees.
         r = claim(["take", "9999", "700", "x"], path)

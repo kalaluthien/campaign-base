@@ -82,16 +82,21 @@ def load(stem, alias):
 
 
 def role_of(session_id):
-    """(role, campaign, how). `None` role means no brief: either the session
-    has no campaign name, or the reading itself failed. The two are kept apart
-    in `how` because one is repaired by naming the session and the other is a
-    defect to report."""
+    """(role, campaign token, how). `None` role means no brief: either the
+    session has no campaign name, or the reading itself failed. The two are
+    kept apart in `how` because one is repaired by naming the session and the
+    other is a defect to report.
+
+    THE CAMPAIGN IS A TOKEN, not a number: since #181 a session is named for
+    its campaign's SLUG, and `campaign_of` is the one reader that admits the
+    slug and the retired `campaign-<N>` alike. Asking it, rather than reading
+    NAME's group 1, is what keeps this in step with what the guard admits."""
     if not session_id:
         return None, None, "the payload carries no session id"
     try:
-        pattern = load("campaign-name-session", "cns").NAME
+        rule = load("campaign-name-session", "cns")
     except Exception as e:                  # noqa: BLE001 -- reported, not raised
-        return None, None, f"could not read the name pattern ({e.__class__.__name__})"
+        return None, None, f"could not read the name rule ({e.__class__.__name__})"
     try:
         r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
                            text=True, timeout=10)
@@ -107,11 +112,11 @@ def role_of(session_id):
                 else {}).get("value") != session_id:
             continue
         name = a.get("name") or ""
-        m = pattern.match(name) if isinstance(name, str) else None
-        if not m:
+        campaign = rule.campaign_of(name) if isinstance(name, str) else None
+        if campaign is None:
             return None, None, (f"no role read for {session_id}: herdr names it "
                                 f"{name or 'nothing'}")
-        return ("planner" if "-planner-" in name else "worker"), m.group(1), name
+        return ("planner" if "-planner-" in name else "worker"), campaign, name
     return None, None, f"no role read for {session_id}: herdr holds no row for it"
 
 
@@ -160,7 +165,7 @@ def record_path(session_id):
 
 
 def brief(role, campaign):
-    parts = [f"You are a {role} of campaign #{campaign}. This is that role's "
+    parts = [f"You are a {role} of campaign `{campaign}`. This is that role's "
              f"standing brief; it replaces nothing you were told, and adds."]
     for p in (SKILL / "SKILL.md", REFERENCES[role]):
         t = body(p)

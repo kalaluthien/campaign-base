@@ -110,8 +110,20 @@ def main():
     # A FILE PATH IS A KIND AND A TAIL, so a fixture can rebuild it. One case
     # per kind, because the replay has a slot per kind and a wrong kind puts
     # the entry in the wrong checkout.
+    # THE CAMPAIGN DIRECTORY IS READ BY EXCLUSION since #181: a slug is a word,
+    # so `demo/` and `machinery/` are campaign directories exactly by not being
+    # one of the base's own. Both the dated name and a bare slug appear below,
+    # and `spec/` is the row that would turn green if the exclusion went.
     for path, kind, tail in (
             ("/b/scripts/x.py", "base", "scripts/x.py"),
+            ("/b/spec/campaign/x.als", "base", "spec/campaign/x.als"),
+            ("/b/.claude/skills/s/x.md", "base", ".claude/skills/s/x.md"),
+            ("/b/runtime/guard.log", "base", "runtime/guard.log"),
+            ("/b/docs/x.html", "base", "docs/x.html"),
+            ("/b/README.md", "base", "README.md"),
+            ("/b/machinery/notes.md", "campaign", "notes.md"),
+            ("/b/machinery/worktrees/7/scripts/x.py", "worktree",
+             "scripts/x.py"),
             ("/b/demo-260904/notes.md", "campaign", "notes.md"),
             ("/b/demo-260904/worktrees/7/scripts/x.py", "worktree",
              "scripts/x.py"),

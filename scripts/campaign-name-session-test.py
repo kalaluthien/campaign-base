@@ -104,6 +104,46 @@ def main():
           and prompts(calls)[0][3] == "/rename campaign-1-worker-5",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
+    # THE SLUG FORM AND THE ONE IT REPLACES, each with its own case, because
+    # both are admitted for one window and a case that passed on either would
+    # pin neither. When the retired form goes, the second of these is what
+    # reddens.
+    r, calls = run(["w1:p1", "machinery-worker-6"],
+                   agents=[{"pane_id": "w1:p1", "agent_status": "idle"}])
+    check("a slug name is admitted",
+          r.returncode == 0 and len(prompts(calls)) == 1
+          and prompts(calls)[0][3] == "/rename machinery-worker-6",
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+
+    # THE THREE SLUG CONDITIONS, ONE CASE EACH. Each name below fails exactly
+    # one of them and satisfies the other two, so dropping any one condition
+    # from `slug_ok` turns exactly one of these green.
+    for name, why in [
+            ("Machinery-worker-6", "not kebab-case: a capital"),
+            ("a-slug-that-is-far-too-long-worker-6",
+             "over the ceiling: 28 characters of slug"),
+            ("campaign-machinery-worker-6", "a `campaign` segment"),
+            ("machinery-planner-worker-6", "a `planner` segment"),
+            # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `docs` would
+            # name a directory the base already owns, and guard-corpus -- which
+            # classifies a recorded path it cannot stat -- would read that
+            # campaign's whole tree as the base's own.
+            ("docs-worker-6", "a `docs` segment"),
+            ("runtime-worker-6", "a `runtime` segment"),
+            ("scripts-worker-6", "a `scripts` segment"),
+            ("spec-worker-6", "a `spec` segment")]:
+        r, calls = run(["w1:p1", name])
+        check(f"a slug with {why} is refused",
+              r.returncode == 1 and not calls and name in r.stderr,
+              f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
+
+    # A NAME WITH TWO ROLE WORDS parses one way or not at all. Barring the role
+    # words from the slug is what makes that true; admit them and `foo-worker-3`
+    # becomes a slug and this name a valid one.
+    r, calls = run(["w1:p1", "foo-worker-3-worker-5"])
+    check("a name carrying two role words is refused rather than read two ways",
+          r.returncode == 1 and not calls, f"exit {r.returncode} calls {calls}")
+
     r, calls = run(["w1:p1", "campaign-1-planner-1", "w1:p1", "campaign-1-worker-3"])
     check("one pane named twice is refused before anything is applied",
           r.returncode == 1 and not calls and "named more than once" in r.stderr,

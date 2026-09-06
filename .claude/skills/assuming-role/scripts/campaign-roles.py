@@ -90,7 +90,7 @@ ROLES = {
         # THE ONE `gh issue` VERB THE LICENCE DOES NOT COVER
         # (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch in
         # the sub-issue's own repository, and with
-        # `--name campaign-<N>/<issue>-<topic>` that branch IS a claim -- the
+        # `--name <slug>/<issue>-<topic>` that branch IS a claim -- the
         # same object `campaign-claim take` cuts. Bare, it names the branch
         # `<issue>-<slug>`, which no reader here treats as a claim; the flag is
         # one word away and the guard reads no flags, so the verb is judged by

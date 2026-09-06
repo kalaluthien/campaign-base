@@ -78,8 +78,28 @@ DEFAULT_OUT = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 DEFAULT_TRANSCRIPTS = "~/.claude/projects/**/*.jsonl"
 FILE_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
 PATH_KEYS = ("file_path", "notebook_path", "path")
-# `<slug>-<YYMMDD>`: AGENTS.md's shape for a campaign directory at the base root.
-CAMPAIGN_DIR = re.compile(r"^[A-Za-z0-9._-]+-\d{6}$")
+def _name_rule():
+    """`campaign-name-session.py`, imported for `BASE_DIRS` alone."""
+    src = HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py"
+    spec = importlib.util.spec_from_loader(
+        "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+# The base's own top-level directories, imported from the one file that names
+# them: `campaign-name-session.py` bars the same words from a slug, so no
+# campaign can be named for a directory the base already owns and this exclusion
+# cannot swallow a real campaign's tree. Two copies pointing at each other in
+# prose is the shape that drifts.
+#
+# A dot-directory is the base's own by the clause in `place` and is not listed
+# there: `.claude` and `.github` in this set pinned nothing.
+#
+# NOT `.gitignore`'s allowlist, which this resembles and is not: that admits
+# what is TRACKED, and `runtime/` is the base's own and ignored.
+BASE_OWN = frozenset(_name_rule().BASE_DIRS)
 # A token that must never be committed. Deliberately crude and deliberately
 # wide: a dropped entry costs one shape, a committed token costs an account.
 SECRET = re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9-]{16,}"
@@ -130,7 +150,7 @@ def place(path: Path, base: Path):
     except ValueError:
         return None
     parts = rel.parts
-    if not parts or not CAMPAIGN_DIR.match(parts[0]):
+    if len(parts) < 2 or parts[0] in BASE_OWN or parts[0].startswith("."):
         return "base", str(rel)
     rest = parts[1:]
     if len(rest) >= 2 and rest[0] == "worktrees":

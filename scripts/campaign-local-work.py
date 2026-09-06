@@ -11,7 +11,7 @@ one implementation, `campaign-tracker settlement`.
 
 It reads two places, and the second only when it is handed one:
 
-  the base        this campaign's own campaign-<N>/ branches and the
+  the base        this campaign's own <slug>/ branches and the
                   worktrees on them -- a base sub-issue is worked there, never
                   under repos/ -- plus the base's single working tree, which
                   cannot be scoped to a campaign and so is reported without
@@ -179,7 +179,7 @@ def default_branch(repo, name, rep):
     return upstream
 
 
-def read_branches(repo, name, rep, upstream, refspec="refs/heads/"):
+def read_branches(repo, name, rep, upstream, refspec=("refs/heads/",)):
     """One row per branch, from both readings of "has this left the machine?".
 
     Unpushed commits and `--no-merged` overlap on purpose: a branch can be both,
@@ -192,7 +192,7 @@ def read_branches(repo, name, rep, upstream, refspec="refs/heads/"):
                     for b in git(repo, "branch", "--no-merged", upstream).splitlines()
                     if b.strip() and not b.strip().startswith("(")}
     for br in run(repo, "git", "-C", repo, "for-each-ref",
-                  "--format=%(refname:short)", refspec).splitlines():
+                  "--format=%(refname:short)", *refspec).splitlines():
         commits = git(repo, "log", "--oneline", br, "--not", "--remotes").splitlines()
         if not commits and br not in unmerged:
             continue
@@ -280,11 +280,50 @@ def read_worktrees(repo, name, rep, prefix=None):
                 counted=bool(dirty))
 
 
+def campaign_prefixes(n, rep):
+    """Every branch prefix this campaign's claims can wear, newest first.
+
+    Two for one window: `<slug>/`, cut since #181, and the `campaign-<N>/` every
+    branch before it carries. The slug comes from `campaign-tracker.py slug`,
+    the one reader of the `campaign:<slug>` label -- read as the WORD it prints,
+    never the exit status. A slug that could not be read narrows the reading to
+    the retired form and is REPORTED, because a narrower sweep that says nothing
+    reads exactly like a machine holding less work than it does."""
+    tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "campaign-tracker.py")
+    try:
+        out = subprocess.run([sys.executable, tracker, "slug", str(n)],
+                             capture_output=True, text=True)
+    except OSError as e:
+        out = None
+        why = f"campaign-tracker could not run ({e.__class__.__name__})"
+    if out is not None:
+        word = out.stdout.strip()
+        if word and word != "none":
+            why = None
+        elif out.returncode == 1:
+            # LOOKED AND FOUND NOTHING: the tracker read the campaign issue and
+            # it carries no `campaign:` label.
+            why = f"#{n} carries no `campaign:` label, so it has no slug"
+        else:
+            # COULD NOT LOOK. Kept apart from the line above, because the fix is
+            # different: one is a label to add, the other a reading to retry.
+            why = (f"campaign-tracker slug {n} exited {out.returncode} without "
+                   f"a verdict: {out.stderr.strip()[:120] or 'no message'}")
+    if why:
+        rep.report(f"REPORT: {why}, so only campaign-{n}/ branches were read. "
+                   f"A branch cut under a slug would not appear below.")
+        return [f"campaign-{n}/"]
+    return [f"{word}/", f"campaign-{n}/"]
+
+
 def read_base(base, n, rep):
     name = slug(base)
     upstream = default_branch(base, name, rep)
-    read_branches(base, name, rep, upstream, refspec=f"refs/heads/campaign-{n}/")
-    read_worktrees(base, name, rep, prefix=f"campaign-{n}/")
+    prefixes = campaign_prefixes(n, rep)
+    read_branches(base, name, rep, upstream,
+                  refspec=[f"refs/heads/{p}" for p in prefixes])
+    read_worktrees(base, name, rep, prefix=tuple(prefixes))
     # The base's single working tree carries no campaign, so it cannot be
     # scoped and is not a blocker on this close -- but a person deciding to
     # delete wants to see it. No --ignored here: the base ignores every

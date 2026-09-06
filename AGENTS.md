@@ -183,7 +183,8 @@ branch the delegate's.
 
 ## The session name
 
-**`campaign-<campaign issue>-<role>-<n>`**, the role being `planner` or
+**`<slug>-<role>-<n>`**, the slug being the campaign's own (§ ID, slug,
+directory, branch) and the role being `planner` or
 `worker`, for every session on this machine; `<n>` is one counter across both
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
 this sentence is that counting rule's one home. **The role word is not a
@@ -223,20 +224,47 @@ does not admit; read what it reports applied, and confirm with `ListAgents`,
 which resolves the harness name a message is addressed to. `herdr agent list`
 shows the pane.
 
-## ID, directory, branch
+## ID, slug, directory, branch
+
+**A campaign has two names.** The **ID** is what every `gh` call is given; the
+**slug** is what every name a person reads is built from. Neither substitutes
+for the other, and a missing slug refuses rather than being guessed at.
 
 - **ID** — the campaign issue's number in `kalaluthien/campaign-base`, typed `#N`.
   The campaign issue carries the `campaign` label; every survey lists by it, so a campaign issue
   filed without it is in nobody's listing.
-- **Directory** — `<slug>-<YYMMDD>/` at the base root, git-ignored, optional
+- **Slug** — one `campaign:<slug>` label on the campaign issue, the same shape
+  as `bound:` and read the same way. `campaign-tracker.py`'s `slug <N>`,
+  `issue <slug>` and `slugs` are its readers, and `campaign-issues` refuses an
+  open campaign that has none. **`campaign-name-session.py` owns what a slug may
+  be** — a length ceiling herdr's own limit sets, and words it may not contain —
+  and every other script asks it rather than restating it. **The planner mints
+  one at open** from `slugs`, which lists every slug ever spent; the owner
+  vetoes by renaming the label before any session is named. Two campaigns cannot
+  share one, because GitHub keeps label names unique.
+- **Directory** — `<slug>/` at the base root, git-ignored, optional
   off the bound machine. A campaign *is* its campaign issue; the directory is one
-  machine's cache and holds nothing that is not derivable from GitHub.
-- **Branch** — `campaign-<N>/<issue>-<topic>`, **the sub-issue's whole claim** as
+  machine's cache and holds nothing that is not derivable from GitHub. **What
+  makes a directory a campaign's is the `.campaign` file inside it**, naming the
+  campaign — a slug is a word, and no name shape separates one from `scripts/`.
+  It sits beside `runtime/` and not inside it, because `runtime/` is scratch
+  sessions sweep. `check-campaign-claim.py` owns that reading and every other
+  script asks it. **A campaign directory with no marker is a campaign nothing on
+  this machine can see** — not a claim, not a guard log, not a close — so
+  `opening-campaign` writes it at scaffold and a directory that predates it gets
+  one by hand.
+- **Branch** — `<slug>/<issue>-<topic>`, **the sub-issue's whole claim** as
   well as its workspace. `campaign-claim take` cuts it from the remote and writes
   nothing else; create-ref refuses an existing ref server-side, so the claim is
   atomic across every machine, where a survey-then-file is not. **Every
   sub-issue cuts one**, work that lands no commit included — a repo-less
   campaign's on the base.
+- **The retired form** — before #181 the session name and the branch carried the
+  campaign NUMBER, as `campaign-<N>-<role>-<n>` and `campaign-<N>/<issue>-<topic>`.
+  Every reader still accepts both, and nothing mints the old one; **the two are
+  two names and not two spellings of one**, so rename a session only once the
+  claims it holds have landed. The window closes when the last `campaign-<N>/`
+  pull request has merged.
 
 # Campaign work
 
@@ -446,7 +474,7 @@ Three readings, and never answer one with another.
   screen is evidence.** `campaign-tracker settlement <N>` is the one reader.
 - **Liveness and attribution are different readings, and a gate needs both.**
   `herdr agent list` gives liveness for every session here; the remote's
-  `campaign-<N>/` refs give every claim; and where each is checked out gives
+  `<slug>/` refs give every claim; and where each is checked out gives
   attribution. `campaign-claim live <N>` makes all three and joins the last two
   on the branch name, which a restart and a rename both leave alone; it
   concludes nothing, a close reads its counts.

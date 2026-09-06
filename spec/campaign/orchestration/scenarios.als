@@ -152,7 +152,7 @@ pred claimOnTheIssuesRepo {
 
    A RULE WITH ONE READER IS A RULE WITH ONE ROUTE, and there was a second
    (kalaluthien/campaign-base#213). `campaign-claim take` is the reader of this
-   rule; `gh issue develop --name campaign-<N>/<issue>-<topic>` cuts the same
+   rule; `gh issue develop --name <slug>/<issue>-<topic>` cuts the same
    ref and reads none of it -- not this scope, not the parent `campaignOf`
    names, not the binding. Nothing in the model separates the two, and nothing
    can: a `Claim` is a `Claim` whichever command made it, which is the point.

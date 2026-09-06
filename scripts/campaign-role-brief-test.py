@@ -54,7 +54,7 @@ PLANNER-MARK
 WORKER-MARK
 """
 
-def row(session_id, name="campaign-1-worker-10"):
+def row(session_id, name="demo-worker-10"):
     return [{"pane_id": "w1:p1", "name": name,
              "agent_session": {"value": session_id}}]
 
@@ -124,8 +124,16 @@ def main():
 
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=NAMED)
     check("--role prints the role and the campaign bounding it",
-          r.returncode == 0 and r.stdout.strip() == "worker 1",
+          r.returncode == 0 and r.stdout.strip() == "worker demo",
           f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE RETIRED TOKEN still names a campaign, because `campaign_of` admits
+    # it: a session named before #181 must not read as no-role and lose its
+    # brief on the strength of a rename it has not been asked to make.
+    r, _, _ = run({"session_id": SID}, argv=["--role"],
+                  agents=row(SID, "campaign-1-worker-10"))
+    check("a name in the retired `campaign-<N>` form still reads as a role",
+          r.stdout.strip() == "worker campaign-1", f"out {r.stdout!r}")
 
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=[])
     check("a session herdr holds no row for reads as NO ROLE, naming the id",
@@ -159,7 +167,7 @@ def main():
                        "session_id": SID}, agents=NAMED)
     check("UserPromptSubmit with no record emits, and writes one",
           r.returncode == 0 and "WORKER-MARK" in r.stdout
-          and stamp is not None and stamp.startswith("worker 1 "),
+          and stamp is not None and stamp.startswith("worker demo "),
           f"out {r.stdout[:80]!r} rec {stamp!r}")
 
     # THE RECORD THE SESSION ALREADY HAS. Recording the CURRENT stamp is the
@@ -176,7 +184,7 @@ def main():
 
     r, rec, _ = run({"hook_event_name": "SessionStart", "source": "compact",
                      "session_id": SID}, agents=NAMED,
-                    record=(SID, "worker 1 deadbeefdead"))
+                    record=(SID, "worker demo deadbeefdead"))
     check("...and rewrites a stale record to what it just briefed",
           rec == stamp, f"rec {rec!r} want {stamp!r}")
     r2, _, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
@@ -190,10 +198,10 @@ def main():
     # the stamp rather than through an event: herdr answers with the new name,
     # the role and campaign in the stamp move, and the next prompt re-briefs.
     r, rec, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
-                    agents=row(SID, "campaign-2-planner-3"), record=(SID, stamp))
+                    agents=row(SID, "other-planner-3"), record=(SID, stamp))
     check("a session renamed into the other role re-briefs on its next prompt",
           "The planner's lifecycle" in r.stdout and "PLANNER-MARK" in r.stdout
-          and rec.startswith("planner 2 "), f"out {r.stdout[:80]!r} rec {rec!r}")
+          and rec.startswith("planner other "), f"out {r.stdout[:80]!r} rec {rec!r}")
 
     # THE STAMP IS A SHA AND NOT A LENGTH. This campaign AGENTS.md differs from
     # the one that produced `stamp` by exactly one character, in place -- so a
@@ -222,11 +230,11 @@ def main():
           f"out {r.stdout[:200]!r}")
 
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=row(SID, "campaign-2-planner-3"))
+                   "session_id": SID}, agents=row(SID, "other-planner-3"))
     check("a planner gets the planner reference and the planner section",
           "The planner's lifecycle" in r.stdout and "PLANNER-MARK" in r.stdout
           and "WORKER-MARK" not in r.stdout
-          and "planner of campaign #2" in r.stdout,
+          and "planner of campaign `other`" in r.stdout,
           f"out {r.stdout[:200]!r}")
 
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",

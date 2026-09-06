@@ -57,7 +57,7 @@ input file, not a shadowed name. Write `command diff`; `cmp`, `sed`, `grep` and
 
 ## `git/matching-refs` does not paginate, and is documented that way
 
-Step 5 reads every `campaign-<N>/` ref with a bare `gh api`. That looks like the
+Step 5 reads every `<slug>/` ref with a bare `gh api`. That looks like the
 truncation hazard this base guards everywhere else — a paged endpoint read
 without `--paginate`, where a truncated list reads exactly like a complete one.
 It is not. Measured against a repository with 241 matching refs:

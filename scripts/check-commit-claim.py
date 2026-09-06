@@ -15,7 +15,7 @@ The commit half of the claim gate; scripts/check-campaign-claim.py is the
 pre-tool-use half and holds the reading both share. The model is
 `claimBeforeCommit` in spec/campaign/orchestration/scenarios.als: a commit on
 a sub-issue by a session's own hands names a sub-issue that session has
-claimed. A claim is a `campaign-<N>/<issue>-<topic>` branch whose ref exists
+claimed. A claim is a `<slug>/<issue>-<topic>` branch whose ref exists
 on the remote, so the reading is: the committing checkout is campaign work --
 a base tree, or under a campaign directory -- and its branch is a claim.
 

@@ -19,7 +19,9 @@ campaign-base/
   .claude/skills/opening-campaign
   .claude/skills/closing-campaign
   spec/  docs/  scripts/
-  auth-refactor-260828/          a campaign, git-ignored
+  auth-refactor/                 a campaign, named for its slug, git-ignored
+    .campaign                    the campaign issue number and the slug; what
+                                 makes this directory a campaign's
     AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    the campaign issue body, section for section
     runtime/                     data, state and artifacts of this campaign
@@ -39,6 +41,12 @@ so a campaign can never be committed into the wrong repository by accident.
 | how campaigns are run | this repository |
 | the code being changed | each member repository's own remote |
 | what a campaign is and how far along it is | GitHub issues |
+
+A campaign has two names: its **campaign issue number**, which every `gh` call
+is given, and its **slug**, which every name a person reads is built from — the
+session names, the claim branches, the directory. The slug lives on the campaign
+issue as a `campaign:<slug>` label, so one reader finds it and no two campaigns
+can share one.
 
 A campaign's identity is its **campaign issue** in this repository. Sub-issues are
 issues in this repository too, whichever repository their code lives in — each

@@ -40,8 +40,9 @@ open synchronization/system
    entity above it may not add a field to it. */
 one sig Request { covers: set Campaign }
 
-/* WHAT A SESSION IS FOR, read from its name -- `campaign-<N>-<role>-<n>`, whose
-   pattern `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns and which is not restated
+/* WHAT A SESSION IS FOR, read from its name -- `<slug>-<role>-<n>`, whose
+   pattern `.claude/skills/assuming-role/scripts/campaign-name-session.py`
+   owns and which is not restated
    here for the same reason the name's shape is not. `herdr agent list` is what
    joins a harness session id to that name, so this is a fact a guard can read
    about its own caller.
@@ -104,8 +105,9 @@ sig Session {
   var claimedIssues:     set Issue,       -- sub-issue branches it created on the remote
   /* WHICH CAMPAIGN THIS SESSION'S NAME SAYS IT IS OF, and `lone` because a
      name may say nothing -- a session that never named itself, or one whose
-     name is not of the shape `campaign-<N>-<role>-<n>`. The name itself is not
-     modelled and must not be: `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns its
+     name is not of the shape `<slug>-<role>-<n>`. The name itself is not
+     modelled and must not be:
+     `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns its
      spelling, and a second statement of it here would admit names that script
      refuses. What is modelled is only the one thing a reader does with it --
      tell whose campaign a session claims to be of -- which is the discriminator
@@ -279,8 +281,8 @@ pred sessionWriteBody[s: Session] {
   Who.session = s
 }
 
-/* Two sessions on one machine resolve <slug>-<YYMMDD>/ to the same path, so
-   the directory is per campaign per machine, not per session. */
+/* Two sessions on one machine resolve <slug>/ to the same path, so the
+   directory is per campaign per machine, not per session. */
 pred sessionCreateDir[s: Session] {
   Now.event = CreateDir
   some s.worksOn

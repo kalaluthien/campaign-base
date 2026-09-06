@@ -131,7 +131,7 @@ def status(clone, *flags):
 # Everything below builds the shape `check-commit-claim.py` actually reads, so
 # the refusals and the admissions come from the shipped gate and not from a
 # stand-in: a base root marked by `scripts/campaign-claim.py`, a
-# `<slug>-<YYMMDD>` campaign directory under it, and a clone of a member
+# campaign directory under it, and a clone of a member
 # repository under that directory's `repos/`.
 
 

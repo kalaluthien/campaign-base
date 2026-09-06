@@ -2013,6 +2013,35 @@ def main():
                   f"NOT checked, naming the file",
                   "shape NOT checked" in out(r) and "would not load" in out(r),
                   out(r)[:400])
+            # THE CEILING IS A SECOND CHECK, and it needs no pattern. Letting
+            # an unreadable name rule silence it would trade one hole for
+            # another: `comment_findings` measures the length whatever the
+            # first line did. Only the `pattern is not None` guard on the first
+            # line's branch may skip.
+            r = ask(f.base, tool="Bash", guard=copy,
+                    command="gh issue comment 7 --body '" + "z" * 3000 + "'")
+            check(f"...and the CEILING is still measured with {missing} gone",
+                  r.returncode == 2 and "over" in out(r)
+                  and "3000 characters" in out(r), out(r)[:300])
+
+    # AN UNPREDICTED FAILURE IS A LOUD ALLOW, never a traceback and never a
+    # wall. Exit 1 is what the harness reads as the hook's own error, so it is
+    # the one status this file may not produce; exit 2 for a bug would wall
+    # every session on the machine. Broken here by deleting a function the
+    # decision path calls, which is the shape of a real edit gone wrong.
+    with tempfile.TemporaryDirectory() as d:
+        broken = Path(d) / "broken-guard.py"
+        src = GUARD.read_text().replace("def classify(", "def _classify_off(", 1)
+        broken.write_text(src)
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken)
+        check("a guard that raises where nothing predicted it allows the call "
+              "and says it did not judge it",
+              r.returncode == 0 and "did not judge this call" in r.stderr,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and it never exits 1, which the harness reads as the hook's "
+              "own error",
+              r.returncode != 1, f"exit {r.returncode}")
 
     if not ran:
         print("FAIL  the suite ran no case at all")

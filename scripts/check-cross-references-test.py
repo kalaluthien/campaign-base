@@ -171,6 +171,20 @@ CASES = [
     ("S5 a skill citing the repository's script resolves too",
      {f"{SKILL}/references/y.md": "Read `scripts/campaign-tracker.py` first.\n"},
      None),
+    # THE `$BASE/` FORM, which is how a skill spells a command a session runs.
+    # `RUN` cannot hold a `$`, so these arrived as `BASE/...` and matched no
+    # shape at all: 17 script paths went unchecked, the one #227's own sweep
+    # had just repaired among them.
+    ("S5 reads a `$BASE/`-prefixed script path",
+     {"a.md": "Run `\"$BASE/scripts/campaign-tracker.py\" bind 1` for it.\n"},
+     None),
+    ("S5 a `$BASE/`-prefixed script at neither root dangles",
+     {"a.md": "Run `\"$BASE/scripts/gone.py\" bind 1` for it.\n"},
+     ("DANGLING", "scripts/gone.py")),
+    ("S2 reads a `$BASE/`-prefixed skill path too",
+     {"a.md": f"Run `\"$BASE/{SKILL}/scripts/gone.sh\"` for it.\n"},
+     ("DANGLING", f"{SKILL}/scripts/gone.sh")),
+
     ("S5 a script at neither root dangles",
      {"a.md": "Run `scripts/gone.py` for it.\n"},
      ("DANGLING", "scripts/gone.py")),

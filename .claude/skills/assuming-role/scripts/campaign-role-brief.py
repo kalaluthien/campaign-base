@@ -144,7 +144,30 @@ def body(path):
 # anything a campaign appends -- a `# Notes` of its own -- used to be swallowed
 # into the brief. `###` does not, because a subheading is part of its section.
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-HEADING = re.compile(r"^#{1,2} ")
+HEADING = re.compile(r"^ {0,3}#{1,2} ")
+
+
+def fenced_lines(lines):
+    """The line numbers inside a CLOSED fence.
+
+    AN OPENER WITH NO CLOSER IS NOT A FENCE, and that is the whole reason this
+    is a first pass rather than a running flag. A stray triple backtick made
+    everything after it text: a heading below it stopped closing sections, so
+    an unclosed fence before the role's heading dropped the campaign's section
+    entirely and one inside it emitted to end of file. Both failures are
+    silent, and a campaign document is somebody's prose -- the shape shows up.
+    Unbalanced, the run is read as the text it is."""
+    inside, open_at, run = set(), None, None
+    for i, line in enumerate(lines):
+        m = FENCE.match(line)
+        if not m:
+            continue
+        if open_at is None:
+            open_at, run = i, m.group(1)
+        elif m.group(1)[0] == run[0] and len(m.group(1)) >= len(run):
+            inside.update(range(open_at, i + 1))
+            open_at, run = None, None
+    return inside
 
 
 def campaign_section(role):
@@ -162,16 +185,11 @@ def campaign_section(role):
         if not (f.is_file() and (d / "runtime").is_dir()):
             continue
         want = f"## {role.capitalize()}"
-        out, keep, fence = [], False, None
-        for line in f.read_text().splitlines():
-            m = FENCE.match(line)
-            if m:
-                run = m.group(1)
-                if fence is None:
-                    fence = run
-                elif run[0] == fence[0] and len(run) >= len(fence):
-                    fence = None
-            elif fence is None and HEADING.match(line):
+        lines = f.read_text().splitlines()
+        fenced = fenced_lines(lines)
+        out, keep = [], False
+        for i, line in enumerate(lines):
+            if i not in fenced and HEADING.match(line):
                 keep = line.strip() in (want, "## Every session")
             if keep:
                 out.append(line)

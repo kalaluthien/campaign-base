@@ -1907,5 +1907,26 @@ def main() -> int:
     return status
 
 
+# THE LAST RESORT, and it is not a refusal. An exception escaping `main` exits
+# 1, and the harness reads a non-zero-that-is-not-2 as the HOOK's own error and
+# lets the tool call PROCEED -- so an unhandled bug here has always been a
+# silent bypass, printed as a traceback nobody reads. This turns it into a loud
+# allow: the guard says it failed and did not judge the call, in the wording
+# every other could-not-look uses. It is deliberately NOT a refusal, because a
+# blanket refusal turns any bug in this file into a wall across every session on
+# the machine, which is the failure `role_of`'s fallback exists to prevent.
+# Each site that CAN fail is still handled where it is, and named there; this
+# only stops the ones nobody predicted from being invisible.
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:                   # noqa: BLE001 -- announced, not raised
+        import traceback
+        print(f"check-campaign-claim: the guard FAILED and did not judge this "
+              f"call ({e.__class__.__name__}: {e}). The call is allowed "
+              f"unjudged; this is a defect in the guard, not a verdict.",
+              file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(0)

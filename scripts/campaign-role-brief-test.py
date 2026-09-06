@@ -14,6 +14,7 @@ that matched (looked, found, and deliberately said nothing).
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -256,6 +257,34 @@ FENCE-MARK
           "FENCE-MARK" not in r.stdout and "WORKER-MARK" in r.stdout,
           f"out {r.stdout[-300:]!r}")
 
+    # AN OPENER WITH NO CLOSER IS NOT A FENCE. Both directions are silent
+    # failures: one before the role heading drops the campaign's section
+    # entirely, one inside it emits to end of file.
+    stray_before = CAMPAIGN_AGENTS.replace("PLANNER-MARK", "```\nPLANNER-MARK")
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED,
+                  campaign_agents=stray_before)
+    check("an unclosed fence before the role's heading does not hide it",
+          "WORKER-MARK" in r.stdout, f"out {r.stdout[-200:]!r}")
+
+    stray_inside = (CAMPAIGN_AGENTS.replace("WORKER-MARK", "```\nWORKER-MARK")
+                    + "\n# Later\n\nTAIL-MARK\n")
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED,
+                  campaign_agents=stray_inside)
+    check("...and one inside it does not run the section to end of file",
+          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
+          f"out {r.stdout[-200:]!r}")
+
+    # UP TO THREE SPACES IS STILL A HEADING (CommonMark), and a campaign
+    # document is somebody's prose.
+    indented = CAMPAIGN_AGENTS + "\n   # Later\n\nTAIL-MARK\n"
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED, campaign_agents=indented)
+    check("a heading indented three spaces still closes the section",
+          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
+          f"out {r.stdout[-200:]!r}")
+
     # A LEVEL-1 HEADING ENDS THE SECTION. `## Worker` is the template's last
     # section, so whatever a campaign appends after it is what this protects.
     tail = CAMPAIGN_AGENTS + "\n# Notes of our own\n\nTAIL-MARK\n"
@@ -327,6 +356,37 @@ FENCE-MARK
     check("a payload carrying no session id briefs nothing and names why",
           r.returncode == 0 and r.stdout == ""
           and "could not read a session id" in r.stderr, f"err {r.stderr!r}")
+
+    # THE LAST-RESORT RECORD PATH, which no case above can reach: every one of
+    # them runs under a directory that HAS a base, which is what the walk finds
+    # first. Run a COPY of the skill so `BASE` is a temporary tree, from a cwd
+    # with no `AGENTS.md` above it at all, and the fallback is the only branch
+    # left. Reported in the REPORT for fix round 1 as covered when it was not.
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        base = d / "base"
+        skill = base / ".claude" / "skills" / "assuming-role"
+        shutil.copytree(SCRIPT.parent.parent, skill)
+        bin_dir = d / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "herdr").write_text(FAKE)
+        (bin_dir / "herdr").chmod(0o755)
+        plain = d / "plain"
+        plain.mkdir()
+        env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                   FAKE_AGENTS=json.dumps(NAMED), CLAUDE_PROJECT_DIR=str(plain))
+        r = subprocess.run(
+            [sys.executable, str(skill / "scripts" / SCRIPT.name)], env=env,
+            cwd=str(plain), capture_output=True, text=True,
+            input=json.dumps({"hook_event_name": "SessionStart",
+                              "source": "startup", "session_id": SID}))
+        landed = sorted((base / "runtime" / "briefed").glob("*")) \
+            if (base / "runtime" / "briefed").is_dir() else []
+        check("with no base above the cwd the record falls back to the "
+              "SCRIPT's own base, and the line says where",
+              r.returncode == 0 and len(landed) == 1
+              and landed[0].name == SID and str(base) in r.stderr,
+              f"landed {landed} err {r.stderr!r}")
 
     for f in fails:
         print(f"FAIL  {f}")

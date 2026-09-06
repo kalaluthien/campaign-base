@@ -25,10 +25,12 @@ leaves the others live and unflagged, so all four are here.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and
-      each skill may keep its own, and prose in a skill cites both -- 13 of the
+      each skill may keep its own, and prose in a skill cites both -- 17 of the
       references in the tree today name the repository's from inside a skill.
       Asking one root would flag those; asking both still catches the only
-      failure that matters, a path naming no file anywhere. Added by #227,
+      failure that matters, a path naming no file anywhere. A leading `$BASE/`,
+      which is how every skill spells a command a session runs, is stripped
+      before any shape is asked. Added by #227,
       after that sub-issue moved a script under a skill and left six prose
       citations of the old path standing -- `check-tree-shape`'s RETIRED row
       reads code lines only, so a path grep found them and no guard did.
@@ -445,6 +447,17 @@ def check_paths(rel, text, tree, report):
             continue
         n = line_of(text, m.start())
 
+        # `$BASE/` IS THE ONE VARIABLE THIS TREE PRESCRIBES for the base root
+        # (AGENTS.md § The three planes), and every skill spells its commands
+        # with it -- 17 citations do. `RUN` cannot hold a `$`, so what arrives
+        # here is `BASE/...`, which matched no prefix and fell into `unshaped`:
+        # the shapes below were checking 121 references while 17 script paths a
+        # session is told to RUN went unchecked, including the one #227's own
+        # sweep had just repaired. Stripped before shaping, so the same rules
+        # decide it.
+        if tok.startswith("BASE/"):
+            tok = tok[len("BASE/"):]
+
         if "<" in tok or ">" in tok or "*" in tok:
             report.template.append((rel, n, tok, "names a form, not a file"))
             continue
@@ -515,8 +528,8 @@ def main(argv):
         # files ARE the spec and their comments are its prose, so a citation
         # there is as load-bearing as one in a document -- and #227 left a
         # retired script path standing in `github/system.als` that a
-        # markdown-only sweep could not see. The § shapes fire on `§`, which
-        # these files do not use; what they carry is paths.
+        # markdown-only sweep could not see. Three of these files cite a
+        # heading with `§` as well, and those resolve too.
         paths = [p for p in tracked(root)
                  if p.endswith((".md", ".markdown", ".als"))]
 

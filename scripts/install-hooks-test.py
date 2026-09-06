@@ -42,6 +42,9 @@ def _needed():
         for key in ("# runs: ", "# installs: "):
             if line.startswith(key):
                 for n in line[len(key):].split():
+                    # An `# installs:` entry carries its events after a colon
+                    # (#227); only the path names a file to place.
+                    n = n.split(":", 1)[0]
                     if n not in out:
                         out.append(n)
     return out
@@ -633,6 +636,27 @@ def main():
               str(commands("PostToolUse"))[:200])
         check("...and the installer says where it wrote them",
               "settings.json PreToolUse" in out.stdout, out.stdout[:200])
+        # THE BRIEF HOOK, on both its events and on neither of the guard's.
+        # It lives under `.claude/skills/`, so the registered command is the
+        # case that catches an installer that still assumes `scripts/`: a
+        # prefixed path would name a file that is not there, and the harness
+        # would run a hook that cannot start.
+        BRIEF = ".claude/skills/assuming-role/scripts/campaign-role-brief.py"
+        for event in ("SessionStart", "UserPromptSubmit"):
+            check(f"the brief hook is registered on {event} by its whole path",
+                  any(BRIEF in c for c in commands(event)),
+                  str(commands(event))[:200])
+        check("...and the brief hook is not on the guard's event",
+              not any("campaign-role-brief.py" in c
+                      for c in commands("PreToolUse")),
+              str(commands("PreToolUse"))[:200])
+        # A matcher on SessionStart matches nothing, so an entry carrying one
+        # would register a hook that never fires.
+        check("...and its entries carry no matcher",
+              all("matcher" not in e
+                  for ev in ("SessionStart", "UserPromptSubmit")
+                  for e in settings.get("hooks", {}).get(ev, [])),
+              str(settings.get("hooks", {}).get("SessionStart"))[:200])
         # The registered command must fail CLOSED when its script is gone. Run
         # each one the way the harness does -- through a shell -- after
         # deleting the guard: a bare path exits 127, which the harness reads as

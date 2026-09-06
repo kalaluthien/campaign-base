@@ -18,7 +18,7 @@ prints one line, and the three outcomes are different questions:
 | --- | --- | --- |
 | `planner <campaign>` or `worker <campaign>` | the role, and the campaign bounding it | read that role's reference below |
 | `no role read for <id>` | herdr holds no campaign name for this session | name the session before any campaign write: `scripts/campaign-name-session.py <pane> <slug>-<role>-<n>` |
-| `could not read <what>` | the resolver itself failed | report it; do not assume either role |
+| anything opening `could not` | the resolver itself failed -- no session id, no herdr, an unreadable rule | report it; do not assume either role |
 
 A no-role reading is not a permission failure and not a role of its own. The
 guard refuses a campaign-plane write from a session it cannot name, so the

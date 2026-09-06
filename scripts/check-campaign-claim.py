@@ -1130,14 +1130,39 @@ COMMENT_CEILING = 2000
 _FIRST_LINE = None
 
 
+# Set when the name rule would not load, and carried into the verdict beside
+# the comment that could not be judged for it.
+FIRST_LINE_UNREADABLE = None
+
+
 def comment_first_line():
-    """Built on first use and cached, not at import: `name_pattern` loads
-    another file, and this guard runs on every tool call of every session."""
-    global _FIRST_LINE
-    if _FIRST_LINE is None:
+    """The first-line pattern, or None when the name rule will not load.
+
+    Built on first use and cached, not at import: `name_pattern` loads another
+    file, and this guard runs on every tool call of every session.
+
+    NONE IS COULD-NOT-LOOK, NOT A BAD SHAPE, and it is why this returns rather
+    than raising. This pattern is BUILT from the session-name regex, so an
+    unreadable `campaign-name-session.py` used to escape as a traceback here --
+    and a PreToolUse hook that raises exits 1, which the harness reads as the
+    HOOK's error and lets the call PROCEED. That is a hole, not a refusal, and
+    it is the same rule `claim_match` and `role_of` already follow. Refusing
+    instead would be the opposite mistake: it would wall every comment on the
+    machine for a missing file, which is what the campaign plane's fallback
+    exists to prevent. So the comment goes on to the claim reading UNJUDGED,
+    exactly as a shell-composed body does, and the verdict says so."""
+    global _FIRST_LINE, FIRST_LINE_UNREADABLE
+    if _FIRST_LINE is None and FIRST_LINE_UNREADABLE is None:
+        try:
+            name = name_pattern().pattern.strip("^$")
+        except Exception as e:              # noqa: BLE001 -- reported, not raised
+            FIRST_LINE_UNREADABLE = (
+                f"campaign-name-session.py, which owns the session-name half of "
+                f"the first line, would not load ({e.__class__.__name__})")
+            return None
         _FIRST_LINE = re.compile(
             r"^(?:" + "|".join(COMMENT_KINDS) + r") (?:owner|"
-            + name_pattern().pattern.strip("^$") + r"): *\S")
+            + name + r"): *\S")
     return _FIRST_LINE
 
 
@@ -1338,16 +1363,20 @@ def _judgeable(text):
 
 
 def comment_findings(text):
-    """Every way this comment's shape is wrong, as lines; empty when it holds."""
+    """(every way this comment's shape is wrong, the reason the first line was
+    not judged). The CEILING is still measured when the first line cannot be:
+    it needs no pattern, and dropping it too would let an unreadable name rule
+    silence a second, unrelated check."""
     out = []
     first = text.strip().splitlines()[0] if text.strip() else ""
-    if not comment_first_line().match(first):
+    pattern = comment_first_line()
+    if pattern is not None and not pattern.match(first):
         out.append(f"its first line is {first[:80]!r}, which is not "
                    f"`KIND <session name|owner>: <one line>`. KIND is one of "
                    f"{', '.join(COMMENT_KINDS)}, one intent per comment")
     if len(text) > COMMENT_CEILING:
         out.append(f"it is {len(text)} characters, over {COMMENT_CEILING}")
-    return out
+    return out, (None if pattern is not None else FIRST_LINE_UNREADABLE)
 
 
 def issue_target(tokens):
@@ -1502,7 +1531,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
             return refuse(read + [
                 f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
                 f"claim of another campaign, and this session is of campaign "
-                f"#{campaign}.", TAKE])
+                f"`{campaign}`.", TAKE])
         if is_claim:
             return allow(read + [f"Clause 1: the target's checkout {top} is on "
                                  f"{branch}, a claim ({source})."])
@@ -1520,7 +1549,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         if holders and not kept:
             return refuse(read + [
                 f"the claims under {root} are of another campaign, and this "
-                f"session is of campaign #{campaign}.",
+                f"session is of campaign `{campaign}`.",
                 *[f"{h[0]} is on {h[1]}" for h in holders], TAKE])
         holders = kept
     if holders:
@@ -1597,7 +1626,10 @@ def bash_call(command, cwd: Path, session_id=""):
         elif why_unjudged:
             unjudged.append(why_unjudged)
         elif text is not None:
-            shape += comment_findings(text)
+            found, why_shape = comment_findings(text)
+            shape += found
+            if why_shape:
+                unjudged.append(why_shape)
     if shape or unread:
         return refuse([f"{what}: a comment whose shape does not hold.",
                        *[f"  {f}" for f in shape + unread],
@@ -1751,7 +1783,7 @@ def bash_call(command, cwd: Path, session_id=""):
                        if claim_token(h[1]) != campaign]
             holders = [h for h in holders if h not in foreign]
             detail += [f"{h[0]} is on {h[1]}, a claim of another campaign; "
-                       f"this session is of campaign #{campaign}"
+                       f"this session is of campaign `{campaign}`"
                        for h in foreign]
         detail += d
         (covering if holders else uncovered).append((i, holders))

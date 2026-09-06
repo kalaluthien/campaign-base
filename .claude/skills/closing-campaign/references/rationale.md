@@ -111,9 +111,10 @@ delegate pushes as soon as it has one commit, so a tree deleted underneath it
 costs uncommitted work and nothing more.
 
 **`-prune` on the two exact paths, not a `*/runtime*` pattern.** A pattern also
-hides `scripts/repos-helper.sh` and anything else whose name merely contains
-`repos` or `runtime` — an omission from a listing whose whole job is to omit
-nothing (probed: the pattern form drops exactly that file).
+hides anything whose name merely contains `repos` or `runtime` — an omission
+from a listing whose whole job is to omit nothing (probed against a
+`repos-helper.sh` under the base's own scripts, since deleted: the pattern form
+dropped exactly that file).
 
 **`grep . || echo` rather than a `${LEFTOVERS:-...}` default**, so the words are
 written by a listing that really ran rather than by an assignment that never

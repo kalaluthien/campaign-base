@@ -305,6 +305,23 @@ for entry in $installs; do
 	fi
 done
 
+# THE IMPORTS ARE CHECKED HERE TOO, and that is what makes the `# imports:`
+# line a declaration rather than a comment. Nothing installs them, so nothing
+# used to read them, and a suite that split an entry the old way failed far
+# downstream as a FileNotFoundError naming a doubled prefix. A guard whose
+# import is missing tracebacks where it meant to refuse, which a PreToolUse
+# hook turns into "the hook errored" and the call PROCEEDS -- so the check
+# belongs beside the one above, on the same run, in the same wording.
+for entry in $(sed -n 's/^# imports: //p' "$0"); do
+	f=$root/${entry%%:*}
+	if [ ! -f "$f" ]; then
+		echo "refusing: $f is missing, and the guards installed here import it," >&2
+		echo "so each would traceback where it meant to refuse -- which a" >&2
+		echo "PreToolUse hook reads as its own error and lets the call proceed." >&2
+		exit 1
+	fi
+done
+
 # shellcheck disable=SC2086 -- the entries are paths without spaces, by rule
 python3 - "$root" $installs <<'PY'
 import json, os, sys

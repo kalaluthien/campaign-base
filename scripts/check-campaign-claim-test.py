@@ -181,7 +181,7 @@ def no_herdr(d):
 
 
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None, env=None, session="sid-1", run_cwd=None):
+        tool_input=None, env=None, session="sid-1", run_cwd=None, guard=None):
     """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
     They are the same question everywhere except one case: a payload that will
     not parse carries no cwd, so the guard falls back to its own, and a case
@@ -196,7 +196,7 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
         "hook_event_name": event or "PreToolUse",
     }
     return subprocess.run(
-        [sys.executable, str(GUARD)],
+        [sys.executable, str(guard or GUARD)],
         input=stdin if stdin is not None else json.dumps(payload),
         capture_output=True, text=True, cwd=str(run_cwd) if run_cwd else None,
         env=dict(os.environ, **(env or {})))
@@ -1975,6 +1975,44 @@ def main():
                                      f"{rc1}, subprocess {r2.returncode}")
             check("corpus: in-process and subprocess agree on the sample",
                   not disagreed, "; ".join(disagreed))
+
+    # A SKILL MODULE THAT WILL NOT LOAD MUST NEVER MAKE THE GUARD RAISE.
+    # A PreToolUse hook that tracebacks exits 1, which the harness reads as the
+    # HOOK's own error and lets the call PROCEED -- a hole, not a refusal, and
+    # the opposite of what this file is for. `role_of` and `claim_match` each
+    # turn the failure into could-not-look; the comment-shape reader reached
+    # `name_pattern()` through `comment_first_line()` and did not, so every
+    # `gh` comment verb exited 1 with a traceback while the file was absent.
+    # Run against a COPY of the guard, because the shipped one resolves its
+    # skill scripts beside itself and no case may delete those.
+    for missing in ("campaign-name-session.py", "campaign-roles.py"):
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d) / "tree"
+            (tree / "scripts").mkdir(parents=True)
+            skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
+            skill.mkdir(parents=True)
+            shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+            for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                      / "scripts").glob("*.py"):
+                if s.name != missing:
+                    shutil.copy(s, skill / s.name)
+            copy = tree / "scripts" / GUARD.name
+            f = Fixture(d, claims=("campaign-1/7-x",))
+            for verb in ("gh issue comment 7 --body 'not a kinded line'",
+                         "gh pr comment 5 --body 'not a kinded line'",
+                         "gh pr review 5 --body 'not a kinded line'",
+                         "gh issue close 7 -c 'not a kinded line'"):
+                r = ask(f.base, tool="Bash", command=verb, guard=copy)
+                check(f"with {missing} gone, `{verb.split()[1:3]}` does not "
+                      f"traceback out of the guard",
+                      r.returncode != 1 and "Traceback" not in out(r),
+                      f"exit {r.returncode}: {out(r)[-300:]}")
+            r = ask(f.base, tool="Bash", guard=copy,
+                    command="gh issue comment 7 --body 'not a kinded line'")
+            check(f"...and with {missing} gone the verdict says the shape was "
+                  f"NOT checked, naming the file",
+                  "shape NOT checked" in out(r) and "would not load" in out(r),
+                  out(r)[:400])
 
     if not ran:
         print("FAIL  the suite ran no case at all")

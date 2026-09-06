@@ -58,6 +58,9 @@ BASE = {
     f"{SKILL}/SKILL.md": "# demo skill\n",
     f"{SKILL}/references/gotchas.md": "# gotchas\n",
     f"{SKILL}/assets/sub-issue.md": "# sub-issue\n",
+    # The two roots S5 asks: the tree's own, and the citing file's skill.
+    "scripts/campaign-tracker.py": "#!/usr/bin/env python3\n",
+    f"{SKILL}/scripts/demo-helper.sh": "#!/bin/sh\n",
 }
 
 # (name, {path: contents}, expected outcome)
@@ -153,8 +156,27 @@ CASES = [
      {"a.md": "The fast-forward `~/.claude/CLAUDE.md` § Git prescribes.\n"},
      None),
     ("a path shape the guard claims no rule over is left alone",
-     {"a.md": "A pattern also hides `scripts/repos-helper.sh` and others.\n"},
+     {"a.md": "The workflow is `.github/workflows/check.yml` and no more.\n"},
      None),
+
+    # ---- S5: a script path, resolved against EITHER root.
+    ("S5 a script at the tree root resolves",
+     {"a.md": "Run `scripts/campaign-tracker.py` for it.\n"}, None),
+    ("S5 a skill's own script resolves from inside that skill",
+     {f"{SKILL}/references/x.md": "Run `scripts/demo-helper.sh` first.\n"},
+     None),
+    # THE ROW THE TWO-ROOT RULE EXISTS FOR: prose inside a skill naming the
+    # REPOSITORY's script. Asking only the skill root would flag this, and 13
+    # references in the real tree have this shape.
+    ("S5 a skill citing the repository's script resolves too",
+     {f"{SKILL}/references/y.md": "Read `scripts/campaign-tracker.py` first.\n"},
+     None),
+    ("S5 a script at neither root dangles",
+     {"a.md": "Run `scripts/gone.py` for it.\n"},
+     ("DANGLING", "scripts/gone.py")),
+    ("S5 fires inside an .als file too, where the comments are the spec",
+     {"spec/campaign/session/system.als": "/* `scripts/gone.py` owns it. */\n"},
+     ("DANGLING", "scripts/gone.py")),
 
     # ---- Precedence: undecided outranks dangling, and both are printed.
     ("undecided and dangling together report both and exit 3",
@@ -237,7 +259,7 @@ def main():
     # is the shape that gets trusted for months while enforcing nothing.
     extra += 1
     r = run_case({})
-    if not ("markdown file(s) under" in r.stdout
+    if not ("file(s) under" in r.stdout
             and "reference(s):" in r.stdout
             and "read from the working tree" in r.stdout):
         failed += 1

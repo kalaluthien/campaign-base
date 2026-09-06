@@ -55,6 +55,7 @@ was read and which branch was taken.
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -83,7 +84,12 @@ def load(stem, alias):
 
 def role_of(session_id):
     """(role, campaign token, how). `None` role means no brief: either the
-    session has no campaign name, or the reading itself failed. The two are
+    session has no campaign name, or the reading itself failed.
+
+    THE TWO ARE TOLD APART BY THE FIRST WORDS OF `how`, and that is a contract
+    `SKILL.md` documents: every could-not-look opens `could not`, every
+    looked-and-found-nothing opens `no role read for`. A reader testing one
+    exact sentence would go stale on the next branch added here. The two are
     kept apart in `how` because one is repaired by naming the session and the
     other is a defect to report.
 
@@ -92,7 +98,7 @@ def role_of(session_id):
     slug and the retired `campaign-<N>` alike. Asking it, rather than reading
     NAME's group 1, is what keeps this in step with what the guard admits."""
     if not session_id:
-        return None, None, "the payload carries no session id"
+        return None, None, "could not read a session id from the payload"
     try:
         rule = load("campaign-name-session", "cns")
     except Exception as e:                  # noqa: BLE001 -- reported, not raised
@@ -104,10 +110,10 @@ def role_of(session_id):
     except Exception as e:                  # noqa: BLE001
         return None, None, f"could not read herdr ({e.__class__.__name__})"
     if rows is None:
-        return None, None, f"herdr agent list exited {r.returncode}"
+        return None, None, f"could not read herdr: agent list exited {r.returncode}"
     for a in rows:
         if not isinstance(a, dict):
-            return None, None, "a herdr row was not an object"
+            return None, None, "could not read herdr: a row was not an object"
         if ((a.get("agent_session") or {}) if isinstance(a.get("agent_session"), dict)
                 else {}).get("value") != session_id:
             continue
@@ -133,20 +139,40 @@ def body(path):
     return text.lstrip("\n")
 
 
+# What opens or closes a fenced block, and what ends a section. A HEADING OF
+# LEVEL 1 OR 2 ends it: the template's `## Worker` is its last section, so
+# anything a campaign appends -- a `# Notes` of its own -- used to be swallowed
+# into the brief. `###` does not, because a subheading is part of its section.
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+HEADING = re.compile(r"^#{1,2} ")
+
+
 def campaign_section(role):
     """The campaign `AGENTS.md`'s section for one role, if there is one. The
     campaign directory is found from cwd, so a session outside one gets no
-    section rather than another campaign's."""
+    section rather than another campaign's.
+
+    A HEADING INSIDE A FENCE IS TEXT, not a heading. A campaign document
+    quoting `## Worker` in an example opened the section there and emitted the
+    rest of the file -- the same reading `check-rule-readers.py` gets right for
+    the opposite reason, and the shape a markdown scanner gets wrong first."""
     cwd = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path.cwd())
     for d in [cwd, *cwd.parents]:
         f = d / "AGENTS.md"
         if not (f.is_file() and (d / "runtime").is_dir()):
             continue
         want = f"## {role.capitalize()}"
-        text, out, keep = f.read_text(), [], False
-        for line in text.splitlines():
-            if line.startswith("## "):
-                keep = line.strip() == want or line.strip() == "## Every session"
+        out, keep, fence = [], False, None
+        for line in f.read_text().splitlines():
+            m = FENCE.match(line)
+            if m:
+                run = m.group(1)
+                if fence is None:
+                    fence = run
+                elif run[0] == fence[0] and len(run) >= len(fence):
+                    fence = None
+            elif fence is None and HEADING.match(line):
+                keep = line.strip() in (want, "## Every session")
             if keep:
                 out.append(line)
         return "\n".join(out) or None
@@ -210,7 +236,7 @@ def main():
     if event == "UserPromptSubmit":
         try:
             if record.read_text().strip() == stamp:
-                say(f"already briefed as {role} of #{campaign} "
+                say(f"already briefed as {role} of `{campaign}` "
                     f"(record {record}); emitted nothing")
                 return 0
         except OSError:
@@ -225,7 +251,7 @@ def main():
                    else "written but read back different")
     except OSError as e:
         written = f"not written ({e.__class__.__name__})"
-    say(f"{event}: briefed {role} of #{campaign} ({len(text)} chars); "
+    say(f"{event}: briefed {role} of `{campaign}` ({len(text)} chars); "
         f"record {record} {written}")
     return 0
 

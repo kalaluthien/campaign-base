@@ -35,11 +35,14 @@ def _needed():
     its heredoc and the post-commit one, which is where push-campaign-branch
     comes from. `# installs:` is read for the same reason one line down: the
     installer refuses when a harness hook it is registering is not there, so a
-    fixture missing it fails every case with one unrelated message.
+    fixture missing it fails every case with one unrelated message. `# imports:`
+    is read for the third time for the same reason: the installer refuses when a
+    file the guards IMPORT is absent, because a guard that tracebacks where it
+    meant to refuse is a hole and not a refusal.
     """
     out = ["install-hooks.sh"]
     for line in (SCRIPTS / "install-hooks.sh").read_text().splitlines():
-        for key in ("# runs: ", "# installs: "):
+        for key in ("# runs: ", "# installs: ", "# imports: "):
             if line.startswith(key):
                 for n in line[len(key):].split():
                     # An `# installs:` entry carries its events after a colon
@@ -252,6 +255,27 @@ def main():
         check("SKIP_REPO_GUARDS=1 is the only way past, and it announces itself",
               c.returncode == 0 and "SKIP_REPO_GUARDS=1" in c.stdout + c.stderr,
               (c.stdout + c.stderr)[:160])
+
+    # A GUARD'S IMPORT IS NOT INSTALLED, so nothing used to read the line that
+    # declares it -- and a guard whose import is absent tracebacks where it
+    # meant to refuse, which a PreToolUse hook reads as its own error and lets
+    # the call PROCEED. The refusal is the installer's, so the case is here.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        imported = [n.split(":", 1)[0] for line in
+                    (SCRIPTS / "install-hooks.sh").read_text().splitlines()
+                    if line.startswith("# imports: ")
+                    for n in line[len("# imports: "):].split()]
+        check("the installer declares at least one import to check",
+              len(imported) > 0, f"imports {imported}")
+        (r.root / imported[0]).unlink()
+        out = installer(r.root)
+        check("the installer refuses when a file its guards IMPORT is missing",
+              out.returncode != 0 and imported[0] in out.stderr,
+              (out.stdout + out.stderr)[:200])
+        check("...and it names why: a traceback where a refusal was meant",
+              "traceback" in (out.stdout + out.stderr).lower(),
+              (out.stdout + out.stderr)[:200])
 
     # 5. The installer refuses where git would not look.
     with tempfile.TemporaryDirectory() as d:

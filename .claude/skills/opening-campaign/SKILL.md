@@ -73,7 +73,7 @@ kind, which is not; say which kind you picked.
   Meaningful and short. `scripts/campaign-tracker.py slugs` lists every slug
   ever spent, closed campaigns included; do not reuse one. What a slug may be
   is `campaign-name-session.py`'s rule and is not repeated here —
-  `scripts/campaign-name-session.py <pane> <slug>-worker-1` refuses a slug it
+  `$BASE/.claude/skills/assuming-role/scripts/campaign-name-session.py <pane> <slug>-worker-1` refuses a slug it
   will not admit, which is the cheapest way to try one before it reaches a
   label. The owner vetoes by renaming the label, before any session is named.
 - **Title** — the display name, in the requester's own words, not yours.

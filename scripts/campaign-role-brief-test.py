@@ -71,6 +71,12 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             fake = bin_dir / "herdr"
             fake.write_text(FAKE)
             fake.chmod(0o755)
+        # THE TEMPDIR IS ITSELF A BASE, so `record_path`'s walk stops here
+        # rather than in the repository under test. Without it the
+        # no-campaign-AGENTS.md case wrote a record into this checkout's own
+        # `runtime/briefed/`, which is a suite editing its subject's tree.
+        (d / "AGENTS.md").write_text("# outer\n")
+        (d / "runtime").mkdir()
         camp = d / "campaign-260101"
         (camp / "runtime").mkdir(parents=True)
         if campaign_agents is not None:
@@ -103,9 +109,10 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             capture_output=True, text=True)
         if lock_runtime:
             (camp / "runtime").chmod(0o700)
-        recs = sorted((camp / "runtime" / "briefed").glob("*")) \
-            if (camp / "runtime" / "briefed").is_dir() else []
-        return r, (recs[0].read_text() if recs else None), camp
+        recs = [q for root in (camp, d)
+                for q in sorted((root / "runtime" / "briefed").glob("*"))]
+        where = recs[0].parent.parent.parent if recs else None
+        return r, (recs[0].read_text() if recs else None), where
 
 
 SID = "1111-2222"
@@ -150,8 +157,7 @@ def main():
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=NAMED,
                   list_fails=True)
     check("a herdr that will not answer is COULD NOT LOOK, not no-role",
-          r.returncode == 0 and "no role read" not in r.stdout
-          and ("could not" in r.stdout.lower() or "exited" in r.stdout),
+          r.returncode == 0 and r.stdout.startswith("could not"),
           f"out {r.stdout!r}")
 
     # ---- what fires, and what does not ----
@@ -237,12 +243,52 @@ def main():
           and "planner of campaign `other`" in r.stdout,
           f"out {r.stdout[:200]!r}")
 
+    # A HEADING INSIDE A FENCE IS TEXT. A campaign document quoting `## Worker`
+    # in an example used to open the section there and emit the rest of the
+    # file, this marker included.
+    fenced = CAMPAIGN_AGENTS.replace("PLANNER-MARK", """```
+## Worker
+FENCE-MARK
+```""")
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED, campaign_agents=None)
+                   "session_id": SID}, agents=NAMED, campaign_agents=fenced)
+    check("a `## Worker` inside a fenced block opens nothing",
+          "FENCE-MARK" not in r.stdout and "WORKER-MARK" in r.stdout,
+          f"out {r.stdout[-300:]!r}")
+
+    # A LEVEL-1 HEADING ENDS THE SECTION. `## Worker` is the template's last
+    # section, so whatever a campaign appends after it is what this protects.
+    tail = CAMPAIGN_AGENTS + "\n# Notes of our own\n\nTAIL-MARK\n"
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED, campaign_agents=tail)
+    check("a `# ` heading after the role's section closes it",
+          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
+          f"out {r.stdout[-300:]!r}")
+
+    # ...AND A `###` DOES NOT: a subheading belongs to its section.
+    sub = CAMPAIGN_AGENTS.replace("WORKER-MARK",
+                                  "WORKER-MARK\n\n### Detail\n\nSUB-MARK")
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED, campaign_agents=sub)
+    check("a `###` subheading stays inside the role's section",
+          "SUB-MARK" in r.stdout, f"out {r.stdout[-300:]!r}")
+
+    r, rec, where = run({"hook_event_name": "SessionStart", "source": "startup",
+                         "session_id": SID}, agents=NAMED, campaign_agents=None)
     check("a campaign with no AGENTS.md of its own still gets the skill's "
           "brief",
           r.returncode == 0 and "The worker's lifecycle" in r.stdout
           and "WORKER-MARK" not in r.stdout, f"out {r.stdout[:120]!r}")
+    # THE RECORD'S FALLBACK, which nothing asserted: the walk takes the NEAREST
+    # ancestor holding both `AGENTS.md` and `runtime/`, so a directory that is
+    # not a campaign does not capture the record and the last resort is not the
+    # repository the script happens to live in.
+    check("...and its record lands at the nearest ancestor that has both, not "
+          "in the campaign directory that has only one",
+          rec is not None and where is not None
+          and where.name != "campaign-260101"
+          and str(where).startswith("/") and "campaign-base" not in str(where),
+          f"rec {rec!r} at {where}")
 
     # ---- an ack is not a write, and no path walls the session ----
 
@@ -280,7 +326,7 @@ def main():
     r, rec, _ = run({"hook_event_name": "UserPromptSubmit"}, agents=NAMED)
     check("a payload carrying no session id briefs nothing and names why",
           r.returncode == 0 and r.stdout == ""
-          and "no session id" in r.stderr, f"err {r.stderr!r}")
+          and "could not read a session id" in r.stderr, f"err {r.stderr!r}")
 
     for f in fails:
         print(f"FAIL  {f}")

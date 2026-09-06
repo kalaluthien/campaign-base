@@ -23,6 +23,16 @@ leaves the others live and unflagged, so all four are here.
 
   S3  a literal `spec/campaign/...` path, against the filesystem.
 
+  S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
+      if EITHER holds the file: this repository keeps scripts at its root and
+      each skill may keep its own, and prose in a skill cites both -- 13 of the
+      references in the tree today name the repository's from inside a skill.
+      Asking one root would flag those; asking both still catches the only
+      failure that matters, a path naming no file anywhere. Added by #227,
+      after that sub-issue moved a script under a skill and left six prose
+      citations of the old path standing -- `check-tree-shape`'s RETIRED row
+      reads code lines only, so a path grep found them and no guard did.
+
   S4  a relative `references/...` or `assets/...` path.
       Ambiguous on its own: it resolves against the *citing* file's skill root
       -- the nearest ancestor holding a SKILL.md -- not against a fixed root.
@@ -145,6 +155,8 @@ DEFAULT_TARGET = "AGENTS.md"
 # absolute prefixes are tested before the two relative ones.
 ABSOLUTE_PREFIXES = (".claude/skills/", "spec/campaign/")
 RELATIVE_PREFIXES = ("references/", "assets/")
+SCRIPT_PREFIX = "scripts/"
+SCRIPT_SUFFIXES = (".py", ".sh")
 
 
 def repo_root():
@@ -424,7 +436,7 @@ def check_sections(rel, text, tree, report):
 
 
 def check_paths(rel, text, tree, report):
-    """S2, S3 and S4: every path-like run in one document."""
+    """S2, S3, S4 and S5: every path-like run in one document."""
     root = skill_root(rel)
     for m in RUN.finditer(text):
         raw = m.group(0)
@@ -444,6 +456,20 @@ def check_paths(rel, text, tree, report):
             else:
                 report.dangling.append(
                     (rel, n, tok, f"{shape}: nothing at this path in the tree"))
+            continue
+
+        if tok.startswith(SCRIPT_PREFIX) and tok.endswith(SCRIPT_SUFFIXES):
+            roots = [""] + ([root] if root else [])
+            where = [r for r in roots
+                     if tree.exists(f"{r}/{tok}" if r else tok)]
+            if where:
+                report.resolved.append(
+                    (rel, n, tok, f"S5, under {where[0] or 'tree root'}"))
+            else:
+                report.dangling.append(
+                    (rel, n, tok,
+                     "S5: nothing at this path under the tree root"
+                     + (f" or under {root}" if root else "")))
             continue
 
         if tok.startswith(RELATIVE_PREFIXES):
@@ -485,7 +511,14 @@ def main(argv):
                       file=sys.stderr)
                 return 3
     else:
-        paths = [p for p in tracked(root) if p.endswith((".md", ".markdown"))]
+        # `.als` IS A SOURCE, not only a target. In this repository the model
+        # files ARE the spec and their comments are its prose, so a citation
+        # there is as load-bearing as one in a document -- and #227 left a
+        # retired script path standing in `github/system.als` that a
+        # markdown-only sweep could not see. The § shapes fire on `§`, which
+        # these files do not use; what they carry is paths.
+        paths = [p for p in tracked(root)
+                 if p.endswith((".md", ".markdown", ".als"))]
 
     report = Report()
     unreadable = []
@@ -507,7 +540,7 @@ def main(argv):
     c = report.counts()
     source = "index (--staged)" if tree.staged else "working tree"
     checked = c["resolved"] + c["dangling"] + c["undecided"]
-    print(f"check-cross-references: {len(paths)} markdown file(s) under "
+    print(f"check-cross-references: {len(paths)} file(s) under "
           f"{root}, read from the {source}")
     print(f"  {checked} reference(s): {c['resolved']} resolved, "
           f"{c['dangling']} dangling, {c['undecided']} undecided "

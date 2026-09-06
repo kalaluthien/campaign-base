@@ -20,6 +20,7 @@
  *             campaign plane and never code; a Worker works its own
  *             campaign's sub-issues, and only the ones it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
+ *   Briefed   the sessions whose CURRENT CONTEXT holds their role's brief.
  *   Binding   the campaign issue's `bound:<machine>` label.
  *   Who       the observer: which session performed the current event.
  *
@@ -73,6 +74,26 @@ one sig Worker  extends Role {}
    session and the name has to. */
 var sig UnderBase in Session {}
 
+/* WHETHER THIS SESSION'S CURRENT CONTEXT HOLDS ITS ROLE'S BRIEF, which is a
+   different question from what its role IS. The role is a fact about the
+   session and survives everything; the brief is a fact about the CONTEXT the
+   session is running in, and the two part company on every compaction -- the
+   session is unchanged and its instructions are gone.
+
+   `campaign-role-brief.py` sets it, on SessionStart and as the
+   UserPromptSubmit catch-up. What clears it is a new context, whatever made
+   one: startup, resume, clear, compact. That is why `ContextReset` is ONE
+   event and not four -- the hook does not read the source either, and a source
+   it treated as already briefed would be the branch that leaves a session
+   acting on instructions it no longer holds.
+
+   NOT A PERMISSION AND NOT A GUARD. No script refuses a write for want of a
+   brief: `check-campaign-claim.py` reads the NAME, which survives a
+   compaction the brief does not. `mayAct` requires it because acting on a role
+   the session can no longer state is the failure this bit exists to name, and
+   naming it is what the bit is for. */
+var sig Briefed in Session {}
+
 sig Session {
   machine:          one Machine,
   role:             lone Role,
@@ -121,9 +142,9 @@ fun working: set Session { { s: Session | some s.worksOn and s.machine in machin
 
 /* ---------------- observable events ---------------- */
 
-one sig Survey, Adopt, ReadBody, EditReadme extends Event {}
+one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset extends Event {}
 
-fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme }
+fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
    is somebody's act, and naming whose is what lets orchestration/scenarios.als's
@@ -139,11 +160,34 @@ fun unattended: set Event {
   OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal
 }
 
+/* THE HOOK EMITTING. Idempotent: a session already briefed stays briefed,
+   which is what the record file `runtime/briefed/<session>` buys and why an
+   ordinary UserPromptSubmit costs one read and no output. */
+pred brief[s: Session] {
+  Briefed' = Briefed + s
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
+  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  bound' = bound
+  Now.event = Brief and no Now.issue and Who.session = s
+}
+
+/* A NEW CONTEXT, whatever made one. Nothing here reads the source, for the
+   reason `Briefed`'s comment gives. */
+pred contextReset[s: Session] {
+  Briefed' = Briefed - s
+  worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
+  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  bound' = bound
+  Now.event = ContextReset and no Now.issue and Who.session = s
+}
+
 pred sessionFrame {
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
   and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
-  and bound' = bound
+  and Briefed' = Briefed and bound' = bound
 }
 
 /* The result is remembered; nothing keeps it fresh. */
@@ -151,7 +195,7 @@ pred survey[s: Session] {
   let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Request.covers } |
     surveyResult' = surveyResult - s->Campaign + s->X
   Surveyed' = Surveyed + s
-  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
   Now.event = Survey and no Now.issue and Who.session = s
 }
@@ -165,7 +209,7 @@ pred adopt[s: Session, c: Campaign] {
   worksOn'      = worksOn  - s->Campaign + s->c
   reposInReadme'     = reposInReadme - s->Repo + s->(c.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(c.reposInBody)
-  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
   Now.event = Adopt and no Now.issue and Who.session = s
 }
@@ -174,7 +218,7 @@ pred readBody[s: Session] {
   some s.worksOn
   reposInReadme'     = reposInReadme - s->Repo + s->(s.worksOn.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.worksOn.reposInBody)
-  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
   Now.event = ReadBody and no Now.issue and Who.session = s
 }
@@ -184,7 +228,7 @@ pred editReadme[s: Session, r: Repo] {
   r not in s.reposInReadme
   reposInReadme' = reposInReadme + s->r
   worksOn' = worksOn and surveyResult' = surveyResult and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
   Now.event = EditReadme and no Now.issue and Who.session = s
 }
@@ -202,7 +246,7 @@ pred sessionFileCampaignIssue[s: Session] {
   bound' = bound - Binding->campaignIssueOf[Now.issue]->Machine
            + Binding->campaignIssueOf[Now.issue]->s.machine
   surveyResult' = surveyResult and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   Who.session = s
 }
 
@@ -230,7 +274,7 @@ pred sessionWriteBody[s: Session] {
   reposInBody' = reposInBody - s.worksOn->Repo + s.worksOn->(s.reposInReadme)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.reposInReadme)
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
   Who.session = s
 }
@@ -245,7 +289,7 @@ pred sessionCreateDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed and Surveyed' = Surveyed
   Who.session = s
 }
 
@@ -260,7 +304,7 @@ pred sessionDeleteDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed and Surveyed' = Surveyed
   Who.session = s
 }
 
@@ -292,7 +336,7 @@ pred sessionClaim[s: Session] {
   s.role = Planner  implies s.machine in machinesHolding[campaignOf[Now.issue]]
   s.role != Planner implies Now.issue in s.worksOn.memberIssues
   claimedIssues' = claimedIssues + s->Now.issue
-  campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
@@ -304,7 +348,7 @@ pred sessionClaim[s: Session] {
 pred sessionRelease[s: Session] {
   Now.event = Release
   claimedIssues' = claimedIssues - Session->Now.issue
-  campaignNamed' = campaignNamed and UnderBase' = UnderBase
+  campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
@@ -334,6 +378,10 @@ pred sessionLaunch[s: Session] {
    contains. */
 pred sessionInit {
   no Surveyed
+  /* A session at time zero has just started, and startup is a SessionStart:
+     the hook has run. Every scenario written before this bit existed therefore
+     stays in the trace space, and only a `ContextReset` leaves it. */
+  Briefed = Session
   all s: Session {
     s.worksOn in Filed
     no s.surveyResult and no s.claimedIssues
@@ -346,7 +394,8 @@ pred sessionStep {
   or (some s: Session | survey[s] or readBody[s] or sessionWriteBody[s]
         or sessionFileCampaignIssue[s] or sessionAddMember[s] or sessionCloseIssue[s]
         or sessionCreateDir[s] or sessionDeleteDir[s] or sessionAcquire[s]
-        or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s])
+        or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s]
+        or brief[s] or contextReset[s])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])
   or (Now.event in unattended and sessionFrame and no Who.session)

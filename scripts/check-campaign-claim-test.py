@@ -76,7 +76,7 @@ class Fixture:
         # the campaign directory: the commit gate's suite commits through the
         # installed hooks over this same fixture.
         (self.base / ".gitignore").write_text(
-            "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n")
+            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n")
         git(self.base, "add", "-A")
         git(self.base, "commit", "-qm", "init")
         git(self.base, "push", "-q", "origin", "HEAD")

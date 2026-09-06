@@ -278,6 +278,14 @@ fi
 # assignment under it, and by install-hooks-test, which builds its fixture from
 # it. Add a harness hook by adding it here.
 # installs: check-campaign-claim.py
+#
+# ...and the line below is what those guards IMPORT rather than run, which no
+# `# runs:` line can carry: a name there is executed as a guard. Nothing in this
+# installer reads it -- the base tree holds every script already, and a member
+# clone reaches them by absolute path -- but the suites that build a fixture
+# from these declarations do, and a fixture missing an import is a guard that
+# tracebacks where it meant to refuse.
+# imports: campaign-name-session.py
 guard=$root/scripts/$(sed -n 's/^# installs: //p' "$0")
 if [ ! -x "$guard" ]; then
 	echo "refusing: $guard is missing or not executable, so the claim guard" >&2

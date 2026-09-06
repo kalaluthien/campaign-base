@@ -70,8 +70,12 @@ class Fixture:
         git(self.base, "symbolic-ref", "HEAD", "refs/heads/main")
         (self.base / "scripts").mkdir()
         (self.base / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
-        self.camp = self.base / "demo-260904"
-        self.camp.mkdir()
+        self.camp = self.base / "demo"
+        # THE MARKER, not the name: since #181 a campaign directory is one
+        # carrying `runtime/campaign`, because the slug dropped the date and no
+        # name shape can tell an arbitrary slug from `scripts/`.
+        (self.camp / "runtime").mkdir(parents=True)
+        (self.camp / "runtime" / "campaign").write_text("1 demo\n")
         # The allowlist shape check-tree-shape requires, which also ignores
         # the campaign directory: the commit gate's suite commits through the
         # installed hooks over this same fixture.
@@ -353,6 +357,24 @@ def main():
               "covers it",
               r.returncode == 0 and UNREAD in r.stdout and GATE in r.stdout,
               out(r)[:300])
+
+    # A BRANCH OF THE CLAIM'S SHAPE THAT NAMES NO CAMPAIGN HERE IS NO CLAIM.
+    # Before #181 the shape alone said so -- `campaign-(\d+)/` -- and a slug is
+    # just a word, so `feature/12-x` matches the shape exactly. What separates
+    # them is the `runtime/campaign` markers at the base root: `demo` is a
+    # campaign here and `feature` is not. The ref IS pushed, so this case fails
+    # for one reason only.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("feature/12-x",))
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("a pushed branch of the claim's shape naming no campaign here "
+              "is not a claim",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/12-x",))
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("...while the same shape under a slug the markers name is",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=(), feature="feature")
@@ -1302,6 +1324,31 @@ def main():
                 env=stranger)
         check("...and a worker of another campaign may not",
               r.returncode == 2, out(r)[:400])
+        # THE SLUG FORM, ALL THE WAY THROUGH. A session named for the slug,
+        # holding a claim cut under it, is this campaign's -- and the carve-out
+        # still resolves its campaign ISSUE NUMBER, which the slug does not
+        # carry, from the `runtime/campaign` marker of the directory at the
+        # base root. One case per link, so none of them covers another.
+        slugged = herdr_stub(d, {"sid-1": "demo-worker-4"})
+        r = ask(f.base, tool="Bash", command="gh issue close 7", env=slugged)
+        check("a slug-named worker is refused a sub-issue it has no claim on",
+              r.returncode == 2, out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 1 --body 'NOTE demo-worker-4: x'",
+                env=slugged)
+        check("a slug-named worker comments on its own campaign's issue, "
+              "the number coming from the directory marker",
+              r.returncode == 0 and "campaign issue of the campaign this "
+              "session is of" in r.stdout, out(r)[:400])
+        # ...and a slug with no marker on this machine resolves to no number,
+        # so the carve-out narrows to the claim reading rather than widening.
+        nomarker = herdr_stub(d, {"sid-1": "absent-worker-1"})
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 1 --body 'NOTE absent-worker-1: x'",
+                env=nomarker)
+        check("a slug no directory here names gets no carve-out",
+              r.returncode == 2, out(r)[:400])
+
         # THE CARVE-OUT IS A VERB, NOT AN ISSUE NUMBER. Keyed on the number
         # alone it admitted every `gh issue` verb against the campaign issue --
         # `edit` is the charter body, `close` closes the campaign, `delete` and
@@ -1565,18 +1612,21 @@ def main():
     # fixture is deliberately not a git repository at all.
     with tempfile.TemporaryDirectory() as d:
         outer = (Path(d) / "outer").resolve()
-        inner = outer / "demo-260904" / "inner"
+        inner = outer / "outerdemo" / "inner"
         for root in (outer, inner):
             (root / "scripts").mkdir(parents=True)
             (root / "scripts" / "campaign-claim.py").write_text("x\n")
-        target = inner / "demo-260905" / "note.md"
-        target.parent.mkdir(parents=True)
+        (outer / "outerdemo" / "runtime").mkdir(parents=True)
+        (outer / "outerdemo" / "runtime" / "campaign").write_text("1 outer\n")
+        target = inner / "innerdemo" / "note.md"
+        (target.parent / "runtime").mkdir(parents=True)
+        (target.parent / "runtime" / "campaign").write_text("2 inner\n")
         inner = inner.resolve()
         target.write_text("x\n")
         r = ask(d, path=str(target), env=no_herdr(d))
         check("base_above answers the nearest base, so the campaign directory "
               "is the inner one",
-              f"campaign directory {inner / 'demo-260905'}" in out(r),
+              f"campaign directory {inner / 'innerdemo'}" in out(r),
               out(r)[:400])
         # ASSERTED ON THE WHOLE PATH IT PRINTED, not on the outer path being
         # absent: the outer campaign directory is a PREFIX of the inner one, so
@@ -1584,7 +1634,7 @@ def main():
         named = re.search(r"campaign directory (\S+?)[.,]", out(r))
         check("...and not the outer base's, which the topmost reading gave",
               named is not None
-              and named.group(1) == str(inner / "demo-260905"),
+              and named.group(1) == str(inner / "innerdemo"),
               f"{named and named.group(1)!r}")
 
     # #192 ITEM 1: `own_claim`'s reach, kept and named. An unrelated

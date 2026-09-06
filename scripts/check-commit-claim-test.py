@@ -28,7 +28,7 @@ def _needed():
     """Every script the installed hooks run, read from the installer."""
     out = ["install-hooks.sh"]
     for line in INSTALLER.read_text().splitlines():
-        for key in ("# runs: ", "# installs: "):
+        for key in ("# runs: ", "# installs: ", "# imports: "):
             if line.startswith(key):
                 for n in line[len(key):].split():
                     if n not in out:
@@ -110,6 +110,20 @@ def main():
 
     def out(r):
         return r.stdout + r.stderr
+
+    # THE GUARD'S OWN IMPORT, MISSING. `claim_match` reads the branch's campaign
+    # token through `campaign-name-session.py`; a traceback there exits 1, and a
+    # `pre-commit` that exits non-zero refuses -- but the PreToolUse half sharing
+    # this code would have the call PROCEED. So the reading fails closed, and
+    # names the cause rather than blaming the branch.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d, claims=("campaign-1/7-x",))
+        (f.trees["campaign-1/7-x"] / "scripts" / "campaign-name-session.py").unlink()
+        r, moved = commit(f, f.trees["campaign-1/7-x"])
+        check("a claim whose name rule will not load is refused, not admitted",
+              r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...naming the rule that would not load, not the branch",
+              "would not load" in out(r), out(r)[:400])
 
     with tempfile.TemporaryDirectory() as d:
         f = build(d, claims=("campaign-1/7-x",), feature="feature")

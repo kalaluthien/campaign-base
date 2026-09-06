@@ -13,7 +13,9 @@ Finished when all of these hold:
   `scripts/campaign-tracker.py check <N>` exits 0 on its title, its length and
   its sections.
 - The campaign issue carries exactly one `bound:` label, and it names this machine.
-- `<slug>-<YYMMDD>/` exists at the base root and holds `AGENTS.md`,
+- The campaign issue carries exactly one `campaign:<slug>` label, and
+  `scripts/campaign-tracker.py slug <N>` prints that slug.
+- `<slug>/` exists at the base root and holds `.campaign`, `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
   each hold the campaign issue body as `gh issue view --json body` returns it --
   the read-back is the canonical form, because the round trip through `gh` is
@@ -60,12 +62,20 @@ with the ID the campaign issue already has), then run steps 2, 4 and 5 with the 
 body from the campaign issue, and skip the rest of step 3, which exists only to
 mint an ID it already has. The directory holds no claim and no brief since #176,
 so it is a cache and not a precondition; scaffold it anyway, because `repos/` and
-the README copy live there. Step 2 still runs, because neither the slug nor the kind is
-recoverable from GitHub; say which kind you picked.
+the README copy live there. **The slug is recoverable** — `campaign-tracker.py
+slug <N>` reads it off the campaign issue's label — so step 2 runs only for the
+kind, which is not; say which kind you picked.
 
 ### 2. Name it and pick its kind
 
-- **Slug** — kebab-case, meaningful, no date; step 4 appends the date.
+- **Slug** — the campaign's name, and every session name, claim branch and
+  directory is built from it (`AGENTS.md` § ID, slug, directory, branch).
+  Meaningful and short. `scripts/campaign-tracker.py slugs` lists every slug
+  ever spent, closed campaigns included; do not reuse one. What a slug may be
+  is `campaign-name-session.py`'s rule and is not repeated here —
+  `scripts/campaign-name-session.py <pane> <slug>-worker-1` refuses a slug it
+  will not admit, which is the cheapest way to try one before it reaches a
+  label. The owner vetoes by renaming the label, before any session is named.
 - **Title** — the display name, in the requester's own words, not yours.
 - **Kind** — which `assets/agents/*.md` becomes the campaign's `AGENTS.md`.
 
@@ -120,6 +130,20 @@ read back as `AGENTS.md` § The binding says.
 "$BASE/scripts/campaign-tracker.py" bound <N>     # want: here
 ```
 
+**Then mint the slug onto the campaign issue**, before this session is named:
+every name after this is built from it, and `campaign-claim take` refuses a
+campaign that has none.
+
+```sh
+gh label create "campaign:<slug>" -R kalaluthien/campaign-base --color 1D76DB \
+  --description "the campaign's slug: every name a person reads is built from it"
+gh issue edit <N> -R kalaluthien/campaign-base --add-label "campaign:<slug>"
+"$BASE/scripts/campaign-tracker.py" slug <N>      # want: the slug, on stdout
+```
+
+`gh label create` failing because the name exists is the uniqueness gate, not a
+hiccup: pick another slug. Do not pass `--force`.
+
 **Then name this session, now that the number exists.** A session that opened
 this campaign while named for another keeps that name until something sets it,
 and nothing later does: every peer message and every `live` sweep would then
@@ -131,11 +155,11 @@ sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
-  "$BASE/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
+  "$BASE/scripts/campaign-name-session.py" "$HERDR_PANE_ID" <slug>-<role>-<n>
 ```
 
 Read what it reports applied, then confirm with `ListAgents` that the harness
-name is `campaign-<N>-<role>-<n>` before step 4 begins. The caller's own
+name is `<slug>-<role>-<n>` before step 4 begins. The caller's own
 rename is the one most likely to need a person, so a `FAILED` line is a stop:
 say so, and do not go on under the old name. **There is no second reader any
 more**: `campaign-claim take` used to refuse a `--name` from another campaign,
@@ -153,17 +177,27 @@ it reaches a path — a slug comes from a person and lands in a `cp` destination
 so one containing `../` writes outside the base.
 
 ```sh
-printf '%s' "<slug>" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$'
-CAMPAIGN="$BASE/<slug>-$(date +%y%m%d)"
+CAMPAIGN="$BASE/$("$BASE/scripts/campaign-tracker.py" slug <N>)"
 if mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
+  printf '%s %s\n' <N> "${CAMPAIGN##*/}" >| "$CAMPAIGN/.campaign"
 else
   echo "exists: read $CAMPAIGN/README.md before writing anything in it"
 fi
 ```
 
+**The directory is named from the LABEL, never from a slug typed again**: the
+label is what `campaign-claim take` builds a branch from, and a directory spelt
+by hand beside it is the copy that drifts. The tracker's reader also refuses a
+slug the name rule will not admit, which is what keeps a `../` out of a path.
+
+**`.campaign` is what makes it a campaign directory** — `<N> <slug>`, one line.
+Without it `campaign-claim`, the claim guard and `guard-precision` all read the
+base as holding no campaign at all. It sits beside `runtime/` and not inside it,
+because `runtime/` is scratch sessions sweep.
+
 **The `mkdir` without `-p` is the gate**, and the only atomic one here: two
-sessions arriving with the same slug on the same day cannot both create the tree.
+sessions arriving with the same slug cannot both create the tree.
 A `[ -e ]` test before the copy is a read and a write with a gap between, and
 `cp -R` over a live campaign exits 0 while replacing a filled-in `README.md`
 with placeholders.
@@ -253,7 +287,7 @@ campaign claims on the base all the same — `--repo` defaults there. Give the
 branch a local checkout only where the sub-issue has one:
 
 ```sh
-B=campaign-<N>/<issue>-<topic>
+B=<slug>/<issue>-<topic>
 git -C "$CAMPAIGN/repos/<name>" fetch origin "$B" &&
   git -C "$CAMPAIGN/repos/<name>" switch -c "$B" --track "origin/$B"
 ```

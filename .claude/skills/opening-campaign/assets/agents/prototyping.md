@@ -32,7 +32,7 @@ an argument, not a product, and it is expected to be deleted.
   generalising a case that has occurred once. It costs turns and it hides which
   part is the actual risk.
 - Merging prototype code into a member repository's default branch. It lives on
-  its `campaign-<N>/` branch until someone decides, as a separate sub-issue, what to keep
+  its claim branch until someone decides, as a separate sub-issue, what to keep
   and rewrites it.
 - Polishing anything before the unknown is answered.
 - Quietly reporting a prototype as production-ready. Say what is hardcoded, what

@@ -42,7 +42,7 @@ Launch in `<campaign>/repos/<repo>/`.
   moves. The probe's raw output is kept as a comment on #210; it is the
   delegate's own report of what it loaded, not an observation of the loader.
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
-  known before the agent starts, and `--name` it `campaign-<N>-worker-<n>` per
+  known before the agent starts, and `--name` it `<slug>-worker-<n>` per
   § The session name -- a delegate is always the worker role. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
   propagate. `scripts/campaign-name-session.py` does both.

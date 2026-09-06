@@ -44,17 +44,17 @@ silently on a relative value.
 ```sh
 CAMPAIGN_DIR=$(cd "$BASE/$SLUG" && pwd -P)
 [ "$(dirname "$CAMPAIGN_DIR")" = "$BASE" ] || echo "REFUSE: not a direct child of $BASE"
-case "${CAMPAIGN_DIR##*/}" in
-  *-[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-  *) echo "REFUSE: basename is not <slug>-<YYMMDD>" ;;
-esac
+[ -f "$CAMPAIGN_DIR/.campaign" ] || echo "REFUSE: no .campaign marker, so this is not a campaign directory"
 ```
 
-Stop on either.
+Stop on either. **The marker and not the name**: since #181 a campaign directory
+is named for its slug, which is a word, and the `-YYMMDD` suffix that used to say
+so is gone. A directory whose marker was swept is one `rm -rf` away from the
+base's own `scripts/`.
 
 Holds when: the campaign issue carries one `bound:` label naming this machine, and
 `$CAMPAIGN_DIR` is absolute, a direct child of the base, and named
-`<slug>-<YYMMDD>`.
+`<slug>`, carrying a `.campaign` marker.
 
 ### 1. Refuse while a claim is occupied or a session is still running
 
@@ -334,7 +334,7 @@ rather than trusted alone. `runtime/` goes with the delete; say so.
 Holds when: the closing comment carries the listing taken immediately before the
 delete — every entry under the directory outside `runtime/` and `repos/`, files
 and directories and symlinks alike, because `rm -rf` destroys all of them — and
-every `campaign-<N>/` claim ref still sitting at `origin/main` is released, any
+every `<slug>/` claim ref still sitting at `origin/main` is released, any
 that holds commits reported and not deleted.
 
 ## Gotchas

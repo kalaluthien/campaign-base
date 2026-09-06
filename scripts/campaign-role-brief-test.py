@@ -186,6 +186,15 @@ def main():
           and "already briefed" in r2.stderr,
           f"out {r2.stdout[:80]!r} err {r2.stderr!r}")
 
+    # A RENAME IS ONE OF THE FOUR TRIGGERS #227 names, and it fires through
+    # the stamp rather than through an event: herdr answers with the new name,
+    # the role and campaign in the stamp move, and the next prompt re-briefs.
+    r, rec, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
+                    agents=row(SID, "campaign-2-planner-3"), record=(SID, stamp))
+    check("a session renamed into the other role re-briefs on its next prompt",
+          "The planner's lifecycle" in r.stdout and "PLANNER-MARK" in r.stdout
+          and rec.startswith("planner 2 "), f"out {r.stdout[:80]!r} rec {rec!r}")
+
     # THE STAMP IS A SHA AND NOT A LENGTH. This campaign AGENTS.md differs from
     # the one that produced `stamp` by exactly one character, in place -- so a
     # stamp carrying `len(text)` matches and this case is the only thing that

@@ -13,9 +13,15 @@ behind a skill the model chooses.
 WHY BOTH EVENTS, and they do different things. SessionStart is the only moment
 a compacted session can be reached: probed 2026-09-06, `/compact` fires it with
 `source=compact` and its stdout survives into the new context, while the
-pre-compaction one is gone. So SessionStart ALWAYS emits and always rewrites
-the record, whatever its `source` -- startup, resume, clear and compact alike --
-because each of those is a context this session has not been briefed in.
+pre-compaction one is gone. AUTO-COMPACTION IS THE SAME EVENT AND THE SAME
+WORD, probed the same day by filling a `--autocompact 100000` session past its
+window: three compactions fired three `SessionStart source=compact` hooks
+mid-turn, with no user prompt between them -- so the hook reaches an
+auto-compacted session without waiting for one, which is the case that actually
+happens to a long worker. `resume` is a fourth source, observed in the same
+probe. So SessionStart ALWAYS emits and always rewrites the record, whatever
+its `source`, because each of those is a context this session has not been
+briefed in.
 UserPromptSubmit is the catch-up: it consults the record and emits only when
 (role, shas) differ, so an ordinary turn costs one read and no output.
 

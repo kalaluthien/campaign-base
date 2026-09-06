@@ -311,6 +311,30 @@ def claim_match(branch, base=None):
         else None
 
 
+def claim_token(branch):
+    """The campaign token of a branch a caller has ALREADY read as a claim, or
+    `""`.
+
+    THE EMPTY STRING IS FAIL-CLOSED IN BOTH DIRECTIONS, which is why it is a
+    sentinel and not a `None` the caller must remember to test. Every reader
+    below compares it against a session's own campaign token: an `!=` refuses,
+    and an `==` drops the holder and then refuses. No real token is empty.
+
+    It exists because `claim_match` may answer None -- for a branch whose token
+    the rule will not admit, and for a name rule that would not load -- while
+    these sites index its result. They were safe only by an argument about call
+    order, and an argument is not a check."""
+    m = claim_match(branch)
+    return m[0] if m else ""
+
+
+def claim_issue(branch):
+    """The sub-issue number of a branch already read as a claim, or `""`. The
+    sentinel is `claim_token`'s, for the same reason."""
+    m = claim_match(branch)
+    return m[1] if m else ""
+
+
 def role_of(session_id):
     """(campaign issue, role, how). THREE OUTCOMES, KEPT APART, because they
     license different things:
@@ -444,27 +468,81 @@ def is_campaign_dir(path: Path):
 _KNOWN_SLUGS = {}
 
 
-def known_slugs(base):
-    """The slugs of the campaign directories at `base`, from their markers.
+def marker_fields(d):
+    """The whitespace-separated fields of `d`'s campaign marker, or None.
 
-    Cached per base root, and read at most once per process: this guard runs on
-    every tool call, and a campaign directory does not appear mid-call. A base
-    that will not enumerate caches as the empty set -- so a claim reading there
+    EVERY WAY A FILE CAN REFUSE TO BE TEXT, not only `OSError`: a `.campaign`
+    that is not UTF-8 raises `UnicodeDecodeError`, which is not an `OSError`,
+    and letting it out of here tracebacks the PreToolUse hook into exit 1 --
+    which the harness reads as the hook's own error and lets the tool call
+    PROCEED. One unreadable marker at the base root would have opened that door
+    for every session on the machine."""
+    try:
+        return (d / CAMPAIGN_MARKER).read_text().split()
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def base_roots_for(path: Path):
+    """Every base root that could hold the campaign directory a branch's slug
+    names, for a checkout at `path`. A union, nearest first.
+
+    NOT `base_above`, and the difference is the point. `base_above` answers
+    "which base OWNS this path", where nearest is right and #191 item 2 says
+    why. This answers a different question, and the nearest reading is wrong for
+    it in every shape a claim is actually worked in:
+
+      * a LINKED WORKTREE carries `scripts/` of its own and no campaign
+        directory, and git puts it wherever it was asked to -- under the
+        campaign directory here, a sibling of the base in the suite's fixture --
+        so no walk up from it reaches the base. Its main checkout does, and that
+        is what `--git-common-dir` answers;
+      * the base's OWN CLONE at `<base>/<campaign>/repos/campaign-base/` is a
+        base with no campaign directory in it, and there the walk up is what
+        reaches the outer base, where its main checkout is the clone itself.
+
+    So both are asked and the answers unioned. Asking the nearest alone made
+    every slug claim in a worktree read as no claim, while `held` -- which is
+    given a repository root already resolved through the git common dir -- read
+    the same branch as a claim, so one run printed both verdicts about one
+    branch (#181 review, finding 1). A union, not a pick: a campaign directory
+    under any of them is this machine's, and there is nothing to choose between.
+
+    THE RETIRED FORM NEEDS NONE OF THIS, which is why the gap was invisible: a
+    `campaign-<N>/` branch carries its campaign in the name and never reaches
+    a marker."""
+    starts = [path]
+    main, _top, _note = checkout_of(path)
+    if main is not None:
+        starts.append(main)
+    roots = []
+    for start in starts:
+        for d in [start, *start.parents]:
+            if (d / BASE_MARKER).is_file() and d not in roots:
+                roots.append(d)
+    return roots
+
+
+def known_slugs(base):
+    """The slugs of the campaign directories at `base` and at every base above
+    it, from their markers.
+
+    Cached per starting path, and read at most once per process: this guard runs
+    on every tool call, and a campaign directory does not appear mid-call. A
+    base that will not enumerate contributes nothing -- so a claim reading there
     falls back to the retired form alone, which refuses rather than admits."""
     key = str(base)
     if key not in _KNOWN_SLUGS:
         found = set()
-        try:
-            entries = sorted(Path(base).iterdir())
-        except OSError:
-            entries = []
-        for d in entries:
+        for root in base_roots_for(Path(base)):
             try:
-                fields = (d / CAMPAIGN_MARKER).read_text().split()
+                entries = sorted(root.iterdir())
             except OSError:
                 continue
-            if len(fields) >= 2:
-                found.add(fields[1])
+            for d in entries:
+                fields = marker_fields(d)
+                if fields and len(fields) >= 2:
+                    found.add(fields[1])
         _KNOWN_SLUGS[key] = found
     return _KNOWN_SLUGS[key]
 
@@ -493,18 +571,22 @@ def campaign_number(token, base):
         return token[len("campaign-"):]
     if not token or base is None:
         return None
-    try:
-        entries = sorted(Path(base).iterdir())
-    except OSError:
-        return None
-    for d in entries:
+    found = set()
+    for root in base_roots_for(Path(base)):
         try:
-            first = (d / CAMPAIGN_MARKER).read_text().split()
+            entries = sorted(root.iterdir())
         except OSError:
             continue
-        if len(first) >= 2 and first[1] == token and first[0].isdigit():
-            return first[0]
-    return None
+        for d in entries:
+            fields = marker_fields(d)
+            if fields and len(fields) >= 2 and fields[1] == token \
+                    and fields[0].isdigit():
+                found.add(fields[0])
+    # TWO MARKERS NAMING ONE SLUG IS NOT A NUMBER. Sorted order is not a
+    # tiebreak, and picking one would widen the carve-out for a campaign issue
+    # nobody named. `slugs_in` refuses the same duplication on the GitHub side;
+    # this is the machine-local half.
+    return found.pop() if len(found) == 1 else None
 
 
 def campaign_dir_of(path: Path, base: Path):
@@ -571,7 +653,7 @@ def claim_on(top):
     """(branch or None, verdict, source) for one checkout: is its branch a
     claim, read as the ref's existence."""
     branch = branch_of(top)
-    if not branch or not claim_match(branch, base_above(top)):
+    if not branch or not claim_match(branch, top):
         return branch, False, (f"{top} is on {branch or 'no branch'}, not a "
                                f"campaign branch"
                                + (f" -- {RULE_UNREADABLE}" if RULE_UNREADABLE
@@ -638,7 +720,7 @@ def own_claim(cwd: Path):
         return None
     branch = git(["branch", "--show-current"], top)[0]
     branch = (branch or "").strip()
-    if not branch or not claim_match(branch, base_above(top)):
+    if not branch or not claim_match(branch, top):
         return None
     exists, source = ref_exists(branch, top)
     return (top, branch, source) if exists else None
@@ -674,7 +756,7 @@ def held(repo_root, issue=None):
     if trees is None:
         return [], [f"git worktree list could not be read at {repo_root}"]
     out, detail = [], []
-    base = base_above(Path(repo_root))
+    base = Path(repo_root)
     claims = [(p, b, claim_match(b, base)) for p, b in trees
               if claim_match(b, base)]
     for path, branch, m in claims:
@@ -1396,7 +1478,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         # docstring said otherwise, which is what makes it a finding rather
         # than a gap.
         if is_claim and role == "worker" and campaign is not None \
-                and claim_match(branch)[0] != campaign:
+                and claim_token(branch) != campaign:
             return refuse(read + [
                 f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
                 f"claim of another campaign, and this session is of campaign "
@@ -1414,7 +1496,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         # covers the target; the name says which campaign this session is of,
         # so a claim of another campaign is not this session's to stand on.
         kept = [h for h in holders
-                if claim_match(h[1])[0] == campaign]
+                if claim_token(h[1]) == campaign]
         if holders and not kept:
             return refuse(read + [
                 f"the claims under {root} are of another campaign, and this "
@@ -1611,9 +1693,9 @@ def bash_call(command, cwd: Path, session_id=""):
     for i in issues:
         holders, d = held(root, i)
         if (not holders and own is not None
-                and claim_match(own[1])[1] == i
+                and claim_issue(own[1]) == i
                 and (role != "worker" or campaign is None
-                     or claim_match(own[1])[0] == campaign)):
+                     or claim_token(own[1]) == campaign)):
             holders = [own]
         # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
         # cover it: the campaign issue is nobody's sub-issue, so `held` finds
@@ -1638,7 +1720,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # the two disagreed on exactly that shape.
         if role == "worker" and campaign is not None:
             foreign = [h for h in holders
-                       if claim_match(h[1])[0] != campaign]
+                       if claim_token(h[1]) != campaign]
             holders = [h for h in holders if h not in foreign]
             detail += [f"{h[0]} is on {h[1]}, a claim of another campaign; "
                        f"this session is of campaign #{campaign}"
@@ -1673,10 +1755,10 @@ def bash_call(command, cwd: Path, session_id=""):
         holders, d = held(root)
         if role == "worker" and campaign is not None:
             holders = [h for h in holders
-                       if claim_match(h[1])[0] == campaign]
+                       if claim_token(h[1]) == campaign]
         if (not holders and own is not None
                 and (role != "worker" or campaign is None
-                     or claim_match(own[1])[0] == campaign)):
+                     or claim_token(own[1]) == campaign)):
             holders = [own]
         if not holders:
             return refuse([f"{what}: a campaign-plane write, and this session "

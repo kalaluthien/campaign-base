@@ -266,6 +266,36 @@ def read_pr_map(path, repo, offline):
     return issue_of
 
 
+def resolve_slug(args):
+    """(slug or None, note) -- the campaign's slug for the branch pattern.
+
+    NOT A DEFAULT IN THE FLAG. `--slug machinery` hardcoded one campaign's name
+    into a tool every campaign runs, which is a wrong answer for all the others
+    and a silent one. Read from the `campaign:<slug>` label instead, through the
+    one reader of it, as the WORD it prints. A read that did not happen narrows
+    the pattern to the retired `campaign-<N>/` form and the note says so, so a
+    half-attributed tally is never mistaken for a whole one."""
+    if args.slug:
+        return args.slug, f"slug {args.slug}, given on the command line"
+    if getattr(args, "offline", False):
+        return None, ("--offline, so no slug was read; only campaign-"
+                      f"{args.campaign}/ branches are attributed")
+    tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "campaign-tracker.py")
+    try:
+        r = subprocess.run([sys.executable, tracker, "slug", str(args.campaign)],
+                           capture_output=True, text=True)
+    except OSError as e:
+        return None, (f"campaign-tracker could not run ({e.__class__.__name__}); "
+                      f"only campaign-{args.campaign}/ branches are attributed")
+    word = r.stdout.strip()
+    if word and word != "none":
+        return word, f"slug {word}, from #{args.campaign}'s campaign: label"
+    return None, (f"#{args.campaign} has no readable slug (campaign-tracker "
+                  f"exited {r.returncode}); only campaign-{args.campaign}/ "
+                  f"branches are attributed")
+
+
 class Corpus:
     """Every transcript file under the roots, read once."""
 
@@ -276,9 +306,11 @@ class Corpus:
         # `campaign-<N>/<issue>-<topic>`, and a tally that read one form would
         # attribute half a campaign's turns to nothing. `--campaign` and
         # `--slug` are both matched, so a window spanning the change is whole.
-        self.branch = re.compile(
-            rf"(?:campaign-{re.escape(args.campaign)}|{re.escape(args.slug)})"
-            rf"/(\d+)-[A-Za-z0-9._-]+")
+        slug, self.slug_note = resolve_slug(args)
+        forms = [rf"campaign-{re.escape(args.campaign)}"]
+        if slug:
+            forms.insert(0, re.escape(slug))
+        self.branch = re.compile(rf"(?:{'|'.join(forms)})/(\d+)-[A-Za-z0-9._-]+")
         self.issue_ref = re.compile(rf"{re.escape(args.repo)}#(\d+)")
         self.pr_map = read_pr_map(args.pr_map, args.repo, args.offline)
         self.bases = [os.path.realpath(b).rstrip("/") for b in args.base]
@@ -498,6 +530,9 @@ def sample_line(corpus):
           f"{', '.join(corpus.args.root)}")
     print(f"window {corpus.args.since or '(open)'} .. {corpus.args.until or '(open)'}; "
           f"bases {', '.join(corpus.bases)}")
+    # PRINTED, because a branch pattern missing the slug attributes half a
+    # campaign's turns to nothing and the totals look merely smaller.
+    print(f"branch attribution: {corpus.slug_note}")
     print(f"turns kept {len(corpus.turns):,} (one per message); "
           f"records folded into one of them {corpus.dropped['folded']:,}; "
           f"messages already counted in another file "
@@ -759,9 +794,12 @@ def parse_args(argv):
                                    "turns before it are dropped")
     p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
     p.add_argument("--campaign", default="1", help="campaign number in branch names")
-    p.add_argument("--slug", default="machinery",
+    p.add_argument("--slug", default=None,
                    help="campaign slug in branch names, which replaced the "
-                        "number in #181; both forms are matched")
+                        "number in #181; both forms are matched. Read from the "
+                        "campaign's `campaign:<slug>` label when not given, and "
+                        "when that read fails only the retired form is matched, "
+                        "which is SAID rather than assumed")
     p.add_argument("--repo", default="kalaluthien/campaign-base")
     p.add_argument("--root", action="append", default=[],
                    help="transcript root (default ~/.claude/projects)")

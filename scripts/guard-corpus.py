@@ -78,16 +78,25 @@ DEFAULT_OUT = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 DEFAULT_TRANSCRIPTS = "~/.claude/projects/**/*.jsonl"
 FILE_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
 PATH_KEYS = ("file_path", "notebook_path", "path")
-# The base's own top-level directories, from AGENTS.md's plane table. A campaign
-# directory is any OTHER directory at the base root -- which is a reading by
-# exclusion since #181, because a slug is a word and the `-YYMMDD` shape that
-# used to say so is gone.
+# The base's own top-level directories: the plane table's, plus `runtime/`,
+# which is the base's own scratch and is where `guard-precision.py` reads
+# `<base>/runtime/guard.log`. A campaign directory is any OTHER directory at the
+# base root -- a reading by exclusion since #181, because a slug is a word and
+# the `-YYMMDD` shape that used to say so is gone.
+#
+# NOT `.gitignore`'s allowlist, which this looks like and is not: that admits
+# what is TRACKED, and `runtime/` is the base's own and ignored. Adding a
+# top-level directory to the base means adding it here too, and the case per
+# entry below is what says so.
 #
 # NOT the `.campaign` marker check-campaign-claim.py owns: this reads paths
 # RECORDED IN A TRANSCRIPT, most of which no longer exist on any disk, so there
 # is nothing here to stat. Exclusion is the only reading a dead path admits, and
 # it is why the list is spelled rather than derived.
-BASE_OWN = frozenset({".claude", ".github", "scripts", "spec", "docs"})
+# A dot-directory is the base's own by the clause in `place` and is not listed
+# here: `.claude` and `.github` in this set pinned nothing, since removing
+# either left every case green.
+BASE_OWN = frozenset({"scripts", "spec", "docs", "runtime"})
 # A token that must never be committed. Deliberately crude and deliberately
 # wide: a dropped entry costs one shape, a committed token costs an account.
 SECRET = re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9-]{16,}"

@@ -291,6 +291,26 @@ def main():
         r = tracker("campaign-issues", "--limit", "9", env=env)
         check("...and a listing under the limit does not", r.returncode == 0)
 
+        # A MISSING SLUG IS AN ANSWER, AND A FAILED LISTING IS NOT. Both used to
+        # exit 1, so a caller could not tell "I read the tracker and a campaign
+        # cannot be worked" from "I could not read the tracker". Two cases, one
+        # per status, because either alone passes with the other's branch gone.
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":"
+            "[{\"name\":\"campaign\"}],\"parent\":null}]'\n")
+        (shim / "gh").chmod(0o755)
+        r = tracker("campaign-issues", env=env)
+        check("a campaign issue with no slug is exit 3: read, and unworkable",
+              r.returncode == 3 and "no `campaign:` label" in r.stdout + r.stderr)
+        (shim / "gh").write_text(
+            "#!/bin/sh\necho '[{\"number\":1,\"title\":\"t\",\"labels\":"
+            "[{\"name\":\"campaign\"},{\"name\":\"campaign:demo\"}],"
+            "\"parent\":null}]'\n")
+        (shim / "gh").chmod(0o755)
+        r = tracker("campaign-issues", env=env)
+        check("...and with one it is exit 0, the slug printed beside its issue",
+              r.returncode == 0 and "demo" in r.stdout)
+
         (shim / "gh").write_text(
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + str(log) + "\necho '[]'\n")
         (shim / "gh").chmod(0o755)

@@ -125,6 +125,22 @@ def main():
         check("...naming the rule that would not load, not the branch",
               "would not load" in out(r), out(r)[:400])
 
+    # THE SLUG FORM, IN ITS OWN WORKTREE -- the shape every claim takes after
+    # #181, and the one no case reached: every other case here uses the retired
+    # `campaign-<N>/` form, which needs no marker lookup at all. Finding 1 of
+    # the #181 review shipped green underneath exactly this gap. A worktree
+    # carries `scripts/` of its own and NO campaign directory, so asking the
+    # base NEAREST the checkout finds no slugs and the claim reads as none.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d, claims=("demo/7-x",))
+        r, moved = commit(f, f.trees["demo/7-x"],
+                          env={"CLAUDE_CODE_SESSION_ID": "sid-1"})
+        check("a commit in a worktree on a SLUG claim goes through",
+              r.returncode == 0 and moved, f"exit {r.returncode}: {out(r)[:400]}")
+        check("...and the hook says that branch is a claim",
+              "demo/7-x is a claim" in out(r).replace("its branch ", ""),
+              out(r)[:400])
+
     with tempfile.TemporaryDirectory() as d:
         f = build(d, claims=("campaign-1/7-x",), feature="feature")
         r, moved = commit(f, f.trees["campaign-1/7-x"],

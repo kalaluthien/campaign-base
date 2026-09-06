@@ -299,13 +299,20 @@ def campaign_prefixes(n, rep):
         why = f"campaign-tracker could not run ({e.__class__.__name__})"
     if out is not None:
         word = out.stdout.strip()
-        why = None if word and word != "none" else (
-            f"campaign-tracker slug {n} said "
-            f"{word or out.stderr.strip()[:120] or 'nothing'}")
+        if word and word != "none":
+            why = None
+        elif out.returncode == 1:
+            # LOOKED AND FOUND NOTHING: the tracker read the campaign issue and
+            # it carries no `campaign:` label.
+            why = f"#{n} carries no `campaign:` label, so it has no slug"
+        else:
+            # COULD NOT LOOK. Kept apart from the line above, because the fix is
+            # different: one is a label to add, the other a reading to retry.
+            why = (f"campaign-tracker slug {n} exited {out.returncode} without "
+                   f"a verdict: {out.stderr.strip()[:120] or 'no message'}")
     if why:
-        rep.report(f"REPORT: #{n} has no readable slug ({why}), so only "
-                   f"campaign-{n}/ branches were read. A branch cut under a "
-                   f"slug would not appear below.")
+        rep.report(f"REPORT: {why}, so only campaign-{n}/ branches were read. "
+                   f"A branch cut under a slug would not appear below.")
         return [f"campaign-{n}/"]
     return [f"{word}/", f"campaign-{n}/"]
 

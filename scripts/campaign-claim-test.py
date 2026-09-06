@@ -998,6 +998,7 @@ def release_cases(m):
         check("release refuses when the occupancy reading did not happen",
               r.returncode == 1 and "herdr" in (r.stdout + r.stderr))
 
+
         # A BRANCH WITH COMMITS IS NEVER DELETED -- and used to leave no exit
         # at all, so a sub-issue closed `not planned` after its worker pushed
         # kept a ref that `take`'s sweep then refused forever.
@@ -1167,6 +1168,33 @@ exit 1
               "finished work and not a fresh claim" in out
               and "--confirmed-absent" not in out)
 
+
+    # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and this command
+    # DELETES. Narrowed to the retired prefix, a ref cut under `<slug>/` is
+    # invisible and comes back as "no ref names sub-issue #N" -- an absence
+    # dressed as a reading. Its own shim: the campaign issue carries the binding
+    # and no `campaign:` label.
+    with tempfile.TemporaryDirectory() as d:
+        slugless = shims(Path(d) / "slugless", gh="""#!/bin/sh
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  *"--json parent"*) echo '9999'; exit 0 ;;
+  *"--json labels"*) echo '[]'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *matching-refs*) echo '[]'; exit 0 ;;
+  *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+esac
+exit 1
+""")
+        r = claim(["release", "9999", "1"], slugless)
+        out = r.stdout + r.stderr
+        check("release refuses when the campaign's slug did not read",
+              r.returncode == 1 and "this command deletes" in out,
+              f"exit {r.returncode}: {out[:300]}")
+        check("...and --branch is still the way through, since it names one "
+              "directly",
+              "--branch" in out, out[:300])
 
 def scope_cases(m):
     """#187 Q4: which campaign directory a reading is about."""

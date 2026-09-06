@@ -483,6 +483,49 @@ def main():
         r = ask(clone, path=str(clone / "AGENTS.md"))
         check("...and on a claimed branch it is allowed by clause 1",
               r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:300])
+    # A MARKER THAT IS NOT TEXT. `read_text()` raises `UnicodeDecodeError`,
+    # which is not an `OSError`; letting it out tracebacks the hook into exit 1,
+    # and the harness reads that as the hook's OWN error and lets the tool call
+    # PROCEED. One unreadable file at the base root would have opened that for
+    # every session here. Asserted on the ALLOW still happening, not on the exit
+    # status alone: a traceback exits 1 and this branch exits 0.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        (f.base / "junk").mkdir()
+        (f.base / "junk" / ".campaign").write_bytes(b"\xff\xfe\x00binary")
+        r = ask(f.base, path=str(f.base / "AGENTS.md"))
+        check("a `.campaign` that is not text is skipped, not a traceback",
+              r.returncode == 0 and "Traceback" not in out(r), out(r)[:400])
+
+    # TWO MARKERS NAMING ONE SLUG IS NOT A NUMBER. Sorted order is not a
+    # tiebreak, and picking one widens the campaign-issue carve-out for a
+    # campaign nobody named. `slugs_in` refuses the same duplication on the
+    # GitHub side; this is the machine-local half.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        (f.base / "twin").mkdir()
+        (f.base / "twin" / ".campaign").write_text("9 demo\n")
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
+                env=worker)
+        check("a slug two markers name resolves to no number, so the "
+              "campaign-issue carve-out does not fire",
+              r.returncode == 2, out(r)[:400])
+
+    # 5a. THE SAME CLONE ON A SLUG CLAIM. The clone is a base with no campaign
+    # directory in it, so the marker that names `demo` is at the OUTER base --
+    # reached by walking up, where the worktree shape above is reached through
+    # the git common dir. Both halves of that union have a case, and this is the
+    # one that reddens when the ancestor walk goes (#181 review, finding 1).
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        clone = f.clone(branch="demo/7-x")
+        r = ask(clone, path=str(clone / "AGENTS.md"))
+        check("a clone under the campaign directory, on a SLUG claim, is "
+              "allowed by clause 1",
+              r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:400])
+
     # 5b. THE ORDINARY DELEGATE SHAPE, which is NOT the clone above: a MEMBER
     # repository's clone carries no marker, so it resolves through the base,
     # and `held` then sweeps the BASE's worktrees -- which structurally cannot

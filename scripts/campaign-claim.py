@@ -1769,6 +1769,17 @@ def cmd_release(args):
                                    args.campaign_issue)
     slug, slug_note = campaign_slug(args.campaign_issue)
     print(slug_note)
+    # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and `release`
+    # DELETES. With the slug unread the sweep narrows to the retired prefix, so
+    # a claim cut under `<slug>/` is invisible and comes back as "no ref names
+    # sub-issue #N" -- an absence dressed as a reading, one step before the
+    # caller passes `--branch` and deletes something else. `live` may narrow and
+    # say so because it only reads; this may not.
+    if slug is None and not args.branch:
+        print(f"refusing: {slug_note}\n  A ref cut under the campaign's slug "
+              f"would not be listed, and this command deletes.\n  Pass --branch "
+              f"to name one directly.", file=sys.stderr)
+        return 1
     found, unread1 = all_refs(repos, args.campaign_issue, slug)
     if unread1 and not args.branch:
         print(f"refusing: {'; '.join(unread1)}\n  A ref listing that did not "

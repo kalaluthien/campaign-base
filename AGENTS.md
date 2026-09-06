@@ -253,7 +253,10 @@ for the other, and a missing slug refuses rather than being guessed at.
   campaign — a slug is a word, and no name shape separates one from `scripts/`.
   It sits beside `runtime/` and not inside it, because `runtime/` is scratch
   sessions sweep. `check-campaign-claim.py` owns that reading and every other
-  script asks it.
+  script asks it. **A campaign directory with no marker is a campaign nothing on
+  this machine can see** — not a claim, not a guard log, not a close — so
+  `opening-campaign` writes it at scaffold and a directory that predates it gets
+  one by hand.
 - **Branch** — `<slug>/<issue>-<topic>`, **the sub-issue's whole claim** as
   well as its workspace. `campaign-claim take` cuts it from the remote and writes
   nothing else; create-ref refuses an existing ref server-side, so the claim is

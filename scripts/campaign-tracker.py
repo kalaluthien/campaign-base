@@ -142,7 +142,9 @@ It catches a pasted copy, not a re-implementation that names nothing.
 EXIT
 
 campaign-issues, index, settlement  0 when the reading was made, 1 when it was not.
-campaign-issues also exits 1 when an open campaign issue has no readable slug.
+campaign-issues exits 3 -- not 1 -- when the listing was read and an open
+                            campaign issue has no readable slug: a reading that
+                            did not happen and an answer must not share a status.
 slug, issue                 0 with the answer on stdout, 1 for `none`, which is
                             a reading, and 2 when the reading itself failed.
 slugs                       0 when the label listing was read, 2 when it was not
@@ -297,12 +299,17 @@ def cmd_campaign_issues(args):
              "a campaign issue whose label was forgotten, or the third kind of issue "
              "this\n   tracker holds. Read the body against the campaign issue template")
     if bad:
+        # EXIT 3, NOT 1. `1` here means the listing did not happen; this is a
+        # listing that DID happen and found a campaign that cannot be worked.
+        # One status for both would put "I could not look" and an answer behind
+        # the same number, which is the confusion every reader in this file is
+        # written to avoid.
         print(f"\nREFUSING: {len(bad)} open campaign issue(s) have no readable "
               f"slug. Every name a\n  person reads is built from one, so a "
               f"campaign without one cannot be worked.", file=sys.stderr)
         for number, why in sorted(bad.items()):
             print(f"  #{number}  {why}", file=sys.stderr)
-        return 1
+        return 3
     return 0
 
 

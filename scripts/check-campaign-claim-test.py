@@ -516,8 +516,8 @@ def main():
     # 5a. THE SAME CLONE ON A SLUG CLAIM. The clone is a base with no campaign
     # directory in it, so the marker that names `demo` is at the OUTER base --
     # reached by walking up, where the worktree shape above is reached through
-    # the git common dir. Both halves of that union have a case, and this is the
-    # one that reddens when the ancestor walk goes (#181 review, finding 1).
+    # the git common dir. The walk runs from the clone, which is
+    # its own main checkout (#181 review, finding 1).
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("demo/7-x",))
         clone = f.clone(branch="demo/7-x")

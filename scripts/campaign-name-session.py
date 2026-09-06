@@ -91,8 +91,12 @@ ROLES = ("planner", "worker")
 #     -- which classifies a RECORDED path it cannot stat -- would read that
 #     campaign's whole tree as the base's own.
 SLUG_CEILING = 20
-RESERVED = ("campaign", "planner", "worker",
-            "scripts", "spec", "docs", "runtime")
+# The base's own directories at its root. Named here because a slug becomes a
+# directory there, and imported by scripts/guard-corpus.py, which excludes the
+# same words when it classifies a recorded path it cannot stat -- one set, one
+# owner, rather than two copies pointing at each other in prose.
+BASE_DIRS = ("scripts", "spec", "docs", "runtime")
+RESERVED = ("campaign", "planner", "worker") + BASE_DIRS
 SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 # The retired campaign token, still admitted. Branches cut before #181 are named

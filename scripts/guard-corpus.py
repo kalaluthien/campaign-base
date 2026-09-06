@@ -78,30 +78,28 @@ DEFAULT_OUT = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 DEFAULT_TRANSCRIPTS = "~/.claude/projects/**/*.jsonl"
 FILE_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
 PATH_KEYS = ("file_path", "notebook_path", "path")
-# The base's own top-level directories: the plane table's, plus `runtime/`,
-# which is the base's own scratch and is where `guard-precision.py` reads
-# `<base>/runtime/guard.log`. A campaign directory is any OTHER directory at the
-# base root -- a reading by exclusion since #181, because a slug is a word and
-# the `-YYMMDD` shape that used to say so is gone.
+def _name_rule():
+    """`campaign-name-session.py`, imported for `BASE_DIRS` alone."""
+    src = HERE / "campaign-name-session.py"
+    spec = importlib.util.spec_from_loader(
+        "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+# The base's own top-level directories, imported from the one file that names
+# them: `campaign-name-session.py` bars the same words from a slug, so no
+# campaign can be named for a directory the base already owns and this exclusion
+# cannot swallow a real campaign's tree. Two copies pointing at each other in
+# prose is the shape that drifts.
 #
-# NOT `.gitignore`'s allowlist, which this looks like and is not: that admits
-# what is TRACKED, and `runtime/` is the base's own and ignored. Adding a
-# top-level directory to the base means adding it here too, and the case per
-# entry in the suite is what says so.
-#
-# The other half of keeping these apart is on the slug side: `RESERVED` in
-# campaign-name-session.py bars these four words from a slug, so no campaign can
-# be named for a directory the base already owns and the exclusion cannot
-# swallow a real campaign's tree.
-#
-# NOT the `.campaign` marker check-campaign-claim.py owns: this reads paths
-# RECORDED IN A TRANSCRIPT, most of which no longer exist on any disk, so there
-# is nothing here to stat. Exclusion is the only reading a dead path admits, and
-# it is why the list is spelled rather than derived.
 # A dot-directory is the base's own by the clause in `place` and is not listed
-# here: `.claude` and `.github` in this set pinned nothing, since removing
-# either left every case green.
-BASE_OWN = frozenset({"scripts", "spec", "docs", "runtime"})
+# there: `.claude` and `.github` in this set pinned nothing.
+#
+# NOT `.gitignore`'s allowlist, which this resembles and is not: that admits
+# what is TRACKED, and `runtime/` is the base's own and ignored.
+BASE_OWN = frozenset(_name_rule().BASE_DIRS)
 # A token that must never be committed. Deliberately crude and deliberately
 # wide: a dropped entry costs one shape, a committed token costs an account.
 SECRET = re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9-]{16,}"

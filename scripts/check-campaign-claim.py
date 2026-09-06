@@ -493,8 +493,9 @@ def marker_fields(d):
 
 
 def base_roots_for(path: Path):
-    """Every base root that could hold the campaign directory a branch's slug
-    names, for a checkout at `path`. A union, nearest first.
+    """The base roots that could hold the campaign directory a branch's slug
+    names, for a checkout at `path`: the marker-bearing ancestors of its MAIN
+    checkout, nearest first. Empty when git cannot name one.
 
     NOT `base_above`, and the difference is the point. `base_above` answers
     "which base OWNS this path", where nearest is right and #191 item 2 says
@@ -504,37 +505,43 @@ def base_roots_for(path: Path):
       * a LINKED WORKTREE carries `scripts/` of its own and no campaign
         directory, and git puts it wherever it was asked to -- under the
         campaign directory here, a sibling of the base in the suite's fixture --
-        so no walk up from it reaches the base. Its main checkout does, and that
+        so no walk up from IT reaches the base. Its main checkout does, and that
         is what `--git-common-dir` answers;
-      * the base's OWN CLONE at `<base>/<campaign>/repos/campaign-base/` is a
-        base with no campaign directory in it, and there the walk up is what
-        reaches the outer base, where its main checkout is the clone itself.
+      * the base's OWN CLONE at `<base>/<campaign>/repos/campaign-base/` is its
+        own main checkout, so the same walk reaches the outer base from there.
 
-    So both are asked and the answers unioned. Asking the nearest alone made
-    every slug claim in a worktree read as no claim, while `held` -- which is
-    given a repository root already resolved through the git common dir -- read
-    the same branch as a claim, so one run printed both verdicts about one
-    branch (#181 review, finding 1). A union, not a pick: a campaign directory
-    under any of them is this machine's, and there is nothing to choose between.
+    ONE START, NOT A UNION. Walking up from the path as well pinned nothing --
+    every start it could use, the main checkout also reaches -- and a branch no
+    case reddens for is deleted rather than covered. Nor is there a fallback to
+    `path` when git answers nothing: `claim_on` and `own_claim` both read the
+    branch through git first, so a checkout git cannot name never arrives here.
+
+    Asking the nearest base alone made every slug claim in a worktree read as no
+    claim, while `held` -- given a repository root already resolved through the
+    git common dir -- read the same branch as a claim, so one run printed both
+    verdicts about one branch (#181 review, finding 1).
+
+    WHICH SUITE READS THIS, named because it is not this file's own: the case is
+    `a commit in a worktree on a SLUG claim goes through`, in
+    check-commit-claim-test.py, and resolving through the path reddens it. The
+    guard's own suite stays green under that mutation and no case here was worth
+    manufacturing: inside the guard a worktree's claim is found by `held`, whose
+    root already comes through the git common dir, so `claim_on` and `own_claim`
+    decide only where `held` finds nothing -- a member clone, and the commit
+    gate, which calls `claim_on` directly.
 
     THE RETIRED FORM NEEDS NONE OF THIS, which is why the gap was invisible: a
     `campaign-<N>/` branch carries its campaign in the name and never reaches
     a marker."""
     main, _top, _note = checkout_of(path)
-    # ONE START, CHOSEN, not a union. `main` is right in every shape git can
-    # answer for -- a worktree resolves to its main checkout, and a clone is its
-    # own -- and the parents of that answer reach the outer base where there is
-    # one. A union with the path walk beside it pinned nothing: removing the
-    # path half left every case green, which is a branch nothing tests. `path`
-    # is the floor for the one case git cannot answer, where there is nothing
-    # else to walk from.
-    start = main if main is not None else path
-    return [d for d in [start, *start.parents] if (d / BASE_MARKER).is_file()]
+    if main is None:
+        return []
+    return [d for d in [main, *main.parents] if (d / BASE_MARKER).is_file()]
 
 
 def known_slugs(base):
-    """The slugs of the campaign directories at the base root above `base`, from
-    their markers -- or None when there is no base root above it at all.
+    """The slugs of the campaign directories at the base roots above `base`,
+    from their markers -- or None when there is no base root above it at all.
 
     Cached per starting path, and read at most once per process: this guard runs
     on every tool call, and a campaign directory does not appear mid-call. A

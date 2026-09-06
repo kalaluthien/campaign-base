@@ -66,7 +66,11 @@ def run(root, base, command, pr_map, extra=()):
         [sys.executable, str(SCRIPT), command, "--root", str(root),
          "--base", str(base), "--pr-map", str(pr_map),
          "--since", "2026-01-02T00:00:00Z", "--until", "2026-01-03T00:00:00Z",
-         *extra],
+         # `--offline` ON EVERY RUN. Without it `resolve_slug` shells the real
+         # `campaign-tracker.py`, which asked GitHub about this machine's
+         # campaign #1 four times per suite run -- green either way, and a
+         # network call from a suite that says no case reaches one.
+         "--offline", *extra],
         capture_output=True, text=True)
     if out.returncode != 0:
         raise SystemExit(f"{command} failed: {out.stderr}")

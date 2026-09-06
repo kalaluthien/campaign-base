@@ -123,7 +123,9 @@ def main():
             # classifies a recorded path it cannot stat -- would read that
             # campaign's whole tree as the base's own.
             ("docs-worker-6", "a `docs` segment"),
-            ("runtime-worker-6", "a `runtime` segment")]:
+            ("runtime-worker-6", "a `runtime` segment"),
+            ("scripts-worker-6", "a `scripts` segment"),
+            ("spec-worker-6", "a `spec` segment")]:
         r, calls = run(["w1:p1", name])
         check(f"a slug with {why} is refused",
               r.returncode == 1 and not calls and name in r.stderr,

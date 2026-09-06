@@ -247,9 +247,15 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     base = Path(os.path.expanduser(a.base))
+    # EVERY CAMPAIGN DIRECTORY'S LOG, found by its `.campaign` marker rather
+    # than by a `-YYMMDD` name: #181 named campaign directories by their slug,
+    # and a glob over a slug is a glob over every directory here. The marker is
+    # the same one check-campaign-claim.py reads, so a log this misses is a
+    # directory that guard would not call a campaign's either.
     paths = a.logs or sorted(
         {str(base / LOG_NAME)}
-        | set(glob.glob(str(base / "*-[0-9][0-9][0-9][0-9][0-9][0-9]" / LOG_NAME))))
+        | {str(Path(marker).parent / LOG_NAME)
+           for marker in glob.glob(str(base / "*" / ".campaign"))})
     rows, notes = read_logs(paths)
     keep = (True if a.all else
             {x.strip() for x in a.sessions.split(",") if x.strip()}

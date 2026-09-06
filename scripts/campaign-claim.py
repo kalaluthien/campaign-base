@@ -278,21 +278,23 @@ NAMES = _name_rule_module()
 # nothing on disk said WHICH campaign it was; the slug dropped the date, and no
 # shape can tell an arbitrary slug from `scripts/`. So the directory says so
 # itself, in a file `opening-campaign` writes at scaffold: one line, `<N>
-# <slug>`, derived from the campaign issue and re-derivable at any time, which
-# is what lets it live in git-ignored `runtime/`.
+# <slug>`, derived from the campaign issue and re-derivable at any time. It sits
+# at the directory root rather than under `runtime/`, which is scratch sessions
+# rewrite and sweep; check-campaign-claim.py, which owns this reading, says why.
 #
 # Nothing here derives the list from GitHub, because the question is which
 # directories are on THIS machine. The same marker the claim guard reads.
-CAMPAIGN_MARKER = Path("runtime") / "campaign"
+CAMPAIGN_MARKER = Path(".campaign")
 
 
 def is_campaign_dir(path):
     """Whether `path` is a campaign directory on this machine, read as the
     marker's presence and not as the name's shape.
 
-    ONE READER, TWO CALLERS: `check-campaign-claim.py` asks the same question of
-    the same file, and imports this rather than restating it, so a directory
-    cannot be a campaign's to one of them and not to the other.
+    ONE RULE, TWO READERS, and the other one owns it: `check-campaign-claim.py`
+    asks the same question of the same file and is the PreToolUse hook, so it
+    cannot afford to exec this file's `gh` plumbing to ask. This is the same
+    two-line predicate over `CAMPAIGN_MARKER`, which is imported from there.
 
     A directory that cannot be stat'd is not a campaign directory rather than a
     refusal, and that is deliberate: this is asked of every entry at the base
@@ -1220,7 +1222,7 @@ def base_root():
     `release` delete a ref somebody is standing in.
 
     So: if any ancestor of this file is a campaign directory -- one carrying
-    the marker `runtime/campaign` -- the base root is that directory's parent,
+    the marker `.campaign` -- the base root is that directory's parent,
     whichever checkout is running.
     Only when none is -- the ordinary case, the base's own `scripts/` -- does
     the git rule apply, and there it is AGENTS.md's one form, which returns the

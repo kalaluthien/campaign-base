@@ -43,7 +43,8 @@ Then, in order, each turn is either dropped or attributed:
                `campaign-1/178-delegate-clone-hooks` -- so the place says where
                the parent was and the brief says what the subagent was for.
   worktree     `cwd` ending `/worktrees/<issue>` names the sub-issue outright.
-  branch       else `gitBranch` matching `campaign-<N>/<issue>-`.
+  branch       else `gitBranch` matching `<slug>/<issue>-` or the retired
+               `campaign-<N>/<issue>-`.
   parent       else, for a subagent transcript, whichever issue its parent
                session was last attributed to when the subagent started.
   carry        else, only for a record carrying no `gitBranch` at all, the last
@@ -71,7 +72,7 @@ print the same table otherwise.
 SUBCOMMANDS
 
   issues     one row per sub-issue: turns, output, new input, cache read
-  sessions   the same, per session name (`campaign-<N>-<role>-<n>`)
+  sessions   the same, per session name (`<slug>-<role>-<n>`)
   turns      one JSON object per turn, for an analysis this script does not make
   reviews    one row per in-process review subagent: its PR, level, and cost
   tool-echo  turns whose tool results are the output of this repository's own
@@ -258,7 +259,8 @@ def read_pr_map(path, repo, offline):
         raw = json.loads(listed.stdout)
     issue_of = {}
     for pr in raw:
-        m = re.match(r"campaign-\d+/(\d+)-", pr.get("headRefName", ""))
+        m = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*/(\d+)-",
+                     pr.get("headRefName", ""))
         if m:
             issue_of[int(pr["number"])] = int(m.group(1))
     return issue_of
@@ -269,7 +271,14 @@ class Corpus:
 
     def __init__(self, args):
         self.args = args
-        self.branch = re.compile(rf"campaign-{args.campaign}/(\d+)-[A-Za-z0-9._-]+")
+        # BOTH FORMS OF THE CLAIM BRANCH. Since #181 a claim is cut as
+        # `<slug>/<issue>-<topic>`; every branch before it is
+        # `campaign-<N>/<issue>-<topic>`, and a tally that read one form would
+        # attribute half a campaign's turns to nothing. `--campaign` and
+        # `--slug` are both matched, so a window spanning the change is whole.
+        self.branch = re.compile(
+            rf"(?:campaign-{re.escape(args.campaign)}|{re.escape(args.slug)})"
+            rf"/(\d+)-[A-Za-z0-9._-]+")
         self.issue_ref = re.compile(rf"{re.escape(args.repo)}#(\d+)")
         self.pr_map = read_pr_map(args.pr_map, args.repo, args.offline)
         self.bases = [os.path.realpath(b).rstrip("/") for b in args.base]
@@ -750,6 +759,9 @@ def parse_args(argv):
                                    "turns before it are dropped")
     p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
     p.add_argument("--campaign", default="1", help="campaign number in branch names")
+    p.add_argument("--slug", default="machinery",
+                   help="campaign slug in branch names, which replaced the "
+                        "number in #181; both forms are matched")
     p.add_argument("--repo", default="kalaluthien/campaign-base")
     p.add_argument("--root", action="append", default=[],
                    help="transcript root (default ~/.claude/projects)")

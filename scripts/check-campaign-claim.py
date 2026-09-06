@@ -107,8 +107,14 @@ BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # Until #181 it was a `-YYMMDD` suffix on the name; the slug dropped the date,
 # and no name shape can tell an arbitrary slug from `scripts/`. So the directory
 # says so itself, in a file `opening-campaign` writes at scaffold: one line,
-# `<N> <slug>`, derived from the campaign issue and re-derivable, which is what
-# lets it live in git-ignored `runtime/`.
+# `<N> <slug>`, derived from the campaign issue and re-derivable at any time,
+# which is what lets it live in the git-ignored directory at all.
+#
+# AT THE DIRECTORY ROOT AND NOT UNDER `runtime/`, although both are ignored.
+# `runtime/` is scratch that sessions rewrite and sweep -- the first cut of this
+# put the marker there and a concurrent session's clean took it out within the
+# hour, which reads to every reader here as "no campaign directory on this
+# machine". What identifies the directory has to outlive its scratch.
 #
 # THIS FILE OWNS THE READING, as it owns `classify` and `claim_on`:
 # check-commit-claim.py already imports all three from here, and
@@ -116,7 +122,7 @@ BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # it. It sits here and not there because this is the PreToolUse hook, which
 # reads it on every tool call and cannot afford to exec that file's `gh`
 # plumbing to ask.
-CAMPAIGN_MARKER = Path("runtime") / "campaign"
+CAMPAIGN_MARKER = Path(".campaign")
 # The claim's shape. Only the campaign TOKEN is read from it, and it is compared
 # against a session name's token by string equality -- so `<slug>/` and the
 # retired `campaign-<N>/` are two tokens and not two spellings of one, exactly
@@ -474,7 +480,7 @@ def campaign_number(token, base):
     Two sources, both local, because this runs on every tool call:
 
       * the retired `campaign-<N>` token carries the number itself;
-      * a slug is looked up in the `runtime/campaign` markers of the campaign
+      * a slug is looked up in the `.campaign` markers of the campaign
         directories at `base` -- the file that says which campaign a directory
         is, written at scaffold and re-derivable from the campaign issue.
 

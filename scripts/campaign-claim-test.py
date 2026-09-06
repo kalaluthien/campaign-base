@@ -1173,7 +1173,7 @@ def scope_cases(m):
     # The walk, as a calculation. Driven by a path rather than by where this
     # file sits, which differs in a worktree, in a clone, and on CI.
     # ON DISK, not on the name: since #181 a campaign directory is one carrying
-    # the `runtime/campaign` marker, because the slug dropped the date and no
+    # the `.campaign` marker, because the slug dropped the date and no
     # name shape can tell an arbitrary slug from `scripts/`. So these paths have
     # to exist, where the shape reading could be asked of any string.
     with tempfile.TemporaryDirectory() as d:

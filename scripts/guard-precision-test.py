@@ -184,6 +184,34 @@ def main():
           rc == 1 and "all 2 verdict(s) were dropped" in out
           and "no verdict has been logged yet" not in out, out[:600])
 
+    # WHICH LOGS IT FINDS WHEN NOBODY NAMES ONE. Every case above passes a log
+    # by hand, so the discovery walk -- the base's own log plus one per campaign
+    # directory -- was covered by nothing. Since #181 a campaign directory is
+    # its `.campaign` marker, because a glob over a slug is a glob over every
+    # directory here; `spec/` below is the row that says so.
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d)
+        for who, marked in (("machinery", True), ("spec", False)):
+            (base / who / "runtime").mkdir(parents=True)
+            (base / who / "runtime" / "guard.log").write_text(
+                row("00", S1, "REFUSED", NO_CLAIM, "gh issue close 9") + "\n")
+            if marked:
+                (base / who / ".campaign").write_text("1 machinery\n")
+        (base / "runtime").mkdir()
+        (base / "runtime" / "guard.log").write_text(
+            row("05", S1, "allowed", COVERED, "gh issue close 9") + "\n")
+        r = subprocess.run([sys.executable, str(PRECISION), "--base", str(base)],
+                           capture_output=True, text=True)
+        out = r.stdout + r.stderr
+        check("with no log named, the base's own and each marked campaign "
+              "directory's are read",
+              str(base / "runtime" / "guard.log") in out
+              and str(base / "machinery" / "runtime" / "guard.log") in out,
+              out[:600])
+        check("...and an unmarked directory's log is not, whatever its name",
+              str(base / "spec" / "runtime" / "guard.log") not in out,
+              out[:600])
+
     if not RAN:
         print("FAIL  the suite ran no case at all")
         return 1

@@ -72,10 +72,10 @@ class Fixture:
         (self.base / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
         self.camp = self.base / "demo"
         # THE MARKER, not the name: since #181 a campaign directory is one
-        # carrying `runtime/campaign`, because the slug dropped the date and no
+        # carrying `.campaign`, because the slug dropped the date and no
         # name shape can tell an arbitrary slug from `scripts/`.
-        (self.camp / "runtime").mkdir(parents=True)
-        (self.camp / "runtime" / "campaign").write_text("1 demo\n")
+        self.camp.mkdir()
+        (self.camp / ".campaign").write_text("1 demo\n")
         # The allowlist shape check-tree-shape requires, which also ignores
         # the campaign directory: the commit gate's suite commits through the
         # installed hooks over this same fixture.
@@ -361,7 +361,7 @@ def main():
     # A BRANCH OF THE CLAIM'S SHAPE THAT NAMES NO CAMPAIGN HERE IS NO CLAIM.
     # Before #181 the shape alone said so -- `campaign-(\d+)/` -- and a slug is
     # just a word, so `feature/12-x` matches the shape exactly. What separates
-    # them is the `runtime/campaign` markers at the base root: `demo` is a
+    # them is the `.campaign` markers at the base root: `demo` is a
     # campaign here and `feature` is not. The ref IS pushed, so this case fails
     # for one reason only.
     with tempfile.TemporaryDirectory() as d:
@@ -1327,7 +1327,7 @@ def main():
         # THE SLUG FORM, ALL THE WAY THROUGH. A session named for the slug,
         # holding a claim cut under it, is this campaign's -- and the carve-out
         # still resolves its campaign ISSUE NUMBER, which the slug does not
-        # carry, from the `runtime/campaign` marker of the directory at the
+        # carry, from the `.campaign` marker of the directory at the
         # base root. One case per link, so none of them covers another.
         slugged = herdr_stub(d, {"sid-1": "demo-worker-4"})
         r = ask(f.base, tool="Bash", command="gh issue close 7", env=slugged)
@@ -1616,11 +1616,10 @@ def main():
         for root in (outer, inner):
             (root / "scripts").mkdir(parents=True)
             (root / "scripts" / "campaign-claim.py").write_text("x\n")
-        (outer / "outerdemo" / "runtime").mkdir(parents=True)
-        (outer / "outerdemo" / "runtime" / "campaign").write_text("1 outer\n")
+        (outer / "outerdemo" / ".campaign").write_text("1 outer\n")
         target = inner / "innerdemo" / "note.md"
-        (target.parent / "runtime").mkdir(parents=True)
-        (target.parent / "runtime" / "campaign").write_text("2 inner\n")
+        target.parent.mkdir(parents=True)
+        (target.parent / ".campaign").write_text("2 inner\n")
         inner = inner.resolve()
         target.write_text("x\n")
         r = ask(d, path=str(target), env=no_herdr(d))

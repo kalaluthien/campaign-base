@@ -9,11 +9,17 @@ resolves and a peer addresses. Renaming one leaves the session answering to two
 different names depending on who is asking, so this sets both and reports each.
 
 It is also the naming rule's owner. `AGENTS.md` § The session name states
-`campaign-<campaign issue>-<role>-<n>`; a name that does not match is refused here
-rather than half-applied, because a rule nothing must consume is a rule that
-drifts. `NAME` below is the one pattern: scripts/campaign-claim.py loads this
-file by path and reads it there, so `take` can refuse a name from another
-campaign without a second spelling of the shape.
+`<slug>-<role>-<n>`; a name that does not match is refused here rather than
+half-applied, because a rule nothing must consume is a rule that drifts.
+`NAME`, `SLUG` and `campaign_of` below are the one spelling: scripts/campaign-claim.py
+and scripts/check-campaign-claim.py load this file by path and read them there,
+so neither restates the shape.
+
+THE SLUG RULE LIVES IN THIS LEAF and not in campaign-tracker.py, which owns the
+`campaign:<slug>` label the slug is stored on. check-campaign-claim.py is a
+PreToolUse hook that reads the name on every tool call and reaches the rule by
+exec'ing this file; reaching it through the tracker instead would exec forty
+kilobytes of `gh` plumbing on that path. The tracker imports the rule from here.
 
 scripts/check-rule-readers.py is the second reader that keeps this claim true: it
 refuses a commit that stages either of the two herdr rename calls as code in
@@ -60,15 +66,73 @@ import re
 import subprocess
 import sys
 
+# The roles, in one place: a planner files the sub-issues and distributes them,
+# a worker works one. A review has no session to name -- it runs as a subagent
+# of the session that wants the merge.
+ROLES = ("planner", "worker")
+
+# The slug: a campaign's name, carried on GitHub by its `campaign:<slug>` label
+# and read by people everywhere else. Three conditions, each with a reason:
+#
+#   * kebab-case starting with a letter, so it is one path segment, one ref
+#     segment and one herdr name without quoting or escaping anywhere;
+#   * at most SLUG_CEILING characters, so the longest name this file admits,
+#     `<slug>-worker-99`, stays inside herdr's 32-character limit on a session
+#     name -- 20 + len("-worker-99") is 30;
+#   * no segment in RESERVED. `planner` and `worker` are barred so that
+#     `<slug>-<role>-<n>` has exactly one reading: with the role words absent
+#     from the slug, a name holds one `-planner-` or `-worker-` and NAME's
+#     group 1 cannot be anything but the slug. `campaign` is barred so that the
+#     retired `campaign-<N>` form stays distinguishable from a slug for as long
+#     as both are read; see OLD_CAMPAIGN.
+SLUG_CEILING = 20
+RESERVED = ("campaign", "planner", "worker")
+SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+
+# The retired campaign token, still admitted. Branches cut before #181 are named
+# `campaign-<N>/<issue>-<topic>` and the sessions holding them are named
+# `campaign-<N>-<role>-<n>`; both are read until every such pull request has
+# landed, at which point this constant and its two readers go. Nothing MINTS
+# this form any more: `campaign-claim take` cuts `<slug>/` and refuses a caller
+# whose own name still carries the old token, which is what makes the window
+# close rather than linger.
+OLD_CAMPAIGN = re.compile(r"^campaign-[0-9]+$")
+
 # One shape, no branches. The sub-issue is deliberately absent: a session works
 # several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
-# sharing a campaign.
-# Two roles: a planner files the sub-issues and distributes them, a worker
-# works one. A review has no session to name -- it runs as a subagent of the
-# session that wants the merge. How <n> is counted across the two roles is
-# AGENTS.md § The session name's rule, stated there and nowhere else.
-NAME = re.compile(r"^campaign-([0-9]+)-(?:planner|worker)-[0-9]+$")   # group 1: the campaign issue
+# sharing a campaign. How <n> is counted across the two roles is AGENTS.md
+# § The session name's rule, stated there and nowhere else.
+#
+# SHAPE ONLY. Whether group 1 is a campaign token this file admits is
+# `campaign_of`'s question, because the slug's three conditions are not all
+# regular and a regex spelling them would be the copy that drifts from
+# `slug_ok`. Every reader calls `campaign_of`; NAME alone admits more.
+NAME = re.compile(r"^(.+)-(?:" + "|".join(ROLES) + r")-[0-9]+$")   # group 1: the campaign token
+
+
+def slug_ok(text):
+    """Whether `text` is a slug. A calculation with no network and no state, so
+    every condition above is a case."""
+    return (bool(SLUG.match(text))
+            and len(text) <= SLUG_CEILING
+            and not any(seg in RESERVED for seg in text.split("-")))
+
+
+def campaign_of(name):
+    """The campaign token a session name says it is of, or None.
+
+    None covers all three ways a name says nothing: it is not of the shape at
+    all, or its role word is missing, or its leading part is neither a slug nor
+    the retired `campaign-<N>`. A reader that wants to know WHICH campaign
+    compares this against another name's, and the comparison is string equality
+    -- the two forms are deliberately not equated, so a session renamed to its
+    slug is refused its old `campaign-<N>/` claims rather than half-admitted."""
+    m = NAME.match(name or "")
+    if not m:
+        return None
+    token = m.group(1)
+    return token if slug_ok(token) or OLD_CAMPAIGN.match(token) else None
 
 
 def refuse(why):
@@ -111,9 +175,11 @@ def main():
     # Validate every name before applying any, so a typo in the last pair does
     # not leave the first session renamed on one path and not the other.
     for pane, name in pairs:
-        if not NAME.match(name):
-            refuse(f"{name!r} is not campaign-<campaign issue>-<role>-<n> "
-                   "(role: planner or worker); nothing was applied")
+        if campaign_of(name) is None:
+            refuse(f"{name!r} is not <slug>-<role>-<n> (role: "
+                   f"{' or '.join(ROLES)}; slug: kebab-case, at most "
+                   f"{SLUG_CEILING} characters, no segment "
+                   f"{' or '.join(RESERVED)}); nothing was applied")
     # One prompt per pane per call: two queued at a working pane merge into
     # one name, and only the last name asked for could have been meant.
     panes = [pane for pane, _ in pairs]

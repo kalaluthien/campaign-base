@@ -47,8 +47,20 @@ def _needed():
     return out
 
 
+def place(n, root):
+    """Copy one `NEEDED` entry into a fixture tree at the path the installer
+    will look for it. An entry is repo-relative since #227 (a harness hook may
+    live under `.claude/skills/<skill>/scripts/`) or a bare name from the older
+    `# runs:` lines, which belongs in `scripts/`."""
+    rel = n if "/" in n else f"scripts/{n}"
+    src = SCRIPTS.parent / rel
+    dst = root / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src, dst)
+
+
 NEEDED = _needed()
-IGNORE = "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n"
+IGNORE = "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n"
 
 
 def git(root, *args, **kw):
@@ -65,7 +77,7 @@ class Repo:
                        capture_output=True, check=True)
         (self.root / "scripts").mkdir()
         for n in NEEDED:
-            shutil.copy(SCRIPTS / n, self.root / "scripts" / n)
+            place(n, self.root)
         (self.root / ".gitignore").write_text(IGNORE)
         git(self.root, "add", "-Af")
         git(self.root, "commit", "-qm", "init", "--no-verify")
@@ -393,7 +405,7 @@ def main():
             (w / "scripts").mkdir()
             for n in NEEDED:
                 if with_installer or n != "install-hooks.sh":
-                    shutil.copy(SCRIPTS / n, w / "scripts" / n)
+                    place(n, w)
             git(w, "add", "-Af")
             git(w, "commit", "-qm", "init", "--no-verify")
             git(w, "push", "-q", "origin", "HEAD")
@@ -528,7 +540,7 @@ def main():
         # `is_guard_shim` knew, so a clone that later gained this repository's
         # hooks would have been refused as holding somebody else's.
         for n in NEEDED:
-            shutil.copy(SCRIPTS / n, dest / "scripts" / n)
+            place(n, dest)
         out = installer(dest)
         check("the installer adopts the shim acquire-repo writes NOW, not only "
               "the one it used to",

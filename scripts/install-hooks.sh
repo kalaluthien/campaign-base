@@ -277,8 +277,12 @@ fi
 # same shape as the `# runs:` lines above and read the same two ways: by the
 # assignment under it, and by install-hooks-test, which builds its fixture from
 # it. Add a harness hook by adding it here.
-# installs: check-campaign-claim.py
-guard=$root/scripts/$(sed -n 's/^# installs: //p' "$0")
+# installs: scripts/check-campaign-claim.py
+# REPO-RELATIVE since #227: a harness hook may live under
+# .claude/skills/<skill>/scripts/, so the entry carries the whole path and
+# this carries no prefix. Not a two-root search -- a search finds whichever
+# copy exists, which is the silent shape.
+guard=$root/$(sed -n 's/^# installs: //p' "$0")
 if [ ! -x "$guard" ]; then
 	echo "refusing: $guard is missing or not executable, so the claim guard" >&2
 	echo "would be registered as a command that cannot run -- which reads to" >&2

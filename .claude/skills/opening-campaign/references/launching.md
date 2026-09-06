@@ -45,7 +45,7 @@ Launch in `<campaign>/repos/<repo>/`.
   known before the agent starts, and `--name` it `campaign-<N>-worker-<n>` per
   § The session name -- a delegate is always the worker role. `--name`
   sets the harness name only; set the herdr pane name too, because the two do not
-  propagate. `scripts/campaign-name-session.py` does both.
+  propagate. `.claude/skills/assuming-role/scripts/campaign-name-session.py` does both.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the base's pool. A memory pool
   inside a git-ignored campaign directory dies with the directory.
 

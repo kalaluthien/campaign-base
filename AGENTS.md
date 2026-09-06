@@ -208,7 +208,7 @@ a rename touches no claim, because a claim is a ref and a checkout. **Set it at
 the start of every session of a campaign, whichever path started it** — the
 `here` reading above, `opening-campaign` step 3, or a delegate launch — because a
 session that arrived from another campaign keeps that campaign's name until
-something sets it. The one pattern lives in `scripts/campaign-name-session.py`, and
+something sets it. The one pattern lives in `.claude/skills/assuming-role/scripts/campaign-name-session.py`, and
 `check-campaign-claim.py` imports it rather than restating it.
 **Nothing refuses a stale name at the CLAIM**, which the record used to do by
 carrying the name into a place later readers trusted; with no record there is no
@@ -222,7 +222,7 @@ against a branch**: they are two strings on purpose, and a test treating them as
 one finds whatever happens to match and misses the rest.
 
 **A session has two names and neither propagates to the other**, so
-`scripts/campaign-name-session.py <pane> <name>` sets both and refuses a name the rule
+`.claude/skills/assuming-role/scripts/campaign-name-session.py <pane> <name>` sets both and refuses a name the rule
 does not admit; read what it reports applied, and confirm with `ListAgents`,
 which resolves the harness name a message is addressed to. `herdr agent list`
 shows the pane.

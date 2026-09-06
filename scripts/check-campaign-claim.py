@@ -102,19 +102,26 @@ from pathlib import Path
 
 # What makes a directory this repository's root: the script that cuts a claim.
 HERE = Path(__file__).resolve().parent
+# The `assuming-role` skill owns the role machinery (#227), so the two modules
+# this guard imports live under it rather than beside this file. Derived from
+# HERE and not searched for: a search finds whichever root happens to hold a
+# copy, and two copies drifting is the failure this import exists to prevent.
+SKILL_SCRIPTS = (HERE.parent / ".claude" / "skills" / "assuming-role"
+                 / "scripts")
 BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # `<slug>-<YYMMDD>`: AGENTS.md's shape for a campaign directory at the root.
 CAMPAIGN_DIR = re.compile(r"-\d{6}$")
 # The claim's shape. Only `<N>` is read from it.
 CLAIM_BRANCH = re.compile(r"^campaign-(\d+)/(\d+)-")
 
-# A name that resolved to no role, as distinct from a role that could not
-# be read at all. The table's last row refuses this one; the other falls
-# back to the claim reading.
-NO_ROLE = "no-role"
+# A name that resolved to no role, as distinct from a role that could not be
+# read at all. The table's last row refuses this one; the other falls back to
+# the claim reading. The VALUE lives in campaign-roles.py with the roles it is
+# the absence of; this diagnosis is the guard's, since only the guard refuses.
 NAMELESS = ("A session with no campaign name has no role, and a session with "
             "no role is refused on both planes. Name it: "
-            "scripts/campaign-name-session.py <pane> campaign-<N>-<role>-<n>")
+            ".claude/skills/assuming-role/scripts/campaign-name-session.py "
+            "<pane> campaign-<N>-<role>-<n>")
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
@@ -140,60 +147,13 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
           "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m",
           "--body-file", "--label", "-a", "--assignee", "--milestone"}
-# WHICH gh WRITES ARE THE CAMPAIGN PLANE. The planner licence is bounded by
-# this and not by WRITES, which holds both planes: `gh pr create` is
-# OpenPullRequest and `gh pr merge` is MergePullRequest, and
-# `codePlaneEvents` in spec/campaign/orchestration/system.als puts the first on
-# the code plane while the three merge conditions -- not a role -- hold the
-# second. A planner allowed every WRITES row could open and merge pull
-# requests and delete another worker's claim ref through `gh api`, which is
-# the opposite of "a planner changes no code".
-#
-# Read as the SUBCOMMAND alone, because that is what the plane is a property
-# of. Anything not here is not a planner's by this rule and falls through to
-# the claim reading, which refuses it without a claim exactly as before.
-PLANNER_GH = {"issue", "label"}
-
-# THE ONE `gh issue` VERB THE LICENCE DOES NOT COVER
-# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch in the
-# sub-issue's own repository, and with `--name campaign-<N>/<issue>-<topic>`
-# that
-# branch IS a claim -- the same object `campaign-claim take` cuts. Bare, it
-# names the branch `<issue>-<slug>`, which no reader here treats as a claim;
-# the flag is one word away and this guard reads no flags, so the verb is
-# judged by what it can cut and not by what a given spelling does cut.
-# So the tempting argument, that `develop` belongs beside `gh pr create`
-# on the code plane, is WRONG and was checked rather than assumed: `Claim` sits
-# in `campaignPlaneEvents` and not in `codePlaneEvents`
-# (spec/campaign/orchestration/system.als), and a planner cutting a claim for a
-# delegate it is about to launch is precisely what the licence exists to buy.
-#
-# WHAT IS WRONG IS THE ROUTE, NOT THE PLANE. `campaign-claim take` reads the
-# binding, reads the sub-issue's real parent, and refuses a sub-issue whose
-# repository the campaign issue's `## Repos` list does not hold --
-# `claimWithinScope` in spec/campaign/orchestration/scenarios.als, given a
-# reader by #203. `gh issue develop` reads none of the three and cuts the ref
-# anyway. Refusing it here leaves ONE route to a claim, which is the only
-# condition under which that model rule has a reader at all.
-#
-# WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. This is
-# the PLANNER branch, so it refuses a planner and nobody else. A session that
-# is not a planner still reaches `gh issue develop 9` through the claim reading
-# below, so one already holding a claim on #9 can cut a second, unscoped branch
-# for it. That hole is strictly narrower -- it needs a claim on the very issue
-# named -- and closing it means the guard reading the campaign issue's
-# `## Repos` on a `gh` call, a `gh` call inside a `PreToolUse` hook, which is
-# the cost #213 weighed and did not pay.
-PLANNER_GH_EXCEPT = {("issue", "develop")}
-
-# WHAT A WORKER MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
-# can ever cover the campaign issue -- it is nobody's sub-issue -- so #207
-# carved it out. Keyed on the VERB and not on the issue number, which is the
-# conjunct the first cut was missing: `edit` is the charter body, which only
-# `closing-campaign` step 4 writes; `close` closes the CAMPAIGN, a person's
-# decision; `delete` and `transfer` are irreversible. A claim on some other
-# sub-issue makes none of them safer, so the claim was never the missing test.
-OWN_CAMPAIGN_GH = {("issue", "comment")}
+# The three write-licence sets moved to campaign-roles.py with #227, whose
+# header carries the rationale each was written with. They are read through
+# `roles()` at the point of decision rather than bound to names here: a name
+# bound at import is a copy, and the whole point of the table is that this
+# guard has none. What stays here is the CLAIM, which is not a property of a
+# role -- it is read per call from the target's checkout and this session's
+# worktrees.
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
@@ -211,16 +171,37 @@ HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
 
 
-def name_pattern():
-    """`campaign-name-session.py`'s NAME regex, imported rather than restated.
-    That script owns the shape; a second copy here would admit names it
-    refuses, and the two would drift apart on the first change to either."""
-    src = HERE / "campaign-name-session.py"
+def skill_module(stem, alias):
+    """One module out of the `assuming-role` skill's scripts, by path.
+
+    Both of this guard's role facts are imported rather than restated: the
+    NAME regex, which campaign-name-session.py owns, and the role table, which
+    campaign-roles.py owns. A second copy of either here would admit what its
+    owner refuses, and the two would drift apart on the first change to
+    either. Failure is the CALLER's to report -- `role_of` turns it into
+    could-not-look -- so nothing is swallowed here."""
+    src = SKILL_SCRIPTS / f"{stem}.py"
     spec = importlib.util.spec_from_loader(
-        "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    return m.NAME
+    return m
+
+
+_roles = None
+
+
+def roles():
+    """The role table, loaded once. Memoised because `role_of` runs on every
+    call this guard sees and the table never changes within one run."""
+    global _roles
+    if _roles is None:
+        _roles = skill_module("campaign-roles", "croles")
+    return _roles
+
+
+def name_pattern():
+    return skill_module("campaign-name-session", "cns").NAME
 
 
 def role_of(session_id):
@@ -240,11 +221,20 @@ def role_of(session_id):
     The second is returned as `NO_ROLE`; the third as `None`."""
     if not session_id:
         return None, None, "the payload carries no session id"
+    # Both skill modules are read HERE, before herdr, so an unreadable one is
+    # could-not-look rather than a crash mid-decision. Reaching any later
+    # `NO_ROLE` comparison therefore means the table loaded and memoised.
     try:
         pattern = name_pattern()
     except Exception as e:                  # noqa: BLE001 -- reported, not raised
         return None, None, ("could not read the name pattern from "
                             "campaign-name-session.py "
+                            f"({e.__class__.__name__})")
+    try:
+        no_role = roles().NO_ROLE
+    except Exception as e:                  # noqa: BLE001 -- reported, not raised
+        return None, None, ("could not read the role table from "
+                            "campaign-roles.py "
                             f"({e.__class__.__name__})")
     try:
         r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
@@ -280,7 +270,7 @@ def role_of(session_id):
             return None, None, "a herdr row's name was not a string"
         m = pattern.match(name)
         if not m:
-            return None, NO_ROLE, (f"session {session_id} is named "
+            return None, no_role, (f"session {session_id} is named "
                                    f"{name or 'nothing'}, which the campaign "
                                    f"name pattern does not admit")
         role = "planner" if "-planner-" in name else "worker"
@@ -840,7 +830,7 @@ def gh_write(tokens):
 #   pairs it against a subcommand, so no kind and no ceiling is checked on that
 #   route. Closing it means a second grammar for `gh api`'s field syntax inside
 #   a hook every session runs, which is the cost this declines -- as
-#   `PLANNER_GH_EXCEPT` declines the matching hole on `gh issue develop`.
+#   the table's `gh_except` declines the matching hole on `gh issue develop`.
 #
 #   `--body-file` naming a file this cannot read comes back as unreadable and
 #   is refused, not allowed: a body that could not be read is not a body with a
@@ -1190,7 +1180,13 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
                 f"{how_role}, so the role could not be read; falling back to "
                 f"the claim reading alone, which is what this gate was "
                 f"before #185.")
-    if role == NO_ROLE:
+    # `role is not None` FIRST, and it is not redundant: `role_of` returns
+    # None when it could not read herdr OR the table, and evaluating
+    # `roles()` here would re-raise the very failure it just turned into
+    # could-not-look -- refusing every session on this machine instead of
+    # falling back to the claim reading. Measured: with campaign-roles.py
+    # removed, the unguarded form refused a claimed worker's own worktree.
+    if role is not None and role == roles().NO_ROLE:
         return refuse(read + [NAMELESS])
     if role == "planner":
         # A PLANNER NEVER TOUCHES CODE, and a checkout is where code lives:
@@ -1349,7 +1345,13 @@ def bash_call(command, cwd: Path, session_id=""):
     fell_back = [] if role else [
         f"{how_role}, so the role could not be read; falling back to the "
         f"claim reading alone, which is what this gate was before #185."]
-    if role == NO_ROLE:
+    # `role is not None` FIRST, and it is not redundant: `role_of` returns
+    # None when it could not read herdr OR the table, and evaluating
+    # `roles()` here would re-raise the very failure it just turned into
+    # could-not-look -- refusing every session on this machine instead of
+    # falling back to the claim reading. Measured: with campaign-roles.py
+    # removed, the unguarded form refused a claimed worker's own worktree.
+    if role is not None and role == roles().NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
     if role == "planner":
         # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
@@ -1363,9 +1365,10 @@ def bash_call(command, cwd: Path, session_id=""):
         # for anyone: a `gh pr merge` is not a planner's by role, whatever its
         # name says.
         # READ AS A PAIR, and reduced to the subcommand only where the plane
-        # is what is being asked. `PLANNER_GH` is keyed on the subcommand
-        # because the plane is a property of it; `PLANNER_GH_EXCEPT` is keyed
-        # on the pair because the exception is a property of one verb.
+        # is what is being asked. The table's `gh` is keyed on the subcommand
+        # because the plane is a property of it; its `gh_except` is keyed on
+        # the pair because the exception is a property of one verb.
+        licence = roles().ROLES["planner"]
         pairs = set()
         for rest, is_write, _ in gh:
             if not is_write:
@@ -1373,13 +1376,14 @@ def bash_call(command, cwd: Path, session_id=""):
             w = gh_words(rest)
             pairs.add(((w[0] if w else ""), (w[1] if len(w) > 1 else "")))
         verbs = {sub for sub, _ in pairs}
-        excepted = sorted(f"{sub} {verb}" for sub, verb in pairs & PLANNER_GH_EXCEPT)
-        if verbs and verbs <= PLANNER_GH and not excepted and not stray:
+        excepted = sorted(f"{sub} {verb}"
+                          for sub, verb in pairs & licence["gh_except"])
+        if verbs and verbs <= licence["gh"] and not excepted and not stray:
             return allow([f"{what}: {how_role}, and a planner writes the "
                           f"campaign plane of any campaign."])
         read_on = [f"{how_role}, but `gh {v}` is not the campaign plane, so "
                    f"the planner licence does not cover it"
-                   for v in sorted(verbs - PLANNER_GH)]
+                   for v in sorted(verbs - licence["gh"])]
         # A REFUSAL AND NOT A SENTENCE. The first cut of this only appended to
         # `read_on` and fell through to the claim reading, which allowed a
         # planner `gh issue develop 9` outright whenever ANY worktree on this
@@ -1401,7 +1405,7 @@ def bash_call(command, cwd: Path, session_id=""):
             # both the header and the licence line fired
             # (kalaluthien/campaign-base#213's review). `read_on or [how_role]`
             # and not `read_on` alone: a bare `gh issue develop 9` leaves
-            # `read_on` EMPTY, since `issue` is in `PLANNER_GH` and only the
+            # `read_on` EMPTY, since `issue` is in the table's `gh` and only the
             # pair is excepted, so dropping the header outright would have lost
             # the role reading on exactly the command this branch is for.
             return refuse([f"{what}.", how, *(read_on or [how_role]), *[
@@ -1446,7 +1450,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the worker's, on one (#207).
         if (role == "worker" and campaign is not None and i == campaign
-                and all((sub, verb) in OWN_CAMPAIGN_GH
+                and all((sub, verb) in roles().ROLES["worker"]["own_campaign_gh"]
                         for j, sub, verb in per_write if j == i)):
             covering.append((i, [("its own campaign", f"campaign-{campaign}",
                                   "the session name")]))

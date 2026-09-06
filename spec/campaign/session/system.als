@@ -5,7 +5,7 @@
  *
  * A SESSION is one harness session -- the `claude` process a herdr pane runs,
  * and the thing a campaign session name names. That name's shape is not
- * restated here: `scripts/campaign-name-session.py` owns it, and a second
+ * restated here: `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns it, and a second
  * statement of it would admit names that script refuses. An agent sits ABOVE
  * it, because an agent is a session working its own claim or a delegate a
  * session launched, so the dependency runs orchestration -> session and
@@ -40,7 +40,7 @@ open synchronization/system
 one sig Request { covers: set Campaign }
 
 /* WHAT A SESSION IS FOR, read from its name -- `campaign-<N>-<role>-<n>`, whose
-   pattern `scripts/campaign-name-session.py` owns and which is not restated
+   pattern `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns and which is not restated
    here for the same reason the name's shape is not. `herdr agent list` is what
    joins a harness session id to that name, so this is a fact a guard can read
    about its own caller.
@@ -84,7 +84,7 @@ sig Session {
   /* WHICH CAMPAIGN THIS SESSION'S NAME SAYS IT IS OF, and `lone` because a
      name may say nothing -- a session that never named itself, or one whose
      name is not of the shape `campaign-<N>-<role>-<n>`. The name itself is not
-     modelled and must not be: `scripts/campaign-name-session.py` owns its
+     modelled and must not be: `.claude/skills/assuming-role/scripts/campaign-name-session.py` owns its
      spelling, and a second statement of it here would admit names that script
      refuses. What is modelled is only the one thing a reader does with it --
      tell whose campaign a session claims to be of -- which is the discriminator

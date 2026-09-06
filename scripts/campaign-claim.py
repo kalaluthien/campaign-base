@@ -162,7 +162,7 @@ it holds no branch -- because git answered.
 WHAT WENT WITH THE RECORD, AND IS GONE
 
 `take --name` checked a session's name against
-`scripts/campaign-name-session.py`'s rule and refused one belonging to another
+`.claude/skills/assuming-role/scripts/campaign-name-session.py`'s rule and refused one belonging to another
 campaign, because a stale name written into a record sent every later reader to
 the wrong session. There is no record to write a name into, so nothing
 here refuses a name AT THE CLAIM any more: a claim can be cut under a stale

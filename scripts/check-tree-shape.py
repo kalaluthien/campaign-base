@@ -148,6 +148,12 @@ RETIRED = [
     # The lookbehind is load-bearing: the destination path *ends* in
     # `scripts/acquire-repo.sh`, so a bare pattern would refuse every correct call
     # as well as every stale one.
+    # Same shape as acquire-repo below: the lookbehind lets the NEW path
+    # through, since `.claude/skills/assuming-role/scripts/campaign-name-session.py`
+    # spells the old substring inside the correct one.
+    (re.compile(r"(?<!assuming-role/)\bscripts/campaign-name-session\b"),
+     "#227 -- moved to "
+     ".claude/skills/assuming-role/scripts/campaign-name-session.py"),
     (re.compile(r"(?<!opening-campaign/)\bscripts/acquire-repo\b"),
      "#105 -- moved to .claude/skills/opening-campaign/scripts/acquire-repo.sh"),
     (extensionless_call(),

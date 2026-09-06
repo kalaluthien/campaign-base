@@ -131,7 +131,7 @@ sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
-  "$BASE/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
+  "$BASE/.claude/skills/assuming-role/scripts/campaign-name-session.py" "$HERDR_PANE_ID" campaign-<N>-<role>-<n>
 ```
 
 Read what it reports applied, then confirm with `ListAgents` that the harness

@@ -107,16 +107,19 @@ from pathlib import Path
 # the finding pointing at a script that exists.
 #
 # The extension went on `path` and not on `token` when #105 gave every script
-# one. `path` is a path -- it is printed as `scripts/<path>` and a reader runs
-# it -- while `token` is the form's name, and four of them name scripts that no
-# longer exist as files at all. A token also has a second reader nobody can
+# one. `path` is a path -- it is printed as it stands and a reader runs it --
+# while `token` is the form's name, and four of them name scripts that no
+# longer exist as files at all. It became REPO-RELATIVE with #227, when the
+# session-name form's owner moved under `.claude/skills/`: a hardcoded
+# `scripts/` prefix here would have printed a path that resolves to nothing,
+# and a finding a reader cannot open is a finding they cannot act on. A token also has a second reader nobody can
 # grep: every `<!-- unguarded: ... -->` already written in the tree, and in a
 # tree this check does not see. Changing one silently turns those exemptions
 # into non-matches, and a non-matching exemption is reported, not honoured.
 FORMS = [
     (
         "campaign-anchors",
-        "campaign-tracker.py",
+        "scripts/campaign-tracker.py",
         # The open-campaign issue survey: a `gh issue list` on this tracker asking for
         # the fields the classification reads.
         re.compile(r"\bgh\b[^|;&]*\bissue\s+list\b[^|;&]*"
@@ -125,7 +128,7 @@ FORMS = [
     ),
     (
         "campaign-bound",
-        "campaign-tracker.py",
+        "scripts/campaign-tracker.py",
         # The binding reading: the campaign issue's `bound:` LABEL, and the
         # machine it names compared against this one's. #176 moved the binding
         # off a `BOUND` comment onto a label, so the comment shapes went with
@@ -164,7 +167,7 @@ FORMS = [
     ),
     (
         "campaign-subtasks",
-        "campaign-tracker.py",
+        "scripts/campaign-tracker.py",
         # The sub-issue index read, in either pagination form.
         re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*sub_issues"
                    r"|sub_issues[^|;&]*--paginate"),
@@ -172,7 +175,7 @@ FORMS = [
     ),
     (
         "campaign-repos",
-        "campaign-repos.py",
+        "scripts/campaign-repos.py",
         # `## Lands in` JOINED THE CLAIM in kalaluthien/campaign-base#217: it is
         # the same vocabulary read by the same file, so a hand-rolled parse of
         # it is the same defect and belongs under the same owner rather than in
@@ -184,7 +187,7 @@ FORMS = [
     ),
     (
         "campaign-settlement",
-        "campaign-tracker.py",
+        "scripts/campaign-tracker.py",
         # The API field names only, not the words "not planned" / "not-planned"
         # a disposition table writes as prose: matching those false-fires on
         # prose that merely mentions a verdict rather than computing one.
@@ -193,7 +196,7 @@ FORMS = [
     ),
     (
         "campaign-local-work",
-        "campaign-local-work.py",
+        "scripts/campaign-local-work.py",
         re.compile(r"\bgit\b[^|;&]*\b(status|worktree\s+list|for-each-ref|stash\s+list)\b"
                    r"|\bgit\b[^|;&]*\bdiff\b[^|;&]*--quiet"
                    r"|\bgit\b[^|;&]*\bbranch\b[^|;&]*--no-merged"),
@@ -201,7 +204,7 @@ FORMS = [
     ),
     (
         "campaign-name-session",
-        "campaign-name-session.py",
+        ".claude/skills/assuming-role/scripts/campaign-name-session.py",
         re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
     ),
@@ -416,7 +419,7 @@ def main(argv):
                 # The path is what to call; the token is what to exempt. Both,
                 # because a finding naming only one sends half the readers to
                 # the wrong edit.
-                print(f"{p}:{n}: {what} belongs to scripts/{path} "
+                print(f"{p}:{n}: {what} belongs to {path} "
                       f"(exempt with `{token}`): {src}")
     if found:
         print(

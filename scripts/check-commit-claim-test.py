@@ -152,9 +152,9 @@ def main():
     # this code would have the call PROCEED. So the reading fails closed, and
     # names the cause rather than blaming the branch.
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",))
-        (f.trees["campaign-1/7-x"] / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py").unlink()
-        r, moved = commit(f, f.trees["campaign-1/7-x"])
+        f = build(d, claims=("demo/7-x",))
+        (f.trees["demo/7-x"] / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py").unlink()
+        r, moved = commit(f, f.trees["demo/7-x"])
         check("a claim whose name rule will not load is refused, not admitted",
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
         check("...naming the rule that would not load, not the branch",
@@ -177,13 +177,13 @@ def main():
               out(r)[:400])
 
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",), feature="feature")
-        r, moved = commit(f, f.trees["campaign-1/7-x"],
+        f = build(d, claims=("demo/7-x",), feature="feature")
+        r, moved = commit(f, f.trees["demo/7-x"],
                           env={"CLAUDE_CODE_SESSION_ID": "sid-1"})
         check("a commit in a worktree on a claimed branch goes through",
               r.returncode == 0 and moved, f"exit {r.returncode}: {out(r)[:300]}")
         check("...and the hook says the branch is a claim and where the ref was read",
-              "is a claim" in out(r) and "refs/remotes/origin/campaign-1/7-x"
+              "is a claim" in out(r) and "refs/remotes/origin/demo/7-x"
               in out(r), out(r)[:300])
         check("...naming the session it read from the environment",
               "session sid-1 (from CLAUDE_CODE_SESSION_ID)" in out(r), out(r)[:300])
@@ -210,8 +210,8 @@ def main():
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
 
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, unpushed=("campaign-1/8-y",))
-        wt8 = f.trees["campaign-1/8-y"]
+        f = build(d, unpushed=("demo/8-y",))
+        wt8 = f.trees["demo/8-y"]
         r, moved = commit(f, wt8)
         check("a campaign branch whose ref is on no remote is refused as no claim",
               r.returncode != 0 and not moved and "no such head" in out(r),
@@ -225,7 +225,7 @@ def main():
     # A delegate's clone under the campaign directory, hooks installed there
     # too (#178), judged by its own branch.
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",))
+        f = build(d, claims=("demo/7-x",))
         clone = f.clone()
         r = subprocess.run([str(clone / "scripts" / "install-hooks.sh"),
                             "--git-only"], cwd=clone, capture_output=True,
@@ -235,7 +235,7 @@ def main():
         check("a commit in a clone on main is refused",
               r.returncode != 0 and not moved and "on main" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
-        f.git(clone, "switch", "-q", "--track", "origin/campaign-1/7-x")
+        f.git(clone, "switch", "-q", "--track", "origin/demo/7-x")
         r, moved = commit(f, clone)
         check("...and on a claimed branch it goes through",
               r.returncode == 0 and moved and "is a claim" in out(r),
@@ -331,11 +331,13 @@ def main():
     # through to `exit 0` and was never pushed. Nothing said so. These cases
     # assert on the REMOTE, which is the only place the difference shows.
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("demo/9-topic", "campaign-1/9-topic"),
-                  feature="feature/9-topic")
+        f = build(d, claims=("demo/9-topic",), feature="feature/9-topic",
+                  unpushed=("campaign-1/9-topic",))
         for branch, want, why in (
-                ("demo/9-topic", True, "a slug claim, the form minted since #181"),
-                ("campaign-1/9-topic", True, "the retired form, still a claim"),
+                ("demo/9-topic", True, "a slug claim, the only form minted"),
+                ("campaign-1/9-topic", False,
+                 "the retired form, no longer a claim: `campaign` is a barred "
+                 "slug segment, so the pre-commit half refuses first"),
                 ("feature/9-topic", False,
                  "no claim, so the pre-commit half refuses and there is "
                  "nothing for the push half to reach")):

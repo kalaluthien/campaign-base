@@ -79,7 +79,7 @@ def main():
     def prompts(calls):
         return [c for c in calls if c[:2] == ["agent", "prompt"]]
 
-    r, calls = run(["w1:p1", "campaign-1-reviewer-1"])
+    r, calls = run(["w1:p1", "machinery-reviewer-1"])
     check("a role the rule does not admit is refused with nothing applied",
           r.returncode == 1 and not calls and "reviewer" in r.stderr,
           f"exit {r.returncode} calls {calls}")
@@ -90,24 +90,31 @@ def main():
     # that reddens. The assertion is on the message and not the exit status:
     # every other bad name exits 1 too, and what a session carrying the old
     # word needs told is the word that replaced it.
-    r, calls = run(["w1:p1", "campaign-1-executor-5"])
+    r, calls = run(["w1:p1", "machinery-executor-5"])
     check("the retired role word `executor` is refused, and the message names "
           "`worker`",
           r.returncode == 1 and not calls
-          and "campaign-1-executor-5" in r.stderr and "worker" in r.stderr,
+          and "machinery-executor-5" in r.stderr and "worker" in r.stderr,
           f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-5"],
+    r, calls = run(["w1:p1", "machinery-worker-5"],
                    agents=[{"pane_id": "w1:p1", "agent_status": "idle"}])
     check("...and the word that replaced it is admitted beside it",
           r.returncode == 0 and len(prompts(calls)) == 1
-          and prompts(calls)[0][3] == "/rename campaign-1-worker-5",
+          and prompts(calls)[0][3] == "/rename machinery-worker-5",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    # THE SLUG FORM AND THE ONE IT REPLACES, each with its own case, because
-    # both are admitted for one window and a case that passed on either would
-    # pin neither. When the retired form goes, the second of these is what
-    # reddens.
+    # THE RETIRED CAMPAIGN TOKEN, now refused (#237). It was admitted beside
+    # the slug for one window; the window closed when the last `machinery/`
+    # pull request merged. Nothing refuses it by name -- `RESERVED` bars a
+    # `campaign` segment, so `machinery` is simply not a slug, which is the
+    # same branch the case two below reads. Both are kept: this one says what
+    # a session carrying the old name is told, and that one says why.
+    r, calls = run(["w1:p1", "campaign-1-worker-5"])
+    check("the retired `campaign-<N>` name form is refused",
+          r.returncode == 1 and not calls and "campaign-1-worker-5" in r.stderr,
+          f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
+
     r, calls = run(["w1:p1", "machinery-worker-6"],
                    agents=[{"pane_id": "w1:p1", "agent_status": "idle"}])
     check("a slug name is admitted",
@@ -144,68 +151,68 @@ def main():
     check("a name carrying two role words is refused rather than read two ways",
           r.returncode == 1 and not calls, f"exit {r.returncode} calls {calls}")
 
-    r, calls = run(["w1:p1", "campaign-1-planner-1", "w1:p1", "campaign-1-worker-3"])
+    r, calls = run(["w1:p1", "machinery-planner-1", "w1:p1", "machinery-worker-3"])
     check("one pane named twice is refused before anything is applied",
           r.returncode == 1 and not calls and "named more than once" in r.stderr,
           f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-3", "w1:p2", "campaign-1-reviewer-1"])
+    r, calls = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-reviewer-1"])
     check("a bad name in the last pair leaves the first pair unapplied too",
           r.returncode == 1 and not calls, f"exit {r.returncode} calls {calls}")
 
     idle = [{"pane_id": "w1:p1", "agent_status": "idle"}]
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=idle)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle)
     check("an idle pane's rename is reported as sent",
           r.returncode == 0 and "/rename sent (confirm" in r.stdout
           and len(prompts(calls)) == 1
-          and prompts(calls)[0][3] == "/rename campaign-1-worker-3",
+          and prompts(calls)[0][3] == "/rename machinery-worker-3",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
     check("...and both names were set: herdr rename, then list, then prompt",
           [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"],
                                      ["agent", "prompt"]]
-          and calls[0][2:] == ["w1:p1", "campaign-1-worker-3"],
+          and calls[0][2:] == ["w1:p1", "machinery-worker-3"],
           f"calls {calls}")
 
     done = [{"pane_id": "w1:p1", "agent_status": "done"}]
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=done)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=done)
     check("a done pane is idle by herdr's own definition, so it reads as sent",
           r.returncode == 0 and "/rename sent (confirm" in r.stdout
           and "queued" not in r.stdout and len(prompts(calls)) == 1,
           f"exit {r.returncode} out {r.stdout!r}")
 
     blocked = [{"pane_id": "w1:p1", "agent_status": "blocked"}]
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=blocked)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=blocked)
     check("a blocked pane gets the herdr name and no prompt, exit 2",
           r.returncode == 2 and "NOT sent" in r.stdout and "blocked" in r.stdout
           and not prompts(calls)
           and [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"]],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=idle, rename_fails=True)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle, rename_fails=True)
     check("a failed herdr rename is reported, sends no prompt for that pane, exit 2",
           r.returncode == 2 and "herdr name  FAILED: rename broke" in r.stdout
           and not prompts(calls), f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=idle, prompt_fails=True)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle, prompt_fails=True)
     check("a failed herdr prompt is reported after the herdr name applied, exit 2",
           r.returncode == 2 and "harness     FAILED: prompt broke" in r.stdout
-          and "herdr name  campaign-1-worker-3" in r.stdout,
+          and "herdr name  machinery-worker-3" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
 
     working = [{"pane_id": "w1:p1", "agent_status": "working"}]
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=working)
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=working)
     check("a working pane's rename is sent once and reported as queued",
           r.returncode == 0 and "/rename queued: the pane is working" in r.stdout
           and "merges into the name" in r.stdout and len(prompts(calls)) == 1,
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], list_fails=True)
+    r, calls = run(["w1:p1", "machinery-worker-3"], list_fails=True)
     check("an unreadable agent list is said, and the rename is still sent",
           r.returncode == 0 and "status could not be read" in r.stdout
           and "list broke" in r.stdout and len(prompts(calls)) == 1,
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    r, calls = run(["w1:p1", "campaign-1-worker-3"], agents=idle[:0])
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle[:0])
     check("a pane absent from the list is said, not read as idle",
           r.returncode == 0 and "not in herdr agent list" in r.stdout
           and "/rename sent (confirm" not in r.stdout,
@@ -213,7 +220,7 @@ def main():
 
     two = [{"pane_id": "w1:p1", "agent_status": "idle"},
            {"pane_id": "w1:p2", "agent_status": "working"}]
-    r, calls = run(["w1:p1", "campaign-1-worker-3", "w1:p2", "campaign-1-planner-4"],
+    r, calls = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-planner-4"],
                    agents=two)
     check("two different panes in one call each get one prompt and their own wording",
           r.returncode == 0 and len(prompts(calls)) == 2

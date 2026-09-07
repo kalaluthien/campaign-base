@@ -270,61 +270,77 @@ def claim(args, path_dir, extra_env=None):
 
 def pure_cases(m):
     # --- which sub-issue a branch names ---
+    # THE SLUG IS PASSED, always. Since #237 it is the only prefix there is,
+    # so omitting it leaves nothing to match and every reading comes back None
+    # -- which is `could not look`, not `no claim`.
     check("a claim branch names its sub-issue",
-          m.issue_of_branch("campaign-1/176-github-facts", "1") == "176")
+          m.issue_of_branch("machinery/176-github-facts", "1", "machinery")
+          == "176")
     check("...and a branch of another campaign names none here",
-          m.issue_of_branch("campaign-2/176-x", "1") is None)
+          m.issue_of_branch("other/176-x", "1", "machinery") is None)
     # The one that would silently mis-attribute: `17` must not answer for `176`.
     check("a shorter number is not a prefix match",
-          m.issue_of_branch("campaign-1/176-x", "1") == "176"
-          and m.refs_for_issue(["campaign-1/176-x"], "1", "17") == [])
+          m.issue_of_branch("machinery/176-x", "1", "machinery") == "176"
+          and m.refs_for_issue(["machinery/176-x"], "1", "17", "machinery") == [])
     check("a second segment with no number claims no sub-issue",
-          m.issue_of_branch("campaign-1/topic-only", "1") is None)
+          m.issue_of_branch("machinery/topic-only", "1") is None)
     check("a branch outside the campaign prefix is not ours",
           m.issue_of_branch("main", "1") is None)
 
-    # --- the slug form, and the one it replaces ---
-    # TWO PREFIXES FOR ONE WINDOW, and each has its own case: a case passing on
-    # either would pin neither, and the second is what reddens when the retired
-    # form goes.
+    # --- one prefix, and what an unreadable slug means ---
+    # THE WINDOW IS CLOSED (#237). `campaign-<N>/` was read beside the slug
+    # until the last such pull request merged; the cases pinning it are gone
+    # and their slug twins are these.
     check("a slug branch names its sub-issue",
           m.issue_of_branch("demo/176-x", "1", "demo") == "176")
-    check("...and the retired form still does, beside it",
-          m.issue_of_branch("campaign-1/176-x", "1", "demo") == "176")
+    check("...and the retired form names none, now that nothing reads it",
+          m.issue_of_branch("campaign-1/176-x", "1", "demo") is None)
     check("...and another campaign's slug names none here",
           m.issue_of_branch("other/176-x", "1", "demo") is None)
-    check("a campaign with no readable slug reads only the retired prefix",
-          m.prefixes("1", None) == ["campaign-1/"])
-    check("...and with one, the slug's prefix comes first",
-          m.prefixes("1", "demo") == ["demo/", "campaign-1/"])
+    check("a campaign's claims wear exactly one prefix",
+          m.prefixes("1", "demo") == ["demo/"])
+    # EMPTY IS `COULD NOT LOOK`. With the retired form gone there is no second
+    # prefix to fall back to, so a slug that would not read leaves nothing --
+    # and `list_refs` must refuse rather than report an empty campaign, which
+    # is what `release` deletes refs off.
+    check("no readable slug leaves no prefix at all",
+          m.prefixes("1", None) == [])
     # ONE FORM IS MINTED. Nothing is ever named `campaign-<N>/` again, which is
     # what closes the window rather than letting it linger.
     check("a claim is cut as <slug>/<issue>-<topic>",
           m.branch_name("demo", "176", "x") == "demo/176-x")
-    check("one sub-issue holding a ref under each form is two refs, not one",
+    check("only the campaign's own slug prefix is its sub-issue's ref",
           m.refs_for_issue(["demo/7-a", "campaign-1/7-b"], "1", "7", "demo")
-          == ["demo/7-a", "campaign-1/7-b"])
+          == ["demo/7-a"])
 
-    refs, why = m.parse_refs('["refs/heads/campaign-1/7-a","refs/tags/v1"]')
+    # AN UNREADABLE SLUG DENIES THE WHOLE LISTING. Before #237 it fell back to
+    # `campaign-<N>/`; now there is nothing to fall back to, and a `[]` here
+    # would be an empty campaign -- which `release` deletes refs off. The
+    # network is not reached, so no stub is needed: the refusal comes first.
+    got, why = m.matching_refs("o/r", "1", None)
+    check("a listing with no readable slug is a why, not zero claims",
+          got is None and why and "could not look" in why, f"{got} {why}")
+
+    refs, why = m.parse_refs('["refs/heads/machinery/7-a","refs/tags/v1"]')
     check("a tag in the ref listing is not a claim branch",
-          refs == ["campaign-1/7-a"] and why is None)
+          refs == ["machinery/7-a"] and why is None)
     refs, why = m.parse_refs("not json")
     check("a ref listing that did not parse is a why, not zero claims",
           refs is None and why)
 
     # --- which ref a release is about ---
-    b, refusal = m.which_branch(["campaign-1/7-a"], "1", "7", None)
-    check("one matching ref answers the release", b == "campaign-1/7-a" and not refusal)
-    b, refusal = m.which_branch([], "1", "7", None)
+    b, refusal = m.which_branch(["machinery/7-a"], "1", "7", None, "machinery")
+    check("one matching ref answers the release", b == "machinery/7-a" and not refusal)
+    b, refusal = m.which_branch([], "1", "7", None, "machinery")
     check("no matching ref is a refusal naming --branch",
           b is None and refusal and "--branch" in refusal)
-    b, refusal = m.which_branch(["campaign-1/7-a", "campaign-1/7-b"], "1", "7", None)
+    b, refusal = m.which_branch(["machinery/7-a", "machinery/7-b"], "1", "7", None, "machinery")
     check("TWO refs on one sub-issue are refused, never picked between",
           b is None and refusal and "7-a" in refusal and "7-b" in refusal)
-    b, refusal = m.which_branch(["campaign-1/7-a", "campaign-1/7-b"], "1", "7",
-                                "campaign-1/7-b")
+    b, refusal = m.which_branch(["machinery/7-a", "machinery/7-b"], "1", "7",
+                                "machinery/7-b")
     check("...and --branch names one directly, past the refusal",
-          b == "campaign-1/7-b" and not refusal)
+          b == "machinery/7-b" and not refusal)
 
     # --- the binding gate ---
     check("only `here` admits a ref cut", m.binding_verdict("here") is None)
@@ -332,9 +348,9 @@ def pure_cases(m):
         check(f"the binding refuses on {word!r}", bool(m.binding_verdict(word)))
 
     # --- the herdr half ---
-    rows, why = m.parse_agents(listing(agent("s1", "campaign-1-worker-1", "/x")))
+    rows, why = m.parse_agents(listing(agent("s1", "machinery-worker-1", "/x")))
     check("a herdr row is read by its session id",
-          why is None and rows["s1"]["name"] == "campaign-1-worker-1")
+          why is None and rows["s1"]["name"] == "machinery-worker-1")
     rows, why = m.parse_agents(listing({"name": "n", "cwd": "/x", "pane_id": "p"}))
     check("a row herdr cannot identify is counted, never dropped",
           why is None and len(rows) == 1
@@ -345,36 +361,36 @@ def pure_cases(m):
 
     # --- the worktree half, as a parse ---
     where = m.parse_worktrees(
-        "worktree /a\nHEAD aaa\nbranch refs/heads/campaign-1/7-a\n\n"
+        "worktree /a\nHEAD aaa\nbranch refs/heads/machinery/7-a\n\n"
         "worktree /b\nHEAD bbb\ndetached\n\n"
         "worktree /c\nHEAD ccc\nbranch refs/heads/main\n")
     check("a worktree's branch is read off its own paragraph",
-          where.get("campaign-1/7-a") == ["/a"])
+          where.get("machinery/7-a") == ["/a"])
     check("a DETACHED worktree holds no branch and is not an unread reading",
           "/b" not in sum(where.values(), []))
     check("...and the paragraph after it is still read",
           where.get("main") == ["/c"])
 
     # --- the join ---
-    stood = {"campaign-1/7-a": ["/w/7"]}
+    stood = {"machinery/7-a": ["/w/7"]}
     sessions = {
-        "s1": {"name": "campaign-1-worker-1", "cwd": "/x", "pane": "p1",
+        "s1": {"name": "machinery-worker-1", "cwd": "/x", "pane": "p1",
                "status": "working"},
-        "s2": {"name": "campaign-2-worker-1", "cwd": "/y", "pane": "p2",
+        "s2": {"name": "other-worker-1", "cwd": "/y", "pane": "p2",
                "status": "idle"},
     }
     occupied, vacant, ours = m.classify(
-        ["campaign-1/7-a", "campaign-1/8-b"], stood, sessions, "1")
+        ["machinery/7-a", "machinery/8-b"], stood, sessions, "1", "machinery")
     check("a claim with a checkout is occupied",
-          occupied == [("campaign-1/7-a", ["/w/7"])])
+          occupied == [("machinery/7-a", ["/w/7"])])
     check("a claim with no checkout is vacant",
-          vacant == [("campaign-1/8-b", [])])
+          vacant == [("machinery/8-b", [])])
     check("only sessions of THIS campaign are listed",
-          [n for _, r in ours for n in [r["name"]]] == ["campaign-1-worker-1"])
+          [n for _, r in ours for n in [r["name"]]] == ["machinery-worker-1"])
     # A campaign whose number is a prefix of another's must not collect it.
     check("campaign 1 does not collect campaign 11's sessions",
-          not m.classify([], {}, {"s": {"name": "campaign-11-worker-1"}},
-                         "1")[2])
+          not m.classify([], {}, {"s": {"name": "eleven-worker-1"}},
+                         "1", "machinery")[2])
 
     check("occupants names every workspace holding the branch",
           m.occupants({"b": ["/w1", "/w2"]}, "b") == ["/w1", "/w2"])
@@ -439,8 +455,8 @@ def live_cases(m):
     lands in is then a property of the fixture and not of the day."""
     with tempfile.TemporaryDirectory() as d:
         path = shims(d, herdr=listing(
-            agent("s1", "campaign-9999-worker-1", d),
-            agent("s2", "campaign-1-planner-9", d)))
+            agent("s1", "probe-worker-1", d),
+            agent("s2", "machinery-planner-9", d)))
         r = claim(["live", "9999"], path)
         out = r.stdout + r.stderr
         # A VACANT REF WHOSE WORK LANDED BLOCKS NOTHING, and saying so is what
@@ -458,14 +474,14 @@ def live_cases(m):
               "probe/1-alpha" in out
               and "claims checked out nowhere on this machine (2)" in out)
         check("a live session of this campaign is listed",
-              "campaign-9999-worker-1" in out)
+              "probe-worker-1" in out, out[:500])
         check("...and a session of another campaign is not",
-              "campaign-1-planner-9" not in out)
+              "machinery-planner-9" not in out)
         check("live reaches no verdict", "No verdict" in out and r.returncode == 0)
 
         # A reading that did not happen must deny every count below it.
         broken = shims(Path(d) / "broken", gh="#!/bin/sh\nexit 1\n",
-                       herdr=listing(agent("s1", "campaign-9999-worker-1", d)))
+                       herdr=listing(agent("s1", "probe-worker-1", d)))
         r = claim(["live", "9999"], broken)
         out = r.stdout + r.stderr
         check("a failed ref listing denies the counts and exits 1",
@@ -984,7 +1000,7 @@ def release_cases(m):
         # somebody's workspace right now. The herdr row's cwd is the worktree's
         # OWNING repository, which is how the sweep reaches a worktree at all.
         path = shims(d, herdr=listing(
-            agent("s1", "campaign-9999-worker-1", str(repo))))
+            agent("s1", "probe-worker-1", str(repo))))
         r = claim(["release", "9999", "1"], path)
         out = r.stdout + r.stderr
         check("release refuses a branch a workspace is standing in",
@@ -1567,8 +1583,8 @@ def verdict_cases(m, capsys=None):
             m.cmd_live(Args())
         out = buf.getvalue()
         check("an unnamed session under the base root reaches the peer list",
-              "live sessions of campaign-9 (1)" in out
-              and "/BASE/anywhere" in out)
+              "live sessions of nine (1)" in out
+              and "/BASE/anywhere" in out, out[:500])
         # A row silently missing from a count is the shape nobody questions, so
         # `live` says which session it left out -- and says plainly when there
         # is no session id to leave out, because then the closer's own row makes
@@ -1651,19 +1667,19 @@ def repos_cases(m):
     # function could have had, including the one that dropped the repository.
     real = m.matching_refs
     try:
-        answers = {"o/base": (["campaign-1/7-a"], None),
-                   "o/acme": (["campaign-1/8-b"], None)}
+        answers = {"o/base": (["machinery/7-a"], None),
+                   "o/acme": (["machinery/8-b"], None)}
         m.matching_refs = lambda repo, n, slug=None: answers[repo]
         found, unread = m.all_refs(["o/base", "o/acme"], "1")
         check("all_refs keys each branch to the repository it was found on",
-              found == {"campaign-1/7-a": "o/base",
-                        "campaign-1/8-b": "o/acme"} and not unread)
+              found == {"machinery/7-a": "o/base",
+                        "machinery/8-b": "o/acme"} and not unread)
         # A repository whose listing failed is NAMED, because a claim that could
         # not be read is not an absent one.
         answers["o/acme"] = (None, "acme would not answer")
         found, unread = m.all_refs(["o/base", "o/acme"], "1")
         check("...and a repository that would not answer is reported",
-              found == {"campaign-1/7-a": "o/base"}
+              found == {"machinery/7-a": "o/base"}
               and unread == ["acme would not answer"])
     finally:
         m.matching_refs = real
@@ -1672,16 +1688,17 @@ def repos_cases(m):
 def peer_cases(m):
     """Who a close is told to ask -- and who it is not."""
     sessions = {
-        "me": {"name": "campaign-9-worker-1", "cwd": "/base/x", "pane": "p",
+        "me": {"name": "demo-worker-1", "cwd": "/base/x", "pane": "p",
                "status": "idle"},
-        "peer": {"name": "campaign-9-planner-2", "cwd": "/base", "pane": "p",
+        "peer": {"name": "demo-planner-2", "cwd": "/base", "pane": "p",
                  "status": "idle"},
         "unnamed": {"name": "<unnamed>", "cwd": "/base/y", "pane": "p",
                     "status": "idle"},
-        "other": {"name": "campaign-3-worker-1", "cwd": "/elsewhere",
+        "other": {"name": "third-worker-1", "cwd": "/elsewhere",
                   "pane": "p", "status": "idle"},
     }
-    _, _, ours = m.classify([], {}, sessions, "9", root="/base", caller="me")
+    _, _, ours = m.classify([], {}, sessions, "9", "demo", root="/base",
+                            caller="me")
     names = sorted(sid for sid, _ in ours)
     # THE CLOSER IS NOT ITS OWN BLOCKER: a close runs from a session of the
     # campaign, so a gate refusing on any live session of it can never pass.
@@ -1698,19 +1715,19 @@ def peer_cases(m):
     # THE OVERCORRECTION. Counting every session under the base root made
     # `ours` identical for every campaign number, so closing #116 asked #1's
     # planner to stand down. A name that says whose it is, is believed.
-    under_base = {"x": {"name": "campaign-1-planner-3", "cwd": "/base",
+    under_base = {"x": {"name": "machinery-planner-3", "cwd": "/base",
                         "pane": "p", "status": "idle"}}
     check("a session named for ANOTHER campaign is not this one's, even here",
-          not m.classify([], {}, under_base, "116", root="/base",
+          not m.classify([], {}, under_base, "116", "elsewhere", root="/base",
                          caller=None)[2])
     check("...and it IS its own campaign's",
-          len(m.classify([], {}, under_base, "1", root="/base",
+          len(m.classify([], {}, under_base, "1", "machinery", root="/base",
                          caller=None)[2]) == 1)
 
-    # BOTH NAME FORMS ARE THIS CAMPAIGN'S, for the window in which both are
-    # worn. A session renamed to the slug while its peers still carry
-    # `campaign-<N>` is still a peer, and a close that missed either would sweep
-    # past a live session. One case per form, so neither covers the other.
+    # ONE NAME FORM SINCE #237. The retired `campaign-<N>-<role>-<n>` was a
+    # peer's name for one window; it is not one now, and the case below is
+    # what says so rather than a comment. `campaign` is a barred slug segment,
+    # so the name simply fails to name a campaign.
     mixed = {"old": {"name": "campaign-9-worker-1", "cwd": "/elsewhere",
                      "pane": "p", "status": "idle"},
              "new": {"name": "nine-worker-2", "cwd": "/elsewhere",
@@ -1720,17 +1737,20 @@ def peer_cases(m):
     got = sorted(sid for sid, _ in
                  m.classify([], {}, mixed, "9", "nine", root="/base",
                             caller=None)[2])
-    check("a peer named for the slug and one named campaign-<N> are both ours",
-          got == ["new", "old"], str(got))
+    check("a peer named for the slug is ours", got == ["new"], str(got))
+    check("...and one still wearing the retired `campaign-<N>` name is not",
+          "old" not in got, str(got))
     check("...and a peer named for another slug is not, wherever it sits",
           "alien" not in got)
-    # A campaign whose slug could not be read still knows its retired token, so
-    # the reading narrows rather than emptying.
+    # NO SLUG IS `COULD NOT LOOK`. With the retired token gone there is no
+    # second thing a peer could be named for, so nothing off the base root can
+    # be claimed as this campaign's -- and a close reading zero peers here is
+    # reading an unanswered question, not an empty machine.
     got = sorted(sid for sid, _ in
                  m.classify([], {}, mixed, "9", None, root="/base",
                             caller=None)[2])
-    check("with no slug read, the retired name form is still this campaign's",
-          got == ["old"], str(got))
+    check("with no slug read, no session elsewhere is named as ours",
+          got == [], str(got))
 
     # `under` answers about absolute paths only: `Path.resolve()` resolves a
     # relative one against the PROCESS cwd, so herdr's `"?"` placeholder counted
@@ -1777,9 +1797,9 @@ def compact_cases(m):
     pane are the two failures, and only one of them is visible in the exit
     status -- neither, in fact, which is why release's exit is asserted to be
     0 in all five."""
-    rows = {"S1": {"name": "campaign-9999-worker-1", "status": "idle",
+    rows = {"S1": {"name": "probe-worker-1", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p1"},
-            "S2": {"name": "campaign-9999-worker-2", "status": "idle",
+            "S2": {"name": "absent-worker-2", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p2"}}
     pane, note = m.own_pane(rows, "S2")
     check("own_pane joins the session id to its own row, not the first row",
@@ -1822,8 +1842,8 @@ exit 1
         # TWO ROWS, and the releasing session is the SECOND. A shim that
         # prompted the first pane would pass a one-row fixture, which is the
         # bug "never prompts a pane that is not its own" names.
-        two = listing(agent("S1", "campaign-9999-worker-1", d, pane="w1:p1"),
-                      agent("S2", "campaign-9999-worker-2", d, pane="w1:p2"))
+        two = listing(agent("S1", "probe-worker-1", d, pane="w1:p1"),
+                      agent("S2", "absent-worker-2", d, pane="w1:p2"))
 
         ok = shims(Path(d) / "ok", gh=rel_gh, herdr=two)
         r = claim(["release", "9999", "4"], ok,

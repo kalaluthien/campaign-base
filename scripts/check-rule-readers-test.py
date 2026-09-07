@@ -121,9 +121,9 @@ FORM_CASES = [
     ("local-work: the long spelling", fence("git status --porcelain"), 1),
     ("local-work: diff --quiet asks the same thing", fence("git diff --quiet"), 1),
     ("local-work: unmerged branches", fence("git branch --no-merged main"), 1),
-    ("local-work: for-each-ref over campaign refs", fence("git for-each-ref refs/heads/campaign-1/"), 1),
-    ("name-session: the herdr pane call", fence("herdr agent rename p1 campaign-1-worker-1"), 1),
-    ("name-session: the harness call", fence('herdr agent prompt p1 "/rename campaign-1-worker-1"'), 1),
+    ("local-work: for-each-ref over campaign refs", fence("git for-each-ref refs/heads/machinery/"), 1),
+    ("name-session: the herdr pane call", fence("herdr agent rename p1 machinery-worker-1"), 1),
+    ("name-session: the harness call", fence('herdr agent prompt p1 "/rename machinery-worker-1"'), 1),
 ]
 
 # How far the pinning goes, stated because a reader would otherwise infer more:
@@ -380,7 +380,7 @@ def main():
     # `<path>` -- so an assertion on the path alone passes with the old
     # hardcoded prefix restored, which is the mutation this case exists to
     # catch. Measured: it did pass, until the preceding word was pinned too.
-    code, out = run(fence("herdr agent rename w1:p1 campaign-1-worker-1"))
+    code, out = run(fence("herdr agent rename w1:p1 machinery-worker-1"))
     named = ("belongs to .claude/skills/assuming-role/scripts/"
              "campaign-name-session.py" in out)
     print(f"{'ok  ' if named else 'FAIL'}  the finding names the owner's whole path")

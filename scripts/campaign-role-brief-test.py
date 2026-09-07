@@ -78,7 +78,7 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
         # `runtime/briefed/`, which is a suite editing its subject's tree.
         (d / "AGENTS.md").write_text("# outer\n")
         (d / "runtime").mkdir()
-        camp = d / "campaign-260101"
+        camp = d / "dated"
         (camp / "runtime").mkdir(parents=True)
         if campaign_agents is not None:
             (camp / "AGENTS.md").write_text(campaign_agents)
@@ -139,9 +139,9 @@ def main():
     # it: a session named before #181 must not read as no-role and lose its
     # brief on the strength of a rename it has not been asked to make.
     r, _, _ = run({"session_id": SID}, argv=["--role"],
-                  agents=row(SID, "campaign-1-worker-10"))
+                  agents=row(SID, "machinery-worker-10"))
     check("a name in the retired `campaign-<N>` form still reads as a role",
-          r.stdout.strip() == "worker campaign-1", f"out {r.stdout!r}")
+          r.stdout.strip() == "worker machinery", f"out {r.stdout!r}")
 
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=[])
     check("a session herdr holds no row for reads as NO ROLE, naming the id",
@@ -315,7 +315,7 @@ FENCE-MARK
     check("...and its record lands at the nearest ancestor that has both, not "
           "in the campaign directory that has only one",
           rec is not None and where is not None
-          and where.name != "campaign-260101"
+          and where.name != "dated"
           and str(where).startswith("/") and "campaign-base" not in str(where),
           f"rec {rec!r} at {where}")
 

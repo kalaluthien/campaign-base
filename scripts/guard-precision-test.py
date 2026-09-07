@@ -61,7 +61,7 @@ def run(lines, *args, path=None):
 NO_CLAIM = ("gh issue close: a campaign-plane write, and this session holds no "
             "claim covering a write to #9.")
 NO_CLAIM_11 = NO_CLAIM.replace("#9", "#11")
-COVERED = "gh issue close: cwd /x -> /x; /x/wt is on campaign-1/9-y, a claim."
+COVERED = "gh issue close: cwd /x -> /x; /x/wt is on machinery/9-y, a claim."
 
 
 def main():

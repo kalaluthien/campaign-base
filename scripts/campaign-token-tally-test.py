@@ -70,7 +70,7 @@ def run(root, base, command, pr_map, extra=()):
          # `campaign-tracker.py`, which asked GitHub about this machine's
          # campaign #1 four times per suite run -- green either way, and a
          # network call from a suite that says no case reaches one.
-         "--offline", *extra],
+         "--offline", "--slug", "machinery", *extra],
         capture_output=True, text=True)
     if out.returncode != 0:
         raise SystemExit(f"{command} failed: {out.stderr}")
@@ -165,10 +165,10 @@ def build(tmp):
     # A worktree whose directory was deleted when its sub-issue closed.
     dead = str(base / "camp-260101" / "worktrees" / "302")
     # A turn on a claim branch at the base root, and one that is only prose.
-    prose = ("the branch is campaign-1/306-topic and issue 305 and "
+    prose = ("the branch is machinery/306-topic and issue 305 and "
              "kalaluthien/campaign-base#305 -- none of this is a place")
     write(root / "proj" / "s1.jsonl", [
-        {"type": "agent-name", "sessionId": "s1", "agentName": "campaign-1-worker-9"},
+        {"type": "agent-name", "sessionId": "s1", "agentName": "machinery-worker-9"},
         *folded,
         {"type": "user", "timestamp": day + "01:00:03Z", "cwd": wt,
          "gitBranch": "main", "sessionId": "s1", "uuid": "r1",
@@ -192,7 +192,7 @@ def build(tmp):
              {"type": "tool_result", "tool_use_id": "t7",
               "content": [{"type": "text", "text": "C" * 600}]}]}},
         assistant("m-branch", day + "02:00:00Z", str(base),
-                  branch="campaign-1/301-topic", out=70),
+                  branch="machinery/301-topic", out=70),
         assistant("m-dead", day + "02:10:00Z", dead, out=60),
         assistant("m-prose", day + "02:20:00Z", str(base), out=40,
                   blocks=[{"type": "text", "text": prose}]),
@@ -234,7 +234,7 @@ def build(tmp):
                   agent="a3"),
     ])
     pr_map = tmp / "prs.json"
-    pr_map.write_text(json.dumps([{"number": 400, "headRefName": "campaign-1/303-x"}]))
+    pr_map.write_text(json.dumps([{"number": 400, "headRefName": "machinery/303-x"}]))
     return root, base, pr_map
 
 
@@ -330,7 +330,7 @@ def main():
         # SESSIONS NAME THE SUBAGENT BY ITS PARENT, which is the only place the
         # name is written.
         check("a subagent's row names the session that started it",
-              "(subagent of campaign-1-worker-9)" in sessions, sessions)
+              "(subagent of machinery-worker-9)" in sessions, sessions)
 
         # REVIEWS READ THE LEVEL AND THE PULL REQUEST FROM THE BRIEF.
         check("a review round is one row, with its pull request and level",
@@ -415,6 +415,13 @@ def main():
                  "--offline"], capture_output=True, text=True)
             check("...and --offline says it read no slug at all",
                   "--offline, so no slug was read" in r.stdout, r.stdout[:400])
+            # AND SAYS WHAT THAT COSTS. Before #237 no slug meant the pattern
+            # narrowed to `campaign-<N>/`, which for any campaign filed after
+            # #181 matched nothing while reading like a pattern. Now it names
+            # the consequence and the escape.
+            check("...and that no branch is attributed, naming --slug",
+                  "NO branch is attributed" in r.stdout
+                  and "--slug" in r.stdout, r.stdout[:400])
 
     for name in FAILED:
         print(f"FAIL  {name}")

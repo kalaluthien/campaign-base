@@ -281,14 +281,17 @@ def read_worktrees(repo, name, rep, prefix=None):
 
 
 def campaign_prefixes(n, rep):
-    """Every branch prefix this campaign's claims can wear, newest first.
+    """Every branch prefix this campaign's claims can wear.
 
-    Two for one window: `<slug>/`, cut since #181, and the `campaign-<N>/` every
-    branch before it carries. The slug comes from `campaign-tracker.py slug`,
-    the one reader of the `campaign:<slug>` label -- read as the WORD it prints,
-    never the exit status. A slug that could not be read narrows the reading to
-    the retired form and is REPORTED, because a narrower sweep that says nothing
-    reads exactly like a machine holding less work than it does."""
+    ONE SINCE #237: `<slug>/`. It was two for one window, the second being the
+    `campaign-<N>/` every branch before #181 carries. The slug comes from
+    `campaign-tracker.py slug`, the one reader of the `campaign:<slug>` label
+    -- read as the WORD it prints, never the exit status.
+
+    A SLUG THAT WOULD NOT READ NOW LEAVES NOTHING, where it used to leave the
+    retired prefix. The empty list is REPORTED and returned, because a sweep
+    that read no prefix and said nothing reads exactly like a machine holding
+    no work."""
     tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "campaign-tracker.py")
     try:
@@ -311,10 +314,11 @@ def campaign_prefixes(n, rep):
             why = (f"campaign-tracker slug {n} exited {out.returncode} without "
                    f"a verdict: {out.stderr.strip()[:120] or 'no message'}")
     if why:
-        rep.report(f"REPORT: {why}, so only campaign-{n}/ branches were read. "
-                   f"A branch cut under a slug would not appear below.")
-        return [f"campaign-{n}/"]
-    return [f"{word}/", f"campaign-{n}/"]
+        rep.report(f"REPORT: {why}, so NO branch prefix could be read for "
+                   f"#{n} and no claim of it appears below. This is `could "
+                   f"not look`, not an empty campaign.")
+        return []
+    return [f"{word}/"]
 
 
 def read_base(base, n, rep):

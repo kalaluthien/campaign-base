@@ -98,18 +98,23 @@ def main():
                 "clw2", str(shim / "campaign-local-work.py")))
         m2 = importlib.util.module_from_spec(spec2)
         spec2.loader.exec_module(m2)
+        # ONE PREFIX SINCE #237, and an unreadable slug leaves NONE -- where it
+        # used to fall back to `campaign-<N>/`. The empty list is the point:
+        # the sweep read nothing, and says so, rather than reporting a machine
+        # holding no work.
         for body, want, prefixes in (
-                ("print('demo')\n", None, ["demo/", "campaign-9/"]),
+                ("print('demo')\n", None, ["demo/"]),
                 ("print('none')\nraise SystemExit(1)\n",
-                 "carries no `campaign:` label", ["campaign-9/"]),
+                 "carries no `campaign:` label", []),
                 ("import sys\nprint('boom', file=sys.stderr)\n"
                  "raise SystemExit(2)\n",
-                 "without a verdict", ["campaign-9/"])):
+                 "without a verdict", [])):
             (shim / "campaign-tracker.py").write_text(
                 "#!/usr/bin/env python3\n" + body)
             rep = Rep()
             got = m2.campaign_prefixes("9", rep)
-            check(f"campaign_prefixes sweeps {prefixes}",
+            check(f"campaign_prefixes sweeps {prefixes} when the tracker "
+                  f"{'answers' if want is None else repr(want)}",
                   got == prefixes, f"{got} {rep.lines}")
             if want is None:
                 check("...and a slug that read reports nothing",

@@ -207,7 +207,7 @@ def main():
     # column itself, so the import is exercised rather than assumed.
     word, note = m.claim_column("o/r", "9")
     check("the claim column reads the remote's refs, and says which",
-          "refs under campaign-9/" in note or "did not read" in note)
+          "refs under demo/" in note or "did not read" in note)
     reader, why = m.claim_reader()
     check("campaign-claim still exposes what the column imports",
           why is None and hasattr(reader, "matching_refs")

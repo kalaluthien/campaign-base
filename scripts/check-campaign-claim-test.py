@@ -2119,9 +2119,17 @@ def main():
         # "the log write itself raised" sends the next reader into a function
         # that was not called. Without this row that wording is read by
         # nothing and can go back silently.
-        check("...and says the attempt raised, not that the log write did",
-              "the attempt raised" in out(r)
-              and "the log write itself raised" not in out(r), out(r)[:400])
+        # ASSERT WHAT THE CORRECTION REMOVED, not the words around it. The
+        # finding was that the handler must not say whether a row LANDED, and
+        # `"the attempt raised" in out` is satisfied by the overclaiming
+        # sentence too -- so the retired claim could come back verbatim under
+        # a compatible spelling with this case still green. The absent string
+        # is the whole test; a string no revert produces (`the log write
+        # itself raised`, which lives only in this file) asserts nothing.
+        check("...and does not say whether a row landed, which this frame "
+              "cannot observe",
+              "as far as this could tell" in out(r)
+              and "before any row was written" not in out(r), out(r)[:400])
 
     # A CRASH AFTER THE VERDICT IS NOT AN UNJUDGED CALL. The handler above
     # wraps all of `main`, the log write included, so an exception past the

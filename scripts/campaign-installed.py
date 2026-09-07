@@ -47,8 +47,10 @@ THE THREE READINGS, and what each prints so a bare verdict never stands alone:
           it is current`, and a check that read nothing must not pass. The
           named failing case in the suite is the marker present and the step
           skipped: an install behind its remote, read as `behind 1`. An
-          `owner/repo` narrows it to one row, the base included when named;
-          a word that is not an `owner/repo` is refused, nothing compared.
+          `owner/repo` narrows it to one row, the base included when named,
+          and one with no row is refused (`has no installed row ...; nothing
+          to check`); a word that is not an `owner/repo` is refused, nothing
+          compared.
   reach   the post-merge step for one row. Says `nothing to reach` and exits
           0 when the repository has no row: it is not installed, and that is
           an answer. Refuses when the word is not an `owner/repo` (the same
@@ -66,8 +68,10 @@ A FAILED `apply` IS DURABLE, because git cannot see it. The fast-forward has
 happened by the time `apply` runs, so an install whose `apply` failed reads
 `current` to every git question; `reach` writes `APPLY_FAILED` inside the
 install's own `.git/` naming the command and its status, and `check` reads it
-as the word `apply failed` -- unread, NOT clear -- until a later `reach` runs
-the command through and removes it. Inside `.git/` because that is the one
+as the word `apply failed` -- its own count, NOT clear -- until a later `reach`
+runs the command through and removes it. A mark that cannot be written or
+removed is said in the merger's line, never a traceback, because the line is
+what a REPORT quotes. Inside `.git/` because that is the one
 place tied to the install that no tree, hook or clone reads.
 
 THE PATH IS THE CHECKOUT'S ROOT, not a directory inside one. `rev-parse
@@ -304,7 +308,17 @@ def cmd_reach(body_path, args):
             return 1
         applied = f"`{apply}` ran"
     if mark.exists():
-        mark.unlink()
+        try:
+            mark.unlink()
+        except OSError as e:
+            # The install IS reached; what is wrong is that `check` will go on
+            # reading the stale mark, so say that in the line the merger quotes.
+            _, head, _ = git(path, "rev-parse", "HEAD")
+            print(f"reached {slug} at {path}: HEAD {head} contains {sha}; apply "
+                  f"{applied}; BUT THE STALE MARK COULD NOT BE REMOVED ({mark}: "
+                  f"{e.strerror}), so `check` will read `apply failed` until it "
+                  f"is removed by hand", file=sys.stderr)
+            return 1
     _, head, _ = git(path, "rev-parse", "HEAD")
     print(f"reached {slug} at {path}: HEAD {head} contains {sha}; apply {applied}")
     return 0

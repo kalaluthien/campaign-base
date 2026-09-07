@@ -151,6 +151,8 @@ def main():
         check("a path inside a checkout is refused as inside it, naming the root",
               rc == 1 and f"-- inside the checkout {os.path.realpath(install)}" in out,
               out + err)
+        check("...and the detail spells the same directory the same way",
+              f"{os.path.realpath(sub)} is not that checkout's root" in out, out)
 
         # ---- reach
         rc, out, err = run("reach", body(tmp, marker), "other/plain", merged)
@@ -196,6 +198,12 @@ def main():
                            "example/thing", unmerged)
         check("a mark that cannot be written is said in the merger's line, not a traceback",
               rc == 1 and "THE MARK COULD NOT BE WRITTEN" in err and "Traceback" not in err, err)
+        # Still a directory: `unlink` refuses one on every platform, where a
+        # read-only `.git/` would stop git itself before the mark is reached.
+        rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
+        check("a mark that cannot be removed is said in the merger's line after a real reach",
+              rc == 1 and "STALE MARK COULD NOT BE REMOVED" in err and "Traceback" not in err
+              and git(install, "rev-parse", "HEAD") == unmerged, err)
         mark.rmdir(); mark.write_text("apply `false` exited 1:\n")
         rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
         check("a reach whose apply runs through clears the mark",

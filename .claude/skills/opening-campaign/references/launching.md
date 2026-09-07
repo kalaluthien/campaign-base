@@ -178,7 +178,7 @@ editing from here can silently revert work that landed. Carry it in and read
 zero again before editing:
 
 ```sh
-CAMPAIGN="$BASE/$("$BASE/scripts/campaign-tracker.py" slug <N>)"
+CAMPAIGN=$(dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)")   # the marker, not the name, says whose directory it is
 "$BASE/scripts/campaign-installed.py" reach "$CAMPAIGN/README.md" kalaluthien/campaign-base "$(git -C "$BASE" rev-parse origin/main)"
 ```
 

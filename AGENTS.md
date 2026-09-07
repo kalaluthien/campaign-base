@@ -275,12 +275,10 @@ for the other, and a missing slug refuses rather than being guessed at.
   atomic across every machine, where a survey-then-file is not. **Every
   sub-issue cuts one**, work that lands no commit included — a repo-less
   campaign's on the base.
-- **The retired form** — before #181 the session name and the branch carried the
-  campaign NUMBER, as `campaign-<N>-<role>-<n>` and `campaign-<N>/<issue>-<topic>`.
-  Every reader still accepts both, and nothing mints the old one; **the two are
-  two names and not two spellings of one**, so rename a session only once the
-  claims it holds have landed. The window closes when the last `campaign-<N>/`
-  pull request has merged.
+- **The retired form is gone** — before #181 a session name and a branch
+  carried the campaign NUMBER. Nothing reads it since #237, and nothing
+  refuses it by name either: `campaign` is a barred slug segment, so
+  `campaign-1` is not a slug and no name or branch can be read as one.
 
 # Campaign work
 

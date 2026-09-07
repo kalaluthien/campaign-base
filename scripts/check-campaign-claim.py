@@ -293,10 +293,11 @@ def claim_match(branch, base=None):
     # NO BASE ROOT IS `base is None`, NOT AN EMPTY SLUG SET. Outside every base
     # `base_roots_for` returns nothing, and reading that as "this machine holds
     # no campaign of that slug" narrowed `own_claim` for slug branches alone --
-    # re-imposing, for one name form, the narrowing #192 item 1 rejected on
-    # purpose, while `campaign-<N>/` went on being admitted there. The three
-    # callers were promised the wide reading two paragraphs up; this is that
-    # promise kept.
+    # re-imposing the narrowing #192 item 1 rejected on purpose. It mattered
+    # more once: the retired `campaign-<N>/` went on being admitted outside
+    # every base while slug branches were not, so the two forms disagreed
+    # about the same checkout. The three callers were promised the wide
+    # reading two paragraphs up; this is that promise kept.
     known = known_slugs(base) if base is not None else None
     if known is None:
         return token, m.group(2)

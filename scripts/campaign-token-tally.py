@@ -43,8 +43,9 @@ Then, in order, each turn is either dropped or attributed:
                `campaign-1/178-delegate-clone-hooks` -- so the place says where
                the parent was and the brief says what the subagent was for.
   worktree     `cwd` ending `/worktrees/<issue>` names the sub-issue outright.
-  branch       else `gitBranch` matching `<slug>/<issue>-`, or the retired
-               `campaign-<N>/<issue>-` a branch cut before #181 carries.
+  branch       else `gitBranch` matching `<slug>/<issue>-`. A window that
+               predates #181 is read by naming its old token to `--slug`,
+               which is used as a literal.
   parent       else, for a subagent transcript, whichever issue its parent
                session was last attributed to when the subagent started.
   carry        else, only for a record carrying no `gitBranch` at all, the last

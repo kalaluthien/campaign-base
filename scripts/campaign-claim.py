@@ -7,11 +7,11 @@
     campaign-claim.py live <N> [--repo owner/repo]
 
 A claim is cut as `<slug>/<issue>-<topic>`, the slug being the campaign's own,
-read from its `campaign:<slug>` label by `campaign-tracker.py slug`. Branches
-cut before #181 are named `campaign-<N>/<issue>-<topic>`; every READING command
-here reads both prefixes until the last of those pull requests has landed, and
-`take` mints only the first, which is what closes the window. `prefixes` is the
-one place the pair is spelled.
+read from its `campaign:<slug>` label by `campaign-tracker.py slug`. ONE FORM,
+since #237: branches cut before #181 carried the campaign NUMBER, and were read
+beside the slug until the last of those pull requests merged. `prefixes` is the
+one place the prefix is spelled, and it returns EMPTY when the slug did not
+read -- which every caller treats as `could not look`, never as no claims.
 
 THE CLAIM IS THE BRANCH, AND NOTHING ELSE
 
@@ -355,9 +355,8 @@ def binding_refusal(campaign_issue):
 
 
 def branch_name(slug, issue, topic):
-    """The one branch a claim is cut as. ONE FORM IS MINTED, the slug's, even
-    while two are read: nothing new is ever named `campaign-<N>/`, which is what
-    makes the window close instead of lingering."""
+    """The one branch a claim is cut as, and since #237 the one that is read.
+    Minting a single form is what let the window close instead of lingering."""
     return f"{slug}/{issue}-{topic}"
 
 

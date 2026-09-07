@@ -101,11 +101,13 @@ seven rounds at 800,567 input tokens, 38% of #177's *new input*, because each
 round re-read the entire pull request to check a handful of fixes.
 
 **A round returning only refinement ends the loop**: when every finding is
-wording, a number, a name or a claim softened -- no behavioural defect in
-shipped code and no test that passes with its branch deleted -- apply them in
+wording, a number in prose, a name or a claim softened -- no behavioural defect
+in shipped code and no test that passes with its branch deleted -- apply them in
 one commit, review that diff narrowed, and merge, rather than commissioning
-another round. Measured on PR #238: six fix rounds followed the full review, and
-the last two returned refinement alone.
+another round. A number a check enforces is not prose. Measured on PR #238: six
+fix rounds followed the full review and every one of them fixed a real defect or
+a test that passed with its branch deleted; only the review after the sixth
+returned refinement alone.
 
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel

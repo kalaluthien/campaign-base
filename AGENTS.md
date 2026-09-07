@@ -588,7 +588,8 @@ disposition. **Check that disposition against the findings list mechanically**: 
 round claiming "all fixed" without re-running its sweep is what keeps happening.
 
 **A round returning only refinement ends the loop**: findings that are wording, a
-number, a name or a claim softened -- with no behavioural defect in shipped code
+number in prose, a name or a claim softened -- with no behavioural defect in
+shipped code
 and no test that passes with its branch deleted -- are applied in one commit,
 reviewed narrowed on that diff, and merged, rather than answered with another
 round.

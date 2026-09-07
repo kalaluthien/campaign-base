@@ -592,7 +592,7 @@ number in prose, a name or a claim softened -- with no behavioural defect in
 shipped code
 and no test that passes with its branch deleted -- are applied in one commit,
 reviewed narrowed on that diff, and merged, rather than answered with another
-round.
+round. A number a check enforces is not prose.
 
 ## Review
 

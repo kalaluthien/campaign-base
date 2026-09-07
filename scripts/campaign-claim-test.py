@@ -83,27 +83,27 @@ GH = """#!/bin/sh
 lands_body() {
   case "$1" in
     404) printf 'no Lands in heading here' ;;
-    502|512) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- outside/scope' ;;
-    500) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- other/elsewhere' ;;
+    502|512) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- outside/scope' ;;
+    500) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- other/elsewhere' ;;
     # THE BASE SPELLED OUT, which `none` cannot stand in for: `## Repos` never
     # holds the base, so this is the one entry whose two readings differ.
-    503|513) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base' ;;
+    503|513) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base' ;;
     # #205: THE SPELLINGS PROSE ARRIVES IN. Each names a repository the campaign
     # already holds, so anything but a clean claim is the raw comparison talking.
-    504) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- `other/elsewhere`' ;;
-    505) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base.git' ;;
-    506) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- Other/Elsewhere' ;;
+    504) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- `other/elsewhere`' ;;
+    505) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- kalaluthien/campaign-base.git' ;;
+    506) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- Other/Elsewhere' ;;
     # ...and the one that names no repository: the template's own placeholder.
-    507) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- <owner/repo>' ;;
+    507) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- <owner/repo>' ;;
     # THE SHAPE CASES (#217), each wrong in exactly one way and right in the
     # rest, so the finding a refusal names is the one the fixture carries.
-    520) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Lands in\\n- none' ;;
+    520) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Lands in\\n- none' ;;
     521) printf '%s' '## Intent\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
     # Padded with a shell BUILTIN, not `awk` or `tr`: this shim runs on a PATH
     # holding only the shim directory, and an external tool that is not there
     # emits nothing, which reads exactly like a body under the ceiling.
-    523) printf '%s' '## Intent\\n- '; printf '%2100s' ''; printf '%s' '\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
-    *) printf '%s' '## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
+    523) printf '%s' '## Intent\\n- '; printf '%2100s' ''; printf '%s' '\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
+    *) printf '%s' '## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none' ;;
   esac
 }
 # The title the shape check reads. 522 is the one over the ceiling.
@@ -650,8 +650,8 @@ def take_cases(m):
         for issue, want, name in (
                 ("520", "no `## Plan` section", "a sub-issue with no `## Plan` "
                  "is refused at the claim, where the plan is due"),
-                ("521", "no `## Done when` section", "a sub-issue with no "
-                 "`## Done when` is refused"),
+                ("521", "no `## Definition of done` section", "a sub-issue with no "
+                 "`## Definition of done` is refused"),
                 ("522", "the title is 107 characters, over 80", "a title over "
                  "the ceiling is refused, printing both numbers"),
                 ("523", "characters, over 2000", "a body over the ceiling is "
@@ -763,8 +763,8 @@ case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
   *"--json parent"*) echo '9999'; exit 0 ;;
   *"--json labels"*) echo '[]'; exit 0 ;;
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '[]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
@@ -792,8 +792,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/probe/3-gamma"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
@@ -823,8 +823,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   # Stateful, or the survey sees the ref this run is about to cut and refuses
   # before the re-check -- the branch under test -- is ever reached.
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
@@ -869,8 +869,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   # Neither racing ref ever merged, so both are live claims and the yield is
   # what settles them. Without this arm the merge question comes back unread
@@ -926,8 +926,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*)
@@ -956,8 +956,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *"issues/9999"*) echo '["campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
 esac
 exit 1
@@ -1062,8 +1062,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
@@ -1180,7 +1180,7 @@ case "$*" in
   *"--json state"*) echo 'OPEN '; exit 0 ;;
   *"--json parent"*) echo '9999'; exit 0 ;;
   *"--json labels"*) echo '[]'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*) echo '[]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","bound:'"$(hostname -s)"'"]'; exit 0 ;;
   *"pr list"*) echo '[]'; exit 0 ;;
@@ -1807,8 +1807,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;
@@ -1909,8 +1909,8 @@ case "$*" in
   *"--json labels"*) echo '[]'; exit 0 ;;
   # The shape reading (#217): one well-shaped sub-issue, so these shims go on
   # exercising what they were written for rather than the new gate.
-  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Done when\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
-  *"issue view"*) printf '## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '%s\\n' '{"title":"Do the thing","body":"## Intent\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Plan\\n- x\\n\\n## Lands in\\n- none","labels":[],"parent":{"number":9999}}'; exit 0 ;;
+  *"issue view"*) printf '## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n\n## Lands in\n- none\n'; exit 0 ;;
   *matching-refs*heads/campaign-*) echo '[]'; exit 0 ;;
   *matching-refs*) echo '["refs/heads/probe/4-done"]'; exit 0 ;;
   *"issues/9999"*) echo '["campaign","campaign:probe","bound:'"$(hostname -s)"'"]'; exit 0 ;;

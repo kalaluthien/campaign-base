@@ -520,9 +520,9 @@ def main():
     check("neither is the third kind, which every reader leaves alone",
           m.kind_of(False, False) == m.THIRD_KIND)
 
-    good_sub = ("## Intent\n- x\n\n## Done when\n- x\n\n## Plan\n- x\n"
+    good_sub = ("## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n"
                 "\n## Lands in\n- none\n")
-    good_campaign = ("## Intent\n- x\n\n## Scope\nIn:\n- x\n\n## Done when\n"
+    good_campaign = ("## Intent\n- x\n\n## Scope\nIn:\n- x\n\n## Definition of done\n"
                      "- x\n\n## Repos\n- none\n")
     check("a well-shaped sub-issue has no finding, plan required",
           m.shape_findings(m.SUB_ISSUE, "Do the thing", good_sub, True) == [])
@@ -541,7 +541,7 @@ def main():
     # while either branch was deleted.
     for want, body in (
             ("Intent", good_sub.replace("## Intent\n- x\n\n", "")),
-            ("Done when", good_sub.replace("## Done when\n- x\n\n", "")),
+            ("Definition of done", good_sub.replace("## Definition of done\n- x\n\n", "")),
             ("Plan", good_sub.replace("## Plan\n- x\n\n", ""))):
         found = m.shape_findings(m.SUB_ISSUE, "t", body, True)
         check(f"a sub-issue with no `## {want}` is refused by that name",
@@ -656,7 +656,7 @@ def main():
               r.returncode == 0 and "RESULT   the shape holds" in r.stdout)
         check("...and prints what it read, not only its verdict",
               "title  12 chars" in r.stdout and "body   " in r.stdout
-              and "sections found: Intent, Done when, Plan, Lands in" in r.stdout)
+              and "sections found: Intent, Definition of done, Plan, Lands in" in r.stdout)
         check("...and names what it did NOT check",
               "NOT checked:" in r.stdout and "verb-first" in r.stdout)
         r = tracker("check", "5", "--plan", env=shim(no_plan))

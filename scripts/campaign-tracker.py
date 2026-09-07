@@ -102,8 +102,9 @@ check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
 
             WHAT IT DOES NOT CHECK, printed on every run: whether a title is
             verb-first, whether a body is bullets rather than prose, whether a
-            `Done when` is checkable. Those are judgement and stay prose. Nor
-            does it reach issues nobody claims or binds -- the ceiling is a cut
+            `Definition of done` is checkable. Those are judgement and stay
+            prose. Nor does it reach issues nobody claims or binds -- the
+            ceiling is a cut
             applied at two moments, not a property of the tracker.
 
 index       The sub-issue index -- the whole of it. `gh issue create --parent` is
@@ -632,11 +633,12 @@ BACKLOG_LABEL = "backlog"
 # ceilings below are stated once each as a constant, and the templates and
 # AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS
 # a section; it never renames one, which is what `## Requirements` beside a
-# sub-issue's `Done when` was doing -- two names for one purpose. `## Plan` is conditional on the
-# moment and so is not in either tuple; see `required_sections`.
-CAMPAIGN_SECTIONS = ("Intent", "Scope", "Done when", "Repos")
+# sub-issue's `Definition of done` was doing -- two names for one purpose.
+# `## Plan` is conditional on the moment and so is not in either tuple; see
+# `required_sections`.
+CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done", "Repos")
 LANDS_SECTION = "Lands in"
-SUB_ISSUE_SECTIONS = ("Intent", "Done when", LANDS_SECTION)
+SUB_ISSUE_SECTIONS = ("Intent", "Definition of done", LANDS_SECTION)
 PLAN_SECTION = "Plan"
 
 SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
@@ -772,8 +774,8 @@ def cmd_check(args):
         print(f"  carries `{BACKLOG_LABEL}`: not worked until the owner removes "
               f"it; `campaign-claim take` refuses a claim on it")
     print("  NOT checked: whether the title is verb-first, whether the body is "
-          "bullets rather than prose, whether `## Done when` is checkable. "
-          "Those are judgement.")
+          "bullets rather than prose, whether `## Definition of done` is "
+          "checkable. Those are judgement.")
     findings = shape_findings(kind, title, body, args.plan)
     if not findings:
         print("RESULT   the shape holds" if want else

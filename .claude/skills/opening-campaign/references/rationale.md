@@ -7,8 +7,8 @@ arbitrary, or when you are about to change it.
 
 `scripts/campaign-repos.py` is the one reader of that list, and its refusals are
 enumerated in its own header. The bare `grep '<'` that `SKILL.md`
-forbids fails because a correct `## Done when` section quotes things like
-`issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
+forbids fails because a correct `## Definition of done` section quotes things
+like `issues/<N>/sub_issues`, so it reports hits on a clean README — which is why the
 check is a reader scoped to the one section.
 
 ## The gate — deciding new or follow-up

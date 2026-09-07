@@ -314,9 +314,9 @@ a campaign issue by its `campaign` label, a sub-issue by its parent, both at onc
 by neither — a defect, reported — and the third kind by neither, which every
 reader leaves alone. The third kind is exempt from the SECTIONS, not from the
 ceilings: a title is a title. A title is a verb-first mission under the title
-ceiling; a body is bullets or tables under the body ceiling; the sections are `##
-Intent`, `## Scope`, `## Done when`, `## Plan`, `## Repos`, `## Lands in`, and a
-kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
+ceiling; a body is bullets or tables under the body ceiling; the sections are
+`## Intent`, `## Scope`, `## Definition of done`, `## Plan`, `## Repos` and
+`## Lands in`, and a kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
 reader: `bind` calls it and prints what it said, `campaign-claim take` calls it
 with `--plan` and refuses on it. Both templates are in
 `.claude/skills/opening-campaign/assets/`.
@@ -444,8 +444,8 @@ what survives the session that opened it.
 ## The campaign issue body
 
 **The campaign issue body is a charter, not a status board.** `## Intent`,
-`## Scope` and `## Done when` say what a person signed up for and change only
-when the scope genuinely changes; the sub-issue index is the decomposition, and
+`## Scope` and `## Definition of done` say what a person signed up for and
+change only when the scope genuinely changes; the sub-issue index is the decomposition, and
 `campaign-tracker settlement <N>` derives progress from it. So the body is written
 at exactly two moments — a scope change, and the close. Adding work is neither,
 and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding a

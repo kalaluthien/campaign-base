@@ -23,7 +23,7 @@ Out:
 
 - <what it deliberately does not cover, and where that work goes instead>
 
-## Done when
+## Definition of done
 
 - <a condition the finished work must satisfy, checkable rather than admirable,
   and readable off the closed campaign issue>

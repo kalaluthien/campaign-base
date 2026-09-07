@@ -112,7 +112,8 @@ def main():
         # ---- check
         rc, out, err = run("check", body(tmp, marker), "example/thing")
         check("an install at origin's default branch reads current and clear",
-              rc == 0 and "-- current" in out and "1 row(s) read, 0 behind, 0 unread -- clear" in out,
+              rc == 0 and "-- current" in out
+              and "1 row(s) read, 0 behind, 0 apply failed, 0 unread -- clear" in out,
               out + err)
         check("check prints what it read: HEAD and origin's tip",
               "HEAD " in out and "origin/main " in out, out)
@@ -121,13 +122,14 @@ def main():
         git(work, "push", "-q", "origin", "main")
         rc, out, err = run("check", body(tmp, marker), "example/thing")
         check("MARKER PRESENT, STEP SKIPPED: a merge nobody reached reads behind 1, NOT clear",
-              rc == 1 and "-- behind 1" in out and "1 behind, 0 unread -- NOT clear" in out,
-              out + err)
+              rc == 1 and "-- behind 1" in out
+              and "1 behind, 0 apply failed, 0 unread -- NOT clear" in out, out + err)
 
         rc, out, err = run("check", body(tmp, f"example/thing (installed: {tmp}/nowhere)"),
                            "example/thing")
         check("an absent install is unread and NOT clear, never current",
-              rc == 1 and "-- absent" in out and "1 unread -- NOT clear" in out, out + err)
+              rc == 1 and "-- absent" in out and "0 apply failed, 1 unread -- NOT clear" in out,
+              out + err)
         plain = Path(tmp, "plain"); plain.mkdir()
         rc, out, err = run("check", body(tmp, f"example/thing (installed: {plain})"),
                            "example/thing")
@@ -187,7 +189,14 @@ def main():
         rc, out, err = run("check", body(tmp, marker), "example/thing")
         check("APPLY FAILED IS DURABLE: check reads it after the fast-forward, NOT clear",
               rc == 1 and "-- apply failed" in out and "apply `false` exited 1" in out
-              and "1 unread -- NOT clear" in out, out + err)
+              and "1 apply failed, 0 unread -- NOT clear" in out, out + err)
+        mark = Path(git(install, "rev-parse", "--absolute-git-dir"), "APPLY_FAILED")
+        mark.unlink(); mark.mkdir()          # a mark that cannot be written
+        rc, out, err = run("reach", body(tmp, f"example/thing (installed: {install}, apply: false)"),
+                           "example/thing", unmerged)
+        check("a mark that cannot be written is said in the merger's line, not a traceback",
+              rc == 1 and "THE MARK COULD NOT BE WRITTEN" in err and "Traceback" not in err, err)
+        mark.rmdir(); mark.write_text("apply `false` exited 1:\n")
         rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
         check("a reach whose apply runs through clears the mark",
               rc == 0 and "apply `touch applied.txt` ran" in out

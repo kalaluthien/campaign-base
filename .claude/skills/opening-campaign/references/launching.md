@@ -178,6 +178,7 @@ editing from here can silently revert work that landed. Carry it in and read
 zero again before editing:
 
 ```sh
+CAMPAIGN="$BASE/$("$BASE/scripts/campaign-tracker.py" slug <N>)"
 "$BASE/scripts/campaign-installed.py" reach "$CAMPAIGN/README.md" kalaluthien/campaign-base "$(git -C "$BASE" rev-parse origin/main)"
 ```
 

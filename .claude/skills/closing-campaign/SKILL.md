@@ -138,8 +138,9 @@ a merged pull request nobody installed (`AGENTS.md` § Installed repositories).
 
 Read the last line: `clear` passes; `NOT clear` refuses, and the row above it
 says which install and why -- `behind <n>` is a merge to carry in with
-`campaign-installed.py reach <README> <owner/repo> <sha>`, and any other word
-is an install the check could not read, which is read by hand before re-running.
+`campaign-installed.py reach <README> <owner/repo> <sha>`, `apply failed` is
+that command run again once the cause is fixed, and any other word is an
+install the check could not read, which is read by hand before re-running.
 
 ### 3. Settle or dispose of every open sub-issue
 

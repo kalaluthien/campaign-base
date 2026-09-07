@@ -37,21 +37,26 @@ THE THREE READINGS, and what each prints so a bare verdict never stands alone:
           disk beyond the body.
   check   per row: the install's HEAD, its remote's default branch after a
           fetch, and one word -- `current` when HEAD contains the remote's
-          default branch, `behind <n>` when it does not, or why it could not
-          be read: `absent`, `not a checkout`, `a checkout of <other>`,
-          `could not fetch`. Then the verdict line, `<n> row(s) read, <m>
-          behind, <k> unread` and `clear` or `NOT clear`; exit 1 on anything
-          but clear. An unread row is NOT clear: `I could not look` is not
-          `I looked and it is current`, and a check that read nothing must not
-          pass. The named failing case in the suite is the marker present and
-          the step skipped: an install behind its remote, read as `behind 1`.
-          An `owner/repo` narrows it to one row, the base included when named.
-  reach   the post-merge step for one row. Refuses when the repository has no
-          row (`nothing to reach`, exit 0: it is not installed, and that is an
-          answer), when <sha> is not on the remote's default branch (merge
-          first), when the install is not on that branch (somebody is working
-          in the install, which is what the clone is for), or when the
-          fast-forward or `apply` fails, printing what git or the command said.
+          default branch, `behind <n>` when it does not, `apply failed` when
+          it does but the last reach's `apply` did not run through, or why it
+          could not be read: `absent`, `not a checkout`, `inside the checkout
+          <root>`, `a checkout of <other>`, `could not fetch`. Then the
+          verdict line, `<n> row(s) read, <m> behind, <f> apply failed, <k>
+          unread` and `clear` or `NOT clear`; exit 1 on anything but clear.
+          An unread row is NOT clear: `I could not look` is not `I looked and
+          it is current`, and a check that read nothing must not pass. The
+          named failing case in the suite is the marker present and the step
+          skipped: an install behind its remote, read as `behind 1`. An
+          `owner/repo` narrows it to one row, the base included when named;
+          a word that is not an `owner/repo` is refused, nothing compared.
+  reach   the post-merge step for one row. Says `nothing to reach` and exits
+          0 when the repository has no row: it is not installed, and that is
+          an answer. Refuses when the word is not an `owner/repo` (the same
+          refusal as `check`, so a typo cannot skip the step), when <sha> is
+          not on the remote's default branch (merge first), when the install
+          is not on that branch (somebody is working in the install, which
+          is what the clone is for), or when the fast-forward or `apply`
+          fails, printing what git or the command said.
           Otherwise fast-forwards the install to the remote's default branch,
           runs `apply` in the install, and prints `reached owner/repo at
           <path>: HEAD <sha> contains <sha>; apply ...` -- the line a REPORT
@@ -145,7 +150,8 @@ def read_install(slug, path):
     if rc != 0:
         return "not a checkout", f"{path}: {err}"
     if Path(top).resolve() != Path(path).resolve():
-        return f"inside the checkout {top}", f"{path} is not that checkout's root"
+        return (f"inside the checkout {top}",
+                f"{Path(path).resolve()} is not that checkout's root")
     rc, url, err = git(path, "remote", "get-url", "origin")
     if rc != 0:
         return "not a checkout", f"{path} has no origin: {err}"
@@ -168,16 +174,22 @@ def read_install(slug, path):
     word = "current" if n == 0 else f"behind {n}"
     failed = apply_failed_mark(path)
     if failed.exists() and n == 0:
-        said = " ".join(failed.read_text().split())[:120]
+        try:
+            said = " ".join(failed.read_text().split())[:120]
+        except OSError as e:
+            said = f"(mark at {failed} unreadable: {e.strerror})"
         return "apply failed", f"HEAD {head}  origin/{branch} {tip}  {said}"
     return word, f"HEAD {head}  origin/{branch} {tip}"
 
 
 def apply_failed_mark(path):
     """The file `reach` leaves inside the install's `.git/` when `apply`
-    failed, and removes when it ran through."""
-    _, gitdir, _ = git(path, "rev-parse", "--absolute-git-dir")
-    return Path(gitdir or path, APPLY_FAILED)
+    failed, and removes when it ran through. Both callers have already read
+    the path as a checkout root, so the git dir is there to be asked for."""
+    rc, gitdir, err = git(path, "rev-parse", "--absolute-git-dir")
+    if rc != 0:
+        raise RuntimeError(f"{path} has no git dir to mark: {err}")
+    return Path(gitdir, APPLY_FAILED)
 
 
 def cmd_list(body_path, _args):
@@ -207,16 +219,19 @@ def cmd_check(body_path, args):
             print(f"campaign-installed: {only} has no installed row in "
                   f"{body_path}; nothing to check", file=sys.stderr)
             return 1
-    behind = unread = 0
+    behind = failed = unread = 0
     for slug, path, _apply in listed:
         word, detail = read_install(slug, path)
         print(f"{slug}  {path}  {detail}  -- {word}")
         if word.startswith("behind"):
             behind += 1
+        elif word == "apply failed":
+            failed += 1
         elif word != "current":
             unread += 1
-    verdict = "clear" if behind == 0 and unread == 0 else "NOT clear"
-    print(f"{len(listed)} row(s) read, {behind} behind, {unread} unread -- {verdict}")
+    verdict = "clear" if behind == failed == unread == 0 else "NOT clear"
+    print(f"{len(listed)} row(s) read, {behind} behind, {failed} apply failed, "
+          f"{unread} unread -- {verdict}")
     return 0 if verdict == "clear" else 1
 
 
@@ -273,11 +288,19 @@ def cmd_reach(body_path, args):
                            text=True)
         if r.returncode != 0:
             said = " ".join((r.stderr or r.stdout).split())[:200]
-            mark.write_text(f"apply `{apply}` exited {r.returncode}: {said}\n")
+            try:
+                mark.write_text(f"apply `{apply}` exited {r.returncode}: {said}\n")
+                marked = (f"marked in {mark} so `check` reads `apply failed` "
+                          f"until a reach runs it through")
+            except OSError as e:
+                # The one path left where the failure would be invisible to
+                # `check`: say so, loudly, in the line the merger reads.
+                marked = (f"AND THE MARK COULD NOT BE WRITTEN ({mark}: "
+                          f"{e.strerror}), so `check` will read this install "
+                          f"as current; run the apply by hand")
             print(f"campaign-installed: {slug} fast-forwarded at {path}, but "
-                  f"apply `{apply}` exited {r.returncode}: {said}; marked in "
-                  f"{mark} so `check` reads `apply failed` until a reach runs "
-                  f"it through", file=sys.stderr)
+                  f"apply `{apply}` exited {r.returncode}: {said}; {marked}",
+                  file=sys.stderr)
             return 1
         applied = f"`{apply}` ran"
     if mark.exists():

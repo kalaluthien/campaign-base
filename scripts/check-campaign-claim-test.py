@@ -80,7 +80,7 @@ class Fixture:
         # the campaign directory: the commit gate's suite commits through the
         # installed hooks over this same fixture.
         (self.base / ".gitignore").write_text(
-            "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n")
+            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n")
         git(self.base, "add", "-A")
         git(self.base, "commit", "-qm", "init")
         git(self.base, "push", "-q", "origin", "HEAD")
@@ -181,7 +181,7 @@ def no_herdr(d):
 
 
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
-        tool_input=None, env=None, session="sid-1", run_cwd=None):
+        tool_input=None, env=None, session="sid-1", run_cwd=None, guard=None):
     """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
     They are the same question everywhere except one case: a payload that will
     not parse carries no cwd, so the guard falls back to its own, and a case
@@ -196,7 +196,7 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
         "hook_event_name": event or "PreToolUse",
     }
     return subprocess.run(
-        [sys.executable, str(GUARD)],
+        [sys.executable, str(guard or GUARD)],
         input=stdin if stdin is not None else json.dumps(payload),
         capture_output=True, text=True, cwd=str(run_cwd) if run_cwd else None,
         env=dict(os.environ, **(env or {})))
@@ -1975,6 +1975,201 @@ def main():
                                      f"{rc1}, subprocess {r2.returncode}")
             check("corpus: in-process and subprocess agree on the sample",
                   not disagreed, "; ".join(disagreed))
+
+    # A SKILL MODULE THAT WILL NOT LOAD MUST NEVER MAKE THE GUARD RAISE.
+    # A PreToolUse hook that tracebacks exits 1, which the harness reads as the
+    # HOOK's own error and lets the call PROCEED -- a hole, not a refusal, and
+    # the opposite of what this file is for. `role_of` and `claim_match` each
+    # turn the failure into could-not-look; the comment-shape reader reached
+    # `name_pattern()` through `comment_first_line()` and did not, so every
+    # `gh` comment verb exited 1 with a traceback while the file was absent.
+    # Run against a COPY of the guard, because the shipped one resolves its
+    # skill scripts beside itself and no case may delete those.
+    for missing in ("campaign-name-session.py", "campaign-roles.py"):
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d) / "tree"
+            (tree / "scripts").mkdir(parents=True)
+            skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
+            skill.mkdir(parents=True)
+            shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+            for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                      / "scripts").glob("*.py"):
+                if s.name != missing:
+                    shutil.copy(s, skill / s.name)
+            copy = tree / "scripts" / GUARD.name
+            f = Fixture(d, claims=("campaign-1/7-x",))
+            for verb in ("gh issue comment 7 --body 'not a kinded line'",
+                         "gh pr comment 5 --body 'not a kinded line'",
+                         "gh pr review 5 --body 'not a kinded line'",
+                         "gh issue close 7 -c 'not a kinded line'"):
+                r = ask(f.base, tool="Bash", command=verb, guard=copy)
+                check(f"with {missing} gone, `{verb.split()[1:3]}` does not "
+                      f"traceback out of the guard",
+                      r.returncode != 1 and "Traceback" not in out(r),
+                      f"exit {r.returncode}: {out(r)[-300:]}")
+            r = ask(f.base, tool="Bash", guard=copy,
+                    command="gh issue comment 7 --body 'not a kinded line'")
+            check(f"...and with {missing} gone the verdict says the shape was "
+                  f"NOT checked, naming the file",
+                  "shape NOT checked" in out(r) and "would not load" in out(r),
+                  out(r)[:400])
+            # THE CEILING IS A SECOND CHECK, and it needs no pattern. Letting
+            # an unreadable name rule silence it would trade one hole for
+            # another: `comment_findings` measures the length whatever the
+            # first line did. Only the `pattern is not None` guard on the first
+            # line's branch may skip.
+            r = ask(f.base, tool="Bash", guard=copy,
+                    command="gh issue comment 7 --body '" + "z" * 3000 + "'")
+            check(f"...and the CEILING is still measured with {missing} gone",
+                  r.returncode == 2 and "over" in out(r)
+                  and "3000 characters" in out(r), out(r)[:300])
+
+    # AN UNPREDICTED FAILURE IS A LOUD ALLOW, never a traceback and never a
+    # wall. Exit 1 is what the harness reads as the hook's own error, so it is
+    # the one status this file may not produce; exit 2 for a bug would wall
+    # every session on the machine. Broken here by deleting a function the
+    # decision path calls, which is the shape of a real edit gone wrong.
+    with tempfile.TemporaryDirectory() as d:
+        broken = Path(d) / "broken-guard.py"
+        src = GUARD.read_text().replace("def classify(", "def _classify_off(", 1)
+        broken.write_text(src)
+        f = Fixture(d, claims=("campaign-1/7-x",))
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken,
+                run_cwd=f.base)
+        check("a guard that raises where nothing predicted it allows the call "
+              "and says it did not judge it",
+              r.returncode == 0 and "did not judge this call" in r.stdout,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and it never exits 1, which the harness reads as the hook's "
+              "own error",
+              r.returncode != 1, f"exit {r.returncode}")
+        # ON STDOUT, NOT STDERR. An exit-0 hook reaches the session through
+        # stdout, so a loud allow announced only on stderr is a message with no
+        # reader -- and the assertion has to name the channel, because
+        # `stdout + stderr` is satisfied by either.
+        check("...and it says so on stdout, the channel an exit-0 hook is read "
+              "on",
+              "did not judge this call" in r.stdout, out(r)[:300])
+        # AND IT LOGS. A crash that logs nothing is indistinguishable from a
+        # guard with nothing to say, so a guard crashing on every call must not
+        # look like a quiet one. Asserted on the row's verdict word and its
+        # session, not on the file existing: a row with no session is one
+        # nothing can pair.
+        # READ DEFENSIVELY: the mutation this case exists to kill is "the
+        # handler logs nothing", which leaves no file at all -- and a
+        # `read_text` raising there kills the SUITE in a traceback instead of
+        # failing this case by name, so the mutant survives as a crash.
+        log = f.base / "runtime" / "guard.log"
+        rows = [json.loads(ln) for ln in
+                (log.read_text().splitlines() if log.is_file() else [])]
+        check("...and it writes a GUARD FAILED row carrying the session, so a "
+              "guard failing on every call is not read as a quiet one",
+              any(x["verdict"] == "GUARD FAILED" and x["session"] == "sid-1"
+                  for x in rows), str(rows)[:300])
+        check("...and it says beside the message whether that row landed",
+              "logged to" in r.stdout, out(r)[:300])
+
+    # THE WINDOW, not just its far side. The verdict is recorded by `refuse`
+    # and `allow` themselves, so there is no statement between deciding and
+    # recording; a case that only breaks `log_verdict` passes while the record
+    # moves back to any line in `main`'s tail, which is where it was. These two
+    # break the guard at the two sites inside that former window -- the
+    # unparseable-payload EARLY RETURN, which no assignment in the tail can
+    # reach at all, and the `cwd` resolution, whose `except OSError` does not
+    # catch a `TypeError`.
+    # A CRASH IS INJECTED, or the case pins nothing. Asserting exit 2 on the
+    # UNBROKEN guard is satisfied by the plain refusal a case above already
+    # covers, and stays green while the record moves back into `main`'s tail
+    # where the early return cannot reach it. `log_verdict` is broken at its
+    # first line, which both refusal paths run.
+    with tempfile.TemporaryDirectory() as d:
+        late = Path(d) / "late-crash-guard.py"
+        late.write_text(GUARD.read_text().replace(
+            "    path, how = log_path(target, cwd)",
+            "    raise RuntimeError('late'); path, how = log_path(target, cwd)",
+            1))
+        f = Fixture(d, claims=())
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"),
+                stdin="{ not json", guard=late, run_cwd=f.base)
+        check("an unparseable payload is refused, and a crash on the early "
+              "return path does not turn that refusal into an allow",
+              r.returncode == 2 and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        # The WRONG-EVENT refusal, which `main` decides itself before it
+        # touches `cwd`, and then a `cwd` that is not a path: `Path(123)`
+        # raises TypeError, which the resolution's own `except OSError` lets
+        # past, straight into the last resort -- with the REFUSED already
+        # printed. The event has to be one `main` refuses, or `pre` crashes
+        # first and "did not judge" is the honest answer.
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"),
+                stdin=json.dumps({"session_id": "sid-1", "cwd": 123,
+                                  "tool_name": "Edit",
+                                  "tool_input": {"file_path":
+                                                 str(f.base / "a.txt")},
+                                  "hook_event_name": "PostToolUse"}),
+                run_cwd=f.base)
+        check("a crash between the verdict and the log keeps the refusal too",
+              r.returncode == 2 and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # AND THE MESSAGE NAMES ONLY WHAT RAN. This is the branch where the
+        # `try`'s ARGUMENTS raise, so `log_verdict` is never entered; saying
+        # "the log write itself raised" sends the next reader into a function
+        # that was not called. Without this row that wording is read by
+        # nothing and can go back silently.
+        # ASSERT WHAT THE CORRECTION REMOVED, not the words around it. The
+        # finding was that the handler must not say whether a row LANDED, and
+        # `"the attempt raised" in out` is satisfied by the overclaiming
+        # sentence too -- so the retired claim could come back verbatim under
+        # a compatible spelling with this case still green. The absent string
+        # is the whole test; a string no revert produces (`the log write
+        # itself raised`, which lives only in this file) asserts nothing.
+        check("...and does not say whether a row landed, which this frame "
+              "cannot observe",
+              "as far as this could tell" in out(r)
+              and "before any row was written" not in out(r), out(r)[:400])
+
+    # A CRASH AFTER THE VERDICT IS NOT AN UNJUDGED CALL. The handler above
+    # wraps all of `main`, the log write included, so an exception past the
+    # decision would turn a decided REFUSED into exit 0 announcing that nothing
+    # was judged -- the guard's own bug reopening the write it had just closed.
+    # Broken here in `log_verdict`, the one thing `main` does after the verdict.
+    with tempfile.TemporaryDirectory() as d:
+        broken = Path(d) / "late-crash-guard.py"
+        src = GUARD.read_text().replace(
+            "    path, how = log_path(target, cwd)",
+            "    raise RuntimeError('late'); path, how = log_path(target, cwd)",
+            1)
+        broken.write_text(src)
+        f = Fixture(d, claims=())          # no claim: the verdict is REFUSED
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken,
+                run_cwd=f.base)
+        check("a crash AFTER the verdict keeps the refusal, exit 2",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the verdict stands rather than that it judged "
+              "nothing",
+              "STANDS" in out(r) and "did not judge this call" not in out(r),
+              out(r)[:300])
+        # THE SAME CRASH AFTER AN *ALLOW*. Both outcomes exit 0, so the status
+        # cannot separate them and the assertion is on the sentence: an allow
+        # that stands is not a call nothing judged. Without this row, `allow`
+        # can stop recording its verdict and every case still passes.
+        with tempfile.TemporaryDirectory() as d2:   # one Fixture per directory
+            f2 = Fixture(d2, claims=("campaign-1/7-x",))
+            wt = f2.trees["campaign-1/7-x"]
+            # A shell command with no unambiguous target is the plainest
+            # `allow` there is -- allowed unread, no role and no claim to
+            # resolve -- so the case turns on the crash and not on the verdict
+            # being hard to reach.
+            r = ask(wt, tool="Bash", command="ls -la", guard=broken,
+                    run_cwd=wt)
+        check("a crash after an ALLOWED verdict says the verdict stands, not "
+              "that nothing was judged",
+              r.returncode == 0 and "STANDS" in out(r)
+              and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
 
     if not ran:
         print("FAIL  the suite ran no case at all")

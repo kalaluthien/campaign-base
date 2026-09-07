@@ -35,20 +35,38 @@ def _needed():
     its heredoc and the post-commit one, which is where push-campaign-branch
     comes from. `# installs:` is read for the same reason one line down: the
     installer refuses when a harness hook it is registering is not there, so a
-    fixture missing it fails every case with one unrelated message.
+    fixture missing it fails every case with one unrelated message. `# imports:`
+    is read for the third time for the same reason: the installer refuses when a
+    file the guards IMPORT is absent, because a guard that tracebacks where it
+    meant to refuse is a hole and not a refusal.
     """
     out = ["install-hooks.sh"]
     for line in (SCRIPTS / "install-hooks.sh").read_text().splitlines():
-        for key in ("# runs: ", "# installs: "):
+        for key in ("# runs: ", "# installs: ", "# imports: "):
             if line.startswith(key):
                 for n in line[len(key):].split():
+                    # An `# installs:` entry carries its events after a colon
+                    # (#227); only the path names a file to place.
+                    n = n.split(":", 1)[0]
                     if n not in out:
                         out.append(n)
     return out
 
 
+def place(n, root):
+    """Copy one `NEEDED` entry into a fixture tree at the path the installer
+    will look for it. An entry is repo-relative since #227 (a harness hook may
+    live under `.claude/skills/<skill>/scripts/`) or a bare name from the older
+    `# runs:` lines, which belongs in `scripts/`."""
+    rel = n if "/" in n else f"scripts/{n}"
+    src = SCRIPTS.parent / rel
+    dst = root / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src, dst)
+
+
 NEEDED = _needed()
-IGNORE = "/*\n!/.gitignore\n!/scripts/\n!/spec/\n!/docs/\n"
+IGNORE = "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n"
 
 
 def git(root, *args, **kw):
@@ -65,7 +83,7 @@ class Repo:
                        capture_output=True, check=True)
         (self.root / "scripts").mkdir()
         for n in NEEDED:
-            shutil.copy(SCRIPTS / n, self.root / "scripts" / n)
+            place(n, self.root)
         (self.root / ".gitignore").write_text(IGNORE)
         git(self.root, "add", "-Af")
         git(self.root, "commit", "-qm", "init", "--no-verify")
@@ -238,6 +256,27 @@ def main():
               c.returncode == 0 and "SKIP_REPO_GUARDS=1" in c.stdout + c.stderr,
               (c.stdout + c.stderr)[:160])
 
+    # A GUARD'S IMPORT IS NOT INSTALLED, so nothing used to read the line that
+    # declares it -- and a guard whose import is absent tracebacks where it
+    # meant to refuse, which a PreToolUse hook reads as its own error and lets
+    # the call PROCEED. The refusal is the installer's, so the case is here.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        imported = [n.split(":", 1)[0] for line in
+                    (SCRIPTS / "install-hooks.sh").read_text().splitlines()
+                    if line.startswith("# imports: ")
+                    for n in line[len("# imports: "):].split()]
+        check("the installer declares at least one import to check",
+              len(imported) > 0, f"imports {imported}")
+        (r.root / imported[0]).unlink()
+        out = installer(r.root)
+        check("the installer refuses when a file its guards IMPORT is missing",
+              out.returncode != 0 and imported[0] in out.stderr,
+              (out.stdout + out.stderr)[:200])
+        check("...and it names why: a traceback where a refusal was meant",
+              "traceback" in (out.stdout + out.stderr).lower(),
+              (out.stdout + out.stderr)[:200])
+
     # 5. The installer refuses where git would not look.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
@@ -393,7 +432,7 @@ def main():
             (w / "scripts").mkdir()
             for n in NEEDED:
                 if with_installer or n != "install-hooks.sh":
-                    shutil.copy(SCRIPTS / n, w / "scripts" / n)
+                    place(n, w)
             git(w, "add", "-Af")
             git(w, "commit", "-qm", "init", "--no-verify")
             git(w, "push", "-q", "origin", "HEAD")
@@ -528,7 +567,7 @@ def main():
         # `is_guard_shim` knew, so a clone that later gained this repository's
         # hooks would have been refused as holding somebody else's.
         for n in NEEDED:
-            shutil.copy(SCRIPTS / n, dest / "scripts" / n)
+            place(n, dest)
         out = installer(dest)
         check("the installer adopts the shim acquire-repo writes NOW, not only "
               "the one it used to",
@@ -621,6 +660,27 @@ def main():
               str(commands("PostToolUse"))[:200])
         check("...and the installer says where it wrote them",
               "settings.json PreToolUse" in out.stdout, out.stdout[:200])
+        # THE BRIEF HOOK, on both its events and on neither of the guard's.
+        # It lives under `.claude/skills/`, so the registered command is the
+        # case that catches an installer that still assumes `scripts/`: a
+        # prefixed path would name a file that is not there, and the harness
+        # would run a hook that cannot start.
+        BRIEF = ".claude/skills/assuming-role/scripts/campaign-role-brief.py"
+        for event in ("SessionStart", "UserPromptSubmit"):
+            check(f"the brief hook is registered on {event} by its whole path",
+                  any(BRIEF in c for c in commands(event)),
+                  str(commands(event))[:200])
+        check("...and the brief hook is not on the guard's event",
+              not any("campaign-role-brief.py" in c
+                      for c in commands("PreToolUse")),
+              str(commands("PreToolUse"))[:200])
+        # A matcher on SessionStart matches nothing, so an entry carrying one
+        # would register a hook that never fires.
+        check("...and its entries carry no matcher",
+              all("matcher" not in e
+                  for ev in ("SessionStart", "UserPromptSubmit")
+                  for e in settings.get("hooks", {}).get(ev, [])),
+              str(settings.get("hooks", {}).get("SessionStart"))[:200])
         # The registered command must fail CLOSED when its script is gone. Run
         # each one the way the harness does -- through a shell -- after
         # deleting the guard: a bare path exits 127, which the harness reads as

@@ -80,7 +80,7 @@ FILE_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
 PATH_KEYS = ("file_path", "notebook_path", "path")
 def _name_rule():
     """`campaign-name-session.py`, imported for `BASE_DIRS` alone."""
-    src = HERE / "campaign-name-session.py"
+    src = HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py"
     spec = importlib.util.spec_from_loader(
         "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
     m = importlib.util.module_from_spec(spec)

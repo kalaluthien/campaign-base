@@ -295,13 +295,13 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <dt>sigs</dt>
       <dd><ul>
         <li><code>one sig Request { covers: set Campaign }</code></li>
-        <li><code>Session { machine, var worksOn, var surveyResult, var reposInReadme, var reposInBodyAsRead, var claimedIssues }</code></li>
+        <li><code>Session { machine, role, var worksOn, var surveyResult, var reposInReadme, var reposInBodyAsRead, var claimedIssues, var campaignNamed }</code></li>
         <li><code>one sig Binding { var bound: Campaign -&gt; Machine }</code></li>
       </ul></dd>
       <dt>var</dt>
-      <dd><code>Surveyed in Session</code></dd>
+      <dd><code>Surveyed in Session</code> <code>UnderBase in Session</code> <code>Briefed in Session</code></dd>
       <dt>events</dt>
-      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code></dd>
+      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code> <code>Brief</code> <code>ContextReset</code></dd>
     </dl>
   </div>
   <div class="rec">

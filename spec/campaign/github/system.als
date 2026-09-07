@@ -99,7 +99,8 @@ sig Issue {
    it, and none of them carries the number any more (#181).
 
    The slug is not modelled as a value, for the same reason the session name is
-   not: `scripts/campaign-name-session.py` owns its shape, and a second
+   not: `.claude/skills/assuming-role/scripts/campaign-name-session.py`
+   owns its shape, and a second
    statement here would admit words that script refuses. What IS normative is
    where it lives and that it is one -- a single `campaign:<slug>` label on the
    campaign issue, so a slug cannot be minted twice (GitHub keeps label names

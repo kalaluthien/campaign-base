@@ -25,15 +25,32 @@ INSTALLER = HERE / "install-hooks.sh"
 
 
 def _needed():
-    """Every script the installed hooks run, read from the installer."""
+    """Every script the installed hooks run, read from the installer.
+
+    An `# installs:` entry is `<repo-relative path>:<Event>[,<Event>]` since
+    #227; the events are the installer's business and the path is this
+    suite's. A `# runs:` entry is still a bare name under `scripts/`."""
     out = ["install-hooks.sh"]
     for line in INSTALLER.read_text().splitlines():
         for key in ("# runs: ", "# installs: ", "# imports: "):
             if line.startswith(key):
                 for n in line[len(key):].split():
+                    n = n.split(":", 1)[0]
                     if n not in out:
                         out.append(n)
     return out
+
+
+def place(n, root):
+    """Copy one `_needed()` entry into a fixture tree at the path the installer
+    looks for it: repo-relative when it holds a slash, under `scripts/`
+    otherwise."""
+    rel = n if "/" in n else f"scripts/{n}"
+    src = HERE.parent / rel
+    dst = root / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(src.read_text())
+    dst.chmod(0o755)
 
 
 def load_fixture():
@@ -52,8 +69,7 @@ def build(d, **kw):
     m = load_fixture()
     f = m.Fixture(d, claims=())
     for n in _needed():
-        (f.base / "scripts" / n).write_text((HERE / n).read_text())
-        (f.base / "scripts" / n).chmod(0o755)
+        place(n, f.base)
     (f.base / "docs").mkdir()
     m.git(f.base, "add", "-A")
     m.git(f.base, "commit", "-qm", "scripts", "--no-verify")
@@ -111,6 +127,25 @@ def main():
     def out(r):
         return r.stdout + r.stderr
 
+    # BEFORE ANY FIXTURE, because every case below copies these files and a
+    # path that does not resolve comes out as a FileNotFoundError from
+    # whichever case ran first -- which is how #227's change to the
+    # `# installs:` line was found: as a crash naming a doubled `scripts/`
+    # prefix, not as a case named for the list.
+    for n in _needed():
+        rel = n if "/" in n else f"scripts/{n}"
+        check(f"the installer's entry {n} resolves to a file in this tree",
+              (HERE.parent / rel).is_file(), f"no {HERE.parent / rel}")
+    if fails:
+        # TERMINAL, because every case below copies these files: without this
+        # the finding is appended and then buried by the FileNotFoundError the
+        # first fixture raises, and the summary that would have named it never
+        # prints.
+        for f in fails:
+            print(f"FAIL  {f}")
+        print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
+        return 1
+
     # THE GUARD'S OWN IMPORT, MISSING. `claim_match` reads the branch's campaign
     # token through `campaign-name-session.py`; a traceback there exits 1, and a
     # `pre-commit` that exits non-zero refuses -- but the PreToolUse half sharing
@@ -118,7 +153,7 @@ def main():
     # names the cause rather than blaming the branch.
     with tempfile.TemporaryDirectory() as d:
         f = build(d, claims=("campaign-1/7-x",))
-        (f.trees["campaign-1/7-x"] / "scripts" / "campaign-name-session.py").unlink()
+        (f.trees["campaign-1/7-x"] / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py").unlink()
         r, moved = commit(f, f.trees["campaign-1/7-x"])
         check("a claim whose name rule will not load is refused, not admitted",
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
@@ -214,9 +249,9 @@ def main():
         subprocess.run(["git", "init", "-q", str(root)], check=True)
         (root / "scripts").mkdir()
         for n in _needed():
-            (root / "scripts" / n).write_text((HERE / n).read_text())
-            (root / "scripts" / n).chmod(0o755)
-        (root / ".gitignore").write_text("/*\n!/.gitignore\n!/scripts/\n!/docs/\n")
+            place(n, root)
+        (root / ".gitignore").write_text(
+            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/docs/\n")
         subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",
                         "user.name=t", "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",

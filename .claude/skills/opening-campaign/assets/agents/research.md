@@ -38,3 +38,18 @@ re-derived and most likely to be repeated.
   findings motivate is not yours to file: report it, and the campaign session
   decides whether it is a sub-issue or an item on work already open.
 - Answering a question the campaign did not ask because it was nearby.
+
+## Every session
+
+What a session of this campaign does that the `assuming-role` skill does not
+already say. The skill carries the lifecycle every campaign shares; this section
+carries only the difference, and empty is the ordinary state.
+
+## Planner
+
+What this campaign's planner decides, files, or refuses beyond that lifecycle.
+
+## Worker
+
+What this campaign's worker owes beyond that lifecycle -- the checks its pull
+requests must pass, and what it leaves behind when a sub-issue closes.

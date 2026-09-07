@@ -61,15 +61,33 @@ at a dialog -- gets no prompt at all: herdr would reject it with
 clear, so this reports the herdr name as applied and the harness half as not
 sent, exit 2.
 """
+import importlib.machinery
+import importlib.util
 import json
 import re
 import subprocess
 import sys
+from pathlib import Path as _Path
 
-# The roles, in one place: a planner files the sub-issues and distributes them,
-# a worker works one. A review has no session to name -- it runs as a subagent
-# of the session that wants the merge.
-ROLES = ("planner", "worker")
+
+def _roles_module():
+    """`campaign-roles.py`, this skill's sibling, which owns the role words.
+
+    Read rather than restated (#227): the words appear in NAME's alternation
+    here and in the licence table there, and a second tuple would let a role
+    exist in one and not the other -- a name the guard admits and has no row
+    for, or a row no name can reach. The sibling is a dict literal with no
+    imports of its own, so this leaf stays cheap to exec, which is the property
+    its header is about."""
+    src = _Path(__file__).resolve().parent / "campaign-roles.py"
+    spec = importlib.util.spec_from_loader(
+        "croles", importlib.machinery.SourceFileLoader("croles", str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+ROLES = _roles_module().ROLE_WORDS
 
 # The slug: a campaign's name, carried on GitHub by its `campaign:<slug>` label
 # and read by people everywhere else. Three conditions, each with a reason:

@@ -40,29 +40,30 @@ outside one; a call under no base is not campaign work and is not logged.
 `verdictIsDurable`. The log is written after the verdict is decided, so it can
 change nothing, and whether it was written is PRINTED beside the verdict --
 a log that quietly stopped being written reads exactly like a log with nothing
-to say. Both directories are git-ignored: this is machine-local scratch.
+to say. Both directories are git-ignored: this is machine-local scratch. A
+guard that CRASHED logs too, as verdict `GUARD FAILED`, for that same reason:
+a crash that logs nothing is indistinguishable from a guard with nothing to
+say, so a guard failing on every call would read as a quiet one.
 
 WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
 from cwd -- or a campaign directory at a base root. Anything else is outside.
 
 WHO MAY WRITE WHAT. A session's ROLE decides, read from its name through
-`herdr agent list` and the pattern `campaign-name-session.py` owns: a PLANNER
-writes the campaign plane of any campaign and changes no code, a WORKER
-writes its own campaign and the sub-issue it claimed, and a name that pattern
-does not admit is refused on both. A campaign directory is campaign-plane
+`herdr agent list` and the pattern `campaign-name-session.py` owns. What each
+role may write is `campaign-roles.py`'s table, imported below and restated
+nowhere, here included; a name that pattern does not admit is refused on both
+planes. A campaign directory is campaign-plane
 scratch, but a CHECKOUT under one -- a member clone, a linked worktree -- is
 code like any other. The role being unreadable is not the same as a name that
 is not a campaign name: the first falls back to the claim reading below and
 says so, because this guard runs for every session on this machine and a
 failed read must not wall them all.
 
-THE ROLE IS NOT A SECURITY BOUNDARY. A session can rename itself, so it can
-name itself a planner; every session here also shares one `gh` account, so one
-that renames itself already holds the power the name would grant. What this
-buys is that the role is EXPLICIT and the mistake is LOUD, which is what the
-guard is for. #194 is the sub-issue for tying the name to something the named
-session did not choose.
+THE ROLE IS NOT A SECURITY BOUNDARY, and is not meant to be: `AGENTS.md`
+§ The session name says why, and #194 is the sub-issue for tying the name to
+something the named session did not choose. What this guard buys is that the
+role is EXPLICIT and the mistake is LOUD.
 
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload
@@ -102,6 +103,12 @@ from pathlib import Path
 
 # What makes a directory this repository's root: the script that cuts a claim.
 HERE = Path(__file__).resolve().parent
+# The `assuming-role` skill owns the role machinery (#227), so the two modules
+# this guard imports live under it rather than beside this file. Derived from
+# HERE and not searched for: a search finds whichever root happens to hold a
+# copy, and two copies drifting is the failure this import exists to prevent.
+SKILL_SCRIPTS = (HERE.parent / ".claude" / "skills" / "assuming-role"
+                 / "scripts")
 BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # THE MARKER THAT MAKES A DIRECTORY A CAMPAIGN'S, relative to the directory.
 # Until #181 it was a `-YYMMDD` suffix on the name; the slug dropped the date,
@@ -129,13 +136,14 @@ CAMPAIGN_MARKER = Path(".campaign")
 # as `campaign-name-session.py`'s `campaign_of` keeps them.
 CLAIM_BRANCH = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)/(\d+)-")
 
-# A name that resolved to no role, as distinct from a role that could not
-# be read at all. The table's last row refuses this one; the other falls
-# back to the claim reading.
-NO_ROLE = "no-role"
+# A name that resolved to no role, as distinct from a role that could not be
+# read at all. The table's last row refuses this one; the other falls back to
+# the claim reading. The VALUE lives in campaign-roles.py with the roles it is
+# the absence of; this diagnosis is the guard's, since only the guard refuses.
 NAMELESS = ("A session with no campaign name has no role, and a session with "
             "no role is refused on both planes. Name it: "
-            "scripts/campaign-name-session.py <pane> <slug>-<role>-<n>")
+            ".claude/skills/assuming-role/scripts/campaign-name-session.py "
+            "<pane> <slug>-<role>-<n>")
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
@@ -161,60 +169,13 @@ WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
 VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
           "-f", "--raw-field", "-b", "--body", "-t", "--title", "-m",
           "--body-file", "--label", "-a", "--assignee", "--milestone"}
-# WHICH gh WRITES ARE THE CAMPAIGN PLANE. The planner licence is bounded by
-# this and not by WRITES, which holds both planes: `gh pr create` is
-# OpenPullRequest and `gh pr merge` is MergePullRequest, and
-# `codePlaneEvents` in spec/campaign/orchestration/system.als puts the first on
-# the code plane while the three merge conditions -- not a role -- hold the
-# second. A planner allowed every WRITES row could open and merge pull
-# requests and delete another worker's claim ref through `gh api`, which is
-# the opposite of "a planner changes no code".
-#
-# Read as the SUBCOMMAND alone, because that is what the plane is a property
-# of. Anything not here is not a planner's by this rule and falls through to
-# the claim reading, which refuses it without a claim exactly as before.
-PLANNER_GH = {"issue", "label"}
-
-# THE ONE `gh issue` VERB THE LICENCE DOES NOT COVER
-# (kalaluthien/campaign-base#213). `gh issue develop` cuts a branch in the
-# sub-issue's own repository, and with `--name <slug>/<issue>-<topic>`
-# that
-# branch IS a claim -- the same object `campaign-claim take` cuts. Bare, it
-# names the branch `<issue>-<slug>`, which no reader here treats as a claim;
-# the flag is one word away and this guard reads no flags, so the verb is
-# judged by what it can cut and not by what a given spelling does cut.
-# So the tempting argument, that `develop` belongs beside `gh pr create`
-# on the code plane, is WRONG and was checked rather than assumed: `Claim` sits
-# in `campaignPlaneEvents` and not in `codePlaneEvents`
-# (spec/campaign/orchestration/system.als), and a planner cutting a claim for a
-# delegate it is about to launch is precisely what the licence exists to buy.
-#
-# WHAT IS WRONG IS THE ROUTE, NOT THE PLANE. `campaign-claim take` reads the
-# binding, reads the sub-issue's real parent, and refuses a sub-issue whose
-# repository the campaign issue's `## Repos` list does not hold --
-# `claimWithinScope` in spec/campaign/orchestration/scenarios.als, given a
-# reader by #203. `gh issue develop` reads none of the three and cuts the ref
-# anyway. Refusing it here leaves ONE route to a claim, which is the only
-# condition under which that model rule has a reader at all.
-#
-# WHAT THIS DOES NOT CLOSE, stated rather than left to be discovered. This is
-# the PLANNER branch, so it refuses a planner and nobody else. A session that
-# is not a planner still reaches `gh issue develop 9` through the claim reading
-# below, so one already holding a claim on #9 can cut a second, unscoped branch
-# for it. That hole is strictly narrower -- it needs a claim on the very issue
-# named -- and closing it means the guard reading the campaign issue's
-# `## Repos` on a `gh` call, a `gh` call inside a `PreToolUse` hook, which is
-# the cost #213 weighed and did not pay.
-PLANNER_GH_EXCEPT = {("issue", "develop")}
-
-# WHAT A WORKER MAY DO TO ITS OWN CAMPAIGN'S ISSUE WITHOUT A CLAIM. No claim
-# can ever cover the campaign issue -- it is nobody's sub-issue -- so #207
-# carved it out. Keyed on the VERB and not on the issue number, which is the
-# conjunct the first cut was missing: `edit` is the charter body, which only
-# `closing-campaign` step 4 writes; `close` closes the CAMPAIGN, a person's
-# decision; `delete` and `transfer` are irreversible. A claim on some other
-# sub-issue makes none of them safer, so the claim was never the missing test.
-OWN_CAMPAIGN_GH = {("issue", "comment")}
+# The three write-licence sets moved to campaign-roles.py with #227, whose
+# header carries the rationale each was written with. They are read through
+# `roles()` at the point of decision rather than bound to names here: a name
+# bound at import is a copy, and the whole point of the table is that this
+# guard has none. What stays here is the CLAIM, which is not a property of a
+# role -- it is read per call from the target's checkout and this session's
+# worktrees.
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
 # Words before a command that are not it, and shells that run a string.
@@ -232,6 +193,35 @@ HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
 
 
+def skill_module(stem, alias):
+    """One module out of the `assuming-role` skill's scripts, by path.
+
+    Both of this guard's role facts are imported rather than restated: the
+    NAME regex, which campaign-name-session.py owns, and the role table, which
+    campaign-roles.py owns. A second copy of either here would admit what its
+    owner refuses, and the two would drift apart on the first change to
+    either. Failure is the CALLER's to report -- `role_of` turns it into
+    could-not-look -- so nothing is swallowed here."""
+    src = SKILL_SCRIPTS / f"{stem}.py"
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+_roles = None
+
+
+def roles():
+    """The role table, loaded once. Memoised because `role_of` runs on every
+    call this guard sees and the table never changes within one run."""
+    global _roles
+    if _roles is None:
+        _roles = skill_module("campaign-roles", "croles")
+    return _roles
+
+
 _NAME_RULE = None
 # Set by `claim_match` when the name rule would not load, and printed beside
 # every "not a campaign branch" reading so the two are never confused.
@@ -242,18 +232,14 @@ def name_rule():
     """`campaign-name-session.py`, imported rather than restated. That script
     owns the session name's shape AND the slug's; a second copy here would admit
     names it refuses, and the two would drift apart on the first change to
-    either.
+    either. It moved under the `assuming-role` skill with #227, so the load
+    goes through `skill_module` beside the role table's.
 
     Cached, and loaded on first use rather than at import: this guard runs on
     every tool call of every session, and the file is read once per process."""
     global _NAME_RULE
     if _NAME_RULE is None:
-        src = HERE / "campaign-name-session.py"
-        spec = importlib.util.spec_from_loader(
-            "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
-        m = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(m)
-        _NAME_RULE = m
+        _NAME_RULE = skill_module("campaign-name-session", "cns")
     return _NAME_RULE
 
 
@@ -361,11 +347,20 @@ def role_of(session_id):
     The second is returned as `NO_ROLE`; the third as `None`."""
     if not session_id:
         return None, None, "the payload carries no session id"
+    # Both skill modules are read HERE, before herdr, so an unreadable one is
+    # could-not-look rather than a crash mid-decision. Reaching any later
+    # `NO_ROLE` comparison therefore means the table loaded and memoised.
     try:
         rule = name_rule()
     except Exception as e:                  # noqa: BLE001 -- reported, not raised
         return None, None, ("could not read the name pattern from "
                             "campaign-name-session.py "
+                            f"({e.__class__.__name__})")
+    try:
+        no_role = roles().NO_ROLE
+    except Exception as e:                  # noqa: BLE001 -- reported, not raised
+        return None, None, ("could not read the role table from "
+                            "campaign-roles.py "
                             f"({e.__class__.__name__})")
     try:
         r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
@@ -401,7 +396,7 @@ def role_of(session_id):
             return None, None, "a herdr row's name was not a string"
         campaign = rule.campaign_of(name)
         if campaign is None:
-            return None, NO_ROLE, (f"session {session_id} is named "
+            return None, no_role, (f"session {session_id} is named "
                                    f"{name or 'nothing'}, which the campaign "
                                    f"name pattern does not admit")
         role = "planner" if "-planner-" in name else "worker"
@@ -1117,7 +1112,7 @@ def gh_write(tokens):
 #   pairs it against a subcommand, so no kind and no ceiling is checked on that
 #   route. Closing it means a second grammar for `gh api`'s field syntax inside
 #   a hook every session runs, which is the cost this declines -- as
-#   `PLANNER_GH_EXCEPT` declines the matching hole on `gh issue develop`.
+#   the table's `gh_except` declines the matching hole on `gh issue develop`.
 #
 #   `--body-file` naming a file this cannot read comes back as unreadable and
 #   is refused, not allowed: a body that could not be read is not a body with a
@@ -1138,14 +1133,39 @@ COMMENT_CEILING = 2000
 _FIRST_LINE = None
 
 
+# Set when the name rule would not load, and carried into the verdict beside
+# the comment that could not be judged for it.
+FIRST_LINE_UNREADABLE = None
+
+
 def comment_first_line():
-    """Built on first use and cached, not at import: `name_pattern` loads
-    another file, and this guard runs on every tool call of every session."""
-    global _FIRST_LINE
-    if _FIRST_LINE is None:
+    """The first-line pattern, or None when the name rule will not load.
+
+    Built on first use and cached, not at import: `name_pattern` loads another
+    file, and this guard runs on every tool call of every session.
+
+    NONE IS COULD-NOT-LOOK, NOT A BAD SHAPE, and it is why this returns rather
+    than raising. This pattern is BUILT from the session-name regex, so an
+    unreadable `campaign-name-session.py` used to escape as a traceback here --
+    and a PreToolUse hook that raises exits 1, which the harness reads as the
+    HOOK's error and lets the call PROCEED. That is a hole, not a refusal, and
+    it is the same rule `claim_match` and `role_of` already follow. Refusing
+    instead would be the opposite mistake: it would wall every comment on the
+    machine for a missing file, which is what the campaign plane's fallback
+    exists to prevent. So the comment goes on to the claim reading UNJUDGED,
+    exactly as a shell-composed body does, and the verdict says so."""
+    global _FIRST_LINE, FIRST_LINE_UNREADABLE
+    if _FIRST_LINE is None and FIRST_LINE_UNREADABLE is None:
+        try:
+            name = name_pattern().pattern.strip("^$")
+        except Exception as e:              # noqa: BLE001 -- reported, not raised
+            FIRST_LINE_UNREADABLE = (
+                f"campaign-name-session.py, which owns the session-name half of "
+                f"the first line, would not load ({e.__class__.__name__})")
+            return None
         _FIRST_LINE = re.compile(
             r"^(?:" + "|".join(COMMENT_KINDS) + r") (?:owner|"
-            + name_pattern().pattern.strip("^$") + r"): *\S")
+            + name + r"): *\S")
     return _FIRST_LINE
 
 
@@ -1346,16 +1366,20 @@ def _judgeable(text):
 
 
 def comment_findings(text):
-    """Every way this comment's shape is wrong, as lines; empty when it holds."""
+    """(every way this comment's shape is wrong, the reason the first line was
+    not judged). The CEILING is still measured when the first line cannot be:
+    it needs no pattern, and dropping it too would let an unreadable name rule
+    silence a second, unrelated check."""
     out = []
     first = text.strip().splitlines()[0] if text.strip() else ""
-    if not comment_first_line().match(first):
+    pattern = comment_first_line()
+    if pattern is not None and not pattern.match(first):
         out.append(f"its first line is {first[:80]!r}, which is not "
                    f"`KIND <session name|owner>: <one line>`. KIND is one of "
                    f"{', '.join(COMMENT_KINDS)}, one intent per comment")
     if len(text) > COMMENT_CEILING:
         out.append(f"it is {len(text)} characters, over {COMMENT_CEILING}")
-    return out
+    return out, (None if pattern is not None else FIRST_LINE_UNREADABLE)
 
 
 def issue_target(tokens):
@@ -1387,13 +1411,20 @@ LAST = {}
 
 
 def refuse(lines):
-    LAST.update(verdict="REFUSED", reason=lines[0] if lines else "")
+    # `status` IS SET HERE, with the verdict, and not at some later line in
+    # `main`. The last resort below reads it to tell "crashed before judging"
+    # from "crashed after judging", and every statement between the decision
+    # and the record is a window where a REFUSED already PRINTED comes out as
+    # an exit 0 saying nothing was judged. Recording it in the two functions
+    # that decide leaves no window at all -- including on `main`'s early
+    # return, which no assignment in the tail can reach.
+    LAST.update(verdict="REFUSED", reason=lines[0] if lines else "", status=2)
     print("check-campaign-claim: REFUSED.\n  " + "\n  ".join(lines), file=sys.stderr)
     return 2
 
 
 def allow(lines):
-    LAST.update(verdict="allowed", reason=lines[0] if lines else "")
+    LAST.update(verdict="allowed", reason=lines[0] if lines else "", status=0)
     print("check-campaign-claim: allowed. " + " ".join(lines))
     return 0
 
@@ -1467,7 +1498,13 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
                 f"{how_role}, so the role could not be read; falling back to "
                 f"the claim reading alone, which is what this gate was "
                 f"before #185.")
-    if role == NO_ROLE:
+    # `role is not None` FIRST, and it is not redundant: `role_of` returns
+    # None when it could not read herdr OR the table, and evaluating
+    # `roles()` here would re-raise the very failure it just turned into
+    # could-not-look -- refusing every session on this machine instead of
+    # falling back to the claim reading. Measured: with campaign-roles.py
+    # removed, the unguarded form refused a claimed worker's own worktree.
+    if role is not None and role == roles().NO_ROLE:
         return refuse(read + [NAMELESS])
     if role == "planner":
         # A PLANNER NEVER TOUCHES CODE, and a checkout is where code lives:
@@ -1504,7 +1541,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
             return refuse(read + [
                 f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
                 f"claim of another campaign, and this session is of campaign "
-                f"#{campaign}.", TAKE])
+                f"`{campaign}`.", TAKE])
         if is_claim:
             return allow(read + [f"Clause 1: the target's checkout {top} is on "
                                  f"{branch}, a claim ({source})."])
@@ -1522,7 +1559,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         if holders and not kept:
             return refuse(read + [
                 f"the claims under {root} are of another campaign, and this "
-                f"session is of campaign #{campaign}.",
+                f"session is of campaign `{campaign}`.",
                 *[f"{h[0]} is on {h[1]}" for h in holders], TAKE])
         holders = kept
     if holders:
@@ -1599,7 +1636,10 @@ def bash_call(command, cwd: Path, session_id=""):
         elif why_unjudged:
             unjudged.append(why_unjudged)
         elif text is not None:
-            shape += comment_findings(text)
+            found, why_shape = comment_findings(text)
+            shape += found
+            if why_shape:
+                unjudged.append(why_shape)
     if shape or unread:
         return refuse([f"{what}: a comment whose shape does not hold.",
                        *[f"  {f}" for f in shape + unread],
@@ -1626,7 +1666,13 @@ def bash_call(command, cwd: Path, session_id=""):
     fell_back = [] if role else [
         f"{how_role}, so the role could not be read; falling back to the "
         f"claim reading alone, which is what this gate was before #185."]
-    if role == NO_ROLE:
+    # `role is not None` FIRST, and it is not redundant: `role_of` returns
+    # None when it could not read herdr OR the table, and evaluating
+    # `roles()` here would re-raise the very failure it just turned into
+    # could-not-look -- refusing every session on this machine instead of
+    # falling back to the claim reading. Measured: with campaign-roles.py
+    # removed, the unguarded form refused a claimed worker's own worktree.
+    if role is not None and role == roles().NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
     if role == "planner":
         # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
@@ -1640,9 +1686,10 @@ def bash_call(command, cwd: Path, session_id=""):
         # for anyone: a `gh pr merge` is not a planner's by role, whatever its
         # name says.
         # READ AS A PAIR, and reduced to the subcommand only where the plane
-        # is what is being asked. `PLANNER_GH` is keyed on the subcommand
-        # because the plane is a property of it; `PLANNER_GH_EXCEPT` is keyed
-        # on the pair because the exception is a property of one verb.
+        # is what is being asked. The table's `gh` is keyed on the subcommand
+        # because the plane is a property of it; its `gh_except` is keyed on
+        # the pair because the exception is a property of one verb.
+        licence = roles().ROLES["planner"]
         pairs = set()
         for rest, is_write, _ in gh:
             if not is_write:
@@ -1650,13 +1697,14 @@ def bash_call(command, cwd: Path, session_id=""):
             w = gh_words(rest)
             pairs.add(((w[0] if w else ""), (w[1] if len(w) > 1 else "")))
         verbs = {sub for sub, _ in pairs}
-        excepted = sorted(f"{sub} {verb}" for sub, verb in pairs & PLANNER_GH_EXCEPT)
-        if verbs and verbs <= PLANNER_GH and not excepted and not stray:
+        excepted = sorted(f"{sub} {verb}"
+                          for sub, verb in pairs & licence["gh_except"])
+        if verbs and verbs <= licence["gh"] and not excepted and not stray:
             return allow([f"{what}: {how_role}, and a planner writes the "
                           f"campaign plane of any campaign."])
         read_on = [f"{how_role}, but `gh {v}` is not the campaign plane, so "
                    f"the planner licence does not cover it"
-                   for v in sorted(verbs - PLANNER_GH)]
+                   for v in sorted(verbs - licence["gh"])]
         # A REFUSAL AND NOT A SENTENCE. The first cut of this only appended to
         # `read_on` and fell through to the claim reading, which allowed a
         # planner `gh issue develop 9` outright whenever ANY worktree on this
@@ -1678,7 +1726,7 @@ def bash_call(command, cwd: Path, session_id=""):
             # both the header and the licence line fired
             # (kalaluthien/campaign-base#213's review). `read_on or [how_role]`
             # and not `read_on` alone: a bare `gh issue develop 9` leaves
-            # `read_on` EMPTY, since `issue` is in `PLANNER_GH` and only the
+            # `read_on` EMPTY, since `issue` is in the table's `gh` and only the
             # pair is excepted, so dropping the header outright would have lost
             # the role reading on exactly the command this branch is for.
             return refuse([f"{what}.", how, *(read_on or [how_role]), *[
@@ -1727,7 +1775,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the worker's, on one (#207).
         if (role == "worker" and own_number is not None and i == own_number
-                and all((sub, verb) in OWN_CAMPAIGN_GH
+                and all((sub, verb) in roles().ROLES["worker"]["own_campaign_gh"]
                         for j, sub, verb in per_write if j == i)):
             covering.append((i, [("its own campaign", campaign,
                                   "the session name")]))
@@ -1745,7 +1793,7 @@ def bash_call(command, cwd: Path, session_id=""):
                        if claim_token(h[1]) != campaign]
             holders = [h for h in holders if h not in foreign]
             detail += [f"{h[0]} is on {h[1]}, a claim of another campaign; "
-                       f"this session is of campaign #{campaign}"
+                       f"this session is of campaign `{campaign}`"
                        for h in foreign]
         detail += d
         (covering if holders else uncovered).append((i, holders))
@@ -1839,6 +1887,11 @@ def main() -> int:
     # command, which is what there was to read.
     try:
         payload = json.load(sys.stdin)
+        # KEPT FOR THE LAST RESORT below, which has no other way to reach it:
+        # a row logged without the session id is a row `guard-precision.py`
+        # cannot pair with anything, and `os.getcwd()` is the guard's own
+        # directory rather than the call's.
+        LAST["payload"] = payload
     except (ValueError, OSError) as e:
         payload = {}
         status = refuse([f"the hook payload would not read "
@@ -1869,5 +1922,65 @@ def main() -> int:
     return status
 
 
+# THE LAST RESORT, and it is not a refusal. An exception escaping `main` exits
+# 1, and the harness reads a non-zero-that-is-not-2 as the HOOK's own error and
+# lets the tool call PROCEED -- so an unhandled bug here has always been a
+# silent bypass, printed as a traceback nobody reads. This turns it into a loud
+# allow: the guard says it failed and did not judge the call, in the wording
+# every other could-not-look uses. It is deliberately NOT a refusal, because a
+# blanket refusal turns any bug in this file into a wall across every session on
+# the machine, which is the failure `role_of`'s fallback exists to prevent.
+# Each site that CAN fail is still handled where it is, and named there; this
+# only stops the ones nobody predicted from being invisible.
+#
+# ON STDOUT, like `allow`, and not on stderr like `refuse`: what a PreToolUse
+# hook writes on an exit-0 path reaches the session through stdout, and a
+# message on the channel the harness reads only for a refusal is a loud allow
+# that nothing hears.
+#
+# AND IT WRITES ITS OWN ROW, as its own verdict word. A crash that logs nothing
+# is indistinguishable from a guard with nothing to say, so a guard failing on
+# EVERY call would read as a quiet one; `guard-precision.py` counts the three
+# words apart, and folding this one into the allows is the mutation its suite
+# pins. The row is best effort by construction: whatever raised may be the very
+# thing the log write needs, so its own failure is caught and said, never
+# raised on top of the first.
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:                   # noqa: BLE001 -- announced, not raised
+        import traceback
+        decided = LAST.get("status")
+        LAST.update(verdict="GUARD FAILED",
+                    reason=f"the guard raised {e.__class__.__name__}: {e}")
+        crashed = LAST.get("payload") or {}
+        try:
+            note = log_verdict(crashed, 0 if decided is None else decided,
+                               LAST.get("target"),
+                               Path(crashed.get("cwd") or os.getcwd()))
+        except Exception as e2:              # noqa: BLE001 -- the log is not the verdict
+            # NAMES ONLY WHAT RAN. The `try` covers the ARGUMENTS too, so a
+            # `cwd` that will not become a Path fails before `log_verdict` is
+            # entered -- and saying "the log write raised" there sends the next
+            # reader into a function that was never called. It does not say
+            # whether a row landed, because from here that is not observable:
+            # this `try` cannot tell an argument that raised from a write that
+            # raised halfway.
+            note = (f"verdict not logged as far as this could tell: the "
+                    f"attempt raised {e2.__class__.__name__}")
+        if decided is None:
+            print(f"check-campaign-claim: the guard FAILED and did not judge "
+                  f"this call ({e.__class__.__name__}: {e}). The call is "
+                  f"allowed unjudged; this is a defect in the guard, not a "
+                  f"verdict. {note}")
+            traceback.print_exc(file=sys.stderr)
+            sys.exit(0)
+        print(f"check-campaign-claim: the verdict was reached and STANDS "
+              f"(exit {decided}); the guard then FAILED after it "
+              f"({e.__class__.__name__}: {e}). This is a defect in the guard, "
+              f"not a change to the verdict. {note}",
+              file=sys.stderr if decided else sys.stdout)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(decided)

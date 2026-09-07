@@ -39,3 +39,18 @@ started.
   say it was not.
 - Extrapolating a trend from two points, or from a window that includes a
   deploy, an incident, or a holiday, without saying so.
+
+## Every session
+
+What a session of this campaign does that the `assuming-role` skill does not
+already say. The skill carries the lifecycle every campaign shares; this section
+carries only the difference, and empty is the ordinary state.
+
+## Planner
+
+What this campaign's planner decides, files, or refuses beyond that lifecycle.
+
+## Worker
+
+What this campaign's worker owes beyond that lifecycle -- the checks its pull
+requests must pass, and what it leaves behind when a sub-issue closes.

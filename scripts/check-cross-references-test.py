@@ -58,6 +58,9 @@ BASE = {
     f"{SKILL}/SKILL.md": "# demo skill\n",
     f"{SKILL}/references/gotchas.md": "# gotchas\n",
     f"{SKILL}/assets/sub-issue.md": "# sub-issue\n",
+    # The two roots S5 asks: the tree's own, and the citing file's skill.
+    "scripts/campaign-tracker.py": "#!/usr/bin/env python3\n",
+    f"{SKILL}/scripts/demo-helper.sh": "#!/bin/sh\n",
 }
 
 # (name, {path: contents}, expected outcome)
@@ -153,8 +156,73 @@ CASES = [
      {"a.md": "The fast-forward `~/.claude/CLAUDE.md` § Git prescribes.\n"},
      None),
     ("a path shape the guard claims no rule over is left alone",
-     {"a.md": "A pattern also hides `scripts/repos-helper.sh` and others.\n"},
+     {"a.md": "The workflow is `.github/workflows/check.yml` and no more.\n"},
      None),
+
+    # ---- S5: a script path, resolved against EITHER root.
+    ("S5 a script at the tree root resolves",
+     {"a.md": "Run `scripts/campaign-tracker.py` for it.\n"}, None),
+    ("S5 a skill's own script resolves from inside that skill",
+     {f"{SKILL}/references/x.md": "Run `scripts/demo-helper.sh` first.\n"},
+     None),
+    # THE ROW THE TWO-ROOT RULE EXISTS FOR: prose inside a skill naming the
+    # REPOSITORY's script. Asking only the skill root would flag this, and 13
+    # references in the real tree have this shape.
+    ("S5 a skill citing the repository's script resolves too",
+     {f"{SKILL}/references/y.md": "Read `scripts/campaign-tracker.py` first.\n"},
+     None),
+    # THE `$BASE/` FORM, which is how a skill spells a command a session runs.
+    # `RUN` cannot hold a `$`, so these arrived as `BASE/...` and matched no
+    # shape at all: 17 script paths went unchecked, the one #227's own sweep
+    # had just repaired among them.
+    ("S5 reads a `$BASE/`-prefixed script path",
+     {"a.md": "Run `\"$BASE/scripts/campaign-tracker.py\" bind 1` for it.\n"},
+     None),
+    ("S5 a `$BASE/`-prefixed script at neither root dangles",
+     {"a.md": "Run `\"$BASE/scripts/gone.py\" bind 1` for it.\n"},
+     ("DANGLING", "scripts/gone.py")),
+    # `$BASE` IS THE TREE ROOT, so a base-rooted path has one root and not
+    # S5's two. This skill's own `scripts/demo-helper.sh` exists; the command
+    # the prose prescribes still exits `No such file or directory`, because
+    # `$BASE/scripts/demo-helper.sh` is not a file. Asking both roots reports
+    # it resolved, which is the class #227 was opened to repair.
+    ("a `$BASE/` script living only under the citing skill dangles",
+     {f"{SKILL}/references/z.md":
+      "Run `\"$BASE/scripts/demo-helper.sh\"` first.\n"},
+     ("DANGLING", "$BASE/scripts/demo-helper.sh")),
+    # The same path WITHOUT `$BASE/` is the two-root rule's own row, and stays
+    # resolved: the narrowing must bite on the prefix and nothing else.
+    ("...while the same path unprefixed still resolves against the skill",
+     {f"{SKILL}/references/z.md": "Run `scripts/demo-helper.sh` first.\n"},
+     None),
+    # THE `$BASE/` SPELLING IS KEPT IN THE LINE. The guard rewrites the token
+    # to shape it; a finding printed as `scripts/gone.py` sends a reader to
+    # grep the file for a string that is not in it.
+    # THE RELATIVE BRANCH GETS S5's NARROWING TOO. `references/gotchas.md`
+    # exists under the demo skill and nowhere else, so a `$BASE/`-prefixed
+    # citation of it from INSIDE that skill resolves against the skill and
+    # dangles against the tree root -- which is the honest answer, since
+    # `$BASE/references/` is not a directory.
+    ("a `$BASE/` relative path is not resolved against the citing skill",
+     {f"{SKILL}/references/w.md": "Read `$BASE/references/gotchas.md` next.\n"},
+     ("DANGLING", "$BASE/references/gotchas.md")),
+    ("a dangling `$BASE/` path is printed with the prefix the file wrote",
+     {"a.md": "Run `\"$BASE/scripts/nowhere.py\"` for it.\n"},
+     ("DANGLING", "$BASE/scripts/nowhere.py")),
+    # THE NEEDLE CARRIES THE PREFIX. `{SKILL}/scripts/gone.sh` is a substring
+    # of BOTH spellings, so a needle without `$BASE/` passes whether or not the
+    # token was rewritten -- an assertion on a neighbour the mutation leaves
+    # alone.
+    ("S2 reads a `$BASE/`-prefixed skill path too, and prints the prefix",
+     {"a.md": f"Run `\"$BASE/{SKILL}/scripts/gone.sh\"` for it.\n"},
+     ("DANGLING", f"$BASE/{SKILL}/scripts/gone.sh")),
+
+    ("S5 a script at neither root dangles",
+     {"a.md": "Run `scripts/gone.py` for it.\n"},
+     ("DANGLING", "scripts/gone.py")),
+    ("S5 fires inside an .als file too, where the comments are the spec",
+     {"spec/campaign/session/system.als": "/* `scripts/gone.py` owns it. */\n"},
+     ("DANGLING", "scripts/gone.py")),
 
     # ---- Precedence: undecided outranks dangling, and both are printed.
     ("undecided and dangling together report both and exit 3",
@@ -237,7 +305,7 @@ def main():
     # is the shape that gets trusted for months while enforcing nothing.
     extra += 1
     r = run_case({})
-    if not ("markdown file(s) under" in r.stdout
+    if not ("file(s) under" in r.stdout
             and "reference(s):" in r.stdout
             and "read from the working tree" in r.stdout):
         failed += 1
@@ -252,6 +320,50 @@ def main():
         failed += 1
         print("FAIL  --list shows the template bucket\n"
               f"      got: {r.stdout.strip()[:300]}")
+
+    # EVERY BUCKET PRINTS THE `$BASE/` SPELLING, not only the dangling one.
+    # The guard rewrites the token to shape it, and a line naming
+    # `scripts/x.py` sends a reader to grep a file that says `$BASE/scripts/x.py`
+    # -- so each of the six report sites is its own row here. Without them,
+    # five of the six survive `shown` being replaced by `tok` and the suite
+    # stays green while the comment claiming "every line" goes false.
+    #
+    # Asserted on the token FIELD of the line, split out rather than searched
+    # for: the unprefixed spelling is a substring of the prefixed one, so a
+    # needle without `$BASE/` passes either way.
+    for what, doc, bucket, token, *rest in [
+        ("a bare `$BASE/`, which names the root and not a file under it",
+         "Resolve it as `$BASE/` and go.", "template", "$BASE/"),
+        ("a `$BASE/` path holding a placeholder",
+         "Go to `$BASE/<the directory that matched>` next.",
+         "template", "$BASE/<the"),
+        ("a `$BASE/` skill path that resolves",
+         f"Fill it from `$BASE/{SKILL}/assets/sub-issue.md`.",
+         "resolved", f"$BASE/{SKILL}/assets/sub-issue.md"),
+        ("a `$BASE/` script path that resolves",
+         "Run `\"$BASE/scripts/campaign-tracker.py\" bind 1`.",
+         "resolved", "$BASE/scripts/campaign-tracker.py"),
+        # The tree root's OWN `references/`, which the shared fixture does not
+        # have: the skill's copy is what the unnarrowed branch would have
+        # answered with, so the row needs a file only the tree root holds.
+        ("a `$BASE/` relative path that resolves at the TREE root",
+         "Fill it from `$BASE/references/rooted.md`.",
+         "resolved", "$BASE/references/rooted.md",
+         {"references/rooted.md": "# rooted\n"}),
+        ("a `$BASE/` path of a shape the guard claims no rule over",
+         "The workflow is `$BASE/.github/workflows/check.yml`.",
+         "unshaped", "$BASE/.github/workflows/check.yml"),
+    ]:
+        extra += 1
+        r = run_case({"a.md": doc + "\n", **(rest[0] if rest else {})},
+                     args=("--list",))
+        got = [ln.split("\t") for ln in r.stdout.splitlines()
+               if ln.startswith(bucket + "\t")]
+        if not any(f[2] == token for f in got):
+            failed += 1
+            print(f"FAIL  {what} is printed with the prefix the file wrote\n"
+                  f"      wanted a {bucket} line whose token is {token!r}, got: "
+                  f"{[f[2] for f in got] or '(no such line)'}")
 
     total = len(CASES) + extra
     print(f"{total - failed}/{total} cases pass")

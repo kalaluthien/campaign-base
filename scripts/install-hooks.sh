@@ -277,7 +277,10 @@ fi
 # same shape as the `# runs:` lines above and read the same two ways: by the
 # assignment under it, and by install-hooks-test, which builds its fixture from
 # it. Add a harness hook by adding it here.
-# installs: check-campaign-claim.py
+# Each entry is `<repo-relative path>:<Event>[,<Event>]`. The events are here
+# and not in the python below because this line is the one list, and a hook
+# whose event lived elsewhere would be registered on a slot nothing names.
+# installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit
 #
 # ...and the line below is what those guards IMPORT rather than run, which no
 # `# runs:` line can carry: a name there is executed as a guard. Nothing in this
@@ -285,36 +288,71 @@ fi
 # clone reaches them by absolute path -- but the suites that build a fixture
 # from these declarations do, and a fixture missing an import is a guard that
 # tracebacks where it meant to refuse.
-# imports: campaign-name-session.py
-guard=$root/scripts/$(sed -n 's/^# installs: //p' "$0")
-if [ ! -x "$guard" ]; then
-	echo "refusing: $guard is missing or not executable, so the claim guard" >&2
-	echo "would be registered as a command that cannot run -- which reads to" >&2
-	echo "every session like a rule being enforced." >&2
-	exit 1
-fi
+# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py
+#
+# REPO-RELATIVE since #227: a script either half names may live under
+# .claude/skills/<skill>/scripts/, so an entry carries the whole path and
+# nothing here adds a prefix. Not a two-root search -- a search finds whichever
+# copy exists, which is the silent shape.
+installs=$(sed -n 's/^# installs: //p' "$0")
+for entry in $installs; do
+	f=$root/${entry%%:*}
+	if [ ! -x "$f" ]; then
+		echo "refusing: $f is missing or not executable, so it would be" >&2
+		echo "registered as a command that cannot run -- which reads to every" >&2
+		echo "session like a rule being enforced." >&2
+		exit 1
+	fi
+done
 
-python3 - "$guard" <<'PY'
+# THE IMPORTS ARE CHECKED HERE TOO, and that is what makes the `# imports:`
+# line a declaration rather than a comment. Nothing installs them, so nothing
+# used to read them, and a suite that split an entry the old way failed far
+# downstream as a FileNotFoundError naming a doubled prefix. A guard whose
+# import is missing tracebacks where it meant to refuse, which a PreToolUse
+# hook turns into "the hook errored" and the call PROCEEDS -- so the check
+# belongs beside the one above, on the same run, in the same wording.
+for entry in $(sed -n 's/^# imports: //p' "$0"); do
+	f=$root/${entry%%:*}
+	if [ ! -f "$f" ]; then
+		echo "refusing: $f is missing, and the guards installed here import it," >&2
+		echo "so each would traceback where it meant to refuse -- which a" >&2
+		echo "PreToolUse hook reads as its own error and lets the call proceed." >&2
+		exit 1
+	fi
+done
+
+# shellcheck disable=SC2086 -- the entries are paths without spaces, by rule
+python3 - "$root" $installs <<'PY'
 import json, os, sys
 
-guard = sys.argv[1]
-name = os.path.basename(guard)
+root, entries = sys.argv[1], sys.argv[2:]
 path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
-# The matcher is the tool list the guard has an opinion about. Bash is on it
-# because a changing shell command is most of what a worker does; the guard
+# The matcher is the tool list the CLAIM GUARD has an opinion about. Bash is on
+# it because a changing shell command is most of what a worker does; the guard
 # itself decides which Bash calls count, so widening the matcher costs a process
-# and never a false refusal.
-MATCHER = "Edit|Write|NotebookEdit|Bash"
+# and never a false refusal. It is keyed on the event: PreToolUse is the only
+# one that takes a matcher, and a matcher on SessionStart would silently match
+# nothing.
+MATCHER = {"PreToolUse": "Edit|Write|NotebookEdit|Bash"}
 # Through the interpreter, never as a bare path. A bare path that has gone
 # missing exits 127 from the shell, which the harness reads as a hook that did
 # not block -- so a moved checkout turns the guard into a silent pass. python3
 # on a missing file exits 2, the one code that refuses, so the same absence
 # refuses every guarded call and says which file it could not read.
-WANT = {"PreToolUse": [f'python3 "{guard}"']}
-# Every event an earlier install may have registered the guard on is swept,
-# so a retired half does not keep running from the slot it kept.
-SWEEP = ("PreToolUse", "PostToolUse")
+WANT = {}
+NAMES = []
+for entry in entries:
+    rel, _, events = entry.partition(":")
+    full = os.path.join(root, rel)
+    NAMES.append(os.path.basename(rel))
+    for event in events.split(","):
+        WANT.setdefault(event, []).append(f'python3 "{full}"')
+# Every event an earlier install may have registered one of these on is swept,
+# so a retired half does not keep running from the slot it kept. PostToolUse
+# holds no hook now and stays on the list for exactly that reason.
+SWEEP = tuple(dict.fromkeys([*WANT, "PreToolUse", "PostToolUse"]))
 
 try:
     with open(path) as handle:
@@ -331,22 +369,26 @@ except (OSError, ValueError) as e:
 hooks = settings.setdefault("hooks", {})
 for event in SWEEP:
     commands = WANT.get(event, [])
-    entries = hooks.setdefault(event, [])
+    existing = hooks.setdefault(event, [])
     # Every entry mentioning this script goes, whatever matcher or flags it
     # carried: an old registration left beside a new one runs the guard twice
     # and, if its event moved, enforces nothing from the slot it kept.
-    kept = [e for e in entries
-            if not any(name in (h.get("command") or "")
+    kept = [e for e in existing
+            if not any(any(n in (h.get("command") or "") for n in NAMES)
                        for h in (e.get("hooks") or []))]
-    dropped = len(entries) - len(kept)
+    dropped = len(existing) - len(kept)
     if commands:
-        kept.append({"matcher": MATCHER,
-                     "hooks": [{"type": "command", "command": c} for c in commands]})
-        print(f"installed: {path} {event} {MATCHER} -> {name}"
+        slot = {"hooks": [{"type": "command", "command": c} for c in commands]}
+        if event in MATCHER:
+            slot["matcher"] = MATCHER[event]
+        kept.append(slot)
+        shown = ", ".join(os.path.basename(c.rsplit('"', 2)[-2]) for c in commands)
+        print(f"installed: {path} {event} {MATCHER.get(event, '(no matcher)')} "
+              f"-> {shown}"
               + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
     elif dropped:
-        print(f"removed: {path} {event} -> {name} ({dropped} retired entry/entries)")
-    elif not entries:
+        print(f"removed: {path} {event} ({dropped} retired entry/entries)")
+    elif not existing:
         del hooks[event]                # nothing to say about this event
         continue
     hooks[event] = kept

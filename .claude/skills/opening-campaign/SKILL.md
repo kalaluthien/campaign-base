@@ -73,7 +73,7 @@ kind, which is not; say which kind you picked.
   Meaningful and short. `scripts/campaign-tracker.py slugs` lists every slug
   ever spent, closed campaigns included; do not reuse one. What a slug may be
   is `campaign-name-session.py`'s rule and is not repeated here —
-  `scripts/campaign-name-session.py <pane> <slug>-worker-1` refuses a slug it
+  `$BASE/.claude/skills/assuming-role/scripts/campaign-name-session.py <pane> <slug>-worker-1` refuses a slug it
   will not admit, which is the cheapest way to try one before it reaches a
   label. The owner vetoes by renaming the label, before any session is named.
 - **Title** — the display name, in the requester's own words, not yours.
@@ -147,15 +147,14 @@ hiccup: pick another slug. Do not pass `--force`.
 **Then name this session, now that the number exists.** A session that opened
 this campaign while named for another keeps that name until something sets it,
 and nothing later does: every peer message and every `live` sweep would then
-read it as another campaign's. `<role>` is `planner` when this session
-will file the sub-issues and hand them out, `worker` when it will work the
-one it files (`AGENTS.md` § The binding); `<n>` is the next free one among the
-sessions `herdr agent list` shows for this campaign, counted as `AGENTS.md`
-§ The session name says.
+read it as another campaign's. `<role>` is the one the `assuming-role` skill
+describes — load it, read the reference for the shape this session will take,
+and pick by that; `<n>` is the next free one among the sessions `herdr agent
+list` shows for this campaign, counted as `AGENTS.md` § The session name says.
 
 ```sh
 test "${HERDR_ENV:-}" = 1 &&
-  "$BASE/scripts/campaign-name-session.py" "$HERDR_PANE_ID" <slug>-<role>-<n>
+  "$BASE/.claude/skills/assuming-role/scripts/campaign-name-session.py" "$HERDR_PANE_ID" <slug>-<role>-<n>
 ```
 
 Read what it reports applied, then confirm with `ListAgents` that the harness

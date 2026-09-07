@@ -37,3 +37,18 @@ cycle of real traffic.
 - A cutover with no rollback, or one whose rollback needs data it destroys.
 - Silence about a difference you found and accepted. Write it down with the
   reason; it is the thing an incident will point at.
+
+## Every session
+
+What a session of this campaign does that the `assuming-role` skill does not
+already say. The skill carries the lifecycle every campaign shares; this section
+carries only the difference, and empty is the ordinary state.
+
+## Planner
+
+What this campaign's planner decides, files, or refuses beyond that lifecycle.
+
+## Worker
+
+What this campaign's worker owes beyond that lifecycle -- the checks its pull
+requests must pass, and what it leaves behind when a sub-issue closes.

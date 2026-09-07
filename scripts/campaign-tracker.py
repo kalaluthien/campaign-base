@@ -407,7 +407,8 @@ def name_rule():
     exec'ing that leaf; were the rule here instead, that path would exec this
     script's `gh` plumbing on every call. Its header says the same from the
     other side."""
-    src = Path(__file__).resolve().parent / "campaign-name-session.py"
+    src = (Path(__file__).resolve().parent.parent / ".claude" / "skills" / "assuming-role" / "scripts"
+           / "campaign-name-session.py")
     spec = importlib.util.spec_from_loader(
         "campaign_name_session", importlib.machinery.SourceFileLoader(
             "campaign_name_session", str(src)))

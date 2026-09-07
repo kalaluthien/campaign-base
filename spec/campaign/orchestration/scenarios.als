@@ -325,8 +325,17 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    the conjunct the carve-out reached it, which Q4 caught. Bounded here rather
    than by a new fact, because the fact is github/system's to add and adding it
    would redden commands this branch is not about. */
+/* THE BRIEF IS THE SECOND READING, and it is about the CONTEXT rather than the
+   session: `some s.role` asks whether the session has a role at all, `s in
+   Briefed` asks whether the context it is acting from still states it. A
+   compaction clears the second and leaves the first alone, which is the whole
+   reason `campaign-role-brief.py` runs on SessionStart. NO SCRIPT ENFORCES
+   THIS ROW -- the guard reads the name, not the brief -- so Q12 measures a rule
+   the hook is the only reader of, and says so rather than implying a refusal
+   nobody makes. */
 pred mayAct[s: Session, e: Event, i: lone Issue] {
   some s.role
+  s in Briefed
   s.role = Planner implies (planeOf[e] = CampaignPlane
                             and (e = Release implies no claimedIssues.i))
   s.role = Worker implies (
@@ -1301,6 +1310,37 @@ pred Q9c_WorkerFilesCampaignIssueUnguarded {
     eventually (Now.event = FileCampaignIssue and Who.session = s)
 }
 
+/* Q12. A session acting from a context it was never re-briefed in. UNSAT: the
+   `s in Briefed` conjunct is the only thing that refuses it, and dropping that
+   line reddens this one alone. */
+pred Q12_UnbriefedSessionRefused {
+  permissionByRole
+  some s: Session |
+    eventually (Now.event = ContextReset and Who.session = s)
+    and eventually (Who.session = s and some planeOf[Now.event] and s not in Briefed)
+}
+
+/* Q12c. CONTROL for Q12, and SAT: without the discipline the same session
+   reaches the same write after the same reset, so the refusal is the rule's
+   and not the trace space's. */
+pred Q12c_UnbriefedSessionReachesTheEventUnguarded {
+  some s: Session |
+    eventually (Now.event = ContextReset and Who.session = s)
+    and eventually (Who.session = s and some planeOf[Now.event] and s not in Briefed)
+}
+
+/* Q12b. The positive side of the same cell, with the order pinned: the reset,
+   then the hook's brief, then the write. SAT, which is what says the bit is a
+   pause and not a wall -- a session compacted mid-sub-issue goes on working. */
+pred Q12b_RebriefedSessionActs {
+  permissionByRole
+  some s: Session |
+    eventually (Now.event = ContextReset and Who.session = s
+                and after eventually (Now.event = Brief and Who.session = s
+                                      and after eventually (Now.event = CloseIssue
+                                                            and Who.session = s)))
+}
+
 /* R4k. THE HOLE THE PRE-TOOL-USE HALF LEAVES OPEN, stated rather than hidden:
    under `claimBeforeWork` alone a session with no claim still reaches a
    commit, because a shell write is not read as `Work` at the moment it is
@@ -1883,6 +1923,9 @@ run Q11_WorkerWritesItsOwnCampaignIssue    for 5 Issue, 1 PullRequest, 2 Campaig
 run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q10b_WorkerClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q10c_WorkerClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q12_UnbriefedSessionRefused                     for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q12c_UnbriefedSessionReachesTheEventUnguarded   for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q12b_RebriefedSessionActs                       for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_PushedButStillLocalOnly         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

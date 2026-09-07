@@ -351,6 +351,43 @@ def main():
             failures += 1
             print("".join(f"        {l}\n" for l in out.splitlines()))
 
+    # EVERY FORM'S `path` RESOLVES TO A FILE. The finding tells a reader which
+    # script owns the rule, and a reader acts on it by opening that path -- so
+    # a path that resolves to nothing is a finding nobody can act on. #227
+    # moved one owner under `.claude/skills/` and the print had a hardcoded
+    # `scripts/` prefix; every count-only case above passed throughout, because
+    # none of them reads the path. This is the case that does.
+    #
+    # Asserted against the tree rather than against a copied list: a later move
+    # that forgets to update the field fails here instead of printing a dead
+    # path for months.
+    import importlib.machinery, importlib.util
+    spec = importlib.util.spec_from_loader(
+        "crr", importlib.machinery.SourceFileLoader("crr", str(GUARD)))
+    crr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(crr)
+    base = GUARD.resolve().parent.parent
+    for token, path, _, _ in crr.FORMS:
+        resolves = (base / path).is_file()
+        print(f"{'ok  ' if resolves else 'FAIL'}  the `{token}` form's owner "
+              f"{path} is a file")
+        if not resolves:
+            failures += 1
+    # ...and the printed finding names that path, not a prefixed guess.
+    #
+    # `belongs to ` IS PART OF THE ASSERTION and must stay. The bare path is a
+    # substring of every prefixed spelling of it -- `scripts/<path>` contains
+    # `<path>` -- so an assertion on the path alone passes with the old
+    # hardcoded prefix restored, which is the mutation this case exists to
+    # catch. Measured: it did pass, until the preceding word was pinned too.
+    code, out = run(fence("herdr agent rename w1:p1 campaign-1-worker-1"))
+    named = ("belongs to .claude/skills/assuming-role/scripts/"
+             "campaign-name-session.py" in out)
+    print(f"{'ok  ' if named else 'FAIL'}  the finding names the owner's whole path")
+    if not named:
+        failures += 1
+        print("".join(f"        {l}\n" for l in out.splitlines()))
+
     staged, worktree, staged_out = staged_case()
     # The announcement names its source, and only a --staged run can pin the
     # other half of that sentence: hardcoding "the working tree" passes every
@@ -367,9 +404,9 @@ def main():
         failures += 1
 
     if failures:
-        print(f"\n{failures} of {len(CASES) + 10} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 1} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES) + 10} cases pass.")
+    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 1} cases pass.")
     return 0
 
 

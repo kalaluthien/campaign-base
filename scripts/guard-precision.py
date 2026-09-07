@@ -290,7 +290,18 @@ def main(argv=None):
     g = guard()
     pairs, held, unpairable = pair_up(g, rows, a.minutes)
     refusals = [r for r in rows if r.get("verdict") == "REFUSED"]
-    print(f"  {len(refusals)} refusal(s), {len(rows) - len(refusals)} allow(s)")
+    allows = [r for r in rows if r.get("verdict") == "allowed"]
+    # THE THIRD VERDICT IS NOT AN ALLOW. `everything not REFUSED` counted the
+    # guard's own crash rows as allows, so a guard failing on EVERY call read
+    # as a guard permitting every call -- the one reading that must not be
+    # inferred from a subtraction. Anything neither word is named as its own
+    # row rather than folded into either, because a verdict this does not know
+    # is a defect somewhere and silence about it is how it stays one.
+    other = collections.Counter(
+        r.get("verdict", "?") for r in rows
+        if r.get("verdict") not in ("REFUSED", "allowed"))
+    print(f"  {len(refusals)} refusal(s), {len(allows)} allow(s)"
+          + "".join(f", {n} {v!r}" for v, n in other.most_common()))
     print(f"  {len(pairs)} suspected false positive(s), {len(held)} refusal(s) "
           f"held, {len(unpairable)} with nothing to match on")
 

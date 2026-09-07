@@ -6,9 +6,26 @@
 set -u
 
 branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
-case "$branch" in
-	campaign-*/*) ;;
-	*) exit 0 ;;
+
+# WHAT A CLAIM LOOKS LIKE IS NOT DECIDED HERE. It was, as `campaign-*/*`, and
+# that glob was a second reader of `claim_match` -- so when #181 moved claims
+# to `<slug>/<issue>-<topic>` the glob went on matching the retired form alone
+# and every claim cut since committed without ever being pushed, silently,
+# because the branch simply fell through to `exit 0`. Ask the owning script.
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 0
+verdict=$("$HERE/check-commit-claim.py" --is-claim 2>&1)
+case $? in
+0) ;;                           # a claim: push it
+1) exit 0 ;;                    # answered no: not this hook's branch
+*)
+	# COULD NOT LOOK, so push anyway and say so. The cost of pushing a
+	# branch that turns out not to be a claim is a branch on the remote;
+	# the cost of not pushing one that is, is work that reads as landed to
+	# nobody and dies with the machine.
+	echo "push-campaign-branch: could not tell whether $branch is a claim." >&2
+	echo "$verdict" | sed 's/^/  /' >&2
+	echo "  Pushing anyway -- an unread question is not a no." >&2
+	;;
 esac
 
 # mktemp, not /tmp/$$: /tmp is world-writable and a pid is guessable, so a

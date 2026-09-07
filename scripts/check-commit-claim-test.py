@@ -324,6 +324,47 @@ def main():
               f"not in `take --help`: {unknown}; remedy: {remedy!r}; "
               f"exit {r.returncode}: {out(r)[:300]}")
 
+    # THE PUSH HALF. `push-campaign-branch.sh` used to match the branch name
+    # itself, with `campaign-*/*`, which is a second reader of `claim_match` --
+    # and it drifted: after #181 cut claims as `<slug>/<issue>-<topic>` the
+    # glob matched the retired form alone, so a commit on a live claim fell
+    # through to `exit 0` and was never pushed. Nothing said so. These cases
+    # assert on the REMOTE, which is the only place the difference shows.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d, claims=("demo/9-topic", "campaign-1/9-topic"),
+                  feature="feature/9-topic")
+        for branch, want, why in (
+                ("demo/9-topic", True, "a slug claim, the form minted since #181"),
+                ("campaign-1/9-topic", True, "the retired form, still a claim"),
+                ("feature/9-topic", False,
+                 "no claim, so the pre-commit half refuses and there is "
+                 "nothing for the push half to reach")):
+            tree = f.trees[branch]
+            r, moved = commit(f, tree)
+            remote = f.git(tree, "ls-remote", "origin", branch).stdout.split()
+            local = f.git(tree, "rev-parse", "HEAD").stdout.strip()
+            pushed = bool(remote) and remote[0] == local
+            check(f"post-commit pushes {branch} -- {why}" if want else
+                  f"{branch} never reaches the remote -- {why}",
+                  (moved and pushed) if want else (not moved and not pushed),
+                  f"committed={moved} pushed={pushed} remote={remote[:1]} "
+                  f"local={local} :: {out(r)[:300]}")
+
+        # The reading the hook asks for, on its own. Three outcomes, and `2`
+        # is not folded into `1`: the hook pushes on 2, because an unread
+        # question is not a no.
+        gate = f.base / "scripts" / "check-commit-claim.py"
+        e = dict(os.environ, HOME=str(f.home))
+        e.pop("CLAUDE_CODE_SESSION_ID", None)
+        for cwd, want, why in (
+                (f.trees["demo/9-topic"], 0, "a claim"),
+                (f.trees["feature/9-topic"], 1, "answered: not a claim"),
+                (Path(d), 2, "could not look -- no git repository here")):
+            r = subprocess.run([str(gate), "--is-claim"], cwd=str(cwd),
+                               capture_output=True, text=True, env=e)
+            check(f"--is-claim exits {want} when {why}", r.returncode == want,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1

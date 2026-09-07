@@ -773,7 +773,7 @@ def cmd_take(args):
     parent, parent_note, readable = issue_parent(args.issue)
     if readable and parent is not None and parent != str(args.campaign_issue):
         print(f"refusing: {parent_note}, not #{args.campaign_issue}.\n"
-              f"  A ref cut under campaign-{args.campaign_issue}/ would be "
+              f"  A ref cut under #{args.campaign_issue}'s slug would be "
               f"invisible to the campaign that owns #{args.issue}\n  and "
               f"unreachable from the one named. Take it under #{parent}, or "
               f"fix the sub-issue's parent.", file=sys.stderr)

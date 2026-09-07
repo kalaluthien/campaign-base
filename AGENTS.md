@@ -587,6 +587,12 @@ push, and which ends in one `REPORT` carrying the sha and a per-finding
 disposition. **Check that disposition against the findings list mechanically**: a
 round claiming "all fixed" without re-running its sweep is what keeps happening.
 
+**A round returning only refinement ends the loop**: findings that are wording, a
+number, a name or a claim softened -- with no behavioural defect in shipped code
+and no test that passes with its branch deleted -- are applied in one commit,
+reviewed narrowed on that diff, and merged, rather than answered with another
+round.
+
 ## Review
 
 **Every review runs as an in-process subagent. There is no other way to run one** —

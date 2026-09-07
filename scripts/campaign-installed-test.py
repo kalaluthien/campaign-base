@@ -140,11 +140,24 @@ def main():
         rc, out, err = run("check", body(tmp, marker), "nobody/here")
         check("a filter naming no installed row is refused, not read as clear",
               rc == 1 and "has no installed row" in err and "clear" not in out, out + err)
+        rc, out, err = run("check", body(tmp, marker), "exampl-thing")
+        check("a filter that is not an owner/repo is refused, nothing compared",
+              rc == 1 and "is not an owner/repo" in err, out + err)
+        sub = Path(install, "sub"); sub.mkdir(exist_ok=True)
+        rc, out, err = run("check", body(tmp, f"example/thing (installed: {sub})"),
+                           "example/thing")
+        check("a path inside a checkout is refused as inside it, naming the root",
+              rc == 1 and f"-- inside the checkout {os.path.realpath(install)}" in out,
+              out + err)
 
         # ---- reach
         rc, out, err = run("reach", body(tmp, marker), "other/plain", merged)
         check("reach on a repository with no row is nothing to reach, exit 0",
               rc == 0 and "nothing to reach" in out, out + err)
+        rc, out, err = run("reach", body(tmp, marker), "exampl-thing", merged)
+        check("reach on a word that is not an owner/repo is refused, as check refuses it",
+              rc == 1 and "is not an owner/repo" in err and "nothing to reach" not in out,
+              out + err)
         unmerged = commit(work, "third-unpushed")
         rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
         check("a sha not on origin's default branch is refused: merge first",
@@ -171,6 +184,14 @@ def main():
         check("a failing apply is reported with its exit status after the fast-forward",
               rc == 1 and "apply `false` exited 1" in err
               and git(install, "rev-parse", "HEAD") == unmerged, err)
+        rc, out, err = run("check", body(tmp, marker), "example/thing")
+        check("APPLY FAILED IS DURABLE: check reads it after the fast-forward, NOT clear",
+              rc == 1 and "-- apply failed" in out and "apply `false` exited 1" in out
+              and "1 unread -- NOT clear" in out, out + err)
+        rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
+        check("a reach whose apply runs through clears the mark",
+              rc == 0 and "apply `touch applied.txt` ran" in out
+              and run("check", body(tmp, marker), "example/thing")[0] == 0, out + err)
 
         local = commit(install, "local-only")
         fourth = commit(work, "fourth")

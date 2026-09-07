@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Read the repositories installed on this machine, say whether each install
-shows what was merged, and carry a merge into one.
+"""List, check and reach the repositories installed on this machine.
+
+Say whether each install shows what was merged, and carry a merge into one.
 
     scripts/campaign-installed.py list  <body>
     scripts/campaign-installed.py check <body> [owner/repo]
@@ -56,6 +57,19 @@ THE THREE READINGS, and what each prints so a bare verdict never stands alone:
           <path>: HEAD <sha> contains <sha>; apply ...` -- the line a REPORT
           quotes.
 
+A FAILED `apply` IS DURABLE, because git cannot see it. The fast-forward has
+happened by the time `apply` runs, so an install whose `apply` failed reads
+`current` to every git question; `reach` writes `APPLY_FAILED` inside the
+install's own `.git/` naming the command and its status, and `check` reads it
+as the word `apply failed` -- unread, NOT clear -- until a later `reach` runs
+the command through and removes it. Inside `.git/` because that is the one
+place tied to the install that no tree, hook or clone reads.
+
+THE PATH IS THE CHECKOUT'S ROOT, not a directory inside one. `rev-parse
+--show-toplevel` says which, and an `installed:` naming a subdirectory is
+refused as `inside the checkout <root>`: `reach` would fast-forward the whole
+checkout and `apply` would run in the wrong directory.
+
 WHO RUNS WHAT. Whoever merges runs `reach` for the repository the merge landed
 in and puts its line in the REPORT (AGENTS.md § Installed repositories);
 `closing-campaign` step 2 runs `check` over the README and refuses on NOT
@@ -74,6 +88,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BASE_APPLY = "scripts/install-hooks.sh"
+APPLY_FAILED = "APPLY_FAILED"
 
 
 def load(name, filename):
@@ -129,6 +144,8 @@ def read_install(slug, path):
     rc, top, err = git(path, "rev-parse", "--show-toplevel")
     if rc != 0:
         return "not a checkout", f"{path}: {err}"
+    if Path(top).resolve() != Path(path).resolve():
+        return f"inside the checkout {top}", f"{path} is not that checkout's root"
     rc, url, err = git(path, "remote", "get-url", "origin")
     if rc != 0:
         return "not a checkout", f"{path} has no origin: {err}"
@@ -149,7 +166,18 @@ def read_install(slug, path):
         return "could not fetch", f"{path} HEAD..origin/{branch}: {err}"
     n = int(count)
     word = "current" if n == 0 else f"behind {n}"
+    failed = apply_failed_mark(path)
+    if failed.exists() and n == 0:
+        said = " ".join(failed.read_text().split())[:120]
+        return "apply failed", f"HEAD {head}  origin/{branch} {tip}  {said}"
     return word, f"HEAD {head}  origin/{branch} {tip}"
+
+
+def apply_failed_mark(path):
+    """The file `reach` leaves inside the install's `.git/` when `apply`
+    failed, and removes when it ran through."""
+    _, gitdir, _ = git(path, "rev-parse", "--absolute-git-dir")
+    return Path(gitdir or path, APPLY_FAILED)
 
 
 def cmd_list(body_path, _args):
@@ -170,6 +198,10 @@ def cmd_check(body_path, args):
         return 1
     only = args[0] if args else None
     if only is not None:
+        if REPOS.key(only) is None:
+            print(f"campaign-installed: {only!r} is not an owner/repo; nothing "
+                  f"was compared", file=sys.stderr)
+            return 1
         listed = [r for r in listed if REPOS.key(r[0]) == REPOS.key(only)]
         if not listed:
             print(f"campaign-installed: {only} has no installed row in "
@@ -197,13 +229,22 @@ def cmd_reach(body_path, args):
     if why:
         print(f"campaign-installed: {why}", file=sys.stderr)
         return 1
+    if REPOS.key(only) is None:
+        # The same refusal `check` makes: a word that names no repository is
+        # not a repository with no row, and reading it as "nothing to reach"
+        # let a typo skip the post-merge step with exit 0.
+        print(f"campaign-installed: {only!r} is not an owner/repo; nothing was "
+              f"compared", file=sys.stderr)
+        return 1
     hit = [r for r in listed if REPOS.key(r[0]) == REPOS.key(only)]
     if not hit:
         print(f"{only} has no installed row in {body_path}: nothing to reach")
         return 0
     slug, path, apply = hit[0]
     word, detail = read_install(slug, path)
-    if word not in ("current",) and not word.startswith("behind"):
+    # `apply failed` is reachable: the fast-forward is a no-op and the point
+    # of the second reach is to run the command through and clear the mark.
+    if word not in ("current", "apply failed") and not word.startswith("behind"):
         print(f"campaign-installed: refusing to reach {slug}: {word} ({detail})",
               file=sys.stderr)
         return 1
@@ -226,16 +267,21 @@ def cmd_reach(body_path, args):
               f"{err}", file=sys.stderr)
         return 1
     applied = "none"
+    mark = apply_failed_mark(path)
     if apply:
         r = subprocess.run(apply, shell=True, cwd=path, capture_output=True,
                            text=True)
         if r.returncode != 0:
             said = " ".join((r.stderr or r.stdout).split())[:200]
+            mark.write_text(f"apply `{apply}` exited {r.returncode}: {said}\n")
             print(f"campaign-installed: {slug} fast-forwarded at {path}, but "
-                  f"apply `{apply}` exited {r.returncode}: {said}",
-                  file=sys.stderr)
+                  f"apply `{apply}` exited {r.returncode}: {said}; marked in "
+                  f"{mark} so `check` reads `apply failed` until a reach runs "
+                  f"it through", file=sys.stderr)
             return 1
         applied = f"`{apply}` ran"
+    if mark.exists():
+        mark.unlink()
     _, head, _ = git(path, "rev-parse", "HEAD")
     print(f"reached {slug} at {path}: HEAD {head} contains {sha}; apply {applied}")
     return 0

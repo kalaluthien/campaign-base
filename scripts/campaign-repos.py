@@ -98,7 +98,10 @@ NONE = "none"
 # bracket is one, at the end, and its fields are `key: value` split on the
 # next ` key:` so a command may hold a comma. `apply` without `installed` is
 # refused: a command with nowhere to run is a marker half written.
-MARKED = re.compile(r"^(?P<slug>\S+)\s+\((?P<marker>.*)\)$")
+# One bracket, holding no bracket: a second `(...)` after the first leaves the
+# line matching nothing here and refused as a malformed line, where a greedy
+# body read `(installed: /a) (apply: b)` as a path and dropped the command.
+MARKED = re.compile(r"^(?P<slug>\S+)\s+\((?P<marker>[^()]*)\)$")
 MARKER_KEYS = ("installed", "apply")
 MARKER_FIELD = re.compile(r"(?:^|,\s*)(installed|apply):\s*")
 
@@ -249,6 +252,9 @@ def marker(entry):
     if not m:
         return entry, None, None, None
     slug_, text = m.group("slug"), m.group("marker")
+    if slug_ == NONE:
+        return None, None, None, (f"malformed marker on {NONE}: the sentinel "
+                                  f"names no repository, so nothing is installed")
     fields = {}
     hits = list(MARKER_FIELD.finditer(text))
     if not hits or hits[0].start() != 0:

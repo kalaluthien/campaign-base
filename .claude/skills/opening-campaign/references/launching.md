@@ -174,9 +174,16 @@ git -C "$BASE" rev-list --left-right --count origin/main...HEAD   # want "0	0"
 ```
 
 Behind means a merged pull request this checkout has not caught up to, and
-editing from here can silently revert work that landed: carry it in with
-`scripts/campaign-installed.py reach`, which fast-forwards the install and runs
-its `apply`, then read zero again before editing.
+editing from here can silently revert work that landed. Carry it in and read
+zero again before editing:
+
+```sh
+"$BASE/scripts/campaign-installed.py" reach "$CAMPAIGN/README.md" kalaluthien/campaign-base "$(git -C "$BASE" rev-parse origin/main)"
+```
+
+That fast-forwards the base and runs `scripts/install-hooks.sh`; it refuses
+while the base is on any branch but `main`, which is the case to read as
+"somebody is working in the install" rather than to work around.
 
 **The clone must not be behind *at launch*, which is a different check.** "Do not
 clone while the base is ahead" is not sufficient: the remote can move

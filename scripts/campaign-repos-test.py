@@ -93,6 +93,10 @@ CASES = [
      section("owner/one (installed: )"), 1, "has no value"),
     ("a marker on the base is still the base, refused",
      section("kalaluthien/campaign-base (installed: /x)"), 1, "names the base"),
+    ("a second bracket is a malformed line, not a path holding one",
+     section("owner/one (installed: /a) (apply: b)"), 1, "malformed line"),
+    ("a marker on `none` is refused: the sentinel names no repository",
+     section("none (installed: /x)"), 1, "the sentinel names no repository"),
     # #205: the base is a member of its own campaign by another route, so the
     # list never names it. Three spellings, because the reader that admitted
     # the plain one admitted all three.

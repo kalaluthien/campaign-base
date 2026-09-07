@@ -33,7 +33,23 @@ pred S15_NoLocalDirectory {
   }
 }
 
+/* An installed repository is merged into, reached, and the campaign closes:
+   the post-merge step exists and a close can follow it (#239). One machine,
+   holding the campaign, with the sub-issue's repository installed. */
+pred S16_MergeReachesInstall {
+  one c: Campaign | one i: c.memberIssues | one m: Machine {
+    always m in machinesHolding[c]
+    i.repo in m.installed
+    reachDiscipline[c]
+    closeDiscipline[c]
+    eventually (Now.event = MergePullRequest and Now.issue = i)
+    eventually (Now.event = Reach and Where.machine = m and Where.repo = i.repo)
+    eventually campaignClosed[c]
+  }
+}
+
 /* ---------------- commands ---------------- */
 
+run S16_MergeReachesInstall     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run S15_NoLocalDirectory        for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1

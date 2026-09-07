@@ -264,14 +264,14 @@ scripts/alloy-check.py --commands spec/campaign</pre>
       <dd><code>github/system</code></dd>
       <dt>sigs</dt>
       <dd><ul>
-        <li><code>Machine</code></li>
+        <li><code>Machine { installed, var current }</code></li>
         <li><code>Branch</code></li>
-        <li><code>CampaignDir { campaign, machine, var checkedOut: Repo -&gt; Branch }</code></li>
+        <li><code>CampaignDir { campaign, machine, var checkedOut: Repo -&gt; Branch, var principled, var gated }</code></li>
       </ul></dd>
       <dt>var</dt>
       <dd><code>OnDisk in CampaignDir</code></dd>
       <dt>events</dt>
-      <dd><code>CreateDir</code> <code>DeleteDir</code> <code>Acquire</code></dd>
+      <dd><code>CreateDir</code> <code>DeleteDir</code> <code>Acquire</code> <code>Reach</code></dd>
     </dl>
   </div>
   <div class="rec">

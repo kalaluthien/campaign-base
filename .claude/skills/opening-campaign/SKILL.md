@@ -248,7 +248,9 @@ done < "$CAMPAIGN/runtime/repos"
 ```
 
 `- none` gets no special case: the loop runs zero times and `repos/` is never
-created. Say in the reply that no repository was acquired, so a campaign that was
+created. An entry marked `(installed: ...)` is acquired like any other: the
+clone is where the work happens and the install is where a merge is carried
+afterwards, `AGENTS.md` § Installed repositories. Say in the reply that no repository was acquired, so a campaign that was
 *meant* to have some is one line to correct.
 
 Safe to re-run; do not clone by hand, and do not read the script — its interface

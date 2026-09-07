@@ -9,10 +9,17 @@ as exit strings in the code below.
 
   no `## Repos` heading       the list is not there at all, and a missing list is
                               not an empty one.
-  a malformed line under it   anything that is not `- owner/repo` or `- none`,
+  a malformed line under it   anything that is not `- owner/repo`, `- none`, or
+                              `- owner/repo (installed: <path>, apply: <cmd>)`,
                               which is also what a surviving `<owner/repo>`
                               placeholder is. Skipping it silently made a list
                               written `* owner/repo` read as empty.
+  a malformed marker          the bracket after a repository names a key that
+                              is not `installed` or `apply`, names one twice,
+                              carries `apply` with no `installed`, or an
+                              `installed` path that is not absolute or
+                              `~`-rooted -- a relative one resolves against
+                              whatever the reader's cwd is.
   an empty list               indistinguishable from a list a bad write dropped,
                               and this list is the only copy of the repository
                               index the close does not delete.
@@ -29,10 +36,25 @@ as exit strings in the code below.
                               second checkout. Prose said so in three files and
                               no reader enforced it (#205).
 
-`slug`, `key`, `WRAPPERS`, `BASE_REPO` and `lands_in` are exported for
-`scripts/campaign-claim.py`, which compares a sub-issue's `## Lands in` entry to
-this list: one reader of what makes two spellings the same repository, rather
-than two that agree by both being exact.
+THE INSTALLED MARKER (kalaluthien/campaign-base#239). A repository that is
+INSTALLED on this machine -- checked out where it is used, `~/.claude` for
+dotclaude, the base root for the base -- has two checkouts once a campaign
+clones it, and a merge is not finished until the install shows it. The
+`## Repos` entry says so with one bracket, `- owner/repo (installed: <path>,
+apply: <command>)`, `apply:` optional: the path is where the install is, and
+the command is what the install runs after it is fast-forwarded. This file
+parses the bracket and nothing else; `scripts/campaign-installed.py` is what
+reads the install off disk and reaches it. The base is never listed here, so
+its row is a constant in that script and not a line in any list. Every reader
+of the LIST still gets `owner/repo` per line: the marker rides on the entry
+and changes nothing about what is cloned.
+
+`slug`, `key`, `WRAPPERS`, `BASE_REPO`, `lands_in` and `read_repos` are
+exported: the first five for `scripts/campaign-claim.py`, which compares a
+sub-issue's `## Lands in` entry to this list -- one reader of what makes two
+spellings the same repository, rather than two that agree by both being exact
+-- and `read_repos` for `scripts/campaign-installed.py`, which needs the
+marker and not only the slug and would otherwise be the second parser.
 
 `lands_in` IS THE SECOND SECTION THIS FILE READS (kalaluthien/campaign-base#217),
 and its docstring says why it is not `## Repos` with a count of one. The command
@@ -72,6 +94,16 @@ ITEM = re.compile(r"^- (\S.*)$")
 # An entry is `owner/repo` or the sentinel, and the sentinel is spelled exactly.
 ENTRY = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 NONE = "none"
+# THE INSTALLED MARKER: `owner/repo (installed: <path>, apply: <command>)`. The
+# bracket is one, at the end, and its fields are `key: value` split on the
+# next ` key:` so a command may hold a comma. `apply` without `installed` is
+# refused: a command with nowhere to run is a marker half written.
+# One bracket, holding no bracket: a second `(...)` after the first leaves the
+# line matching nothing here and refused as a malformed line, where a greedy
+# body read `(installed: /a) (apply: b)` as a path and dropped the command.
+MARKED = re.compile(r"^(?P<slug>\S+)\s+\((?P<marker>[^()]*)\)$")
+MARKER_KEYS = ("installed", "apply")
+MARKER_FIELD = re.compile(r"(?:^|,\s*)(installed|apply):\s*")
 
 # THE BASE'S OWN SLUG LIVES HERE because this is the reader that has to refuse
 # it, and `scripts/campaign-claim.py` imports it from here rather than keeping a
@@ -212,29 +244,68 @@ def lands_in(text):
     return entry, None
 
 
-def main():
-    if len(sys.argv) != 2:
-        raise SystemExit(__doc__)
-    path = sys.argv[1]
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = section(f.read())
-    except OSError as e:
-        sys.exit(f"campaign-repos: cannot read {path}: {e.strerror}")
+def marker(entry):
+    """(slug, installed, apply, why) for one entry as written. `installed` and
+    `apply` are None on a bare entry; `why` is the refusal and the other three
+    are None when the bracket does not read."""
+    m = MARKED.match(entry)
+    if not m:
+        return entry, None, None, None
+    slug_, text = m.group("slug"), m.group("marker")
+    if slug_ == NONE:
+        return None, None, None, (f"malformed marker on {NONE}: the sentinel "
+                                  f"names no repository, so nothing is installed")
+    fields = {}
+    hits = list(MARKER_FIELD.finditer(text))
+    if not hits or hits[0].start() != 0:
+        return None, None, None, (f"malformed marker on {slug_}: `({text})` "
+                                  f"does not open with one of {', '.join(MARKER_KEYS)}")
+    for n, h in enumerate(hits):
+        end = hits[n + 1].start() if n + 1 < len(hits) else len(text)
+        value = text[h.end():end].strip()
+        if h.group(1) in fields:
+            return None, None, None, (f"malformed marker on {slug_}: "
+                                      f"`{h.group(1)}` is given twice")
+        if not value:
+            return None, None, None, (f"malformed marker on {slug_}: "
+                                      f"`{h.group(1)}` has no value")
+        fields[h.group(1)] = value
+    installed, apply = fields.get("installed"), fields.get("apply")
+    if installed is None:
+        return None, None, None, (f"malformed marker on {slug_}: `apply` with "
+                                  f"no `installed`, so there is nowhere to run it")
+    if not (installed.startswith("/") or installed == "~"
+            or installed.startswith("~/")):
+        return None, None, None, (f"malformed marker on {slug_}: installed path "
+                                  f"`{installed}` is not absolute or `~`-rooted, "
+                                  f"so it would resolve against the reader's cwd")
+    return slug_, installed, apply, None
 
+
+def read_repos(text):
+    """(rows, why) -- the `## Repos` list of one body, each row
+    `(owner/repo, installed, apply)` with the last two None on a bare entry.
+    `rows` is `[]` for `- none` alone; `why` is the refusal, verbatim what the
+    command line prints, and `rows` is None beside it. Pure, so the command
+    line and `campaign-installed.py` read one parser and cannot disagree."""
+    lines = section(text)
     if lines is None:
-        sys.exit(f"campaign-repos: no `## Repos` heading in {path}")
+        return None, "no `## Repos` heading"
 
     items = []
     for line in lines:
         m = ITEM.match(line)
         if not m:
-            sys.exit(f"campaign-repos: malformed line under ## Repos: {line}")
+            return None, f"malformed line under ## Repos: {line}"
         entry = m.group(1).strip()
-        if entry != NONE and not ENTRY.match(entry):
+        slug_, installed, apply, why = marker(entry)
+        if why:
+            return None, why
+        if slug_ != NONE and not ENTRY.match(slug_):
             # `<owner/repo>` from the template lands here too, and reads as what
             # it is: a line that is neither a repository nor the sentinel.
-            sys.exit(f"campaign-repos: malformed line under ## Repos: - {entry}")
+            return None, f"malformed line under ## Repos: - {entry}"
+        entry = slug_
         # THE BASE IS NEVER A MEMBER OF THIS LIST, and until #205 that was
         # prose in three files with no reader. `## Repos` says which
         # repositories to CLONE when a campaign opens; the base reaches
@@ -244,22 +315,22 @@ def main():
         # it reads the list -- so this refusal is the structural gap being
         # closed, not a live break being fixed.
         if is_base(entry):
-            sys.exit(f"campaign-repos: `## Repos` names the base ({entry}); it "
-                     f"lists the MEMBER repositories a campaign clones, and the"
-                     f" base is a member of its own campaign by another route")
-        items.append(entry)
+            return None, (f"`## Repos` names the base ({entry}); it "
+                          f"lists the MEMBER repositories a campaign clones, and the"
+                          f" base is a member of its own campaign by another route")
+        items.append((entry, installed, apply))
 
     if not items:
-        sys.exit(f"campaign-repos: the ## Repos list is empty in {path}")
+        return None, "the ## Repos list is empty"
 
-    repos = [i for i in items if i != NONE]
+    repos = [i for i in items if i[0] != NONE]
     if len(repos) != len(items):
         if repos:
             plural = "y" if len(repos) == 1 else "ies"
-            sys.exit(f"campaign-repos: `- none` is mixed with {len(repos)} repository"
-                     f" entr{plural}; the list is `- none` alone or repositories,"
-                     " never both")
-        return                     # `- none` alone: no repositories, and that is fine
+            return None, (f"`- none` is mixed with {len(repos)} repository"
+                          f" entr{plural}; the list is `- none` alone or repositories,"
+                          " never both")
+        return [], None            # `- none` alone: no repositories, and that is fine
 
     # Every entry becomes a checkout at repos/<name>/, so two entries ending in
     # the same name are one directory and the second acquire overwrites the
@@ -269,16 +340,37 @@ def main():
     # it. Latent when a review found it, and a rename is cheaper than the day it
     # is not.
     seen = {}
-    for i in repos:
+    for i, _installed, _apply in repos:
         where = i.rsplit("/", 1)[-1].casefold()
         if where in seen:
             if seen[where] == i:
-                sys.exit(f"campaign-repos: duplicate entry under ## Repos: {i}")
-            sys.exit("campaign-repos: two entries share the checkout directory"
-                     f" repos/{i.rsplit('/', 1)[-1]}/: {seen[where]} and {i}")
+                return None, f"duplicate entry under ## Repos: {i}"
+            return None, ("two entries share the checkout directory"
+                          f" repos/{i.rsplit('/', 1)[-1]}/: {seen[where]} and {i}")
         seen[where] = i
+    return repos, None
 
-    print("\n".join(repos))
+
+def main():
+    if len(sys.argv) != 2:
+        raise SystemExit(__doc__)
+    path = sys.argv[1]
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        sys.exit(f"campaign-repos: cannot read {path}: {e.strerror}")
+
+    rows, why = read_repos(text)
+    if why:
+        # The two refusals that name the file keep naming it: a heading that is
+        # not there and a list that is empty are about the file, where every
+        # other refusal quotes the line.
+        if why.startswith("no `## Repos` heading") or why.startswith("the ## Repos list is empty"):
+            why = f"{why} in {path}"
+        sys.exit(f"campaign-repos: {why}")
+    if rows:
+        print("\n".join(r[0] for r in rows))
 
 
 # GUARDED, so campaign-claim.py can import `slug`, `key` and `BASE_REPO` without

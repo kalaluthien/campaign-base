@@ -21,7 +21,10 @@ and, on a claim, the code the sub-issue names.
    level. A session that cannot start one is blocked and says so.
 7. **Merge only on all three conditions**: a review read at the sha being
    merged, written by an agent that did not write the commits, and a branch
-   containing the current `main`.
+   containing the current `main`. **Then reach the install**, when the
+   repository has one here — the base always does:
+   `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>`,
+   and the `REPORT` quotes the line it prints, which names the install's sha.
 8. **Release the claim** when the sub-issue is settled. The release compacts
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.

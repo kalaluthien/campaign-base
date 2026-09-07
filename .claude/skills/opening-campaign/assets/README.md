@@ -34,7 +34,15 @@ Out:
      list for a campaign with no member repository; adding the first one
      replaces it, and the two never sit together. The base is never listed --
      it reaches its campaign directory by its own route, and
-     `scripts/campaign-repos.py` refuses an entry naming it. -->
+     `scripts/campaign-repos.py` refuses an entry naming it.
+
+     A repository INSTALLED on this machine -- checked out where it is used,
+     `~/.claude` for dotclaude -- carries one bracket saying where, and what
+     the install runs once a merge is carried into it:
+       - owner/repo (installed: <path>, apply: <command>)
+     `apply:` is optional; `installed:` is absolute or `~`-rooted. The entry
+     is still cloned like any other; `scripts/campaign-installed.py` is what
+     reads the install and reaches it after a merge. -->
 
 - <owner/repo>
 - <owner/repo>

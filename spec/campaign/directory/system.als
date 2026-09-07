@@ -3,13 +3,27 @@
  * it. It opens github/system because a directory holds a campaign's work and a
  * checkout is of a repository, and both of those are the entity below.
  *
- *   Machine       a machine a campaign can run on.
+ *   Machine       a machine a campaign can run on, and which repositories
+ *                 are INSTALLED on it: checked out where they are used, not
+ *                 only cloned into a campaign directory.
  *   Branch        a git branch a checkout can be on.
  *   CampaignDir   one campaign's directory on one machine: which campaign,
  *                 which machine, and which branch each repository is on.
  *   OnDisk        the campaign directories that currently exist.
  *   Where         the observer: which machine and which repository the current
  *                 event touched.
+ *
+ * An installed repository has two checkouts on a machine -- the install, where
+ * it is used, and the clone under the campaign directory, where it is worked --
+ * and a merge is not finished until the install shows it (#239). Before #239 the
+ * base alone had that rule, as prose, and `~/.claude` (dotclaude) had none:
+ * carrying a merge into the install was each worker's improvisation. `current`
+ * below is the set of installed repositories whose install contains everything
+ * merged; a MergePullRequest on a repository empties it for that repository on
+ * every machine, and a Reach on one machine refills it. The `## Repos` marker
+ * that says WHICH repositories are installed and HOW a merge reaches each is
+ * `scripts/campaign-repos.py`'s; `scripts/campaign-installed.py check` reads
+ * `current` off this machine's disk and `reach` is the event.
  *
  * A campaign directory holds no fact another machine reads, which is what lets
  * it be optional. Its name is the campaign's slug, and what makes a directory
@@ -27,7 +41,19 @@ module directory/system
 
 open github/system
 
-sig Machine {}
+sig Machine {
+  /* WHICH REPOSITORIES ARE INSTALLED HERE. Static: a trace runs on machines as
+     they are, and installing one is not a campaign event. The Base is installed
+     on every machine a campaign runs on -- the base root IS its install -- and
+     the fact below says so, which is what makes the base one row of this rule
+     rather than a special case beside it. */
+  installed: set Repo,
+  /* THE INSTALLED REPOSITORIES WHOSE INSTALL CONTAINS EVERYTHING MERGED. Never
+     wider than `installed`; emptied for a repository by every MergePullRequest
+     on it, refilled by Reach. Read off disk by `campaign-installed.py check`:
+     the install's HEAD contains the remote's default branch, or does not. */
+  var current: set Repo
+}
 sig Branch {}
 
 /* One campaign's directory on one machine. Keyed by an atom rather than
@@ -88,15 +114,41 @@ one sig Where {
 fact DirectoryWellFormed {
   all disj x, y: CampaignDir | x.campaign != y.campaign or x.machine != y.machine
   always all t: CampaignDir, r: Repo | lone t.checkedOut[r]
+  all m: Machine | Base in m.installed
+  always all m: Machine | m.current in m.installed
+}
+
+/* THE REPOSITORIES A CAMPAIGN'S MERGES LAND IN: where each member issue lands,
+   its `## Repos` list, and the base, which is a member of every campaign by its
+   own route. The member issues are in the set because github/system.als lets a
+   member land in a repository the body never listed, and a merge there leaves
+   an install behind exactly the same. */
+fun landingRepos[c: Campaign]: set Repo { c.memberIssues.repo + c.reposInBody + Base }
+
+/* WHAT A MACHINE HOLDING THE CAMPAIGN STILL OWES: an installed landing
+   repository whose install does not contain what was merged. Empty is the
+   only reading a close accepts. */
+fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c]) - m.current }
+
+/* A CAMPAIGN DOES NOT CLOSE WHILE A MERGE HAS NOT REACHED ITS INSTALL on a
+   machine holding it. Assumed by a scenario and never a fact, the shape
+   github/system.als's `closeDiscipline` takes: `closing-campaign` step 2 is
+   the reader, and a check that assumed it as a fact could not exhibit its
+   absence. Scoped to `machinesHolding` because that is where the check runs --
+   the bound machine's disk -- and a machine that installed the repository but
+   never held the campaign is one no session of it can read. */
+pred reachDiscipline[c: Campaign] {
+  always ((Now.event = CloseIssue and Now.issue = c.campaignIssue)
+          implies all m: machinesHolding[c] | no unreached[c, m])
 }
 
 /* ---------------- observable events ---------------- */
 
-one sig CreateDir, DeleteDir, Acquire extends Event {}
+one sig CreateDir, DeleteDir, Acquire, Reach extends Event {}
 
-fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire }
+fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire + Reach }
 
-pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated and current' = current }
 
 pred createDir[t: CampaignDir] {
   t not in OnDisk
@@ -104,6 +156,7 @@ pred createDir[t: CampaignDir] {
   checkedOut' = checkedOut
   principled' = principled     -- a fresh directory has no clone yet to principle
   gated' = gated               -- nor one to gate
+  current' = current           -- and the installs are not the directory's
   Now.event = CreateDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -116,6 +169,7 @@ pred deleteDir[t: CampaignDir] {
   checkedOut' = checkedOut - t->Repo->Branch
   principled' = principled - t->Repo    -- the clones go with the directory
   gated' = gated - t->Repo              -- and the hooks go with the clones
+  current' = current                    -- the installs stay: they were never inside it
   Now.event = DeleteDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
 
@@ -152,18 +206,49 @@ pred acquire[t: CampaignDir, r: Repo, b: Branch] {
      that refuses its commits. */
   gated' = gated + t->r
   OnDisk' = OnDisk
+  current' = current           -- a clone is not the install
   Now.event = Acquire and no Now.issue and Where.machine = t.machine and Where.repo = r
+}
+
+/* scripts/campaign-installed.py reach. The post-merge step for an installed
+   repository: fast-forward the install to the merged sha and run the row's
+   `apply`. It is what refills `current`, and the only thing that does, so a
+   merge on an installed repository is followed by exactly this or the campaign
+   holding it does not close (`reachDiscipline`). Not tied to an issue: the
+   install is one per repository per machine, and two merges on one repository
+   are reached by one fast-forward. */
+pred reach[m: Machine, r: Repo] {
+  r in m.installed
+  r not in m.current
+  current' = current + m->r
+  OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated
+  Now.event = Reach and no Now.issue and Where.machine = m and Where.repo = r
+}
+
+/* A MERGE EMPTIES `current` FOR THE REPOSITORY IT LANDED IN, on every machine
+   that installed it: the install is now behind what was merged, whether or not
+   the machine holds the campaign. The github event itself is above this entity
+   and does not know `current` exists, so the reading is made here, where the
+   event's issue says which repository it landed in. */
+pred mergeLeavesInstallBehind {
+  Now.event = MergePullRequest
+  current' = current - Machine->(Now.issue.repo)
+  OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated
+  no Where.machine and no Where.repo
 }
 
 pred directoryInit {
   all t: CampaignDir | some t.checkedOut implies t in OnDisk
+  current = installed          -- nothing is merged at the start of a trace
 }
 
 pred directoryStep {
   (Now.event = Stutter and directoryFrame and no Where.machine and no Where.repo)
   or (some t: CampaignDir | createDir[t] or deleteDir[t])
   or (some t: CampaignDir, r: Repo, b: Branch | acquire[t,r,b])
-  or (Now.event in githubEvents and directoryFrame and no Where.machine and no Where.repo)
+  or (some m: Machine, r: Repo | reach[m,r])
+  or mergeLeavesInstallBehind
+  or (Now.event in githubEvents - MergePullRequest and directoryFrame and no Where.machine and no Where.repo)
   /* An event declared in an entity above. `Where` is left to that entity: the
      one directly above sets `Where.machine` on its own events, and constrains it
      to none on everything higher, so the observer is pinned exactly once. */

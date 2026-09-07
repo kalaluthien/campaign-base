@@ -161,9 +161,11 @@ a process started outside any pane carried neither. The first plain-terminal or
 ## The base as a member of its own campaign
 
 The base gets cloned into `<campaign>/repos/campaign-base/`, so one
-repository has two checkouts. Read both hazards with one command — **before
-launching a delegate, right after merging its pull request, and before the outer
-session next edits anything**:
+repository has two checkouts -- and so does every `## Repos` entry marked
+`(installed: ...)`, for which the same two checks hold with the install's path
+in place of `$BASE` (`AGENTS.md` § Installed repositories). Read both hazards
+with one command — **before launching a delegate, right after merging its pull
+request, and before the outer session next edits anything**:
 
 ```sh
 BASE=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" && pwd -P)
@@ -172,8 +174,17 @@ git -C "$BASE" rev-list --left-right --count origin/main...HEAD   # want "0	0"
 ```
 
 Behind means a merged pull request this checkout has not caught up to, and
-editing from here can silently revert work that landed: pull, then read zero
-again before editing.
+editing from here can silently revert work that landed. Carry it in and read
+zero again before editing:
+
+```sh
+CAMPAIGN=$(dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)")   # the marker, not the name, says whose directory it is
+"$BASE/scripts/campaign-installed.py" reach "$CAMPAIGN/README.md" kalaluthien/campaign-base "$(git -C "$BASE" rev-parse origin/main)"
+```
+
+That fast-forwards the base and runs `scripts/install-hooks.sh`; it refuses
+while the base is on any branch but `main`, which is the case to read as
+"somebody is working in the install" rather than to work around.
 
 **The clone must not be behind *at launch*, which is a different check.** "Do not
 clone while the base is ahead" is not sufficient: the remote can move

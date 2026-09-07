@@ -42,8 +42,8 @@ change nothing, and whether it was written is PRINTED beside the verdict --
 a log that quietly stopped being written reads exactly like a log with nothing
 to say. Both directories are git-ignored: this is machine-local scratch. A
 guard that CRASHED logs too, as verdict `GUARD FAILED`, for that same reason:
-`guard-precision.py` reads every non-`REFUSED` row as an allow, so a guard
-failing on every call would otherwise be a quiet one.
+a crash that logs nothing is indistinguishable from a guard with nothing to
+say, so a guard failing on every call would read as a quiet one.
 
 WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
@@ -1411,13 +1411,20 @@ LAST = {}
 
 
 def refuse(lines):
-    LAST.update(verdict="REFUSED", reason=lines[0] if lines else "")
+    # `status` IS SET HERE, with the verdict, and not at some later line in
+    # `main`. The last resort below reads it to tell "crashed before judging"
+    # from "crashed after judging", and every statement between the decision
+    # and the record is a window where a REFUSED already PRINTED comes out as
+    # an exit 0 saying nothing was judged. Recording it in the two functions
+    # that decide leaves no window at all -- including on `main`'s early
+    # return, which no assignment in the tail can reach.
+    LAST.update(verdict="REFUSED", reason=lines[0] if lines else "", status=2)
     print("check-campaign-claim: REFUSED.\n  " + "\n  ".join(lines), file=sys.stderr)
     return 2
 
 
 def allow(lines):
-    LAST.update(verdict="allowed", reason=lines[0] if lines else "")
+    LAST.update(verdict="allowed", reason=lines[0] if lines else "", status=0)
     print("check-campaign-claim: allowed. " + " ".join(lines))
     return 0
 
@@ -1910,11 +1917,6 @@ def main() -> int:
         cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
     except OSError:
         cwd = Path(".")
-    # THE VERDICT IS REACHED HERE, and the last resort below reads this to tell
-    # its two cases apart: a crash BEFORE this line judged nothing, and a crash
-    # after it -- in the log write, or anywhere past it -- must not turn a
-    # decided REFUSED into an exit 0 announcing that nothing was judged.
-    LAST["status"] = status
     note = log_verdict(payload, status, LAST.get("target"), cwd)
     print(note, file=sys.stderr if status else sys.stdout)
     return status
@@ -1936,10 +1938,11 @@ def main() -> int:
 # message on the channel the harness reads only for a refusal is a loud allow
 # that nothing hears.
 #
-# AND IT WRITES ITS OWN ROW. `guard-precision.py` counts every non-REFUSED row
-# as an allow, so a crash that logs nothing is indistinguishable from a guard
-# with nothing to say -- a guard failing on EVERY call would read as a quiet
-# one. The row is best effort by construction: whatever raised may be the very
+# AND IT WRITES ITS OWN ROW, as its own verdict word. A crash that logs nothing
+# is indistinguishable from a guard with nothing to say, so a guard failing on
+# EVERY call would read as a quiet one; `guard-precision.py` counts the three
+# words apart, and folding this one into the allows is the mutation its suite
+# pins. The row is best effort by construction: whatever raised may be the very
 # thing the log write needs, so its own failure is caught and said, never
 # raised on top of the first.
 if __name__ == "__main__":
@@ -1958,8 +1961,12 @@ if __name__ == "__main__":
                                LAST.get("target"),
                                Path(crashed.get("cwd") or os.getcwd()))
         except Exception as e2:              # noqa: BLE001 -- the log is not the verdict
-            note = (f"verdict not logged: the log write itself raised "
-                    f"{e2.__class__.__name__}")
+            # NAMES ONLY WHAT RAN. The `try` covers the arguments too, so a
+            # `cwd` that will not become a Path fails before `log_verdict` is
+            # entered -- and saying "the log write raised" there sends the next
+            # reader into a function that was never called.
+            note = (f"verdict not logged: the attempt to log it raised "
+                    f"{e2.__class__.__name__} before any row was written")
         if decided is None:
             print(f"check-campaign-claim: the guard FAILED and did not judge "
                   f"this call ({e.__class__.__name__}: {e}). The call is "

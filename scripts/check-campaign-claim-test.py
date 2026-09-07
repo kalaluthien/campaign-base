@@ -2050,10 +2050,11 @@ def main():
         check("...and it says so on stdout, the channel an exit-0 hook is read "
               "on",
               "did not judge this call" in r.stdout, out(r)[:300])
-        # AND IT LOGS. `guard-precision.py` reads every non-REFUSED row as an
-        # allow, so a guard crashing on every call must not look like a quiet
-        # one. Asserted on the row's verdict word and its session, not on the
-        # file existing: a row with no session is one nothing can pair.
+        # AND IT LOGS. A crash that logs nothing is indistinguishable from a
+        # guard with nothing to say, so a guard crashing on every call must not
+        # look like a quiet one. Asserted on the row's verdict word and its
+        # session, not on the file existing: a row with no session is one
+        # nothing can pair.
         # READ DEFENSIVELY: the mutation this case exists to kill is "the
         # handler logs nothing", which leaves no file at all -- and a
         # `read_text` raising there kills the SUITE in a traceback instead of
@@ -2067,6 +2068,42 @@ def main():
                   for x in rows), str(rows)[:300])
         check("...and it says beside the message whether that row landed",
               "logged to" in r.stdout, out(r)[:300])
+
+    # THE WINDOW, not just its far side. The verdict is recorded by `refuse`
+    # and `allow` themselves, so there is no statement between deciding and
+    # recording; a case that only breaks `log_verdict` passes while the record
+    # moves back to any line in `main`'s tail, which is where it was. These two
+    # break the guard at the two sites inside that former window -- the
+    # unparseable-payload EARLY RETURN, which no assignment in the tail can
+    # reach at all, and the `cwd` resolution, whose `except OSError` does not
+    # catch a `TypeError`.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"),
+                stdin="{ not json", run_cwd=f.base)
+        check("an unparseable payload is refused, and a crash on the early "
+              "return path does not turn that refusal into an allow",
+              r.returncode == 2 and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        # The WRONG-EVENT refusal, which `main` decides itself before it
+        # touches `cwd`, and then a `cwd` that is not a path: `Path(123)`
+        # raises TypeError, which the resolution's own `except OSError` lets
+        # past, straight into the last resort -- with the REFUSED already
+        # printed. The event has to be one `main` refuses, or `pre` crashes
+        # first and "did not judge" is the honest answer.
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"),
+                stdin=json.dumps({"session_id": "sid-1", "cwd": 123,
+                                  "tool_name": "Edit",
+                                  "tool_input": {"file_path":
+                                                 str(f.base / "a.txt")},
+                                  "hook_event_name": "PostToolUse"}),
+                run_cwd=f.base)
+        check("a crash between the verdict and the log keeps the refusal too",
+              r.returncode == 2 and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
 
     # A CRASH AFTER THE VERDICT IS NOT AN UNJUDGED CALL. The handler above
     # wraps all of `main`, the log write included, so an exception past the
@@ -2089,6 +2126,24 @@ def main():
               "nothing",
               "STANDS" in out(r) and "did not judge this call" not in out(r),
               out(r)[:300])
+        # THE SAME CRASH AFTER AN *ALLOW*. Both outcomes exit 0, so the status
+        # cannot separate them and the assertion is on the sentence: an allow
+        # that stands is not a call nothing judged. Without this row, `allow`
+        # can stop recording its verdict and every case still passes.
+        with tempfile.TemporaryDirectory() as d2:   # one Fixture per directory
+            f2 = Fixture(d2, claims=("campaign-1/7-x",))
+            wt = f2.trees["campaign-1/7-x"]
+            # A shell command with no unambiguous target is the plainest
+            # `allow` there is -- allowed unread, no role and no claim to
+            # resolve -- so the case turns on the crash and not on the verdict
+            # being hard to reach.
+            r = ask(wt, tool="Bash", command="ls -la", guard=broken,
+                    run_cwd=wt)
+        check("a crash after an ALLOWED verdict says the verdict stands, not "
+              "that nothing was judged",
+              r.returncode == 0 and "STANDS" in out(r)
+              and "did not judge this call" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
 
     if not ran:
         print("FAIL  the suite ran no case at all")

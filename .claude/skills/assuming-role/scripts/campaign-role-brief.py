@@ -42,11 +42,12 @@ beside reports a link it never verified, and two silent successes read exactly
 like a repair; a mechanised rule that cannot say what it observed is worse than
 the unenforced rule it replaced.
 
-IT DOES NOT WRITE `guard.log`. That log is the claim guard's own verdict stream
-and `guard-precision.py` counts every non-REFUSED row in it as an allow, so a
-brief line there would inflate the denominator of the one measurement the log
-exists for. What is durable here is the record file, whose path every line
-prints.
+IT DOES NOT WRITE `guard.log`. That log is the CLAIM GUARD's own verdict
+stream, one row per call it judged, and `guard-precision.py` pairs a refusal
+with the same session's next `allowed` row on the same target. A brief line
+is neither verdict and would sit in that stream as a row nothing can pair,
+between a refusal and the allow that answers it. What is durable here is the
+record file, whose path every line prints.
 
 EXIT. Always 0, and never a traceback: a hook that fails must not wall the
 session it was meant to help. Every path prints one line to stderr saying what

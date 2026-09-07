@@ -198,12 +198,24 @@ CASES = [
     # THE `$BASE/` SPELLING IS KEPT IN THE LINE. The guard rewrites the token
     # to shape it; a finding printed as `scripts/gone.py` sends a reader to
     # grep the file for a string that is not in it.
+    # THE RELATIVE BRANCH GETS S5's NARROWING TOO. `references/gotchas.md`
+    # exists under the demo skill and nowhere else, so a `$BASE/`-prefixed
+    # citation of it from INSIDE that skill resolves against the skill and
+    # dangles against the tree root -- which is the honest answer, since
+    # `$BASE/references/` is not a directory.
+    ("a `$BASE/` relative path is not resolved against the citing skill",
+     {f"{SKILL}/references/w.md": "Read `$BASE/references/gotchas.md` next.\n"},
+     ("DANGLING", "$BASE/references/gotchas.md")),
     ("a dangling `$BASE/` path is printed with the prefix the file wrote",
      {"a.md": "Run `\"$BASE/scripts/nowhere.py\"` for it.\n"},
      ("DANGLING", "$BASE/scripts/nowhere.py")),
-    ("S2 reads a `$BASE/`-prefixed skill path too",
+    # THE NEEDLE CARRIES THE PREFIX. `{SKILL}/scripts/gone.sh` is a substring
+    # of BOTH spellings, so a needle without `$BASE/` passes whether or not the
+    # token was rewritten -- an assertion on a neighbour the mutation leaves
+    # alone.
+    ("S2 reads a `$BASE/`-prefixed skill path too, and prints the prefix",
      {"a.md": f"Run `\"$BASE/{SKILL}/scripts/gone.sh\"` for it.\n"},
-     ("DANGLING", f"{SKILL}/scripts/gone.sh")),
+     ("DANGLING", f"$BASE/{SKILL}/scripts/gone.sh")),
 
     ("S5 a script at neither root dangles",
      {"a.md": "Run `scripts/gone.py` for it.\n"},
@@ -309,20 +321,49 @@ def main():
         print("FAIL  --list shows the template bucket\n"
               f"      got: {r.stdout.strip()[:300]}")
 
-    # A BARE `$BASE/` NAMES THE ROOT, not a file under it, and two SKILL.md
-    # files spell one. Stripped, it left an EMPTY token that `unshaped` printed
-    # as a line naming nothing; it is dropped before shaping instead. Asserted
-    # on the printed LINE and not on the bucket counts, which any other token
-    # in the fixture also moves.
-    extra += 1
-    r = run_case({"a.md": "Resolve it as `$BASE/` and go.\n"}, args=("--list",))
-    bare = [ln for ln in r.stdout.splitlines()
-            if ln.startswith(("unshaped\t", "template\t", "DANGLING", "UNDECIDED"))
-            and ln.split("\t")[2] in ("", "$BASE/")]
-    if bare:
-        failed += 1
-        print("FAIL  a bare `$BASE/` names the root and is reported as nothing\n"
-              f"      got: {bare[0][:200]}")
+    # EVERY BUCKET PRINTS THE `$BASE/` SPELLING, not only the dangling one.
+    # The guard rewrites the token to shape it, and a line naming
+    # `scripts/x.py` sends a reader to grep a file that says `$BASE/scripts/x.py`
+    # -- so each of the six report sites is its own row here. Without them,
+    # five of the six survive `shown` being replaced by `tok` and the suite
+    # stays green while the comment claiming "every line" goes false.
+    #
+    # Asserted on the token FIELD of the line, split out rather than searched
+    # for: the unprefixed spelling is a substring of the prefixed one, so a
+    # needle without `$BASE/` passes either way.
+    for what, doc, bucket, token, *rest in [
+        ("a bare `$BASE/`, which names the root and not a file under it",
+         "Resolve it as `$BASE/` and go.", "template", "$BASE/"),
+        ("a `$BASE/` path holding a placeholder",
+         "Go to `$BASE/<the directory that matched>` next.",
+         "template", "$BASE/<the"),
+        ("a `$BASE/` skill path that resolves",
+         f"Fill it from `$BASE/{SKILL}/assets/sub-issue.md`.",
+         "resolved", f"$BASE/{SKILL}/assets/sub-issue.md"),
+        ("a `$BASE/` script path that resolves",
+         "Run `\"$BASE/scripts/campaign-tracker.py\" bind 1`.",
+         "resolved", "$BASE/scripts/campaign-tracker.py"),
+        # The tree root's OWN `references/`, which the shared fixture does not
+        # have: the skill's copy is what the unnarrowed branch would have
+        # answered with, so the row needs a file only the tree root holds.
+        ("a `$BASE/` relative path that resolves at the TREE root",
+         "Fill it from `$BASE/references/rooted.md`.",
+         "resolved", "$BASE/references/rooted.md",
+         {"references/rooted.md": "# rooted\n"}),
+        ("a `$BASE/` path of a shape the guard claims no rule over",
+         "The workflow is `$BASE/.github/workflows/check.yml`.",
+         "unshaped", "$BASE/.github/workflows/check.yml"),
+    ]:
+        extra += 1
+        r = run_case({"a.md": doc + "\n", **(rest[0] if rest else {})},
+                     args=("--list",))
+        got = [ln.split("\t") for ln in r.stdout.splitlines()
+               if ln.startswith(bucket + "\t")]
+        if not any(f[2] == token for f in got):
+            failed += 1
+            print(f"FAIL  {what} is printed with the prefix the file wrote\n"
+                  f"      wanted a {bucket} line whose token is {token!r}, got: "
+                  f"{[f[2] for f in got] or '(no such line)'}")
 
     total = len(CASES) + extra
     print(f"{total - failed}/{total} cases pass")

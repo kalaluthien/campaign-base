@@ -42,12 +42,17 @@ class Rep:
     def __init__(self):
         self.lines = []
         self.rows = []
+        # COUNTED APART, because only `unread` denies `clear` and the two
+        # landed in one list -- so a case could not tell a note from a place
+        # the reading did not happen, which is the whole difference.
+        self.skipped = 0
 
     def report(self, line):
         self.lines.append(line)
 
     def unread(self, line):
         self.lines.append(line)
+        self.skipped += 1
 
     def add(self, repo, kind, ident, check, clears, note="", counted=True):
         self.rows.append((repo, kind, ident))
@@ -141,6 +146,12 @@ def main():
         m2.read_base(str(shim.parent), "9", rep)
         check("with no prefix, neither the branches nor the worktrees are read",
               seen == [], f"read {seen}; {rep.lines}")
+        # AND THE SKIP DENIES `clear`. Skipping the two readings while
+        # reporting them as a note left the run summarising `clear`, which is
+        # what licenses the delete -- a check that never ran reading as an
+        # absence of findings.
+        check("...and the skip is counted as unread, which denies `clear`",
+              rep.skipped == 1, f"skipped {rep.skipped}; {rep.lines}")
 
     with tempfile.TemporaryDirectory() as d:
         runtime = Path(d) / "runtime"

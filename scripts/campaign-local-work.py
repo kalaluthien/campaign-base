@@ -314,7 +314,13 @@ def campaign_prefixes(n, rep):
             why = (f"campaign-tracker slug {n} exited {out.returncode} without "
                    f"a verdict: {out.stderr.strip()[:120] or 'no message'}")
     if why:
-        rep.report(f"REPORT: {why}, so NO branch prefix could be read for "
+        # `unread`, NOT `report`: this is a place the reading did not happen,
+        # and only `unread` increments `skipped`, which is what denies `clear`.
+        # With `report` the sweep skipped both readings and still summarised
+        # `clear` -- the exact absence-of-findings-from-a-check-that-never-ran
+        # that `unread`'s docstring exists to refuse, and `clear` licenses the
+        # delete.
+        rep.unread(f"REPORT: {why}, so NO branch prefix could be read for "
                    f"#{n} and no claim of it appears below. This is `could "
                    f"not look`, not an empty campaign.")
         return []

@@ -178,7 +178,7 @@ def load_tree(staged):
         return None, f"{e.__class__.__name__}: {e}"
 
 
-def claim_subcommands():
+def claim_subcommands(root):
     """Every subcommand `campaign-claim.py` defines.
 
     Three outcomes, and the caller acts on each differently:
@@ -188,8 +188,13 @@ def claim_subcommands():
                  here to call -- R3c does not apply, and R3a already refuses a
                  call naming a file that is not there
       raises     never: an unreadable file comes back as `False`, which R3c
-                 reports as `could not look` rather than judging"""
-    src = Path(__file__).resolve().parent / "campaign-claim.py"
+                 reports as `could not look` rather than judging
+
+    READ FROM THE TREE BEING JUDGED, not from this script's own directory. The
+    first cut read its own sibling, so a call in some other checkout was judged
+    against THIS repository's verbs -- and a fixture tree's own
+    `campaign-claim.py` was never consulted at all."""
+    src = Path(root) / "scripts" / "campaign-claim.py"
     if not src.is_file():
         return None
     try:
@@ -385,10 +390,10 @@ def code_lines(text):
 def main():
     staged = "--staged" in sys.argv
     paths = tracked(staged)
+    root = git("rev-parse", "--show-toplevel").strip()
     # Said before any verdict, and on every run: a clean tree and a tree nobody
     # looked at both print nothing otherwise, and the second is what a wrong
     # checkout or an empty file list gives.
-    root = git("rev-parse", "--show-toplevel").strip()
     print(f"check-tree-shape: {len(paths)} tracked path(s) under {root}, "
           f"read from {'the index' if staged else 'the working tree'}")
     findings = []
@@ -432,11 +437,12 @@ def main():
     # rule that refused it would refuse every guard's own coverage. R3b and
     # R3c still run there, because neither depends on a path existing.
     fixtures = {q for q in paths if q.endswith("-test.py")}
-    subs = claim_subcommands()
-    if subs is False:
+    subs = claim_subcommands(root)
+    if subs is False or subs == set():
         note("R0", "scripts/campaign-claim.py",
-             "R3c did not run: the file is here but its subcommands could "
-             "not be read")
+             "R3c did not run: the file is here but names no subcommand "
+             + ("(it could not be read)" if subs is False
+                else "(its argparse defines none this could find)"))
         subs = None
     recorded = [p for p in paths if p.startswith(RECORDED)]
     for p in paths:

@@ -301,12 +301,19 @@ CASES = [
     ("R3c prose naming the script is not a call",
      {"scripts/x.py": 'DOC = "scripts/campaign-claim.py in a checkout"\n',
       "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, None),
+    # R3c SAYS WHEN IT DID NOT RUN. A `campaign-claim.py` that is here but
+    # names no subcommand is `could not look`, not `nothing is allowed` -- and
+    # it used to pass silently, printing `0 finding(s)` with the rule off.
+    ("R3c a campaign-claim.py naming no subcommand is said, not assumed",
+     {"scripts/x.py": 'run("scripts/campaign-claim.py take 1")\n',
+      "scripts/campaign-claim.py": "x = 1\n"}, "R0"),
+
     ("R3a ...and a suite may name a path that is not there",
      {"scripts/x-test.py": 'CASES = [{"scripts/gone.py": "x"}]\n'}, None),
 
     ("R3 ...and the correct spelling is not a finding",
      {"scripts/x.py": 'run("scripts/campaign-claim.py")\n',
-      "scripts/campaign-claim.py": "x = 1\n"}, None),
+      "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, None),
     ("R3 ...nor is a suite, whose stem opens with a banned name",
      {"scripts/x.py": 'run("scripts/campaign-claim-test.py")\n',
       "scripts/campaign-claim-test.py": "x = 1\n"}, None),

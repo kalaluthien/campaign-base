@@ -369,6 +369,9 @@ def main():
                  "could not look: an unread question is not a no"),
                 ("claim", 1, True,
                  "the word and the status disagree, which is itself unread")):
+            # The third round pushes like the second, so `pushed` alone cannot
+            # tell them apart -- deleting the disagreement branch kept 40/40.
+            # What separates them is what the hook SAID.
             # `--is-claim` ONLY. The same file is the pre-commit gate, and a
             # stub that refused there would stop the commit before the push
             # half ran -- which is the branch these cases exist to reach.
@@ -393,11 +396,13 @@ def main():
                           "demo/9-topic").stdout.split()
             local = f.git(tree, "rev-parse", "HEAD").stdout.strip()
             pushed = bool(after) and after[0] == local
+            said = "could not tell whether" in out(r)
             check(f"the hook {'pushes' if pushes else 'stands down'} on "
                   f"`{word}` -- {why}",
-                  moved and pushed == pushes,
-                  f"committed={moved} pushed={pushed} before={before[:1]} "
-                  f"after={after[:1]} :: {out(r)[:200]}")
+                  moved and pushed == pushes
+                  and said == (word != "no-claim" and status != 0),
+                  f"committed={moved} pushed={pushed} said={said} "
+                  f"before={before[:1]} after={after[:1]} :: {out(r)[:200]}")
         gate.write_text(real)
         gate.chmod(0o755)
 

@@ -73,6 +73,26 @@ CASES = [
      section("owner/web", "other/Web"), 1, "share the checkout directory"),
     ("the same entry twice is refused as a duplicate",
      section("owner/one", "owner/one"), 1, "duplicate entry"),
+    # THE INSTALLED MARKER (#239) rides on an entry and changes nothing about
+    # the list: the command line prints the slug alone, so `runtime/repos`
+    # and the acquire loop read what they always read.
+    ("an installed marker is accepted and the slug alone is printed",
+     section("owner/one (installed: /opt/one, apply: make install)", "other/two"),
+     0, "owner/one\nother/two"),
+    ("`apply` is optional on a marker",
+     section("owner/one (installed: ~/one)"), 0, "owner/one"),
+    ("a marker key that is not installed or apply is refused",
+     section("owner/one (path: /opt/one)"), 1, "does not open with one of installed, apply"),
+    ("`apply` with no `installed` is refused",
+     section("owner/one (apply: make)"), 1, "`apply` with no `installed`"),
+    ("a relative installed path is refused",
+     section("owner/one (installed: repos/one)"), 1, "is not absolute or `~`-rooted"),
+    ("a marker key given twice is refused",
+     section("owner/one (installed: /a, installed: /b)"), 1, "is given twice"),
+    ("a marker key with no value is refused",
+     section("owner/one (installed: )"), 1, "has no value"),
+    ("a marker on the base is still the base, refused",
+     section("kalaluthien/campaign-base (installed: /x)"), 1, "names the base"),
     # #205: the base is a member of its own campaign by another route, so the
     # list never names it. Three spellings, because the reader that admitted
     # the plain one admitted all three.
@@ -207,6 +227,18 @@ def main():
                        "\n## Plan\n- z\n")
     check("a comment is not an entry and the next `## ` ends the section",
           entry == "other/elsewhere" and why is None, f"{entry!r} {why!r}")
+
+    # `read_repos` IS THE EXPORT `campaign-installed.py` READS, so its rows
+    # carry the marker the command line drops; a change that kept the command
+    # line right and lost the fields would pass every case above.
+    rows, why = m.read_repos(section("owner/one (installed: /opt/one, apply: make a, b)",
+                                     "other/two"))
+    check("read_repos carries installed and apply, comma in the command kept",
+          why is None and rows == [("owner/one", "/opt/one", "make a, b"),
+                                   ("other/two", None, None)], f"{rows!r} {why!r}")
+    rows, why = m.read_repos(section("none"))
+    check("read_repos reads `- none` as an empty row list, not a refusal",
+          rows == [] and why is None, f"{rows!r} {why!r}")
 
     if not RAN:
         print("FAIL  the suite ran no case at all")

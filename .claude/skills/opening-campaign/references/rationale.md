@@ -18,7 +18,7 @@ its two readings are shaped the way they are.
 
 **Read an unplaced issue for shape.** Which shape means which kind, and that the
 third kind is left alone rather than surveyed, joined, or edited, is `AGENTS.md`
-§ The base as its own member. What that section leaves
+§ Sub-issues. What that section leaves
 implicit for this step: every campaign issue is in the no-parent listing whether or not
 it was labelled, which is what makes the two readings cross-check each other.
 

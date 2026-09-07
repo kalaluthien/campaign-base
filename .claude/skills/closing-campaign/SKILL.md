@@ -127,6 +127,20 @@ discarded on the person's word, and every unread place read by hand and either
 emptied or reported first. `NOT clear` with no counted row left names places it
 could not reach: reach them, never read past the verdict.
 
+**Then the inverse reading: a merge that has not reached its install.** The
+base and every `## Repos` entry marked `(installed: ...)` have a checkout on
+this machine where they are used, and a close with one of them behind leaves
+a merged pull request nobody installed (`AGENTS.md` § Installed repositories).
+
+```sh
+"$BASE/scripts/campaign-installed.py" check "$CAMPAIGN_DIR/README.md"
+```
+
+Read the last line: `clear` passes; `NOT clear` refuses, and the row above it
+says which install and why -- `behind <n>` is a merge to carry in with
+`campaign-installed.py reach <README> <owner/repo> <sha>`, and any other word
+is an install the check could not read, which is read by hand before re-running.
+
 ### 3. Settle or dispose of every open sub-issue
 
 **First, confirm `$N` is a campaign issue**, so step 5 does not close somebody's sub-issue.

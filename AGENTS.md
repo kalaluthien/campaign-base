@@ -96,13 +96,29 @@ The base root is the main checkout by definition, and this form returns it
 from a linked worktree too, where `--show-toplevel` returns the worktree instead.
 Never run one git command across member repositories.
 
-### The base as its own member
+### Installed repositories
 
-The base gets cloned into `<campaign>/repos/campaign-base/`, so one
-repository has two checkouts. **Behind is a merged pull request you have not
-caught up to**, and editing from the outer one can silently revert it; **the clone
-must not be behind at launch**; and **a skill edited inside the clone does not
-change the running campaign**. Commands: `.claude/skills/opening-campaign/references/launching.md`.
+**A repository installed on this machine — checked out where it is used — has
+two checkouts once a campaign clones it**, and one rule covers every such
+repository: work in the clone, and **a merge is not finished until the install
+shows it**. The base is one row of that rule, not a case beside it.
+
+| repository | installed at | how a merge reaches it |
+| --- | --- | --- |
+| the base | the base root | `scripts/campaign-installed.py reach`, whose `apply` is `scripts/install-hooks.sh` |
+| a `## Repos` entry carrying `(installed: <path>, apply: <command>)` | `<path>` | the same command, running `<command>` |
+
+The marker is `scripts/campaign-repos.py`'s to read, and the base's row is a
+constant in `scripts/campaign-installed.py`, since `## Repos` refuses the base.
+**Whoever merges runs `reach` for the repository the merge landed in, and the
+`REPORT` quotes its line**, which names the install's sha; `closing-campaign`
+step 2 runs `check` and refuses while an install is behind. The model is
+`Machine.installed` and `reachDiscipline` in `spec/campaign/directory/system.als`.
+Two hazards stay with the clone: **behind is a merged pull request the
+checkout has not caught up to**, so the clone must not be behind at launch and
+the install must not be edited while behind; and **a skill edited inside the
+clone does not change the running campaign**. Commands:
+`.claude/skills/opening-campaign/references/launching.md`.
 
 # Session identity
 
@@ -347,7 +363,9 @@ what was built. Quote `campaign-tracker settlement`'s note for that row, not its
 
 **`## Repos`** says which repositories to clone when a campaign is opened, and
 `scripts/campaign-repos.py <path>` is its one reader; `- none` is the whole list for
-a repo-less campaign. **Work that lands no commit is claimed all the same**,
+a repo-less campaign. An entry installed on this machine carries
+`(installed: <path>, apply: <command>)`, § Installed repositories, and is
+cloned like any other. **Work that lands no commit is claimed all the same**,
 with `campaign-claim take`: one ref, cut on the base. **Two readers make that
 true rather than remembered, one rule read at two moments.**
 `scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "may this

@@ -2077,10 +2077,20 @@ def main():
     # unparseable-payload EARLY RETURN, which no assignment in the tail can
     # reach at all, and the `cwd` resolution, whose `except OSError` does not
     # catch a `TypeError`.
+    # A CRASH IS INJECTED, or the case pins nothing. Asserting exit 2 on the
+    # UNBROKEN guard is satisfied by the plain refusal a case above already
+    # covers, and stays green while the record moves back into `main`'s tail
+    # where the early return cannot reach it. `log_verdict` is broken at its
+    # first line, which both refusal paths run.
     with tempfile.TemporaryDirectory() as d:
+        late = Path(d) / "late-crash-guard.py"
+        late.write_text(GUARD.read_text().replace(
+            "    path, how = log_path(target, cwd)",
+            "    raise RuntimeError('late'); path, how = log_path(target, cwd)",
+            1))
         f = Fixture(d, claims=())
         r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"),
-                stdin="{ not json", run_cwd=f.base)
+                stdin="{ not json", guard=late, run_cwd=f.base)
         check("an unparseable payload is refused, and a crash on the early "
               "return path does not turn that refusal into an allow",
               r.returncode == 2 and "did not judge this call" not in out(r),
@@ -2104,6 +2114,14 @@ def main():
         check("a crash between the verdict and the log keeps the refusal too",
               r.returncode == 2 and "did not judge this call" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
+        # AND THE MESSAGE NAMES ONLY WHAT RAN. This is the branch where the
+        # `try`'s ARGUMENTS raise, so `log_verdict` is never entered; saying
+        # "the log write itself raised" sends the next reader into a function
+        # that was not called. Without this row that wording is read by
+        # nothing and can go back silently.
+        check("...and says the attempt raised, not that the log write did",
+              "the attempt raised" in out(r)
+              and "the log write itself raised" not in out(r), out(r)[:400])
 
     # A CRASH AFTER THE VERDICT IS NOT AN UNJUDGED CALL. The handler above
     # wraps all of `main`, the log write included, so an exception past the

@@ -1961,12 +1961,15 @@ if __name__ == "__main__":
                                LAST.get("target"),
                                Path(crashed.get("cwd") or os.getcwd()))
         except Exception as e2:              # noqa: BLE001 -- the log is not the verdict
-            # NAMES ONLY WHAT RAN. The `try` covers the arguments too, so a
+            # NAMES ONLY WHAT RAN. The `try` covers the ARGUMENTS too, so a
             # `cwd` that will not become a Path fails before `log_verdict` is
             # entered -- and saying "the log write raised" there sends the next
-            # reader into a function that was never called.
-            note = (f"verdict not logged: the attempt to log it raised "
-                    f"{e2.__class__.__name__} before any row was written")
+            # reader into a function that was never called. It does not say
+            # whether a row landed, because from here that is not observable:
+            # this `try` cannot tell an argument that raised from a write that
+            # raised halfway.
+            note = (f"verdict not logged as far as this could tell: the "
+                    f"attempt raised {e2.__class__.__name__}")
         if decided is None:
             print(f"check-campaign-claim: the guard FAILED and did not judge "
                   f"this call ({e.__class__.__name__}: {e}). The call is "

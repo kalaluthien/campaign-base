@@ -46,6 +46,9 @@ leaves the others live and unflagged, so all four are here.
       So the guard must know which file it is reading, not only what that file
       names. Written outside a skill the shape names no root, and that is U2
       below rather than a dangling reference.
+      UNLESS IT CARRIES `$BASE/`, which names the tree root and so answers the
+      ambiguity the paragraph above is about: such a path is asked at the tree
+      root, the citing skill is not consulted, and U2 cannot apply to it.
 
 WHERE THE NAME ENDS (S1)
 
@@ -85,7 +88,8 @@ here would be worse than the gap it closes. So:
       target file does. The citation points at prose; the guard has no rule for
       citing prose. Named, never counted as dangling and never as resolved.
   U2  an S4 relative path in a file that is inside no skill: no root to
-      resolve against.
+      resolve against. A `$BASE/`-prefixed one never lands here -- it names
+      the tree root, so it has one.
   U3  a file that cannot be opened or decoded -- the citing file, or the target
       of an S1 citation.
 
@@ -94,8 +98,10 @@ WHAT IS DELIBERATELY NOT A REFERENCE
 Printed as counts, and listed by --list, so the boundary is visible rather than
 implied:
 
-  template  a path-like run holding `<...>` or a `*` glob. `<campaign>/repos/`
-            and `spec/campaign/*/*.als` name a form, not a file.
+  template  a path-like run naming a form rather than a file: one holding
+            `<...>` or a `*` glob (`<campaign>/repos/`,
+            `spec/campaign/*/*.als`), and a bare `$BASE/`, which names the
+            tree root itself and nothing under it.
   external  an S1 citation qualified by a path outside this repository --
             `~/.claude/CLAUDE.md § Git`. The guard cannot check it without
             making its verdict depend on the machine it runs on, and CI has no
@@ -467,9 +473,11 @@ def check_paths(rel, text, tree, report):
         # `$BASE/scripts/x.py` while `x.py` lives only under that skill's own
         # `scripts/` is prescribing a command that exits `No such file or
         # directory`, which is exactly the class #227 was opened to repair.
-        # Asking both roots reports it resolved. So `based` narrows BOTH
-        # two-root branches -- S5 and the relative one below -- to the tree
-        # root, and `shown` keeps the `$BASE/` spelling in every line printed,
+        # Asking both roots reports it resolved. So `based` sends every path
+        # to the tree root: it narrows S5, which really does ask two, and it
+        # REDIRECTS the relative branch below, which asks one -- the citing
+        # skill's -- and would answer with a file the prescribed command
+        # cannot reach. And `shown` keeps the `$BASE/` spelling in every line printed,
         # because a reader cannot grep the file for a token this guard rewrote.
         # `shown` is `tok` for everything else, so the three report sites in
         # the UNBASED relative branch are reached by no based token and print

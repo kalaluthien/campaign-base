@@ -352,6 +352,55 @@ def main():
                   f"committed={moved} pushed={pushed} remote={remote[:1]} "
                   f"local={local} :: {out(r)[:300]}")
 
+        # WHAT THE HOOK DOES WITH EACH ANSWER, which the cases above do not
+        # reach: they are satisfied by the pre-commit half refusing first. The
+        # reader is stubbed, so this pins the hook's own branches and nothing
+        # else -- and the word is what it reads, because python exits 1 on an
+        # uncaught exception and a bare 1 read as `no` would strand a claim.
+        # THE COPY THE HOOK ACTUALLY RUNS is the worktree's own, resolved under
+        # its toplevel -- not the base's. Stubbing the base's left the real
+        # reader answering and the case passed on the wrong thing.
+        tree = f.trees["demo/9-topic"]
+        gate = tree / "scripts" / "check-commit-claim.py"
+        real = gate.read_text()
+        for word, status, pushes, why in (
+                ("no-claim", 1, False, "answered no: not this hook's branch"),
+                ("unknown", 2, True,
+                 "could not look: an unread question is not a no"),
+                ("claim", 1, True,
+                 "the word and the status disagree, which is itself unread")):
+            # `--is-claim` ONLY. The same file is the pre-commit gate, and a
+            # stub that refused there would stop the commit before the push
+            # half ran -- which is the branch these cases exist to reach.
+            gate.write_text("#!/usr/bin/env python3\n"
+                            "import sys\n"
+                            "if '--is-claim' not in sys.argv[1:]:\n"
+                            "    print('stub: pre-commit half not judged')\n"
+                            "    sys.exit(0)\n"
+                            f"print({word + ' stub'!r})\n"
+                            f"sys.exit({status})\n")
+            gate.chmod(0o755)
+            before = f.git(tree, "ls-remote", "origin",
+                           "demo/9-topic").stdout.split()
+            # A DISTINCT FILE PER ROUND: `commit` writes one fixed page, so a
+            # second round had nothing to commit and every branch looked the
+            # same as the last.
+            (tree / "docs").mkdir(exist_ok=True)
+            (tree / "docs" / f"{word}.html").write_text(f"<p>{word}</p>\n")
+            f.git(tree, "add", str(tree / "docs" / f"{word}.html"))
+            r, moved = commit(f, tree)
+            after = f.git(tree, "ls-remote", "origin",
+                          "demo/9-topic").stdout.split()
+            local = f.git(tree, "rev-parse", "HEAD").stdout.strip()
+            pushed = bool(after) and after[0] == local
+            check(f"the hook {'pushes' if pushes else 'stands down'} on "
+                  f"`{word}` -- {why}",
+                  moved and pushed == pushes,
+                  f"committed={moved} pushed={pushed} before={before[:1]} "
+                  f"after={after[:1]} :: {out(r)[:200]}")
+        gate.write_text(real)
+        gate.chmod(0o755)
+
         # The reading the hook asks for, on its own. Three outcomes, and `2`
         # is not folded into `1`: the hook pushes on 2, because an unread
         # question is not a no.

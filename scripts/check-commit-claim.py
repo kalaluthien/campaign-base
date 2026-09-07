@@ -3,7 +3,9 @@
 
     check-commit-claim.py --is-claim    ANSWER ONLY, refusing nothing: is the
                                         branch of the checkout this runs in a
-                                        claim? 0 yes, 1 no, 2 could not look.
+                                        claim? The FIRST WORD of the answer
+                                        is `claim`, `no-claim` or `unknown`,
+                                        and the status agrees: 0, 1, 2.
                                         `push-campaign-branch.sh` asks it
                                         rather than matching the branch name
                                         itself, because a glob there was a
@@ -113,17 +115,26 @@ def answer(guard, why) -> int:
               f"{os.getcwd()}: {git_why}", file=sys.stderr)
         return 2
     top = Path(out.strip()).resolve()
-    branch, is_claim, source = guard.claim_on(top)
+    # THE WORD IS THE ANSWER, not the exit status. Python exits 1 on an
+    # uncaught exception, and the caller reading a bare 1 as "answered no"
+    # would skip the push of a real claim on any bug in here. The word is
+    # printed first on every branch, and the status agrees with it.
+    try:
+        branch, is_claim, source = guard.claim_on(top)
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        print(f"unknown check-commit-claim: the reading raised "
+              f"{e.__class__.__name__}: {e}", file=sys.stderr)
+        return 2
     if is_claim:
-        print(f"check-commit-claim: {branch} is a claim ({source})")
+        print(f"claim check-commit-claim: {branch} is a claim ({source})")
         return 0
     if is_claim is None:
-        print(f"check-commit-claim: could not read whether "
+        print(f"unknown check-commit-claim: could not read whether "
               f"{branch or 'this checkout'} is a claim: {source}",
               file=sys.stderr)
         return 2
-    print(f"check-commit-claim: {branch or 'this checkout'} is not a claim: "
-          f"{source}")
+    print(f"no-claim check-commit-claim: {branch or 'this checkout'} is not a "
+          f"claim: {source}")
     return 1
 
 

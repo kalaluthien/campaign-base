@@ -91,26 +91,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-def extensionless_call():
-    """A call to a script beside this one that omits its language extension.
-
-    #105 gave every script here `.py` or `.sh`, so `scripts/campaign-claim`
-    names no file. The names are read from the directory this guard was loaded
-    out of, never listed: the other bans below are literals because they name
-    things that will never come back, and this one names things that arrive --
-    a script added tomorrow is covered with no edit here. The directory exists
-    by construction, the interpreter having just read this file out of it.
-
-    `(?![\\w.-])` is what lets the correct spellings through:
-    `scripts/campaign-claim` is refused, while `scripts/campaign-claim.py` and
-    `scripts/campaign-claim-test.py` both pass.
-    """
-    names = sorted((p.stem for p in Path(__file__).resolve().parent.iterdir()
-                    if p.suffix in (".py", ".sh")), key=len, reverse=True)
-    return re.compile(r"\bscripts/(" + "|".join(re.escape(n) for n in names)
-                      + r")(?![\w.-])")
-
-
 # R3 IS THREE ALLOW-LISTS, NOT A DENY LIST (#237). It was a list of retired
 # names, and a deny list has the failure mode every deny list has: it grows one
 # entry per retirement, it says nothing about a name nobody thought to add, and
@@ -140,8 +120,15 @@ def extensionless_call():
 # THE TOKEN MAY NOT END IN PUNCTUATION. `see scripts/install-hooks.sh.` ends a
 # sentence, and a trailing dot swallowed into the token made every such line a
 # finding about a file that is plainly there.
+#
+# THE LOOKBEHIND ADMITS A SLASH, and the first cut of it did not. `(?<![\w./-])`
+# blocked every path-qualified site -- `"$BASE/scripts/campaign-claim.py"`,
+# `$root/scripts/x` -- which is how the skills spell every call they make, so
+# R3a examined none of them and the rule was narrower than the deny list it
+# replaced. What it must still exclude is a token GLUED to a word:
+# `myscripts/x` is not `scripts/x`.
 SCRIPT_CALL = re.compile(
-    r"(?<![\w./-])((?:\.claude/skills/[a-z][a-z0-9-]*/)?"
+    r"(?<![\w.-])((?:\.claude/skills/[a-z][a-z0-9-]*/)?"
     r"scripts/[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])")
 
 # R3b. What `runtime/` may hold, named by what it is FOR: a derived file that
@@ -153,7 +140,14 @@ SCRIPT_CALL = re.compile(
 RUNTIME_ALLOWED = ("repos", "repos.tmp", "campaign-issue-body-derived.md",
                    "guard.log", "briefed")
 RUNTIME_SUFFIXES = (".pid", ".lock", ".log")
-RUNTIME_CALL = re.compile(r"(?<![\w./-])runtime/([A-Za-z0-9][A-Za-z0-9._-]*)")
+# `$CAMPAIGN/runtime/holder` is the ordinary spelling, so the lookbehind admits
+# a slash here too. The SECOND alternative is the shape the retired
+# `runtime/claims` entry's own comment named as what a reintroduced reader
+# writes -- a path built segment by segment, which no `runtime/<name>` pattern
+# can see.
+RUNTIME_CALL = re.compile(
+    r"(?<![\w.-])runtime/([A-Za-z0-9][A-Za-z0-9._-]*)"
+    r"|[\"']runtime[\"']\s*[/,]\s*[\"']([A-Za-z0-9][A-Za-z0-9._-]*)[\"']")
 
 # R3c. A `campaign-claim.py <subcommand>` is one argparse defines. Read from
 # the file, so retiring a subcommand is deleting its `add_parser` and nothing
@@ -164,7 +158,7 @@ RUNTIME_CALL = re.compile(r"(?<![\w./-])runtime/([A-Za-z0-9][A-Za-z0-9._-]*)")
 # placeholder, a flag, or the end of the command.
 CLAIM_CALL = re.compile(
     r"campaign-claim\.py[\"\']?\s+(?!--)([a-z][a-z-]*)"
-    r"(?=[\"\']?\s*(?:$|[<$0-9]|--))")
+    r"(?=[\"\']?\s*(?:$|[<$0-9\"\']|--))")
 
 
 def load_tree(staged):
@@ -481,14 +475,15 @@ def main():
                     note("R3a", f"{p}:{n}", f"`{tok}` names no file in this "
                                             f"tree -- it was renamed, merged "
                                             f"or moved, and this call was not")
-            for tok in RUNTIME_CALL.findall(line):
+            for a, b in RUNTIME_CALL.findall(line):
+                tok = a or b
                 if tok in RUNTIME_ALLOWED or tok.endswith(RUNTIME_SUFFIXES):
                     continue
                 note("R3b", f"{p}:{n}", f"`runtime/{tok}` is not what runtime/ "
                                         f"holds: {', '.join(RUNTIME_ALLOWED)}, "
                                         f"or a pid, lock or log. A record of "
                                         f"the work goes on its issue")
-            if subs is not None:
+            if subs:            # empty is `could not look`, not `none allowed`
                 for tok in CLAIM_CALL.findall(line):
                     if tok not in subs:
                         note("R3c", f"{p}:{n}", f"`campaign-claim.py {tok}` is "

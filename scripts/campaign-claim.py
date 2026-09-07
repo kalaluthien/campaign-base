@@ -1791,10 +1791,10 @@ def cmd_release(args):
     slug, slug_note = campaign_slug(args.campaign_issue)
     print(slug_note)
     # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and `release`
-    # DELETES. With the slug unread the sweep narrows to the retired prefix, so
-    # a claim cut under `<slug>/` is invisible and comes back as "no ref names
-    # sub-issue #N" -- an absence dressed as a reading, one step before the
-    # caller passes `--branch` and deletes something else. `live` may narrow and
+    # DELETES. With the slug unread there is no prefix at all since #237, so
+    # every claim is invisible and comes back as "no ref names sub-issue #N"
+    # -- an absence dressed as a reading, one step before the caller passes
+    # `--branch` and deletes something else. `live` may narrow and
     # say so because it only reads; this may not.
     if slug is None and not args.branch:
         print(f"refusing: {slug_note}\n  A ref cut under the campaign's slug "

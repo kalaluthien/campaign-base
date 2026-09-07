@@ -539,8 +539,9 @@ def known_slugs(base):
 
     Cached per starting path, and read at most once per process: this guard runs
     on every tool call, and a campaign directory does not appear mid-call. A
-    base that will not enumerate contributes nothing -- so a claim reading there
-    falls back to the retired form alone, which refuses rather than admits."""
+    base that will not enumerate contributes nothing -- and since #237 there is
+    no retired form to fall back to, so a claim reading there finds no known
+    slug, which refuses rather than admits."""
     key = str(base)
     if key not in _KNOWN_SLUGS:
         roots = base_roots_for(Path(base))

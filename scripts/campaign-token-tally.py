@@ -807,13 +807,16 @@ def parse_args(argv):
     p.add_argument("--since", help="UTC ISO timestamp, e.g. 2026-09-04T00:45:00Z; "
                                    "turns before it are dropped")
     p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
-    p.add_argument("--campaign", default="1", help="campaign number in branch names")
+    p.add_argument("--campaign", default="1",
+                   help="campaign issue number; used to look up the slug, and "
+                        "not matched in a branch name")
     p.add_argument("--slug", default=None,
-                   help="campaign slug in branch names, which replaced the "
-                        "number in #181; both forms are matched. Read from the "
-                        "campaign's `campaign:<slug>` label when not given, and "
-                        "when that read fails only the retired form is matched, "
-                        "which is SAID rather than assumed")
+                   help="campaign slug in branch names, the one form matched "
+                        "since #237. Read from the campaign's "
+                        "`campaign:<slug>` label when not given, and when that "
+                        "read fails NO branch is attributed, which is SAID "
+                        "rather than assumed. Used as a literal, so a window "
+                        "predating #181 is read with --slug campaign-<N>")
     p.add_argument("--repo", default="kalaluthien/campaign-base")
     p.add_argument("--root", action="append", default=[],
                    help="transcript root (default ~/.claude/projects)")

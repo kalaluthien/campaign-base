@@ -123,6 +123,25 @@ def main():
                 check(f"...and says {want!r} when it could not use one",
                       any(want in l for l in rep.lines), str(rep.lines))
 
+        # THE CONSEQUENCE, not just the return value. An empty prefix list fed
+        # through reached `git for-each-ref` with NO pattern and
+        # `read_worktrees`'s `if prefix and` guard, so a slug that would not
+        # read widened the sweep to every branch and worktree while the note
+        # said no claim would appear. The case above pins the list; this pins
+        # that nothing is read off it.
+        (shim / "campaign-tracker.py").write_text(
+            "#!/usr/bin/env python3\nprint('none')\nraise SystemExit(1)\n")
+        seen = []
+        m2.read_branches = lambda *a, **k: seen.append("branches")
+        m2.read_worktrees = lambda *a, **k: seen.append("worktrees")
+        m2.slug = lambda b: "base"
+        m2.default_branch = lambda *a, **k: "main"
+        m2.git = lambda *a, **k: ""
+        rep = Rep()
+        m2.read_base(str(shim.parent), "9", rep)
+        check("with no prefix, neither the branches nor the worktrees are read",
+              seen == [], f"read {seen}; {rep.lines}")
+
     with tempfile.TemporaryDirectory() as d:
         runtime = Path(d) / "runtime"
         runtime.mkdir()

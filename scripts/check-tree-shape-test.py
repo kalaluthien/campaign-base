@@ -263,6 +263,26 @@ CASES = [
     ("R3b runtime/ may hold what is derived or a process artifact",
      {"scripts/x.py": 'open("runtime/repos"); open("runtime/guard.log")\n'
                       'open("runtime/agent.pid"); open("runtime/x.lock")\n'}, None),
+    # PATH-QUALIFIED SITES, which is how every skill spells a call. The first
+    # cut of these three patterns had a `(?<![\w./-])` lookbehind that blocked
+    # a preceding slash, so `"$BASE/scripts/..."` was invisible and R3 was
+    # NARROWER than the deny list it replaced. One case per pattern.
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3a a $BASE-qualified call is read like any other",
+     {"scripts/x.sh": 'test -x "$BASE/scripts/campaign-bound"\n'}, "R3a"),
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3b a $CAMPAIGN-qualified runtime path is read too",
+     {"scripts/x.sh": 'cat "$CAMPAIGN/runtime/holder"\n'}, "R3b"),
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3b ...and a path built segment by segment, which no runtime/<name> sees",
+     {"scripts/x.py": 'p = d / "runtime" / "claims"\n'}, "R3b"),
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3c a verb followed by a QUOTED argument is still a call",
+     {"scripts/x.sh": '"$BASE/scripts/campaign-claim.py" stood-down "$N"\n',
+      "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, "R3c"),
+    ("R3a ...while a token glued to a word is not one of ours",
+     {"scripts/x.py": 'p = "myscripts/gone.py"\n'}, None),
+
     # unguarded: check-tree-shape -- fixtures must spell the names it refuses
     ("R3b ...but not a record of the work, whatever it is called",
      {"scripts/x.py": 'open("runtime/planner-state.md")\n'}, "R3b"),

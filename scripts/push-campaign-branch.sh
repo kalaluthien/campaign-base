@@ -14,9 +14,21 @@ branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
 # because the branch simply fell through to `exit 0`. Ask the owning script.
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 0
 verdict=$("$HERE/check-commit-claim.py" --is-claim 2>&1)
-case $? in
+status=$?
+
+# THE WORD, NOT THE STATUS. Python exits 1 on an uncaught exception, so a bare
+# status of 1 read as `answered no` would silently skip the push of a real
+# claim on any bug in the reader. The word and the status must agree; when they
+# do not, that is itself the unread question.
+case "${verdict%% *}" in
+claim) [ "$status" -eq 0 ] || status=9 ;;
+no-claim) [ "$status" -eq 1 ] && exit 0; status=9 ;;
+unknown) status=2 ;;
+*) status=9 ;;
+esac
+
+case $status in
 0) ;;                           # a claim: push it
-1) exit 0 ;;                    # answered no: not this hook's branch
 *)
 	# COULD NOT LOOK, so push anyway and say so. The cost of pushing a
 	# branch that turns out not to be a claim is a branch on the remote;

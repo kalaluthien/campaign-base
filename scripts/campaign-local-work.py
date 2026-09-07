@@ -325,9 +325,15 @@ def read_base(base, n, rep):
     name = slug(base)
     upstream = default_branch(base, name, rep)
     prefixes = campaign_prefixes(n, rep)
-    read_branches(base, name, rep, upstream,
-                  refspec=[f"refs/heads/{p}" for p in prefixes])
-    read_worktrees(base, name, rep, prefix=tuple(prefixes))
+    # AN EMPTY PREFIX LIST IS NOT AN EMPTY FILTER. Passing it through reached
+    # `git for-each-ref` with no pattern and `read_worktrees`'s `if prefix and`
+    # guard, so a slug that would not read widened the sweep to EVERY branch
+    # and worktree while the note above said no claim would appear. The note
+    # is the truth; these two do not run.
+    if prefixes:
+        read_branches(base, name, rep, upstream,
+                      refspec=[f"refs/heads/{p}" for p in prefixes])
+        read_worktrees(base, name, rep, prefix=tuple(prefixes))
     # The base's single working tree carries no campaign, so it cannot be
     # scoped and is not a blocker on this close -- but a person deciding to
     # delete wants to see it. No --ignored here: the base ignores every

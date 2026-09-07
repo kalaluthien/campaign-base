@@ -145,6 +145,11 @@ def a_base_with_campaign(d):
     (base / "scripts" / "campaign-claim.py").write_text("# the base marker\n")
     camp = base / "demo-260905"
     camp.mkdir()
+    # THE MARKER IS WHAT MAKES `demo` A CAMPAIGN HERE, and since #237 it is the
+    # only thing that can: the retired `campaign-<N>/` branch carried its
+    # campaign in the name and needed no directory behind it, so a clone under
+    # this base was read as claimed with no marker anywhere.
+    (camp / ".campaign").write_text("1 demo\n")
     return base, camp
 
 
@@ -155,7 +160,7 @@ def a_member_repo(d, camp, slug="acme/widget"):
     reads as `acme/widget` -- last two path segments, `.git` stripped -- so
     `acquire` treats it as the member repository `acme/widget` and takes its
     already-present branch, which needs no network. Two branches are pushed:
-    `main`, which is not a claim, and `campaign-1/190-fixture`, which is one,
+    `main`, which is not a claim, and `demo/190-fixture`, which is one,
     because `ref_exists` reads the clone's `refs/remotes/origin/` copy first."""
     owner, name = slug.split("/")
     remote = Path(d) / "remotes" / owner / f"{name}.git"
@@ -173,7 +178,7 @@ def a_member_repo(d, camp, slug="acme/widget"):
     g("add", "tracked")
     g("commit", "-qm", "init")
     g("push", "-q", "origin", "HEAD:refs/heads/main")
-    g("push", "-q", "origin", "HEAD:refs/heads/campaign-1/190-fixture")
+    g("push", "-q", "origin", "HEAD:refs/heads/demo/190-fixture")
     dest = camp / "repos" / name
     dest.parent.mkdir(parents=True, exist_ok=True)
     run("git", "clone", "-q", str(remote), str(dest))
@@ -332,7 +337,7 @@ def main():
         # ...AND ADMITS ONE, or the gate is a wall rather than a gate. This is
         # the case a rule that refused everything would fail, and the one the
         # refusals above cannot distinguish themselves from without it.
-        on_branch(clone, "campaign-1/190-fixture", track=True)
+        on_branch(clone, "demo/190-fixture", track=True)
         c, both = commit_in(clone, home, "b", "2")
         check("...and admits a commit on a claimed branch",
               c.returncode == 0, f"exit {c.returncode}; {both[:240]}")

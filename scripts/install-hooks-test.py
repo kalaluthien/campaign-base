@@ -588,19 +588,25 @@ def main():
         c = r.commit()
         check("an ordinary branch is not pushed", "push-campaign-branch" not in
               c.stdout + c.stderr, (c.stdout + c.stderr)[:160])
-        git(r.root, "switch", "-qc", "campaign-9/1-x")
+        # THE REF IS THE CLAIM, so the branch is on the remote before the
+        # commit -- which is what `campaign-claim take` does, server-side,
+        # before a worker ever checks it out. The hook used to push on the
+        # branch NAME alone; it now asks whether the branch is a claim, and a
+        # name with no ref behind it is not one.
+        git(r.root, "switch", "-qc", "demo/1-x")
+        git(r.root, "push", "-q", "origin", "demo/1-x")
         (r.root / "docs" / "b.html").write_text("<p>b</p>\n")
         git(r.root, "add", "docs/b.html")
         c = r.commit()
         check("a campaign branch is pushed by the hook",
-              "pushed campaign-9/1-x" in c.stdout + c.stderr,
+              "pushed demo/1-x" in c.stdout + c.stderr,
               (c.stdout + c.stderr)[:200])
         ls = subprocess.run(["git", "ls-remote", "--heads", str(r.remote)],
                             capture_output=True, text=True)
-        check("...and the remote really has it", "campaign-9/1-x" in ls.stdout,
+        check("...and the remote really has it", "demo/1-x" in ls.stdout,
               ls.stdout[:160])
         remote_sha = subprocess.run(["git", "ls-remote", "--heads",
-                                     str(r.remote), "campaign-9/1-x"],
+                                     str(r.remote), "demo/1-x"],
                                     capture_output=True, text=True).stdout.split()[0]
         # A rejected push. The commit is durable nowhere, and silence here is
         # exactly the loss push-early exists to prevent.
@@ -612,10 +618,27 @@ def main():
         # asserting on it passed with the remote rewritten and the case pinned
         # nothing it was named for.
         after = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
-                                "campaign-9/1-x"], capture_output=True,
+                                "demo/1-x"], capture_output=True,
                                text=True).stdout.split()[0]
         check("...and the remote still holds the exact commit it had",
               after == remote_sha, f"{remote_sha} -> {after}")
+
+        # A branch SHAPED like a claim with no ref behind it. The old glob
+        # pushed it -- it matched `campaign-*/*` and asked nothing else -- so
+        # any branch a person happened to name that way was published by a
+        # commit. Nothing here is a claim, so nothing is pushed.
+        git(r.root, "switch", "-qc", "demo/2-unclaimed")
+        (r.root / "docs" / "d.html").write_text("<p>d</p>\n")
+        git(r.root, "add", "docs/d.html")
+        c = r.commit()
+        ls2 = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
+                              "demo/2-unclaimed"],
+                             capture_output=True, text=True)
+        check("a claim-SHAPED branch with no ref behind it is not pushed",
+              not ls2.stdout.strip()
+              and "pushed demo/2-unclaimed" not in c.stdout + c.stderr,
+              f"ls-remote={ls2.stdout!r}; {(c.stdout + c.stderr)[:200]}")
+        git(r.root, "switch", "-q", "demo/1-x")
 
         # mktemp failing: TMPDIR pointed at nothing does not make mktemp fail,
         # so a failing mktemp shimmed ahead of it on PATH is what actually

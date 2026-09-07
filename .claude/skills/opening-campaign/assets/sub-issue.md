@@ -9,8 +9,8 @@
      `campaign-tracker index` reads it back; a line nothing read is the shape a
      declared contract takes just before it drifts.
 
-     TWO MOMENTS. `## Intent`, `## Done when` and `## Lands in` are written when
-     the issue is FILED. `## Plan` is added by whoever will prompt the work,
+     TWO MOMENTS. `## Intent`, `## Definition of done` and `## Lands in` are
+     written when the issue is FILED. `## Plan` is added by whoever will prompt the work,
      BEFORE anybody is prompted onto it, so a worker reads one issue and nobody
      plans in a pane. `campaign-claim take` requires all four and refuses the
      claim without them, naming the escape: a planner edits the body.
@@ -27,7 +27,7 @@
 
 - <what is wrong or missing now, and what says so>
 
-## Done when
+## Definition of done
 
 - <the condition that settles this issue, readable off the CLOSED issue -- the
   merged pull request, or for a sub-issue that lands no commit its closing

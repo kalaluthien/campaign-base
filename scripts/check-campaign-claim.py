@@ -131,9 +131,9 @@ BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # plumbing to ask.
 CAMPAIGN_MARKER = Path(".campaign")
 # The claim's shape. Only the campaign TOKEN is read from it, and it is compared
-# against a session name's token by string equality -- so `<slug>/` and the
-# retired `campaign-<N>/` are two tokens and not two spellings of one, exactly
-# as `campaign-name-session.py`'s `campaign_of` keeps them.
+# against a session name's token by string equality. One form since #237: the
+# retired `campaign-<N>/` is refused here by the same slug rule that refuses
+# `feature/`, because `campaign` is a barred segment in `campaign-name-session.py`.
 CLAIM_BRANCH = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)/(\d+)-")
 
 # A name that resolved to no role, as distinct from a role that could not be
@@ -258,11 +258,10 @@ def claim_match(branch, base=None):
     called `feature`, and every comparison downstream is against a session name
     that can never carry it.
 
-    Both forms pass: the slug, and the retired `campaign-<N>` a branch cut
-    before #181 carries. They stay two tokens and not two spellings of one --
-    string equality against the session's own name is the whole comparison, and
-    a session renamed to its slug is refused its old claims rather than
-    half-admitted."""
+    ONE FORM SINCE #237. The retired `campaign-<N>` a pre-#181 branch carries
+    is no longer admitted, and nothing here says so by name: `campaign` is a
+    barred segment, so `campaign-1` fails `slug_ok` exactly as `feature` and
+    `release` do, through the branch below and not a special case."""
     m = CLAIM_BRANCH.match(branch or "")
     if not m:
         return None
@@ -283,8 +282,6 @@ def claim_match(branch, base=None):
                            f"rule, would not load ({e.__class__.__name__}), so "
                            f"no branch can be read as a claim")
         return None
-    if rule.OLD_CAMPAIGN.match(token):
-        return token, m.group(2)
     if not rule.slug_ok(token):
         return None
     # A SLUG IS A WORD, so the rule alone cannot tell `demo/12-x` from
@@ -296,10 +293,11 @@ def claim_match(branch, base=None):
     # NO BASE ROOT IS `base is None`, NOT AN EMPTY SLUG SET. Outside every base
     # `base_roots_for` returns nothing, and reading that as "this machine holds
     # no campaign of that slug" narrowed `own_claim` for slug branches alone --
-    # re-imposing, for one name form, the narrowing #192 item 1 rejected on
-    # purpose, while `campaign-<N>/` went on being admitted there. The three
-    # callers were promised the wide reading two paragraphs up; this is that
-    # promise kept.
+    # re-imposing the narrowing #192 item 1 rejected on purpose. It mattered
+    # more once: the retired `campaign-<N>/` went on being admitted outside
+    # every base while slug branches were not, so the two forms disagreed
+    # about the same checkout. The three callers were promised the wide
+    # reading two paragraphs up; this is that promise kept.
     known = known_slugs(base) if base is not None else None
     if known is None:
         return token, m.group(2)
@@ -525,9 +523,10 @@ def base_roots_for(path: Path):
     decide only where `held` finds nothing -- a member clone, and the commit
     gate, which calls `claim_on` directly.
 
-    THE RETIRED FORM NEEDS NONE OF THIS, which is why the gap was invisible: a
-    `campaign-<N>/` branch carries its campaign in the name and never reaches
-    a marker."""
+    THE RETIRED FORM USED TO NEED NONE OF THIS, which is why the gap was
+    invisible for as long as it lasted: a `campaign-<N>/` branch carried its
+    campaign in the name and never reached a marker. Since #237 every claim is
+    a slug, so every claim reaches here."""
     main, _top, _note = checkout_of(path)
     if main is None:
         return []
@@ -540,8 +539,9 @@ def known_slugs(base):
 
     Cached per starting path, and read at most once per process: this guard runs
     on every tool call, and a campaign directory does not appear mid-call. A
-    base that will not enumerate contributes nothing -- so a claim reading there
-    falls back to the retired form alone, which refuses rather than admits."""
+    base that will not enumerate contributes nothing -- and since #237 there is
+    no retired form to fall back to, so a claim reading there finds no known
+    slug, which refuses rather than admits."""
     key = str(base)
     if key not in _KNOWN_SLUGS:
         roots = base_roots_for(Path(base))
@@ -572,20 +572,17 @@ def campaign_number(token, base):
     issue compares against an issue number typed on a `gh` line. Every other
     comparison in this file is token against token and asks nothing of this.
 
-    Two sources, both local, because this runs on every tool call:
-
-      * the retired `campaign-<N>` token carries the number itself;
-      * a slug is looked up in the `.campaign` markers of the campaign
-        directories at `base` -- the file that says which campaign a directory
-        is, written at scaffold and re-derivable from the campaign issue.
+    ONE SOURCE, local, because this runs on every tool call: the slug is
+    looked up in the `.campaign` markers of the campaign directories at `base`
+    -- the file that says which campaign a directory is, written at scaffold
+    and re-derivable from the campaign issue. The retired `campaign-<N>` token
+    carried its number itself and needed no lookup; since #237 there is no such
+    token, so a token whose campaign has no directory here is the only miss.
 
     None is "I could not say", and the caller falls back to the claim reading,
     which is the narrower gate. A slug whose campaign has no directory on this
     machine is that case: correct, since a session naming a campaign this
     machine does not hold is not one this carve-out should widen for."""
-    rule = name_rule()
-    if rule.OLD_CAMPAIGN.match(token or ""):
-        return token[len("campaign-"):]
     if not token or base is None:
         return None
     found = set()

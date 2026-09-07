@@ -42,12 +42,17 @@ class Rep:
     def __init__(self):
         self.lines = []
         self.rows = []
+        # COUNTED APART, because only `unread` denies `clear` and the two
+        # landed in one list -- so a case could not tell a note from a place
+        # the reading did not happen, which is the whole difference.
+        self.skipped = 0
 
     def report(self, line):
         self.lines.append(line)
 
     def unread(self, line):
         self.lines.append(line)
+        self.skipped += 1
 
     def add(self, repo, kind, ident, check, clears, note="", counted=True):
         self.rows.append((repo, kind, ident))
@@ -98,18 +103,23 @@ def main():
                 "clw2", str(shim / "campaign-local-work.py")))
         m2 = importlib.util.module_from_spec(spec2)
         spec2.loader.exec_module(m2)
+        # ONE PREFIX SINCE #237, and an unreadable slug leaves NONE -- where it
+        # used to fall back to `campaign-<N>/`. The empty list is the point:
+        # the sweep read nothing, and says so, rather than reporting a machine
+        # holding no work.
         for body, want, prefixes in (
-                ("print('demo')\n", None, ["demo/", "campaign-9/"]),
+                ("print('demo')\n", None, ["demo/"]),
                 ("print('none')\nraise SystemExit(1)\n",
-                 "carries no `campaign:` label", ["campaign-9/"]),
+                 "carries no `campaign:` label", []),
                 ("import sys\nprint('boom', file=sys.stderr)\n"
                  "raise SystemExit(2)\n",
-                 "without a verdict", ["campaign-9/"])):
+                 "without a verdict", [])):
             (shim / "campaign-tracker.py").write_text(
                 "#!/usr/bin/env python3\n" + body)
             rep = Rep()
             got = m2.campaign_prefixes("9", rep)
-            check(f"campaign_prefixes sweeps {prefixes}",
+            check(f"campaign_prefixes sweeps {prefixes} when the tracker "
+                  f"{'answers' if want is None else repr(want)}",
                   got == prefixes, f"{got} {rep.lines}")
             if want is None:
                 check("...and a slug that read reports nothing",
@@ -117,6 +127,31 @@ def main():
             else:
                 check(f"...and says {want!r} when it could not use one",
                       any(want in l for l in rep.lines), str(rep.lines))
+
+        # THE CONSEQUENCE, not just the return value. An empty prefix list fed
+        # through reached `git for-each-ref` with NO pattern and
+        # `read_worktrees`'s `if prefix and` guard, so a slug that would not
+        # read widened the sweep to every branch and worktree while the note
+        # said no claim would appear. The case above pins the list; this pins
+        # that nothing is read off it.
+        (shim / "campaign-tracker.py").write_text(
+            "#!/usr/bin/env python3\nprint('none')\nraise SystemExit(1)\n")
+        seen = []
+        m2.read_branches = lambda *a, **k: seen.append("branches")
+        m2.read_worktrees = lambda *a, **k: seen.append("worktrees")
+        m2.slug = lambda b: "base"
+        m2.default_branch = lambda *a, **k: "main"
+        m2.git = lambda *a, **k: ""
+        rep = Rep()
+        m2.read_base(str(shim.parent), "9", rep)
+        check("with no prefix, neither the branches nor the worktrees are read",
+              seen == [], f"read {seen}; {rep.lines}")
+        # AND THE SKIP DENIES `clear`. Skipping the two readings while
+        # reporting them as a note left the run summarising `clear`, which is
+        # what licenses the delete -- a check that never ran reading as an
+        # absence of findings.
+        check("...and the skip is counted as unread, which denies `clear`",
+              rep.skipped == 1, f"skipped {rep.skipped}; {rep.lines}")
 
     with tempfile.TemporaryDirectory() as d:
         runtime = Path(d) / "runtime"

@@ -152,9 +152,9 @@ def main():
     # this code would have the call PROCEED. So the reading fails closed, and
     # names the cause rather than blaming the branch.
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",))
-        (f.trees["campaign-1/7-x"] / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py").unlink()
-        r, moved = commit(f, f.trees["campaign-1/7-x"])
+        f = build(d, claims=("demo/7-x",))
+        (f.trees["demo/7-x"] / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py").unlink()
+        r, moved = commit(f, f.trees["demo/7-x"])
         check("a claim whose name rule will not load is refused, not admitted",
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
         check("...naming the rule that would not load, not the branch",
@@ -177,13 +177,13 @@ def main():
               out(r)[:400])
 
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",), feature="feature")
-        r, moved = commit(f, f.trees["campaign-1/7-x"],
+        f = build(d, claims=("demo/7-x",), feature="feature")
+        r, moved = commit(f, f.trees["demo/7-x"],
                           env={"CLAUDE_CODE_SESSION_ID": "sid-1"})
         check("a commit in a worktree on a claimed branch goes through",
               r.returncode == 0 and moved, f"exit {r.returncode}: {out(r)[:300]}")
         check("...and the hook says the branch is a claim and where the ref was read",
-              "is a claim" in out(r) and "refs/remotes/origin/campaign-1/7-x"
+              "is a claim" in out(r) and "refs/remotes/origin/demo/7-x"
               in out(r), out(r)[:300])
         check("...naming the session it read from the environment",
               "session sid-1 (from CLAUDE_CODE_SESSION_ID)" in out(r), out(r)[:300])
@@ -210,8 +210,8 @@ def main():
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
 
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, unpushed=("campaign-1/8-y",))
-        wt8 = f.trees["campaign-1/8-y"]
+        f = build(d, unpushed=("demo/8-y",))
+        wt8 = f.trees["demo/8-y"]
         r, moved = commit(f, wt8)
         check("a campaign branch whose ref is on no remote is refused as no claim",
               r.returncode != 0 and not moved and "no such head" in out(r),
@@ -225,7 +225,7 @@ def main():
     # A delegate's clone under the campaign directory, hooks installed there
     # too (#178), judged by its own branch.
     with tempfile.TemporaryDirectory() as d:
-        f = build(d, claims=("campaign-1/7-x",))
+        f = build(d, claims=("demo/7-x",))
         clone = f.clone()
         r = subprocess.run([str(clone / "scripts" / "install-hooks.sh"),
                             "--git-only"], cwd=clone, capture_output=True,
@@ -235,7 +235,7 @@ def main():
         check("a commit in a clone on main is refused",
               r.returncode != 0 and not moved and "on main" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
-        f.git(clone, "switch", "-q", "--track", "origin/campaign-1/7-x")
+        f.git(clone, "switch", "-q", "--track", "origin/demo/7-x")
         r, moved = commit(f, clone)
         check("...and on a claimed branch it goes through",
               r.returncode == 0 and moved and "is a claim" in out(r),
@@ -323,6 +323,103 @@ def main():
               remedy and not unknown,
               f"not in `take --help`: {unknown}; remedy: {remedy!r}; "
               f"exit {r.returncode}: {out(r)[:300]}")
+
+    # THE PUSH HALF. `push-campaign-branch.sh` used to match the branch name
+    # itself, with `campaign-*/*`, which is a second reader of `claim_match` --
+    # and it drifted: after #181 cut claims as `<slug>/<issue>-<topic>` the
+    # glob matched the retired form alone, so a commit on a live claim fell
+    # through to `exit 0` and was never pushed. Nothing said so. These cases
+    # assert on the REMOTE, which is the only place the difference shows.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d, claims=("demo/9-topic",), feature="feature/9-topic",
+                  unpushed=("campaign-1/9-topic",))
+        for branch, want, why in (
+                ("demo/9-topic", True, "a slug claim, the only form minted"),
+                ("campaign-1/9-topic", False,
+                 "the retired form, no longer a claim: `campaign` is a barred "
+                 "slug segment, so the pre-commit half refuses first"),
+                ("feature/9-topic", False,
+                 "no claim, so the pre-commit half refuses and there is "
+                 "nothing for the push half to reach")):
+            tree = f.trees[branch]
+            r, moved = commit(f, tree)
+            remote = f.git(tree, "ls-remote", "origin", branch).stdout.split()
+            local = f.git(tree, "rev-parse", "HEAD").stdout.strip()
+            pushed = bool(remote) and remote[0] == local
+            check(f"post-commit pushes {branch} -- {why}" if want else
+                  f"{branch} never reaches the remote -- {why}",
+                  (moved and pushed) if want else (not moved and not pushed),
+                  f"committed={moved} pushed={pushed} remote={remote[:1]} "
+                  f"local={local} :: {out(r)[:300]}")
+
+        # WHAT THE HOOK DOES WITH EACH ANSWER, which the cases above do not
+        # reach: they are satisfied by the pre-commit half refusing first. The
+        # reader is stubbed, so this pins the hook's own branches and nothing
+        # else -- and the word is what it reads, because python exits 1 on an
+        # uncaught exception and a bare 1 read as `no` would strand a claim.
+        # THE COPY THE HOOK ACTUALLY RUNS is the worktree's own, resolved under
+        # its toplevel -- not the base's. Stubbing the base's left the real
+        # reader answering and the case passed on the wrong thing.
+        tree = f.trees["demo/9-topic"]
+        gate = tree / "scripts" / "check-commit-claim.py"
+        real = gate.read_text()
+        for word, status, pushes, why in (
+                ("no-claim", 1, False, "answered no: not this hook's branch"),
+                ("unknown", 2, True,
+                 "could not look: an unread question is not a no"),
+                ("claim", 1, True,
+                 "the word and the status disagree, which is itself unread")):
+            # The third round pushes like the second, so `pushed` alone cannot
+            # tell them apart -- deleting the disagreement branch kept 40/40.
+            # What separates them is what the hook SAID.
+            # `--is-claim` ONLY. The same file is the pre-commit gate, and a
+            # stub that refused there would stop the commit before the push
+            # half ran -- which is the branch these cases exist to reach.
+            gate.write_text("#!/usr/bin/env python3\n"
+                            "import sys\n"
+                            "if '--is-claim' not in sys.argv[1:]:\n"
+                            "    print('stub: pre-commit half not judged')\n"
+                            "    sys.exit(0)\n"
+                            f"print({word + ' stub'!r})\n"
+                            f"sys.exit({status})\n")
+            gate.chmod(0o755)
+            before = f.git(tree, "ls-remote", "origin",
+                           "demo/9-topic").stdout.split()
+            # A DISTINCT FILE PER ROUND: `commit` writes one fixed page, so a
+            # second round had nothing to commit and every branch looked the
+            # same as the last.
+            (tree / "docs").mkdir(exist_ok=True)
+            (tree / "docs" / f"{word}.html").write_text(f"<p>{word}</p>\n")
+            f.git(tree, "add", str(tree / "docs" / f"{word}.html"))
+            r, moved = commit(f, tree)
+            after = f.git(tree, "ls-remote", "origin",
+                          "demo/9-topic").stdout.split()
+            local = f.git(tree, "rev-parse", "HEAD").stdout.strip()
+            pushed = bool(after) and after[0] == local
+            said = "could not tell whether" in out(r)
+            check(f"the hook {'pushes' if pushes else 'stands down'} on "
+                  f"`{word}` -- {why}",
+                  moved and pushed == pushes
+                  and said == (word != "no-claim" and status != 0),
+                  f"committed={moved} pushed={pushed} said={said} "
+                  f"before={before[:1]} after={after[:1]} :: {out(r)[:200]}")
+        gate.write_text(real)
+        gate.chmod(0o755)
+
+        # The reading the hook asks for, on its own. Three outcomes, and `2`
+        # is not folded into `1`: the hook pushes on 2, because an unread
+        # question is not a no.
+        gate = f.base / "scripts" / "check-commit-claim.py"
+        e = dict(os.environ, HOME=str(f.home))
+        e.pop("CLAUDE_CODE_SESSION_ID", None)
+        for cwd, want, why in (
+                (f.trees["demo/9-topic"], 0, "a claim"),
+                (f.trees["feature/9-topic"], 1, "answered: not a claim"),
+                (Path(d), 2, "could not look -- no git repository here")):
+            r = subprocess.run([str(gate), "--is-claim"], cwd=str(cwd),
+                               capture_output=True, text=True, env=e)
+            check(f"--is-claim exits {want} when {why}", r.returncode == want,
+                  f"exit {r.returncode}: {out(r)[:300]}")
 
     if not ran:
         print("FAIL  the suite ran no case at all")

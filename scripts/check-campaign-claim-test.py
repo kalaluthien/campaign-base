@@ -56,7 +56,7 @@ class Fixture:
     campaign branches in worktrees whose ref exists nowhere on the remote;
     `feature` is a worktree on a plain branch."""
 
-    def __init__(self, d, claims=("campaign-1/7-x",), unpushed=(), feature=None):
+    def __init__(self, d, claims=("demo/7-x",), unpushed=(), feature=None):
         self.d = Path(d)
         self.remote = self.d / "r.git"
         self.base = self.d / "base"
@@ -128,8 +128,8 @@ class Fixture:
         git(seed, "add", "-A")
         git(seed, "commit", "-qm", "init")
         git(seed, "push", "-q", "origin", "HEAD")
-        git(seed, "branch", "campaign-1/7-x")
-        git(seed, "push", "-q", "origin", "campaign-1/7-x")
+        git(seed, "branch", "demo/7-x")
+        git(seed, "push", "-q", "origin", "demo/7-x")
         dest = self.camp / "repos" / "member"
         dest.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "clone", "-q", str(remote), str(dest)],
@@ -319,7 +319,7 @@ def main():
         plain.mkdir()
         subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
         for cmd in ("gh issue close 9", "gh pr merge 9 --merge",
-                    "gh pr comment 9 --body 'NOTE campaign-1-worker-1: x'"):
+                    "gh pr comment 9 --body 'NOTE demo-worker-1: x'"):
             r = ask(plain, tool="Bash", command=cmd)
             check(f"`{cmd}` from an ordinary git repository that is no base is "
                   f"allowed, naming why",
@@ -329,14 +329,14 @@ def main():
     # 2. The two clauses, and the refusal when neither holds.
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, feature="feature")
-        wt7 = f.trees["campaign-1/7-x"]
+        wt7 = f.trees["demo/7-x"]
         r = ask(d, path=str(wt7 / "a.md"))
         check("clause 1: a write into a checkout on a claimed branch is allowed "
               "from any cwd",
               r.returncode == 0 and "Clause 1" in r.stdout
-              and "campaign-1/7-x, a claim" in r.stdout, out(r)[:300])
+              and "demo/7-x, a claim" in r.stdout, out(r)[:300])
         check("...and says the ref was read from the local origin/ copy",
-              "refs/remotes/origin/campaign-1/7-x" in r.stdout, out(r)[:300])
+              "refs/remotes/origin/demo/7-x" in r.stdout, out(r)[:300])
         r = ask(f.trees["feature"], path=str(f.base / "AGENTS.md"))
         check("clause 2: a write into the main checkout on main is allowed when "
               "the session's root has a worktree on a claim",
@@ -410,13 +410,13 @@ def main():
 
     # 3. The ref is the claim, and a ref that cannot be read is not an absence.
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=(), unpushed=("campaign-1/8-y",))
-        wt8 = f.trees["campaign-1/8-y"]
+        f = Fixture(d, claims=(), unpushed=("demo/8-y",))
+        wt8 = f.trees["demo/8-y"]
         r = ask(wt8, path=str(wt8 / "a.md"))
         check("a campaign branch whose ref is on no remote is not a claim",
               r.returncode == 2 and "no such head" in r.stderr, out(r)[:400])
         check("...and says it asked the remote, having found no local copy",
-              "ls-remote origin campaign-1/8-y" in r.stderr, out(r)[:400])
+              "ls-remote origin demo/8-y" in r.stderr, out(r)[:400])
         git(f.base, "remote", "set-url", "origin", str(f.d / "nowhere.git"))
         r = ask(wt8, path=str(wt8 / "a.md"))
         check("a remote that cannot be asked is printed as unreadable, not absent",
@@ -473,13 +473,13 @@ def main():
     # 5. A delegate's clone under the campaign directory is a base tree of its
     # own, and its claim is its own branch.
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x",))
+        f = Fixture(d, claims=("demo/7-x",))
         clone = f.clone()
         r = ask(clone, path=str(clone / "AGENTS.md"))
         check("a clone on main under the campaign directory, holding nothing, "
               "is refused", r.returncode == 2 and f"inside the base {clone}"
               in r.stderr, out(r)[:400])
-        git(clone, "switch", "-q", "--track", "origin/campaign-1/7-x")
+        git(clone, "switch", "-q", "--track", "origin/demo/7-x")
         r = ask(clone, path=str(clone / "AGENTS.md"))
         check("...and on a claimed branch it is allowed by clause 1",
               r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:300])
@@ -533,11 +533,11 @@ def main():
     # claim read as holding none, and every gh write it made was refused.
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=())
-        member = f.member(branch="campaign-1/7-x")
+        member = f.member(branch="demo/7-x")
         r = ask(member, tool="Bash", command="gh issue close 7")
         check("a gh write from a member clone standing on its own claim is "
               "allowed, though no worktree of the base is on it",
-              r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
+              r.returncode == 0 and "demo/7-x, a claim" in r.stdout,
               out(r)[:400])
         r = ask(member, tool="Bash", command="gh issue close 9")
         check("...and it is still narrowed: a write to another issue is refused",
@@ -561,7 +561,7 @@ def main():
             ("gh issue transfer 5 o/r", "gh issue transfer"),
             ("gh issue delete 5 --yes", "gh issue delete"),
             ("gh issue edit 5 --body x", "gh issue edit"),
-            ("gh issue comment 5 --body 'NOTE campaign-1-worker-1: x'", "gh issue comment"),
+            ("gh issue comment 5 --body 'NOTE demo-worker-1: x'", "gh issue comment"),
             ("gh api repos/o/r/issues -f title=x", "gh api with a field"),
             ("gh api -X PATCH repos/o/r/issues/5 --input body.json", "gh api PATCH"),
             ("gh api --method=DELETE repos/o/r/issues/5", "gh api DELETE"),
@@ -599,7 +599,7 @@ def main():
         # The body file is REAL and kinded, so the comment check has nothing
         # to say and the diagnosis under test is the only one printed. Its
         # name still ends in digits after a slash, which is the whole shape.
-        (f.base / "123").write_text("NOTE campaign-1-worker-1: x\n")
+        (f.base / "123").write_text("NOTE demo-worker-1: x\n")
         r = ask(f.base, tool="Bash",
                 command=f"gh issue comment --body-file {f.base}/123 7")
         check("a file path operand is not read as the issue number",
@@ -611,7 +611,7 @@ def main():
         # And a flag's value that IS a bare number must not be read as the
         # issue either -- which the path rule alone cannot catch, since the
         # value has no slash. VALUED is what skips it.
-        (f.base / "9").write_text("NOTE campaign-1-worker-1: x\n")
+        (f.base / "9").write_text("NOTE demo-worker-1: x\n")
         r = ask(f.base, tool="Bash",
                 command="gh issue comment --body-file 9 7")
         check("a valued flag's numeric value is not the issue the write names",
@@ -702,7 +702,7 @@ def main():
               r.returncode == 2 and "a write to #9" in r.stderr
               and "cannot read as a call" not in r.stderr, out(r)[:300])
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x",))
+        f = Fixture(d, claims=("demo/7-x",))
         # THE ORDINARY DELEGATE SHAPE. A member repository under a campaign
         # directory is a git repository with no marker, so resolving a cwd to
         # its own common dir read it as "in no campaign" and allowed every
@@ -730,7 +730,7 @@ def main():
         r = ask(f.base, tool="Bash", command="gh issue edit 9 --body x")
         check("every gh issue write naming a number is narrowed to it, not only close",
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:300])
-        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body 'NOTE campaign-1-worker-1: x'")
+        r = ask(f.base, tool="Bash", command="gh issue comment 7 --body 'NOTE demo-worker-1: x'")
         check("...and one naming the held claim's issue is allowed",
               r.returncode == 0 and "covers #7" in r.stdout, out(r)[:300])
         # EVERY ISSUE NAMED MUST BE COVERED. Collapsing two to "any claim at
@@ -741,31 +741,31 @@ def main():
         check("a claim on one issue does not admit a write to another beside it",
               r.returncode == 2 and "a write to #9" in r.stderr, out(r)[:400])
         r = ask(f.base, tool="Bash",
-                command="gh issue close 7; gh issue comment 7 --body 'NOTE campaign-1-worker-1: x'")
+                command="gh issue close 7; gh issue comment 7 --body 'NOTE demo-worker-1: x'")
         check("...and two writes to the SAME claimed issue are allowed",
               r.returncode == 0 and "It covers #7" in r.stdout, out(r)[:400])
         r = ask(f.base, tool="Bash",
-                command="gh pr comment 5 --body 'NOTE campaign-1-worker-1: hi'")
+                command="gh pr comment 5 --body 'NOTE demo-worker-1: hi'")
         check("a gh write that names no issue is covered by any held claim",
-              r.returncode == 0 and "campaign-1/7-x, a claim" in r.stdout,
+              r.returncode == 0 and "demo/7-x, a claim" in r.stdout,
               out(r)[:300])
 
         # ------ #217: THE COMMENT'S SHAPE, read from all four spellings ------
         # A DIFFERENT QUESTION FROM THE CLAIM, so every case here runs on the
         # fixture that HOLDS the claim: a refusal below is the shape and can be
         # nothing else, and an allow is not the shape being skipped.
-        ok = "NOTE campaign-1-worker-1: x"
+        ok = "NOTE demo-worker-1: x"
         for kind in ("REPORT", "REVIEW", "BLOCKED", "DECISION", "NOTE"):
             r = ask(f.base, tool="Bash",
                     command=f"gh issue comment 7 --body '{kind} "
-                            f"campaign-1-worker-1: x'")
+                            f"demo-worker-1: x'")
             check(f"a comment kinded `{kind}` is allowed",
                   r.returncode == 0, out(r)[:300])
         # A SIXTH WORD IS NOT A KIND. Without this the kind list is decoration:
         # a check accepting any leading capitalised word passes all five above.
         r = ask(f.base, tool="Bash",
                 command="gh issue comment 7 --body 'SUMMARY "
-                        "campaign-1-worker-1: x'")
+                        "demo-worker-1: x'")
         check("...and a word that is not one of the five is refused",
               r.returncode == 2 and "which is not `KIND" in r.stderr,
               out(r)[:300])
@@ -922,7 +922,7 @@ def main():
         check("a body with backticks is judged, not waved through",
               r.returncode == 2 and "x.py" in r.stderr, out(r)[:400])
         r = ask(f.base, tool="Bash",
-                command=r"""gh pr comment 5 --body "NOTE campaign-1-worker-1: see \`x.py\`" """)
+                command=r"""gh pr comment 5 --body "NOTE demo-worker-1: see \`x.py\`" """)
         check("...and a kinded one with backticks passes",
               r.returncode == 0, out(r)[:400])
         # ...AND `${` IS NOT ONE EITHER. Its own case, or the two above pass
@@ -997,7 +997,7 @@ def main():
               and "shape does not hold" not in r.stderr, out(r)[:300])
         # A worktree directory that is gone is a claim git itself calls
         # prunable, and clause 2 must not stand on it.
-        shutil.rmtree(f.trees["campaign-1/7-x"])
+        shutil.rmtree(f.trees["demo/7-x"])
         r = ask(f.base, path=str(f.base / "AGENTS.md"))
         check("a prunable worktree does not hold clause 2 open",
               r.returncode == 2 and "no checkout under" in r.stderr, out(r)[:300])
@@ -1042,16 +1042,16 @@ def main():
     # imports it rather than restating it.
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=())
-        planner = herdr_stub(d, {"sid-1": "campaign-1-planner-3"})
-        worker = herdr_stub(d, {"sid-1": "campaign-1-worker-4"})
-        stranger = herdr_stub(d, {"sid-1": "campaign-9-worker-1"})
+        planner = herdr_stub(d, {"sid-1": "demo-planner-3"})
+        worker = herdr_stub(d, {"sid-1": "demo-worker-4"})
+        stranger = herdr_stub(d, {"sid-1": "other-worker-1"})
         unnamed = herdr_stub(d, {"sid-1": ""})
         gone = no_herdr(d)
 
         # THE CASE THAT PROMPTED #185, from a planner session that really was
         # refused this write on 2026-09-05: a comment on the campaign issue,
         # which no claim can ever cover because #1 is nobody's sub-issue.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
                 env=planner)
         check("a planner comments on the campaign issue, which no claim covers",
               r.returncode == 0 and "planner writes the campaign plane" in r.stdout,
@@ -1060,7 +1060,7 @@ def main():
         # campaign may comment on its campaign issue, which no claim can cover.
         # The contrast the planner row is here for is the CAMPAIGN, not the
         # claim -- so the refusal case is a worker of another one.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
                 env=stranger)
         check("...and the same write from a worker of another campaign is "
               "refused", r.returncode == 2, out(r)[:400])
@@ -1078,7 +1078,7 @@ def main():
         for cmd in ("gh pr create --title t --body b",
                     "gh pr merge 9 --merge",
                     "gh pr edit 9 --title x",
-                    "gh api -X DELETE repos/o/r/git/refs/heads/campaign-2/8-y"):
+                    "gh api -X DELETE repos/o/r/git/refs/heads/other/8-y"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
             check(f"the planner licence does not cover `{cmd[:34]}`",
                   r.returncode == 2 and "not the campaign plane" in r.stderr,
@@ -1098,7 +1098,7 @@ def main():
         # ...and one develop hidden among covered verbs sinks the whole call,
         # which is the shape a set-membership test on the SUBCOMMAND missed.
         r = ask(f.base, tool="Bash",
-                command="gh issue comment 9 --body 'NOTE campaign-1-worker-1: x' && gh issue develop 9",
+                command="gh issue comment 9 --body 'NOTE demo-worker-1: x' && gh issue develop 9",
                 env=planner)
         check("...and a develop beside a covered verb is not carried by it",
               r.returncode == 2 and "cuts a branch in the sub-issue's "
@@ -1112,8 +1112,8 @@ def main():
         # needs a fixture where that claim EXISTS, or it passes over the one
         # world the exception has to cover.
         with tempfile.TemporaryDirectory() as d9:
-            f9 = Fixture(d9, claims=("campaign-1/9-topic",))
-            p9 = herdr_stub(d9, {"sid-1": "campaign-1-planner-3"})
+            f9 = Fixture(d9, claims=("demo/9-topic",))
+            p9 = herdr_stub(d9, {"sid-1": "demo-planner-3"})
             r = ask(f9.base, tool="Bash", command="gh issue develop 9", env=p9)
             check("...and a live claim on the very issue does not carry it "
                   "either", r.returncode == 2
@@ -1122,7 +1122,7 @@ def main():
             # ALLOW beside it: the same claim, the same planner, an ordinary
             # campaign-plane verb -- so the refusal is the verb and not the
             # fixture.
-            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body 'NOTE campaign-1-worker-1: x'",
+            r = ask(f9.base, tool="Bash", command="gh issue comment 9 --body 'NOTE demo-worker-1: x'",
                     env=p9)
             check("...and the same planner still comments on that issue",
                   r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
@@ -1150,16 +1150,16 @@ def main():
         # (#213's REPORT, item 2). Asserted as a COUNT, because a case
         # asserting presence passes on one copy and on five.
         check("...and the role reading is printed exactly once",
-              r.stderr.count("is campaign-1-planner-") == 1,
-              f"{r.stderr.count('is campaign-1-planner-')} copies: {out(r)[:500]}")
+              r.stderr.count("is demo-planner-") == 1,
+              f"{r.stderr.count('is demo-planner-')} copies: {out(r)[:500]}")
         # ...AND THE BARE develop STILL CARRIES IT. `read_on` is EMPTY there --
         # `issue` is a planner's subcommand and only the pair is excepted -- so
         # a header that simply dropped `how_role` would have lost the role
         # reading on the very command this branch exists for.
         r = ask(f.base, tool="Bash", command="gh issue develop 9", env=planner)
         check("a bare develop refusal still names the role it read",
-              r.stderr.count("is campaign-1-planner-") == 1,
-              f"{r.stderr.count('is campaign-1-planner-')} copies: {out(r)[:500]}")
+              r.stderr.count("is demo-planner-") == 1,
+              f"{r.stderr.count('is demo-planner-')} copies: {out(r)[:500]}")
 
         # THE FALLBACK SENTENCE, which had no case. `read_on` is empty when a
         # planner's command holds no gh WRITE the guard can read but does hold
@@ -1186,7 +1186,7 @@ def main():
               in r.stderr, out(r)[:400])
 
         # ALLOW beside it: the campaign-plane verbs the licence is FOR.
-        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body 'NOTE campaign-1-worker-1: x'",
+        for cmd in ("gh issue edit 9 --body x", "gh issue comment 9 --body 'NOTE demo-worker-1: x'",
                     "gh issue close 9", "gh issue reopen 9",
                     "gh label create x"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
@@ -1224,16 +1224,16 @@ def main():
         # which of its two names is stale rather than that some name is. Put
         # `executor` back into the alternation in campaign-name-session.py and
         # these two go green: they are what pins the rename on this side.
-        retired = herdr_stub(d, {"sid-1": "campaign-1-executor-5"})
+        retired = herdr_stub(d, {"sid-1": "demo-executor-5"})
         r = ask(f.base, tool="Bash", command="gh issue close 9", env=retired)
         check("the retired role word `executor` has no role on the campaign "
               "plane, and the refusal quotes the stale name",
               r.returncode == 2 and "no role" in r.stderr
-              and "campaign-1-executor-5" in r.stderr, out(r)[:300])
+              and "demo-executor-5" in r.stderr, out(r)[:300])
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=retired)
         check("...and none on the code plane either", r.returncode == 2
               and "no role" in r.stderr
-              and "campaign-1-executor-5" in r.stderr, out(r)[:300])
+              and "demo-executor-5" in r.stderr, out(r)[:300])
 
         # A CHECKOUT UNDER A CAMPAIGN DIRECTORY IS STILL CODE. A clone at
         # <campaign>/repos/<repo>/ reports the campaign directory as where it
@@ -1244,7 +1244,7 @@ def main():
         # never reaches the scratch reading and the case could not see the
         # bug it was written for. Probed: with `f.clone()` here, reverting
         # `scratch` left the suite fully green.
-        member = f.member(branch="campaign-1/7-x")
+        member = f.member(branch="demo/7-x")
         r = ask(member, path=str(member / "code.txt"), env=planner)
         check("a planner may not edit a checkout under the campaign directory",
               r.returncode == 2 and "may not change code" in r.stderr,
@@ -1274,14 +1274,14 @@ def main():
     # it permitted -- the whole distinction this gate keeps, dropped on the one
     # path nobody asserts.
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x",))
+        f = Fixture(d, claims=("demo/7-x",))
         gone = no_herdr(d)
         r = ask(f.base, tool="Bash", command="gh issue close 7", env=gone)
         check("an ALLOW that fell back says it fell back",
               r.returncode == 0
               and "falling back to the claim reading" in r.stdout, out(r)[:600])
         # ALLOW beside it: with herdr readable, the allow does NOT say it.
-        fine = herdr_stub(d, {"sid-1": "campaign-1-worker-4"})
+        fine = herdr_stub(d, {"sid-1": "demo-worker-4"})
         r = ask(f.base, tool="Bash", command="gh issue close 7", env=fine)
         check("...and one that read the role does not claim to have fallen back",
               r.returncode == 0
@@ -1326,9 +1326,9 @@ def main():
         # resolves the row it wants: the malformed-row refusal must not fire on
         # a shape that is merely unfamiliar.
         crowded = herdr_stub_raw(d, json.dumps({"result": {"agents": [
-            {"agent_session": {"value": "sid-other"}, "name": "campaign-2-worker-1",
+            {"agent_session": {"value": "sid-other"}, "name": "other-worker-1",
              "cwd": "/x", "unknown_field": 7},
-            {"agent_session": {"value": "sid-1"}, "name": "campaign-1-planner-3",
+            {"agent_session": {"value": "sid-1"}, "name": "demo-planner-3",
              "revision": 12, "tab_id": "t1"},
         ]}}))
         r = ask(f.base, tool="Bash", command="gh issue close 116", env=crowded)
@@ -1340,9 +1340,9 @@ def main():
               r.returncode == 0, out(r)[:300])
 
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x",))
-        worker = herdr_stub(d, {"sid-1": "campaign-1-worker-4"})
-        stranger = herdr_stub(d, {"sid-1": "campaign-9-worker-1"})
+        f = Fixture(d, claims=("demo/7-x",))
+        worker = herdr_stub(d, {"sid-1": "demo-worker-4"})
+        stranger = herdr_stub(d, {"sid-1": "other-worker-1"})
         # worker, its own campaign and the sub-issue it holds
         r = ask(f.base, tool="Bash", command="gh issue close 7", env=worker)
         check("a worker of campaign 1 closes the sub-issue it claimed",
@@ -1358,32 +1358,22 @@ def main():
         # #207: THE CAMPAIGN ISSUE IS NOBODY'S SUB-ISSUE, so no claim can ever
         # cover it and every worker was refused a comment on the campaign it
         # works. Its own campaign's number comes from its name.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
                 env=worker)
         check("a worker comments on its OWN campaign's issue",
               r.returncode == 0 and "campaign issue of the campaign this "
               "session is of" in r.stdout, out(r)[:400])
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
                 env=stranger)
         check("...and a worker of another campaign may not",
               r.returncode == 2, out(r)[:400])
-        # THE SLUG FORM, ALL THE WAY THROUGH. A session named for the slug,
-        # holding a claim cut under it, is this campaign's -- and the carve-out
-        # still resolves its campaign ISSUE NUMBER, which the slug does not
-        # carry, from the `.campaign` marker of the directory at the
-        # base root. One case per link, so none of them covers another.
-        slugged = herdr_stub(d, {"sid-1": "demo-worker-4"})
-        r = ask(f.base, tool="Bash", command="gh issue close 7", env=slugged)
-        check("a slug-named worker is refused a sub-issue it has no claim on",
-              r.returncode == 2, out(r)[:400])
-        r = ask(f.base, tool="Bash",
-                command="gh issue comment 1 --body 'NOTE demo-worker-4: x'",
-                env=slugged)
-        check("a slug-named worker comments on its own campaign's issue, "
-              "the number coming from the directory marker",
-              r.returncode == 0 and "campaign issue of the campaign this "
-              "session is of" in r.stdout, out(r)[:400])
-        # ...and a slug with no marker on this machine resolves to no number,
+        # THE NUMBER COMES FROM THE MARKER, and since #237 there is no other
+        # way to get it: the retired `campaign-<N>` token carried it in the
+        # name, so this link was covered twice and the marker path could have
+        # broken unseen. The case above -- a worker commenting on #1 while
+        # named only for the slug -- is now that link's only reader.
+        #
+        # A slug with no marker on this machine resolves to no number,
         # so the carve-out narrows to the claim reading rather than widening.
         nomarker = herdr_stub(d, {"sid-1": "absent-worker-1"})
         r = ask(f.base, tool="Bash",
@@ -1405,13 +1395,13 @@ def main():
                   r.returncode == 2, out(r)[:400])
         # ...and it covers its own write and nothing standing beside it.
         r = ask(f.base, tool="Bash",
-                command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x' && gh pr merge 12 --merge",
+                command="gh issue comment 1 --body 'NOTE demo-worker-1: x' && gh pr merge 12 --merge",
                 env=worker)
         check("the carve-out carries no other write in the same command",
               r.returncode == 2 and "covers no other write" in r.stderr,
               out(r)[:400])
         # ALLOW beside all of it: the one verb the carve-out is for, and a read.
-        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE campaign-1-worker-1: x'",
+        r = ask(f.base, tool="Bash", command="gh issue comment 1 --body 'NOTE demo-worker-1: x'",
                 env=worker)
         check("ALLOW beside it: the comment the carve-out is for",
               r.returncode == 0, out(r)[:400])
@@ -1430,7 +1420,7 @@ def main():
         # target's checkout is on SOME claim, so a worker of another
         # campaign -- role read correctly -- edited this campaign's worktree,
         # while the docstring said a worker writes its own campaign.
-        wt = f.trees["campaign-1/7-x"]
+        wt = f.trees["demo/7-x"]
         r = ask(wt, path=str(wt / "a.md"), env=stranger)
         check("clause 1 does not admit a worker of another campaign",
               r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
@@ -1461,8 +1451,14 @@ def main():
     # the foreign claim named as the cover. The filter is per issue now, and
     # this is the fixture that can tell the two apart.
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x", "campaign-2/8-y"))
-        worker = herdr_stub(d, {"sid-1": "campaign-1-worker-1"})
+        f = Fixture(d, claims=("demo/7-x", "other/8-y"))
+        # THE SECOND CAMPAIGN NEEDS A MARKER since #237. The retired
+        # `campaign-<N>/` carried its campaign in the branch name, so a foreign
+        # claim was recognisable with no directory behind it; a slug is a word,
+        # and `other` is a campaign here only because this says so.
+        (f.base / "other-dir").mkdir()
+        (f.base / "other-dir" / ".campaign").write_text("2 other\n")
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
         r = ask(f.base, tool="Bash", command="gh issue close 8", env=worker)
         check("a worker may not write another campaign's sub-issue, even "
               "with a claim of its own under the same root",
@@ -1481,12 +1477,12 @@ def main():
 
     # ---------------------------------------------------------------- #193
     # A HEREDOC BODY IS DATA. Reproduced 2026-09-05 on
-    # campaign-1/187-claim-identity: `git commit -F - <<'MSG'` whose message
+    # demo/187-claim-identity: `git commit -F - <<'MSG'` whose message
     # said `machine's` was refused, and the refusal named a `gh` call that was
     # not in the command at all.
     with tempfile.TemporaryDirectory() as d:
-        f = Fixture(d, claims=("campaign-1/7-x", "campaign-1/9-y"))
-        wt7 = f.trees["campaign-1/7-x"]
+        f = Fixture(d, claims=("demo/7-x", "demo/9-y"))
+        wt7 = f.trees["demo/7-x"]
         r = ask(wt7, tool="Bash",
                 command="git commit -q -F - <<'MSG'\nRead the machine's "
                         "branch's name\nMSG")
@@ -1528,7 +1524,7 @@ def main():
         check("a quoted `<<` does not swallow the write on the next line",
               r.returncode == 2 and "a write to #11" in r.stderr, out(r)[:400])
         r = ask(wt7, tool="Bash",
-                command='gh issue comment 7 --body "NOTE campaign-1-worker-1: line one\n'
+                command='gh issue comment 7 --body "NOTE demo-worker-1: line one\n'
                         'mentions <<EOF in passing\nline three"')
         check("...and a quote a `<<` sits inside is not eaten either, so a "
               "multi-line body still splits",
@@ -1698,20 +1694,20 @@ def main():
         git(sandbox, "add", "-A")
         git(sandbox, "commit", "-qm", "c")
         git(sandbox, "push", "-q", "origin", "HEAD")
-        for branch, pushed in (("campaign-1/888-x", True),
-                               ("campaign-1/889-x", False),
+        for branch, pushed in (("demo/888-x", True),
+                               ("demo/889-x", False),
                                ("feature-888", True)):
             git(sandbox, "switch", "-qc", branch)
             if pushed:
                 git(sandbox, "push", "-q", "origin", branch)
             git(sandbox, "fetch", "-q", "origin")
-        git(sandbox, "switch", "-q", "campaign-1/888-x")
+        git(sandbox, "switch", "-q", "demo/888-x")
         r = ask(sandbox, tool="Bash", command="gh issue close 888")
         check("own_claim admits any checkout on a claim-shaped branch whose "
               "ref exists on ITS OWN remote -- the reach #192 names and keeps",
-              r.returncode == 0 and "campaign-1/888-x" in r.stdout,
+              r.returncode == 0 and "demo/888-x" in r.stdout,
               out(r)[:400])
-        git(sandbox, "switch", "-q", "campaign-1/889-x")
+        git(sandbox, "switch", "-q", "demo/889-x")
         r = ask(sandbox, tool="Bash", command="gh issue close 889")
         check("...but the ref must EXIST, so an unpushed branch is no claim",
               r.returncode == 2, out(r)[:400])
@@ -1875,14 +1871,14 @@ def main():
             # worktree UNDER the campaign directory: `worktree` entries came
             # from `<campaign>/worktrees/<n>/`, which is a checkout of its own
             # and cannot share a branch with the sibling worktrees above.
-            f = Fixture(d, claims=tuple([f"campaign-1/{i}-x" for i in issues]
-                                        + ["campaign-1/909-corpus"]))
+            f = Fixture(d, claims=tuple([f"demo/{i}-x" for i in issues]
+                                        + ["demo/909-corpus"]))
             git(f.base, "worktree", "remove", "--force",
-                str(f.trees["campaign-1/909-corpus"]))
-            wt = f.worktree("209", "campaign-1/909-corpus",
+                str(f.trees["demo/909-corpus"]))
+            wt = f.worktree("209", "demo/909-corpus",
                             under=f.camp / "worktrees")
-            member = f.member(branch="campaign-1/7-x")
-            env = herdr_stub(d, {"sid-1": "campaign-1-worker-1"})
+            member = f.member(branch="demo/7-x")
+            env = herdr_stub(d, {"sid-1": "demo-worker-1"})
             # FOUR SLOTS, AND TODAY'S CORPUS FILLS TWO. Every file entry in it
             # is `campaign` or `worktree`, because that is where this
             # campaign's sessions wrote; `base` and `member` are exercised by
@@ -1947,7 +1943,7 @@ def main():
                   len(refused_at) > 5, f"{len(refused_at)} refused")
             # THE CONTROL, and it is not decoration: without it the two above
             # are equally satisfied by a check that refuses EVERY comment. A
-            # handful of this campaign's own `REPORT campaign-1-worker-3: ...`
+            # handful of this campaign's own `REPORT demo-worker-3: ...`
             # comments already carry a kind and a name, and they must still
             # pass -- which is what says this reads the SHAPE and not the verb.
             already = sorted(posts - set(refused_at))
@@ -1997,7 +1993,7 @@ def main():
                 if s.name != missing:
                     shutil.copy(s, skill / s.name)
             copy = tree / "scripts" / GUARD.name
-            f = Fixture(d, claims=("campaign-1/7-x",))
+            f = Fixture(d, claims=("demo/7-x",))
             for verb in ("gh issue comment 7 --body 'not a kinded line'",
                          "gh pr comment 5 --body 'not a kinded line'",
                          "gh pr review 5 --body 'not a kinded line'",
@@ -2033,7 +2029,7 @@ def main():
         broken = Path(d) / "broken-guard.py"
         src = GUARD.read_text().replace("def classify(", "def _classify_off(", 1)
         broken.write_text(src)
-        f = Fixture(d, claims=("campaign-1/7-x",))
+        f = Fixture(d, claims=("demo/7-x",))
         r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken,
                 run_cwd=f.base)
         check("a guard that raises where nothing predicted it allows the call "
@@ -2157,8 +2153,8 @@ def main():
         # that stands is not a call nothing judged. Without this row, `allow`
         # can stop recording its verdict and every case still passes.
         with tempfile.TemporaryDirectory() as d2:   # one Fixture per directory
-            f2 = Fixture(d2, claims=("campaign-1/7-x",))
-            wt = f2.trees["campaign-1/7-x"]
+            f2 = Fixture(d2, claims=("demo/7-x",))
+            wt = f2.trees["demo/7-x"]
             # A shell command with no unambiguous target is the plainest
             # `allow` there is -- allowed unread, no role and no claim to
             # resolve -- so the case turns on the crash and not on the verdict

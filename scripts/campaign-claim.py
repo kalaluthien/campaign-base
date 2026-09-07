@@ -7,11 +7,11 @@
     campaign-claim.py live <N> [--repo owner/repo]
 
 A claim is cut as `<slug>/<issue>-<topic>`, the slug being the campaign's own,
-read from its `campaign:<slug>` label by `campaign-tracker.py slug`. Branches
-cut before #181 are named `campaign-<N>/<issue>-<topic>`; every READING command
-here reads both prefixes until the last of those pull requests has landed, and
-`take` mints only the first, which is what closes the window. `prefixes` is the
-one place the pair is spelled.
+read from its `campaign:<slug>` label by `campaign-tracker.py slug`. ONE FORM,
+since #237: branches cut before #181 carried the campaign NUMBER, and were read
+beside the slug until the last of those pull requests merged. `prefixes` is the
+one place the prefix is spelled, and it returns EMPTY when the slug did not
+read -- which every caller treats as `could not look`, never as no claims.
 
 THE CLAIM IS THE BRANCH, AND NOTHING ELSE
 
@@ -355,21 +355,26 @@ def binding_refusal(campaign_issue):
 
 
 def branch_name(slug, issue, topic):
-    """The one branch a claim is cut as. ONE FORM IS MINTED, the slug's, even
-    while two are read: nothing new is ever named `campaign-<N>/`, which is what
-    makes the window close instead of lingering."""
+    """The one branch a claim is cut as, and since #237 the one that is read.
+    Minting a single form is what let the window close instead of lingering."""
     return f"{slug}/{issue}-{topic}"
 
 
 def prefixes(campaign_issue, slug):
-    """Every ref prefix that carries a claim of this campaign, newest first.
+    """Every ref prefix that carries a claim of this campaign.
 
-    TWO, FOR ONE WINDOW. `campaign-<N>/` is the form branches were cut as before
-    #181; they are read until the last of those pull requests has landed, and
-    then this returns one prefix and its second element goes. A `slug` that
-    could not be read leaves only the retired form, which is a narrower reading
-    said out loud by the caller rather than a wrong one made quietly."""
-    return ([f"{slug}/"] if slug else []) + [f"campaign-{campaign_issue}/"]
+    ONE SINCE #237. It was two for one window -- `campaign-<N>/`, the form
+    branches were cut as before #181, read beside the slug until the last of
+    those pull requests merged. `campaign_issue` is kept in the signature
+    because every caller has it and the empty case below is about that
+    campaign.
+
+    EMPTY IS `COULD NOT LOOK`, NOT `NO CLAIMS`. With the retired form gone a
+    slug that would not read leaves no prefix at all, and a caller that treated
+    that as an answer would report an unreadable campaign as an empty one --
+    which is what `release` deletes refs off. Every caller checks."""
+    del campaign_issue
+    return [f"{slug}/"] if slug else []
 
 
 def issue_of_branch(branch, campaign_issue, slug=None):
@@ -399,7 +404,7 @@ def parse_refs(text):
 
 
 def matching_refs(repo, campaign_issue, slug=None):
-    """Every claim branch of this campaign on the remote, under either prefix.
+    """Every claim branch of this campaign on the remote, under its one prefix.
 
     `git/matching-refs/` answers a prefix in one request and 200s with an empty
     array when nothing matches, so an empty campaign and an unreachable
@@ -410,7 +415,12 @@ def matching_refs(repo, campaign_issue, slug=None):
     exactly like a campaign with fewer of them, and `release` deletes refs off
     this."""
     found = []
-    for prefix in prefixes(campaign_issue, slug):
+    wanted = prefixes(campaign_issue, slug)
+    if not wanted:
+        return None, (f"#{campaign_issue} has no slug that could be read, so "
+                      f"no ref prefix carries its claims -- this is `could not "
+                      f"look`, not an empty campaign")
+    for prefix in wanted:
         r = run("gh", "api", f"repos/{repo}/git/matching-refs/heads/{prefix}",
                 "--jq", "[.[].ref]")
         if r.returncode != 0:
@@ -773,7 +783,7 @@ def cmd_take(args):
     parent, parent_note, readable = issue_parent(args.issue)
     if readable and parent is not None and parent != str(args.campaign_issue):
         print(f"refusing: {parent_note}, not #{args.campaign_issue}.\n"
-              f"  A ref cut under campaign-{args.campaign_issue}/ would be "
+              f"  A ref cut under #{args.campaign_issue}'s slug would be "
               f"invisible to the campaign that owns #{args.issue}\n  and "
               f"unreachable from the one named. Take it under #{parent}, or "
               f"fix the sub-issue's parent.", file=sys.stderr)
@@ -1467,11 +1477,17 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
     campaign it is closing, so a gate that refuses on any live session of the
     campaign refuses on the closer itself and can never pass. The caller is the
     one session whose intent is known."""
-    # THE TWO TOKENS THIS CAMPAIGN ANSWERS TO, for one window: its slug and the
-    # `campaign-<N>` the names carried before #181. A session renamed to one
-    # while its peers still carry the other is still this campaign's, and a
-    # close that missed it would sweep past a live session.
-    mine = {f"campaign-{campaign_issue}"} | ({slug} if slug else set())
+    # ONE TOKEN THIS CAMPAIGN ANSWERS TO SINCE #237: its slug. The
+    # `campaign-<N>` names carried before #181 were read beside it for one
+    # window, which closed when the last such pull request merged.
+    #
+    # AN UNREADABLE SLUG EMPTIES THIS SET, and that is `could not look`. No
+    # name can then be matched, so every peer reaching `ours` does so by
+    # sitting under the base root -- a narrower reading, and the reason
+    # `cmd_live` prints the slug note beside the count rather than the count
+    # alone.
+    del campaign_issue
+    mine = {slug} if slug else set()
     occupied, vacant = [], []
     for b in branches:
         paths = where.get(b, [])
@@ -1542,7 +1558,9 @@ def cmd_live(args):
     found, unread1 = all_refs(repos, args.campaign_issue, slug)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
-    print(f"reading 1  refs under {' and '.join(prefixes(args.campaign_issue, slug))} in "
+    under = (' and '.join(prefixes(args.campaign_issue, slug))
+             or f"no prefix -- #{args.campaign_issue}'s slug did not read")
+    print(f"reading 1  refs under {under} in "
           f"{', '.join(repos)} -- "
           f"{'FAILED: ' + why1 if why1 else str(len(branches)) + ' claim(s)'}")
     print(f"           {repo_note}")
@@ -1607,7 +1625,8 @@ def cmd_live(args):
               "checkout on another machine. Ask before\n  treating either as "
               "free.")
 
-    print(f"\nlive sessions of campaign-{args.campaign_issue} ({len(ours)})")
+    named = slug or f"#{args.campaign_issue}, whose slug did not read"
+    print(f"\nlive sessions of {named} ({len(ours)})")
     for sid, row in ours:
         print(f"  {row['name']:<24} {row['status']:<8} {row['pane']:<10} "
               f"{row['cwd']}")
@@ -1665,8 +1684,10 @@ def which_branch(branches, campaign_issue, issue, branch_arg, slug=None):
         return branch_arg, None
     found = refs_for_issue(branches, campaign_issue, issue, slug)
     if not found:
+        under = (' or '.join(prefixes(campaign_issue, slug))
+                 or f"any prefix -- #{campaign_issue}'s slug did not read")
         return None, (f"no ref under "
-                      f"{' or '.join(prefixes(campaign_issue, slug))} names "
+                      f"{under} names "
                       f"sub-issue #{issue}, so there is no claim here to "
                       f"release. Pass --branch if the branch was named some "
                       f"other way.")
@@ -1770,10 +1791,10 @@ def cmd_release(args):
     slug, slug_note = campaign_slug(args.campaign_issue)
     print(slug_note)
     # A SLUG THAT DID NOT READ IS NOT A CAMPAIGN WITHOUT ONE, and `release`
-    # DELETES. With the slug unread the sweep narrows to the retired prefix, so
-    # a claim cut under `<slug>/` is invisible and comes back as "no ref names
-    # sub-issue #N" -- an absence dressed as a reading, one step before the
-    # caller passes `--branch` and deletes something else. `live` may narrow and
+    # DELETES. With the slug unread there is no prefix at all since #237, so
+    # every claim is invisible and comes back as "no ref names sub-issue #N"
+    # -- an absence dressed as a reading, one step before the caller passes
+    # `--branch` and deletes something else. `live` may narrow and
     # say so because it only reads; this may not.
     if slug is None and not args.branch:
         print(f"refusing: {slug_note}\n  A ref cut under the campaign's slug "

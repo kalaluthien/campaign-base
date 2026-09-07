@@ -43,8 +43,9 @@ Then, in order, each turn is either dropped or attributed:
                `campaign-1/178-delegate-clone-hooks` -- so the place says where
                the parent was and the brief says what the subagent was for.
   worktree     `cwd` ending `/worktrees/<issue>` names the sub-issue outright.
-  branch       else `gitBranch` matching `<slug>/<issue>-`, or the retired
-               `campaign-<N>/<issue>-` a branch cut before #181 carries.
+  branch       else `gitBranch` matching `<slug>/<issue>-`. A window that
+               predates #181 is read by naming its old token to `--slug`,
+               which is used as a literal.
   parent       else, for a subagent transcript, whichever issue its parent
                session was last attributed to when the subagent started.
   carry        else, only for a record carrying no `gitBranch` at all, the last
@@ -272,14 +273,16 @@ def resolve_slug(args):
     NOT A DEFAULT IN THE FLAG. `--slug machinery` hardcoded one campaign's name
     into a tool every campaign runs, which is a wrong answer for all the others
     and a silent one. Read from the `campaign:<slug>` label instead, through the
-    one reader of it, as the WORD it prints. A read that did not happen narrows
-    the pattern to the retired `campaign-<N>/` form and the note says so, so a
-    half-attributed tally is never mistaken for a whole one."""
+    one reader of it, as the WORD it prints. A read that did not happen leaves
+    NO branch pattern at all since #237, and the note says so, so a tally with
+    no branch attribution is never mistaken for a whole one. A window that
+    predates #181 is read by passing the old token to `--slug`, which is used
+    as a literal."""
     if args.slug:
         return args.slug, f"slug {args.slug}, given on the command line"
     if getattr(args, "offline", False):
-        return None, ("--offline, so no slug was read; only campaign-"
-                      f"{args.campaign}/ branches are attributed")
+        return None, ("--offline, so no slug was read and NO branch is "
+                      "attributed; pass --slug to name one")
     tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "campaign-tracker.py")
     try:
@@ -287,7 +290,7 @@ def resolve_slug(args):
                            capture_output=True, text=True)
     except OSError as e:
         return None, (f"campaign-tracker could not run ({e.__class__.__name__}); "
-                      f"only campaign-{args.campaign}/ branches are attributed")
+                      f"NO branch is attributed")
     word = r.stdout.strip()
     if word and word != "none":
         return word, f"slug {word}, from #{args.campaign}'s campaign: label"
@@ -301,7 +304,7 @@ def resolve_slug(args):
     else:
         why = (f"campaign-tracker slug {args.campaign} exited {r.returncode} "
                f"without a verdict: {r.stderr.strip()[:120] or 'no message'}")
-    return None, f"{why}; only campaign-{args.campaign}/ branches are attributed"
+    return None, f"{why}; NO branch is attributed"
 
 
 class Corpus:
@@ -309,16 +312,19 @@ class Corpus:
 
     def __init__(self, args):
         self.args = args
-        # BOTH FORMS OF THE CLAIM BRANCH. Since #181 a claim is cut as
-        # `<slug>/<issue>-<topic>`; every branch before it is
-        # `campaign-<N>/<issue>-<topic>`, and a tally that read one form would
-        # attribute half a campaign's turns to nothing. `--campaign` and
-        # `--slug` are both matched, so a window spanning the change is whole.
+        # ONE FORM OF THE CLAIM BRANCH SINCE #237: `<slug>/<issue>-<topic>`.
+        # The retired `campaign-<N>/` was matched beside it while both were
+        # worn. A WINDOW THAT PREDATES #181 IS STILL TALLIED, by naming the old
+        # token to `--slug` -- it is used as a literal, not validated as a slug
+        # -- so `--slug campaign-1` reads that history and nothing here has to
+        # keep a form the tree no longer mints.
+        #
+        # NO SLUG MEANS NO BRANCH ATTRIBUTION AT ALL, and `slug_note` says so.
+        # It used to fall back to `campaign-<N>/`, which for any campaign filed
+        # after #181 matched nothing while reading like a pattern.
         slug, self.slug_note = resolve_slug(args)
-        forms = [rf"campaign-{re.escape(args.campaign)}"]
-        if slug:
-            forms.insert(0, re.escape(slug))
-        self.branch = re.compile(rf"(?:{'|'.join(forms)})/(\d+)-[A-Za-z0-9._-]+")
+        self.branch = (re.compile(rf"{re.escape(slug)}/(\d+)-[A-Za-z0-9._-]+")
+                       if slug else None)
         self.issue_ref = re.compile(rf"{re.escape(args.repo)}#(\d+)")
         self.pr_map = read_pr_map(args.pr_map, args.repo, args.offline)
         self.bases = [os.path.realpath(b).rstrip("/") for b in args.base]
@@ -400,7 +406,7 @@ class Corpus:
                 first_prompt_seen = True
                 brief_issue = self.read_brief(message)
             branch_field = record.get("gitBranch") or ""
-            on_branch = self.branch.match(branch_field)
+            on_branch = self.branch.match(branch_field) if self.branch else None
             if on_branch:
                 carried = int(on_branch.group(1))
             if record.get("type") != "assistant":
@@ -460,7 +466,7 @@ class Corpus:
                 pr = int(m.group(2))
                 if pr in self.pr_map:
                     return self.pr_map[pr]
-            m = self.branch.search(text)
+            m = self.branch.search(text) if self.branch else None
             if m:
                 return int(m.group(1))
             m = self.issue_ref.search(text)
@@ -485,7 +491,7 @@ class Corpus:
         m = WORKTREE.search(cwd)
         if m:
             return int(m.group(1)), "worktree"
-        m = self.branch.match(branch_field)
+        m = self.branch.match(branch_field) if self.branch else None
         if m:
             return int(m.group(1)), "branch"
         if is_sub:
@@ -801,13 +807,16 @@ def parse_args(argv):
     p.add_argument("--since", help="UTC ISO timestamp, e.g. 2026-09-04T00:45:00Z; "
                                    "turns before it are dropped")
     p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
-    p.add_argument("--campaign", default="1", help="campaign number in branch names")
+    p.add_argument("--campaign", default="1",
+                   help="campaign issue number; used to look up the slug, and "
+                        "not matched in a branch name")
     p.add_argument("--slug", default=None,
-                   help="campaign slug in branch names, which replaced the "
-                        "number in #181; both forms are matched. Read from the "
-                        "campaign's `campaign:<slug>` label when not given, and "
-                        "when that read fails only the retired form is matched, "
-                        "which is SAID rather than assumed")
+                   help="campaign slug in branch names, the one form matched "
+                        "since #237. Read from the campaign's "
+                        "`campaign:<slug>` label when not given, and when that "
+                        "read fails NO branch is attributed, which is SAID "
+                        "rather than assumed. Used as a literal, so a window "
+                        "predating #181 is read with --slug campaign-<N>")
     p.add_argument("--repo", default="kalaluthien/campaign-base")
     p.add_argument("--root", action="append", default=[],
                    help="transcript root (default ~/.claude/projects)")

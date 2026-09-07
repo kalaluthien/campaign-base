@@ -21,13 +21,22 @@ WHAT IT CHECKS
       one is tracked by accident, and the accident is invisible: git says
       nothing, and the next `git add` in it silently commits scratch.
 
-  R3  a retired name does not come back as code.
-      Same split check-rule-readers makes, for the same reason: prose must go
-      on being able to say `runtime/holder` is retired, while a path or an
-      identifier spelling it is a reintroduction. Retirement notes exist to
-      stop reintroduction; with a machine behind the ban they can be deleted.
-      It stands down over `RECORDED` -- a corpus of calls that were really
-      made -- and says so on every run; the comment there is why.
+  R3  what code names is what the tree holds. THREE ALLOW-LISTS, each derived
+      from the tree rather than listed by hand (#237 replaced a deny list of
+      retired names, which grew one entry per retirement and caught nothing
+      nobody had thought of):
+
+        R3a  a `scripts/<name>` a code line calls resolves to a file.
+             The resolver is `check-cross-references.py`'s `Tree`, imported.
+        R3b  a `runtime/<name>` is derived state or a process artifact.
+             A record of the work belongs on its issue, not here.
+        R3c  a `campaign-claim.py <verb>` is one its argparse defines.
+
+      Same split check-rule-readers makes, and for the same reason: prose must
+      go on being able to say `runtime/holder` is retired, while a path
+      spelling it is a reintroduction. R3 stands down over `RECORDED` -- a
+      corpus of calls that were really made -- and R3a over the suites, whose
+      fixtures name absent paths on purpose. Both are counted on every run.
 
   R4  no member-repository file is committed here.
       Three planes, and the base is one of them. R2 catches the ordinary
@@ -35,8 +44,8 @@ WHAT IT CHECKS
 
 WHAT IT DOES NOT CATCH
 
-R3 is a name check, not a concept check: reintroducing the holder role under a
-different word passes. R1 does not read a file's contents, so HTML named .md is
+R3 is a path check, not a concept check: reintroducing the holder role under a
+different word, or in a file that exists, passes. R1 does not read a file's contents, so HTML named .md is
 caught and markdown named .html is not. Both are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
@@ -75,90 +84,125 @@ an unreadable tree crashes.
 
 Usage: scripts/check-tree-shape.py [--staged]
 """
+import importlib.machinery
+import importlib.util
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-def extensionless_call():
-    """A call to a script beside this one that omits its language extension.
+# R3 IS THREE ALLOW-LISTS, NOT A DENY LIST (#237). It was a list of retired
+# names, and a deny list has the failure mode every deny list has: it grows one
+# entry per retirement, it says nothing about a name nobody thought to add, and
+# every entry is a second reader of a rule some other file already owns. Each
+# list below is derived from what the tree actually holds, so a retirement
+# lands in it by deleting the file, and a name nobody anticipated is caught the
+# same day it is written.
+#
+# What the deny list held, and where each entry went:
+#
+#   scripts/campaign-{anchors,bound,...}   R3a -- the file is not there
+#   scripts/acquire-repo, campaign-name-session (old paths)   R3a, likewise
+#   scripts/<name> with no extension       R3a
+#   runtime/{holder,executors,claims,handover}   R3b -- not in the set
+#   campaign-claim.py {status,list,alive,stood-down}   R3c -- argparse says
+#   CLAIMED, STOOD DOWN                    dropped. They are words, not paths,
+#                                          and the concepts behind them are
+#                                          gone from the model; a word check
+#                                          could only catch the spelling.
 
-    #105 gave every script here `.py` or `.sh`, so `scripts/campaign-claim`
-    names no file. The names are read from the directory this guard was loaded
-    out of, never listed: the other bans below are literals because they name
-    things that will never come back, and this one names things that arrive --
-    a script added tomorrow is covered with no edit here. The directory exists
-    by construction, the interpreter having just read this file out of it.
+# R3a. Every `scripts/<name>` a code line calls, skill-scoped or not. THE
+# RESOLUTION IS `check-cross-references.py`'s: its `Tree` is the one reader of
+# whether a path exists in this tree, and this asks it rather than restating
+# it. That file reads `.md`, `.markdown` and `.als`; this reads code, so the
+# two cover different files with one rule between them.
+#
+# THE TOKEN MAY NOT END IN PUNCTUATION. `see scripts/install-hooks.sh.` ends a
+# sentence, and a trailing dot swallowed into the token made every such line a
+# finding about a file that is plainly there.
+#
+# THE LOOKBEHIND ADMITS A SLASH, and the first cut of it did not. `(?<![\w./-])`
+# blocked every path-qualified site -- `"$BASE/scripts/campaign-claim.py"`,
+# `$root/scripts/x` -- which is how the skills spell every call they make, so
+# R3a examined none of them and the rule was narrower than the deny list it
+# replaced. What it must still exclude is a token GLUED to a word:
+# `myscripts/x` is not `scripts/x`.
+SCRIPT_CALL = re.compile(
+    r"(?<![\w.-])((?:\.claude/skills/[a-z][a-z0-9-]*/)?"
+    r"scripts/[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])")
 
-    `(?![\\w.-])` is what lets the correct spellings through:
-    `scripts/campaign-claim` is refused, while `scripts/campaign-claim.py` and
-    `scripts/campaign-claim-test.py` both pass.
-    """
-    names = sorted((p.stem for p in Path(__file__).resolve().parent.iterdir()
-                    if p.suffix in (".py", ".sh")), key=len, reverse=True)
-    return re.compile(r"\bscripts/(" + "|".join(re.escape(n) for n in names)
-                      + r")(?![\w.-])")
+# R3b. What `runtime/` may hold, named by what it is FOR: a derived file that
+# can be rebuilt from GitHub, or a process artifact no issue can carry. A
+# record of the work is not in the list, and that is the rule -- AGENTS.md
+# § The three planes says no record of the work lives only in `runtime/`, and
+# this is the machine behind that sentence rather than a second statement of
+# it.
+RUNTIME_ALLOWED = ("repos", "repos.tmp", "campaign-issue-body-derived.md",
+                   "guard.log", "briefed")
+RUNTIME_SUFFIXES = (".pid", ".lock", ".log")
+# `$CAMPAIGN/runtime/holder` is the ordinary spelling, so the lookbehind admits
+# a slash here too. The SECOND alternative is the shape the retired
+# `runtime/claims` entry's own comment named as what a reintroduced reader
+# writes -- a path built segment by segment, which no `runtime/<name>` pattern
+# can see.
+RUNTIME_CALL = re.compile(
+    r"(?<![\w.-])runtime/([A-Za-z0-9][A-Za-z0-9._-]*)"
+    r"|[\"']runtime[\"']\s*[/,]\s*[\"']([A-Za-z0-9][A-Za-z0-9._-]*)[\"']")
+
+# R3c. A `campaign-claim.py <subcommand>` is one argparse defines. Read from
+# the file, so retiring a subcommand is deleting its `add_parser` and nothing
+# else -- the deny list needed an entry per retired verb, and had four.
+# THE LOOKAHEAD IS WHAT KEEPS PROSE OUT. `scripts/campaign-claim.py in a
+# checkout` is a sentence, not a call, and `in` is not a subcommand -- so
+# a real call is recognised by what FOLLOWS the verb: an argument, a
+# placeholder, a flag, or the end of the command.
+CLAIM_CALL = re.compile(
+    r"campaign-claim\.py[\"\']?\s+(?!--)([a-z][a-z-]*)"
+    r"(?=[\"\']?\s*(?:$|[<$0-9\"\']|--))")
 
 
-# A retired name and the issue that retired it, so a finding says why.
-# Prose may name any of these; code may not.
-RETIRED = [
-    (re.compile(r"\bruntime/holder\b"), "#100 -- the holding session is retired"),
-    (re.compile(r"\bruntime/executors\b"), "#59 -- renamed to runtime/claims/, itself retired by #176"),
-    # The bare word, not quoted: a quote immediately after it would miss
-    # `CLAIMED:`, `send(CLAIMED)`, and `CLAIMED <issue>`. R3 only ever reads
-    # code, so prose may still name the message.
-    (re.compile(r"\bCLAIMED\b"), "#59 -- the claim is a record, not an announcement"),
-    # #105 folded eighteen scripts into twelve. These bans are on the *path*,
-    # not the bare word, and deliberately: check-rule-readers keeps
-    # `campaign-anchors`, `campaign-subtasks`, `campaign-settlement` and
-    # `campaign-session-alive` as exemption tokens, one per form, and its suite
-    # writes them into fixtures. Banning the bare word would refuse the table
-    # that is the authoritative record of those tokens. What a reintroduction
-    # actually looks like is a call, and a call names the path.
-    (re.compile(r"\bscripts/campaign-(anchors|bound|subtasks|settlement)\b"),
-     "#105 -- merged into scripts/campaign-tracker.py <subcommand>"),
-    (re.compile(r"\bscripts/campaign-(live|session-alive)\b"),
-     "#105 -- merged into scripts/campaign-claim.py live"),
-    # #176 deleted the record, the brief, the canary and the two prose
-    # comments.
-    #
-    # NO `(?!/)` LOOKAHEAD, and the first cut of these had one. It was meant to
-    # let prose say `runtime/claims/` while banning the bare noun, and it
-    # inverted the intent exactly: a reintroduced READER writes
-    # `runtime/claims/<issue>` or `d / "runtime" / "claims"`, both of which the
-    # lookahead exempted, while the only thing it caught was prose. These match
-    # the path however it is spelled, and a document that must name the retired
-    # shape exempts the block, which is what the exemption is for.
-    (re.compile(r"\bruntime/claims\b|[\"']runtime[\"']\s*[/,]\s*[\"']claims[\"']"),
-     "#176 -- the claim is the branch ref; there is no record"),
-    (re.compile(r"\bruntime/handover\b|[\"']runtime[\"']\s*[/,]\s*[\"']handover[\"']"),
-     "#176 -- the brief is the sub-issue body"),
-    # The comment used to announce a STOOD DOWN ban that no pattern implemented.
-    (re.compile(r"\bSTOOD DOWN\b"),
-     "#176 -- a peer leaves by stopping its pane, not by saying so"),
-    # `\b` before the subcommand and not after `.py`: the skills write
-    # `"$BASE/scripts/campaign-claim.py" stood-down`, where a quote stands
-    # between the path and the space, so a pattern anchored on `.py ` misses
-    # every real call site.
-    (re.compile(r"campaign-claim\.py[\"']?\s+(status|list|alive|stood-down)\b"),
-     "#176 -- retired with the record; take | release | live are what is left"),
-    (re.compile(r"\bscripts/alloy-trace-digest\b"),
-     "#105 -- merged into scripts/alloy-check.py --digest"),
-    # The lookbehind is load-bearing: the destination path *ends* in
-    # `scripts/acquire-repo.sh`, so a bare pattern would refuse every correct call
-    # as well as every stale one.
-    # Same shape as acquire-repo below: the lookbehind lets the NEW path
-    # through, since `.claude/skills/assuming-role/scripts/campaign-name-session.py`
-    # spells the old substring inside the correct one.
-    (re.compile(r"(?<!assuming-role/)\bscripts/campaign-name-session\b"),
-     "#227 -- moved to "
-     ".claude/skills/assuming-role/scripts/campaign-name-session.py"),
-    (re.compile(r"(?<!opening-campaign/)\bscripts/acquire-repo\b"),
-     "#105 -- moved to .claude/skills/opening-campaign/scripts/acquire-repo.sh"),
-    (extensionless_call(),
-     "#105 -- a script carries the extension of its language; add .py or .sh"),
-]
+def load_tree(staged):
+    """(Tree or None, why) -- `check-cross-references.py`'s path resolver.
+
+    Imported by path because these are scripts and not a package. It owns
+    whether a path resolves in this tree; asking it is what keeps R3a from
+    becoming a second reader of that."""
+    src = Path(__file__).resolve().parent / "check-cross-references.py"
+    try:
+        spec = importlib.util.spec_from_loader(
+            "xref", importlib.machinery.SourceFileLoader("xref", str(src)))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.Tree(Path(mod.repo_root()), staged), None
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        return None, f"{e.__class__.__name__}: {e}"
+
+
+def claim_subcommands(root):
+    """Every subcommand `campaign-claim.py` defines.
+
+    Three outcomes, and the caller acts on each differently:
+
+      a set      these are the verbs; R3c judges against them
+      None       the file is not in this tree, so there is no `campaign-claim`
+                 here to call -- R3c does not apply, and R3a already refuses a
+                 call naming a file that is not there
+      raises     never: an unreadable file comes back as `False`, which R3c
+                 reports as `could not look` rather than judging
+
+    READ FROM THE TREE BEING JUDGED, not from this script's own directory. The
+    first cut read its own sibling, so a call in some other checkout was judged
+    against THIS repository's verbs -- and a fixture tree's own
+    `campaign-claim.py` was never consulted at all."""
+    src = Path(root) / "scripts" / "campaign-claim.py"
+    if not src.is_file():
+        return None
+    try:
+        text = src.read_text()
+    except OSError:
+        return False
+    return set(re.findall(r"add_parser\(\"([a-z][a-z-]*)\"", text))
+
 
 # A RECORDED CORPUS IS EVIDENCE, NOT CODE, and R3 does not run over one.
 # `scripts/fixtures/` holds calls this machine's sessions really made, extracted
@@ -346,10 +390,10 @@ def code_lines(text):
 def main():
     staged = "--staged" in sys.argv
     paths = tracked(staged)
+    root = git("rev-parse", "--show-toplevel").strip()
     # Said before any verdict, and on every run: a clean tree and a tree nobody
     # looked at both print nothing otherwise, and the second is what a wrong
     # checkout or an empty file list gives.
-    root = git("rev-parse", "--show-toplevel").strip()
     print(f"check-tree-shape: {len(paths)} tracked path(s) under {root}, "
           f"read from {'the index' if staged else 'the working tree'}")
     findings = []
@@ -380,6 +424,26 @@ def main():
                 note("R2", t, "tracked but not in .gitignore's allowlist")
 
     # R3
+    # ONE READER OF "DOES THIS PATH EXIST HERE", imported rather than restated:
+    # `check-cross-references.py`'s `Tree`. When it will not load, R3a stands
+    # down and says so -- `could not look` is not `every call resolves`.
+    tree, tree_why = load_tree(staged)
+    if tree_why:
+        note("R0", "scripts/check-cross-references.py",
+             f"R3a did not run: the path resolver would not load ({tree_why})")
+    # R3a STANDS DOWN OVER SUITES, for the reason it stands down over the
+    # recorded corpus: a suite's fixtures name paths that deliberately do not
+    # exist -- `scripts/gone.py` is the point of the case it sits in, and a
+    # rule that refused it would refuse every guard's own coverage. R3b and
+    # R3c still run there, because neither depends on a path existing.
+    fixtures = {q for q in paths if q.endswith("-test.py")}
+    subs = claim_subcommands(root)
+    if subs is False or subs == set():
+        note("R0", "scripts/campaign-claim.py",
+             "R3c did not run: the file is here but names no subcommand "
+             + ("(it could not be read)" if subs is False
+                else "(its argparse defines none this could find)"))
+        subs = None
     recorded = [p for p in paths if p.startswith(RECORDED)]
     for p in paths:
         if p in recorded:
@@ -405,15 +469,41 @@ def main():
             continue
         lines = code_lines(text) if spec is None else code_lines_by_comment(text, spec)
         for n, line in lines:
-            for pat, why in RETIRED:
-                if pat.search(line):
-                    note("R3", f"{p}:{n}", f"retired name as code ({why}): {line.strip()[:60]}")
+            for tok in (SCRIPT_CALL.findall(line)
+                        if tree and p not in fixtures else []):
+                if tree.exists(tok):
+                    continue                  # a file or a directory that is there
+                if not tok.endswith((".py", ".sh")):
+                    note("R3a", f"{p}:{n}", f"`{tok}` names no file: a script "
+                                            f"carries the extension of its "
+                                            f"language; add .py or .sh")
+                else:
+                    note("R3a", f"{p}:{n}", f"`{tok}` names no file in this "
+                                            f"tree -- it was renamed, merged "
+                                            f"or moved, and this call was not")
+            for a, b in RUNTIME_CALL.findall(line):
+                tok = a or b
+                if tok in RUNTIME_ALLOWED or tok.endswith(RUNTIME_SUFFIXES):
+                    continue
+                note("R3b", f"{p}:{n}", f"`runtime/{tok}` is not what runtime/ "
+                                        f"holds: {', '.join(RUNTIME_ALLOWED)}, "
+                                        f"or a pid, lock or log. A record of "
+                                        f"the work goes on its issue")
+            if subs:            # empty is `could not look`, not `none allowed`
+                for tok in CLAIM_CALL.findall(line):
+                    if tok not in subs:
+                        note("R3c", f"{p}:{n}", f"`campaign-claim.py {tok}` is "
+                                                f"not a subcommand it defines: "
+                                                f"{' | '.join(sorted(subs))}")
 
     # R4
     for p in paths:
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
             note("R4", p, "a member repository's file in the base plane")
 
+    if fixtures:
+        print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "
+              f"fixture names a path on purpose that is not there")
     if recorded:
         print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
               f"{', '.join(RECORDED)}: a corpus of calls that were really made "

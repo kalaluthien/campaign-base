@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """Refuse a commit on campaign work whose branch is not a claim.
 
+    check-commit-claim.py --is-claim    ANSWER ONLY, refusing nothing: is the
+                                        branch of the checkout this runs in a
+                                        claim? The FIRST WORD of the answer
+                                        is `claim`, `no-claim` or `unknown`,
+                                        and the status agrees: 0, 1, 2.
+                                        `push-campaign-branch.sh` asks it
+                                        rather than matching the branch name
+                                        itself, because a glob there was a
+                                        second reader of `claim_match` and it
+                                        drifted -- `campaign-*/*` went on
+                                        matching the retired form alone, so
+                                        every `<slug>/` claim cut since #181
+                                        committed without ever being pushed.
     check-commit-claim.py [--staged]    pre-commit, run by whichever hook
                                         installed it -- the one
                                         scripts/install-hooks.sh writes in a
@@ -85,8 +98,50 @@ def refuse(lines):
     return 1
 
 
+def answer(guard, why) -> int:
+    """`--is-claim`: three outcomes, and the caller acts on which one.
+
+    It REFUSES NOTHING. The pre-commit half below is the gate; this exists so
+    that a second reader of the branch shape does not have to. `2` is `could
+    not look` and is deliberately not folded into `1`: a caller that pushes on
+    a claim must be able to tell an answered no from an unread question."""
+    if why:
+        print(f"check-commit-claim: could not import the claim reading -- "
+              f"{why}", file=sys.stderr)
+        return 2
+    out, git_why, _ = guard.git(["rev-parse", "--show-toplevel"], os.getcwd())
+    if out is None:
+        print(f"check-commit-claim: git rev-parse --show-toplevel failed in "
+              f"{os.getcwd()}: {git_why}", file=sys.stderr)
+        return 2
+    top = Path(out.strip()).resolve()
+    # THE WORD IS THE ANSWER, not the exit status. Python exits 1 on an
+    # uncaught exception, and the caller reading a bare 1 as "answered no"
+    # would skip the push of a real claim on any bug in here. The word is
+    # printed first on every branch, and the status agrees with it.
+    try:
+        branch, is_claim, source = guard.claim_on(top)
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        print(f"unknown check-commit-claim: the reading raised "
+              f"{e.__class__.__name__}: {e}", file=sys.stderr)
+        return 2
+    if is_claim:
+        print(f"claim check-commit-claim: {branch} is a claim ({source})")
+        return 0
+    if is_claim is None:
+        print(f"unknown check-commit-claim: could not read whether "
+              f"{branch or 'this checkout'} is a claim: {source}",
+              file=sys.stderr)
+        return 2
+    print(f"no-claim check-commit-claim: {branch or 'this checkout'} is not a "
+          f"claim: {source}")
+    return 1
+
+
 def main() -> int:
     guard, why = load_guard()
+    if "--is-claim" in sys.argv[1:]:
+        return answer(guard, why)
     if why:
         return refuse([f"could not import the claim reading -- {why}",
                        "It lives in one script, and this is not it."])

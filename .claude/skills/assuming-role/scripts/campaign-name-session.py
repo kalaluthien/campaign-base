@@ -101,8 +101,10 @@ ROLES = _roles_module().ROLE_WORDS
 #     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:
 #     with the role words absent from the slug, a name holds one `-planner-` or
 #     `-worker-` and NAME's group 1 cannot be anything but the slug. `campaign`
-#     is barred so that the retired `campaign-<N>` form stays distinguishable
-#     from a slug for as long as both are read; see OLD_CAMPAIGN. And the last
+#     is barred so that the retired `campaign-<N>` form cannot come back as a
+#     slug: `campaign-1` satisfies SLUG, and admitting it would re-open the
+#     two-form window #237 closed, this time with nothing marking it as old.
+#     And the last
 #     four are the base's own directories at its root, which is where a
 #     campaign's directory is created: a campaign slugged `docs` or `runtime`
 #     would name a directory the base already owns, and `scripts/guard-corpus.py`
@@ -117,14 +119,12 @@ BASE_DIRS = ("scripts", "spec", "docs", "runtime")
 RESERVED = ("campaign", "planner", "worker") + BASE_DIRS
 SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
-# The retired campaign token, still admitted. Branches cut before #181 are named
-# `campaign-<N>/<issue>-<topic>` and the sessions holding them are named
-# `campaign-<N>-<role>-<n>`; both are read until every such pull request has
-# landed, at which point this constant and its two readers go. Nothing MINTS
-# this form any more: `campaign-claim take` cuts `<slug>/` and refuses a caller
-# whose own name still carries the old token, which is what makes the window
-# close rather than linger.
-OLD_CAMPAIGN = re.compile(r"^campaign-[0-9]+$")
+# THE RETIRED `campaign-<N>` TOKEN IS GONE (#237). It named branches and
+# sessions before #181; it was read beside the slug for one window, which
+# closed when the last such pull request merged and no `campaign-1/` ref was
+# left. What keeps it from returning is not a regex but `RESERVED`: `campaign`
+# is a barred segment, so `campaign-1` is not a slug and no name or branch can
+# be minted or read as one.
 
 # One shape, no branches. The sub-issue is deliberately absent: a session works
 # several sub-issues, in parallel or one after another, and a name that tracked
@@ -151,16 +151,14 @@ def campaign_of(name):
     """The campaign token a session name says it is of, or None.
 
     None covers all three ways a name says nothing: it is not of the shape at
-    all, or its role word is missing, or its leading part is neither a slug nor
-    the retired `campaign-<N>`. A reader that wants to know WHICH campaign
-    compares this against another name's, and the comparison is string equality
-    -- the two forms are deliberately not equated, so a session renamed to its
-    slug is refused its old `campaign-<N>/` claims rather than half-admitted."""
+    all, or its role word is missing, or its leading part is not a slug. A
+    reader that wants to know WHICH campaign compares this against another
+    name's, and the comparison is string equality."""
     m = NAME.match(name or "")
     if not m:
         return None
     token = m.group(1)
-    return token if slug_ok(token) or OLD_CAMPAIGN.match(token) else None
+    return token if slug_ok(token) else None
 
 
 def refuse(why):

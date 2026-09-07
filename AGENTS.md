@@ -275,12 +275,10 @@ for the other, and a missing slug refuses rather than being guessed at.
   atomic across every machine, where a survey-then-file is not. **Every
   sub-issue cuts one**, work that lands no commit included — a repo-less
   campaign's on the base.
-- **The retired form** — before #181 the session name and the branch carried the
-  campaign NUMBER, as `campaign-<N>-<role>-<n>` and `campaign-<N>/<issue>-<topic>`.
-  Every reader still accepts both, and nothing mints the old one; **the two are
-  two names and not two spellings of one**, so rename a session only once the
-  claims it holds have landed. The window closes when the last `campaign-<N>/`
-  pull request has merged.
+- **The retired form is gone** — before #181 a session name and a branch
+  carried the campaign NUMBER. Nothing reads it since #237, and nothing
+  refuses it by name either: `campaign` is a barred slug segment, so
+  `campaign-1` is not a slug and no name or branch can be read as one.
 
 # Campaign work
 
@@ -314,9 +312,9 @@ a campaign issue by its `campaign` label, a sub-issue by its parent, both at onc
 by neither — a defect, reported — and the third kind by neither, which every
 reader leaves alone. The third kind is exempt from the SECTIONS, not from the
 ceilings: a title is a title. A title is a verb-first mission under the title
-ceiling; a body is bullets or tables under the body ceiling; the sections are `##
-Intent`, `## Scope`, `## Done when`, `## Plan`, `## Repos`, `## Lands in`, and a
-kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
+ceiling; a body is bullets or tables under the body ceiling; the sections are
+`## Intent`, `## Scope`, `## Definition of done`, `## Plan`, `## Repos` and
+`## Lands in`, and a kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
 reader: `bind` calls it and prints what it said, `campaign-claim take` calls it
 with `--plan` and refuses on it. Both templates are in
 `.claude/skills/opening-campaign/assets/`.
@@ -444,8 +442,8 @@ what survives the session that opened it.
 ## The campaign issue body
 
 **The campaign issue body is a charter, not a status board.** `## Intent`,
-`## Scope` and `## Done when` say what a person signed up for and change only
-when the scope genuinely changes; the sub-issue index is the decomposition, and
+`## Scope` and `## Definition of done` say what a person signed up for and
+change only when the scope genuinely changes; the sub-issue index is the decomposition, and
 `campaign-tracker settlement <N>` derives progress from it. So the body is written
 at exactly two moments — a scope change, and the close. Adding work is neither,
 and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding a

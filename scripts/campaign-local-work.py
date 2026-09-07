@@ -281,14 +281,17 @@ def read_worktrees(repo, name, rep, prefix=None):
 
 
 def campaign_prefixes(n, rep):
-    """Every branch prefix this campaign's claims can wear, newest first.
+    """Every branch prefix this campaign's claims can wear.
 
-    Two for one window: `<slug>/`, cut since #181, and the `campaign-<N>/` every
-    branch before it carries. The slug comes from `campaign-tracker.py slug`,
-    the one reader of the `campaign:<slug>` label -- read as the WORD it prints,
-    never the exit status. A slug that could not be read narrows the reading to
-    the retired form and is REPORTED, because a narrower sweep that says nothing
-    reads exactly like a machine holding less work than it does."""
+    ONE SINCE #237: `<slug>/`. It was two for one window, the second being the
+    `campaign-<N>/` every branch before #181 carries. The slug comes from
+    `campaign-tracker.py slug`, the one reader of the `campaign:<slug>` label
+    -- read as the WORD it prints, never the exit status.
+
+    A SLUG THAT WOULD NOT READ NOW LEAVES NOTHING, where it used to leave the
+    retired prefix. The empty list is REPORTED and returned, because a sweep
+    that read no prefix and said nothing reads exactly like a machine holding
+    no work."""
     tracker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "campaign-tracker.py")
     try:
@@ -311,19 +314,32 @@ def campaign_prefixes(n, rep):
             why = (f"campaign-tracker slug {n} exited {out.returncode} without "
                    f"a verdict: {out.stderr.strip()[:120] or 'no message'}")
     if why:
-        rep.report(f"REPORT: {why}, so only campaign-{n}/ branches were read. "
-                   f"A branch cut under a slug would not appear below.")
-        return [f"campaign-{n}/"]
-    return [f"{word}/", f"campaign-{n}/"]
+        # `unread`, NOT `report`: this is a place the reading did not happen,
+        # and only `unread` increments `skipped`, which is what denies `clear`.
+        # With `report` the sweep skipped both readings and still summarised
+        # `clear` -- the exact absence-of-findings-from-a-check-that-never-ran
+        # that `unread`'s docstring exists to refuse, and `clear` licenses the
+        # delete.
+        rep.unread(f"REPORT: {why}, so NO branch prefix could be read for "
+                   f"#{n} and no claim of it appears below. This is `could "
+                   f"not look`, not an empty campaign.")
+        return []
+    return [f"{word}/"]
 
 
 def read_base(base, n, rep):
     name = slug(base)
     upstream = default_branch(base, name, rep)
     prefixes = campaign_prefixes(n, rep)
-    read_branches(base, name, rep, upstream,
-                  refspec=[f"refs/heads/{p}" for p in prefixes])
-    read_worktrees(base, name, rep, prefix=tuple(prefixes))
+    # AN EMPTY PREFIX LIST IS NOT AN EMPTY FILTER. Passing it through reached
+    # `git for-each-ref` with no pattern and `read_worktrees`'s `if prefix and`
+    # guard, so a slug that would not read widened the sweep to EVERY branch
+    # and worktree while the note above said no claim would appear. The note
+    # is the truth; these two do not run.
+    if prefixes:
+        read_branches(base, name, rep, upstream,
+                      refspec=[f"refs/heads/{p}" for p in prefixes])
+        read_worktrees(base, name, rep, prefix=tuple(prefixes))
     # The base's single working tree carries no campaign, so it cannot be
     # scoped and is not a blocker on this close -- but a person deciding to
     # delete wants to see it. No --ignored here: the base ignores every

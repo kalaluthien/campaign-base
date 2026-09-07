@@ -95,9 +95,10 @@ def role_of(session_id):
     other is a defect to report.
 
     THE CAMPAIGN IS A TOKEN, not a number: since #181 a session is named for
-    its campaign's SLUG, and `campaign_of` is the one reader that admits the
-    slug and the retired `campaign-<N>` alike. Asking it, rather than reading
-    NAME's group 1, is what keeps this in step with what the guard admits."""
+    its campaign's SLUG, and `campaign_of` is the one reader of which tokens
+    count. Asking it, rather than reading NAME's group 1, is what keeps this in
+    step with what the guard admits -- including #237's narrowing to the slug
+    alone, which reached here without an edit."""
     if not session_id:
         return None, None, "could not read a session id from the payload"
     try:

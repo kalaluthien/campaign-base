@@ -42,18 +42,18 @@ CASES = [
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 md: a retired path in a fence",
-     {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, "R3"),
+     {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, "R3b"),
     ("R3 md: the same path named in prose is a mention",
      {"AGENTS.md": "t\n\n`runtime/holder` is retired with the role.\n"}, None),
     ("R3 md: an indented block is code too",
-     {"AGENTS.md": "t\n\n    cat runtime/holder\n"}, "R3"),
+     {"AGENTS.md": "t\n\n    cat runtime/holder\n"}, "R3b"),
     ("R3 md: an exempted block is spent on the next block",
      {"AGENTS.md": "t\n\n<!-- unguarded: check-tree-shape -- the retired form, quoted -->\n```sh\ncat runtime/holder\n```\n"}, None),
 
     # R3 Alloy -- where the prose lives inside the comment.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 als: a retired name in a signature",
-     {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3"),
+     {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3b"),
     ("R3 als: the same name inside a block comment",
      {"spec/a.als": "/*\n * `runtime/holder` is retired with the role.\n */\nsig S {}\n"}, None),
     ("R3 als: after a // line comment",
@@ -63,25 +63,25 @@ CASES = [
     ("R3 als: the earliest line-comment marker wins, not the first in the table",
      {"spec/a.als": "sig S {} -- runtime/holder // x\n"}, None),
     ("R3 als: a one-line block comment does not swallow the rest of the file",
-     {"spec/a.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3"),
+     {"spec/a.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3b"),
 
     # R3 scripts -- docstring and hash prose.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a retired path in code",
-     {"scripts/x.py": 'open("runtime/holder")\n'}, "R3"),
+     {"scripts/x.py": 'open("runtime/holder")\n'}, "R3b"),
     ("R3 py: the same path in the docstring",
      {"scripts/x.py": '"""Why runtime/holder went away."""\nx = 1\n'}, None),
     ("R3 py: after a hash",
      {"scripts/x.py": "x = 1  # runtime/holder is retired\n"}, None),
     ("R3 py: code before a trailing hash still counts",
-     {"scripts/x.py": 'open("runtime/holder")  # a note\n'}, "R3"),
+     {"scripts/x.py": 'open("runtime/holder")  # a note\n'}, "R3b"),
 
     # The exemption itself, which is a branch and needs pinning both ways.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a marker exempts the run of code below it",
      {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nopen("runtime/holder")\n'}, None),
     ("R3 py: the exemption is spent at the next blank line",
-     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3"),
+     {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3b"),
     ("R3 als: the marker is read on a block comment's opening line",
      {"spec/a.als": "/* unguarded: check-tree-shape -- fixture */\nsig S { h: runtime/holder }\n"}, None),
     # A block comment runs many lines and the marker is usually not on the
@@ -98,10 +98,10 @@ CASES = [
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 py: a docstring explaining the marker is not a marker",
      {"scripts/x.py": DQ + "The `unguarded:` marker exempts the code below.\n"
-                      + DQ + '\nopen("runtime/holder")\n'}, "R3"),
+                      + DQ + '\nopen("runtime/holder")\n'}, "R3b"),
     ("R3 py: a marker naming another guard's token exempts nothing here",
      {"scripts/x.py": "# unguarded: campaign-repos -- check-rule-readers' token\n"
-                      'open("runtime/holder")\n'}, "R3"),
+                      'open("runtime/holder")\n'}, "R3b"),
 
     # The exemption reaches the code the comment sits on top of, and no
     # further back than the last thing that comment says. Without the second
@@ -113,7 +113,7 @@ CASES = [
     ("R3 py: ...and prose after the marker spends it before the code",
      {"scripts/x.py": DQ + "Docs.\nunguarded: check-tree-shape -- fixture\n"
                       "More prose, and the marker is no longer what this says.\n"
-                      + DQ + '\nopen("runtime/holder")\n'}, "R3"),
+                      + DQ + '\nopen("runtime/holder")\n'}, "R3b"),
 
     # A hash or a triple quote inside a string literal is indistinguishable
     # from a comment to this cut, so neither may spend an exemption granted
@@ -129,7 +129,7 @@ CASES = [
     # R3 html -- the language a path grep in one syntax cannot see.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 html: a retired path in markup",
-     {"docs/x.html": "<code>runtime/holder</code>\n"}, "R3"),
+     {"docs/x.html": "<code>runtime/holder</code>\n"}, "R3b"),
     ("R3 html: the same path in an html comment",
      {"docs/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
 
@@ -145,7 +145,7 @@ CASES = [
     # empty marker lists must not make the whole file read as prose.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 json: a language with no comments is all code",
-     {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3"),
+     {"scripts/x.json": '{"path": "runtime/holder"}\n'}, "R3b"),
 
     # RECORDED -- a corpus of calls that were really made. R3 stands down over
     # it and nothing else does, so the four cases below break the exemption
@@ -159,7 +159,7 @@ CASES = [
      {"scripts/fixtures/older.jsonl":
       '{"command": "cat runtime/handover/7.md", "tool": "Bash"}\n'}, None),
     ("R3 ...but the exemption is the PATH and not the suffix",
-     {"scripts/x.jsonl": '{"path": "runtime/holder"}\n'}, "R3"),
+     {"scripts/x.jsonl": '{"path": "runtime/holder"}\n'}, "R3b"),
     ("R4 still runs over a recorded path",
      {"scripts/fixtures/repos/member/x.jsonl": '{"a": 1}\n'}, "R4"),
 
@@ -177,9 +177,7 @@ CASES = [
     # that pattern from RETIRED would leave the suite green.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 the runtime/executors path is retired too",
-     {"scripts/x.py": 'open("runtime/executors/62")\n'}, "R3"),
-    ("R3 CLAIMED as a string literal is the retired announcement",
-     {"scripts/x.py": 'send("CLAIMED")\n'}, "R3"),
+     {"scripts/x.py": 'open("runtime/executors/62")\n'}, "R3b"),
     ("R3 ...but the word in prose is a mention",
      {"AGENTS.md": "t\n\nThe `CLAIMED` message was retired by #59.\n"}, None),
 
@@ -189,32 +187,36 @@ CASES = [
     # any one name from its alternation now fails the case that spells it.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 scripts/campaign-anchors is retired",
-     {"scripts/x.py": 'run("scripts/campaign-anchors")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-anchors")\n'}, "R3a"),
     ("R3 scripts/campaign-bound is retired",
-     {"scripts/x.py": 'run("scripts/campaign-bound", "1")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-bound", "1")\n'}, "R3a"),
     ("R3 scripts/campaign-subtasks is retired",
-     {"scripts/x.py": 'run("scripts/campaign-subtasks", "1")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-subtasks", "1")\n'}, "R3a"),
     ("R3 scripts/campaign-settlement is retired",
-     {"scripts/x.py": 'run("scripts/campaign-settlement", "1")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-settlement", "1")\n'}, "R3a"),
     ("R3 scripts/campaign-live is retired",
-     {"scripts/x.py": 'run("scripts/campaign-live", "1")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-live", "1")\n'}, "R3a"),
     ("R3 scripts/campaign-session-alive is retired",
-     {"scripts/x.py": 'run("scripts/campaign-session-alive", "1")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-session-alive", "1")\n'}, "R3a"),
     ("R3 scripts/alloy-trace-digest is retired",
-     {"scripts/x.py": 'run("scripts/alloy-trace-digest", "s.txt")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/alloy-trace-digest", "s.txt")\n'}, "R3a"),
     ("R3 a bare scripts/acquire-repo is the stale call",
-     {"scripts/x.py": 'run("scripts/acquire-repo.sh", "o/r")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/acquire-repo.sh", "o/r")\n'}, "R3a"),
+    # THE ALLOW SIDE IS A FILE THAT IS THERE. R3a resolves against the tree it
+    # is judging, so these fixtures carry the file they name -- which is the
+    # rule stated from the other end: a call is fine exactly when its target
+    # exists here.
     ("R3 ...and the moved path is the correct one",
-     {"scripts/x.py": 'run(".claude/skills/opening-campaign/scripts/acquire-repo.sh", "o/r")\n'}, None),
+     {"scripts/x.py": 'run(".claude/skills/opening-campaign/scripts/acquire-repo.sh", "o/r")\n',
+      ".claude/skills/opening-campaign/scripts/acquire-repo.sh": "#!/bin/sh\n",
+      # `.claude/` needs its allowlist line or R2 answers before R3a does.
+      ".gitignore": IGNORE + "!/.claude/\n"}, None),
     ("R3 the live tracker subcommand is not a retired name",
-     {"scripts/x.py": 'run("scripts/campaign-tracker.py", "campaign-issues")\n'}, None),
+     {"scripts/x.py": 'run("scripts/campaign-tracker.py", "campaign-issues")\n',
+      "scripts/campaign-tracker.py": "x = 1\n"}, None),
 
     # The forms a quote-immediately-after-the-word pattern would miss. One
     # case each.
-    # unguarded: check-tree-shape -- fixtures must spell the names it bans
-    ("R3 CLAIMED followed by a colon", {"scripts/x.py": 'x = "CLAIMED: 7"\n'}, "R3"),
-    ("R3 CLAIMED passed bare to a call", {"scripts/x.py": "send(CLAIMED)\n"}, "R3"),
-    ("R3 CLAIMED with an argument after it", {"scripts/x.py": "msg = CLAIMED 7\n"}, "R3"),
 
     # A single-quoted docstring is prose too; the table declared only the
     # double-quoted form, so a retired name mentioned in one read as code.
@@ -237,7 +239,7 @@ CASES = [
      {"scripts/x": "#!/usr/bin/env python3\n" + SQ
       + "about runtime/holder" + SQ + "\nx = 1\n"}, None),
     ("R3 ...and its code is still code",
-     {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3"),
+     {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3b"),
 
     # Shell, which #105 gave a suffix of its own. Before it, every shell script
     # was extensionless and reached PROSE through the "" entry; a `.sh` with no
@@ -247,7 +249,7 @@ CASES = [
     ("R3 sh: a # comment is prose",
      {"scripts/x.sh": "#!/usr/bin/env sh\n# about runtime/holder\n"}, None),
     ("R3 ...and a .sh file's code is still code",
-     {"scripts/x.sh": "#!/usr/bin/env sh\ngrep runtime/holder .\n"}, "R3"),
+     {"scripts/x.sh": "#!/usr/bin/env sh\ngrep runtime/holder .\n"}, "R3b"),
 
     # The extensionless-call ban, whose name list is read from the scripts
     # directory rather than written down. Three cases, because the lookahead
@@ -255,11 +257,39 @@ CASES = [
     # drop it and the first two below still pass while the last two fail.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 a call to a script here that omits its extension",
-     {"scripts/x.py": 'run("scripts/campaign-claim")\n'}, "R3"),
+     {"scripts/x.py": 'run("scripts/campaign-claim")\n'}, "R3a"),
+    # THE THREE ALLOW-LISTS, from the allow side (#237). Each pair is one
+    # thing the list admits and one it does not, so neither covers the other.
+    ("R3b runtime/ may hold what is derived or a process artifact",
+     {"scripts/x.py": 'open("runtime/repos"); open("runtime/guard.log")\n'
+                      'open("runtime/agent.pid"); open("runtime/x.lock")\n'}, None),
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3b ...but not a record of the work, whatever it is called",
+     {"scripts/x.py": 'open("runtime/planner-state.md")\n'}, "R3b"),
+    ("R3b ...and the message names the set rather than the retired word",
+     {"scripts/x.py": 'open("runtime/holder")\n'}, "R3b"),
+    ("R3c a subcommand argparse defines is a call",
+     {"scripts/x.py": 'run("scripts/campaign-claim.py take 1 7 topic")\n',
+      "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, None),
+    # unguarded: check-tree-shape -- fixtures must spell the names it refuses
+    ("R3c ...and one it does not define is not",
+     {"scripts/x.py": 'run("scripts/campaign-claim.py stood-down 7")\n',
+      "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, "R3c"),
+    # THE SENTENCE THAT IS NOT A CALL. R3c reads code, and code quotes prose:
+    # `scripts/campaign-claim.py in a checkout` is a sentence, and `in` is not
+    # a subcommand. What tells them apart is what follows the verb.
+    ("R3c prose naming the script is not a call",
+     {"scripts/x.py": 'DOC = "scripts/campaign-claim.py in a checkout"\n',
+      "scripts/campaign-claim.py": 'sub.add_parser("take")\n'}, None),
+    ("R3a ...and a suite may name a path that is not there",
+     {"scripts/x-test.py": 'CASES = [{"scripts/gone.py": "x"}]\n'}, None),
+
     ("R3 ...and the correct spelling is not a finding",
-     {"scripts/x.py": 'run("scripts/campaign-claim.py")\n'}, None),
+     {"scripts/x.py": 'run("scripts/campaign-claim.py")\n',
+      "scripts/campaign-claim.py": "x = 1\n"}, None),
     ("R3 ...nor is a suite, whose stem opens with a banned name",
-     {"scripts/x.py": 'run("scripts/campaign-claim-test.py")\n'}, None),
+     {"scripts/x.py": 'run("scripts/campaign-claim-test.py")\n',
+      "scripts/campaign-claim-test.py": "x = 1\n"}, None),
 
     # R4
     ("R4 a member repository's file", {"repos/web/a.py": "x = 1\n"}, "R4"),
@@ -309,7 +339,7 @@ STAGED_CASES = [
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("--staged judges what is staged, not what is on disk",
      {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"},
-     {"AGENTS.md": "t\n\nclean now\n"}, "R3"),
+     {"AGENTS.md": "t\n\nclean now\n"}, "R3b"),
     ("--staged does not fire on a violation only the working tree has",
      {"AGENTS.md": "t\n\nclean\n"},
      {"AGENTS.md": "t\n\n```sh\ncat runtime/holder\n```\n"}, None),

@@ -25,12 +25,14 @@ leaves the others live and unflagged, so all four are here.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and
-      each skill may keep its own, and prose in a skill cites both -- 17 of the
+      each skill may keep its own, and prose in a skill cites both -- 29 of the
       references in the tree today name the repository's from inside a skill.
       Asking one root would flag those; asking both still catches the only
       failure that matters, a path naming no file anywhere. A leading `$BASE/`,
       which is how every skill spells a command a session runs, is stripped
-      before any shape is asked. Added by #227,
+      before any shape is asked -- and NARROWS S5 TO ONE ROOT, the tree's,
+      because `$BASE` is that root and a base-rooted path resolving against a
+      skill's own `scripts/` is a command that will not run. Added by #227,
       after that sub-issue moved a script under a skill and left six prose
       citations of the old path standing -- `check-tree-shape`'s RETIRED row
       reads code lines only, so a path grep found them and no guard did.
@@ -449,57 +451,77 @@ def check_paths(rel, text, tree, report):
 
         # `$BASE/` IS THE ONE VARIABLE THIS TREE PRESCRIBES for the base root
         # (AGENTS.md § The three planes), and every skill spells its commands
-        # with it -- 17 citations do. `RUN` cannot hold a `$`, so what arrives
-        # here is `BASE/...`, which matched no prefix and fell into `unshaped`:
-        # the shapes below were checking 121 references while 17 script paths a
-        # session is told to RUN went unchecked, including the one #227's own
-        # sweep had just repaired. Stripped before shaping, so the same rules
-        # decide it.
-        if tok.startswith("BASE/"):
+        # with it -- 18 tokens in the tree today do. `RUN` cannot hold a `$`,
+        # so what arrives here is `BASE/...`, which matched no prefix and fell
+        # into `unshaped`: the shapes below were checking 121 references while
+        # 15 more a session is told to RUN went unchecked -- 12 script paths
+        # and 3 skill paths, the one #227's own sweep had just repaired among
+        # them. Stripped before shaping, so the same shapes decide it.
+        #
+        # BUT IT IS ALSO WHAT MAKES THE PATH UNAMBIGUOUS, and that must not be
+        # thrown away with the prefix. `$BASE` IS the repository root, so a
+        # base-rooted path has ONE root and never S5's two: a skill that cites
+        # `$BASE/scripts/x.py` while `x.py` lives only under that skill's own
+        # `scripts/` is prescribing a command that exits `No such file or
+        # directory`, which is exactly the class #227 was opened to repair.
+        # Asking both roots reports it resolved. So `based` narrows S5 to the
+        # tree root, and `shown` keeps the `$BASE/` spelling in every line
+        # printed, because a reader cannot grep the file for a token this
+        # guard rewrote.
+        based = tok.startswith("BASE/")
+        if based:
             tok = tok[len("BASE/"):]
+            # A bare `$BASE/` names the root itself, not a file under it. Two
+            # SKILL.md files spell one. Reported as `unshaped` it printed an
+            # EMPTY token, a finding naming nothing.
+            if not tok:
+                continue
+        shown = f"$BASE/{tok}" if based else tok
 
         if "<" in tok or ">" in tok or "*" in tok:
-            report.template.append((rel, n, tok, "names a form, not a file"))
+            report.template.append((rel, n, shown, "names a form, not a file"))
             continue
 
         if tok.startswith(ABSOLUTE_PREFIXES):
             shape = "S2" if tok.startswith(".claude/") else "S3"
             if tree.exists(tok):
-                report.resolved.append((rel, n, tok, f"{shape}, tree root"))
+                report.resolved.append((rel, n, shown, f"{shape}, tree root"))
             else:
                 report.dangling.append(
-                    (rel, n, tok, f"{shape}: nothing at this path in the tree"))
+                    (rel, n, shown, f"{shape}: nothing at this path in the tree"))
             continue
 
         if tok.startswith(SCRIPT_PREFIX) and tok.endswith(SCRIPT_SUFFIXES):
-            roots = [""] + ([root] if root else [])
+            roots = [""] if based else [""] + ([root] if root else [])
             where = [r for r in roots
                      if tree.exists(f"{r}/{tok}" if r else tok)]
             if where:
                 report.resolved.append(
-                    (rel, n, tok, f"S5, under {where[0] or 'tree root'}"))
+                    (rel, n, shown, f"S5, under {where[0] or 'tree root'}"))
             else:
                 report.dangling.append(
-                    (rel, n, tok,
+                    (rel, n, shown,
                      "S5: nothing at this path under the tree root"
-                     + (f" or under {root}" if root else "")))
+                     + (f" or under {root}" if root and not based else "")
+                     + (" -- `$BASE/` names the tree root, so the citing "
+                        "skill's own scripts/ is not asked" if based else "")))
             continue
 
         if tok.startswith(RELATIVE_PREFIXES):
             if root is None:
                 report.undecided.append(
-                    (rel, n, tok, "U2",
+                    (rel, n, shown, "U2",
                      "a relative skill path in a file inside no skill: it "
                      "names no root to resolve against"))
                 continue
             if tree.exists(f"{root}/{tok}"):
-                report.resolved.append((rel, n, tok, f"S4, under {root}"))
+                report.resolved.append((rel, n, shown, f"S4, under {root}"))
             else:
                 report.dangling.append(
-                    (rel, n, tok, f"S4: nothing at {root}/{tok}"))
+                    (rel, n, shown, f"S4: nothing at {root}/{tok}"))
             continue
 
-        report.unshaped.append((rel, n, tok, "no shape rule claims it"))
+        report.unshaped.append((rel, n, shown, "no shape rule claims it"))
 
 
 def main(argv):
@@ -528,8 +550,8 @@ def main(argv):
         # files ARE the spec and their comments are its prose, so a citation
         # there is as load-bearing as one in a document -- and #227 left a
         # retired script path standing in `github/system.als` that a
-        # markdown-only sweep could not see. Three of these files cite a
-        # heading with `§` as well, and those resolve too.
+        # markdown-only sweep could not see. Three `§` citations, across two of
+        # these files, are read as well, and those resolve too.
         paths = [p for p in tracked(root)
                  if p.endswith((".md", ".markdown", ".als"))]
 

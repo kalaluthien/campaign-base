@@ -2034,14 +2034,61 @@ def main():
         src = GUARD.read_text().replace("def classify(", "def _classify_off(", 1)
         broken.write_text(src)
         f = Fixture(d, claims=("campaign-1/7-x",))
-        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken)
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken,
+                run_cwd=f.base)
         check("a guard that raises where nothing predicted it allows the call "
               "and says it did not judge it",
-              r.returncode == 0 and "did not judge this call" in r.stderr,
+              r.returncode == 0 and "did not judge this call" in r.stdout,
               f"exit {r.returncode}: {out(r)[:300]}")
         check("...and it never exits 1, which the harness reads as the hook's "
               "own error",
               r.returncode != 1, f"exit {r.returncode}")
+        # ON STDOUT, NOT STDERR. An exit-0 hook reaches the session through
+        # stdout, so a loud allow announced only on stderr is a message with no
+        # reader -- and the assertion has to name the channel, because
+        # `stdout + stderr` is satisfied by either.
+        check("...and it says so on stdout, the channel an exit-0 hook is read "
+              "on",
+              "did not judge this call" in r.stdout, out(r)[:300])
+        # AND IT LOGS. `guard-precision.py` reads every non-REFUSED row as an
+        # allow, so a guard crashing on every call must not look like a quiet
+        # one. Asserted on the row's verdict word and its session, not on the
+        # file existing: a row with no session is one nothing can pair.
+        # READ DEFENSIVELY: the mutation this case exists to kill is "the
+        # handler logs nothing", which leaves no file at all -- and a
+        # `read_text` raising there kills the SUITE in a traceback instead of
+        # failing this case by name, so the mutant survives as a crash.
+        log = f.base / "runtime" / "guard.log"
+        rows = [json.loads(ln) for ln in
+                (log.read_text().splitlines() if log.is_file() else [])]
+        check("...and it writes a GUARD FAILED row carrying the session, so a "
+              "guard failing on every call is not read as a quiet one",
+              any(x["verdict"] == "GUARD FAILED" and x["session"] == "sid-1"
+                  for x in rows), str(rows)[:300])
+        check("...and it says beside the message whether that row landed",
+              "logged to" in r.stdout, out(r)[:300])
+
+    # A CRASH AFTER THE VERDICT IS NOT AN UNJUDGED CALL. The handler above
+    # wraps all of `main`, the log write included, so an exception past the
+    # decision would turn a decided REFUSED into exit 0 announcing that nothing
+    # was judged -- the guard's own bug reopening the write it had just closed.
+    # Broken here in `log_verdict`, the one thing `main` does after the verdict.
+    with tempfile.TemporaryDirectory() as d:
+        broken = Path(d) / "late-crash-guard.py"
+        src = GUARD.read_text().replace(
+            "    path, how = log_path(target, cwd)",
+            "    raise RuntimeError('late'); path, how = log_path(target, cwd)",
+            1)
+        broken.write_text(src)
+        f = Fixture(d, claims=())          # no claim: the verdict is REFUSED
+        r = ask(f.base, tool="Edit", path=str(f.base / "a.txt"), guard=broken,
+                run_cwd=f.base)
+        check("a crash AFTER the verdict keeps the refusal, exit 2",
+              r.returncode == 2, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the verdict stands rather than that it judged "
+              "nothing",
+              "STANDS" in out(r) and "did not judge this call" not in out(r),
+              out(r)[:300])
 
     if not ran:
         print("FAIL  the suite ran no case at all")

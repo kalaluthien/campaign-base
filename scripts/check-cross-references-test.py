@@ -181,6 +181,26 @@ CASES = [
     ("S5 a `$BASE/`-prefixed script at neither root dangles",
      {"a.md": "Run `\"$BASE/scripts/gone.py\" bind 1` for it.\n"},
      ("DANGLING", "scripts/gone.py")),
+    # `$BASE` IS THE TREE ROOT, so a base-rooted path has one root and not
+    # S5's two. This skill's own `scripts/demo-helper.sh` exists; the command
+    # the prose prescribes still exits `No such file or directory`, because
+    # `$BASE/scripts/demo-helper.sh` is not a file. Asking both roots reports
+    # it resolved, which is the class #227 was opened to repair.
+    ("a `$BASE/` script living only under the citing skill dangles",
+     {f"{SKILL}/references/z.md":
+      "Run `\"$BASE/scripts/demo-helper.sh\"` first.\n"},
+     ("DANGLING", "$BASE/scripts/demo-helper.sh")),
+    # The same path WITHOUT `$BASE/` is the two-root rule's own row, and stays
+    # resolved: the narrowing must bite on the prefix and nothing else.
+    ("...while the same path unprefixed still resolves against the skill",
+     {f"{SKILL}/references/z.md": "Run `scripts/demo-helper.sh` first.\n"},
+     None),
+    # THE `$BASE/` SPELLING IS KEPT IN THE LINE. The guard rewrites the token
+    # to shape it; a finding printed as `scripts/gone.py` sends a reader to
+    # grep the file for a string that is not in it.
+    ("a dangling `$BASE/` path is printed with the prefix the file wrote",
+     {"a.md": "Run `\"$BASE/scripts/nowhere.py\"` for it.\n"},
+     ("DANGLING", "$BASE/scripts/nowhere.py")),
     ("S2 reads a `$BASE/`-prefixed skill path too",
      {"a.md": f"Run `\"$BASE/{SKILL}/scripts/gone.sh\"` for it.\n"},
      ("DANGLING", f"{SKILL}/scripts/gone.sh")),
@@ -288,6 +308,21 @@ def main():
         failed += 1
         print("FAIL  --list shows the template bucket\n"
               f"      got: {r.stdout.strip()[:300]}")
+
+    # A BARE `$BASE/` NAMES THE ROOT, not a file under it, and two SKILL.md
+    # files spell one. Stripped, it left an EMPTY token that `unshaped` printed
+    # as a line naming nothing; it is dropped before shaping instead. Asserted
+    # on the printed LINE and not on the bucket counts, which any other token
+    # in the fixture also moves.
+    extra += 1
+    r = run_case({"a.md": "Resolve it as `$BASE/` and go.\n"}, args=("--list",))
+    bare = [ln for ln in r.stdout.splitlines()
+            if ln.startswith(("unshaped\t", "template\t", "DANGLING", "UNDECIDED"))
+            and ln.split("\t")[2] in ("", "$BASE/")]
+    if bare:
+        failed += 1
+        print("FAIL  a bare `$BASE/` names the root and is reported as nothing\n"
+              f"      got: {bare[0][:200]}")
 
     total = len(CASES) + extra
     print(f"{total - failed}/{total} cases pass")

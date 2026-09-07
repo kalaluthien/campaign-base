@@ -40,7 +40,10 @@ outside one; a call under no base is not campaign work and is not logged.
 `verdictIsDurable`. The log is written after the verdict is decided, so it can
 change nothing, and whether it was written is PRINTED beside the verdict --
 a log that quietly stopped being written reads exactly like a log with nothing
-to say. Both directories are git-ignored: this is machine-local scratch.
+to say. Both directories are git-ignored: this is machine-local scratch. A
+guard that CRASHED logs too, as verdict `GUARD FAILED`, for that same reason:
+`guard-precision.py` reads every non-`REFUSED` row as an allow, so a guard
+failing on every call would otherwise be a quiet one.
 
 WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
@@ -1877,6 +1880,11 @@ def main() -> int:
     # command, which is what there was to read.
     try:
         payload = json.load(sys.stdin)
+        # KEPT FOR THE LAST RESORT below, which has no other way to reach it:
+        # a row logged without the session id is a row `guard-precision.py`
+        # cannot pair with anything, and `os.getcwd()` is the guard's own
+        # directory rather than the call's.
+        LAST["payload"] = payload
     except (ValueError, OSError) as e:
         payload = {}
         status = refuse([f"the hook payload would not read "
@@ -1902,6 +1910,11 @@ def main() -> int:
         cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
     except OSError:
         cwd = Path(".")
+    # THE VERDICT IS REACHED HERE, and the last resort below reads this to tell
+    # its two cases apart: a crash BEFORE this line judged nothing, and a crash
+    # after it -- in the log write, or anywhere past it -- must not turn a
+    # decided REFUSED into an exit 0 announcing that nothing was judged.
+    LAST["status"] = status
     note = log_verdict(payload, status, LAST.get("target"), cwd)
     print(note, file=sys.stderr if status else sys.stdout)
     return status
@@ -1917,6 +1930,18 @@ def main() -> int:
 # the machine, which is the failure `role_of`'s fallback exists to prevent.
 # Each site that CAN fail is still handled where it is, and named there; this
 # only stops the ones nobody predicted from being invisible.
+#
+# ON STDOUT, like `allow`, and not on stderr like `refuse`: what a PreToolUse
+# hook writes on an exit-0 path reaches the session through stdout, and a
+# message on the channel the harness reads only for a refusal is a loud allow
+# that nothing hears.
+#
+# AND IT WRITES ITS OWN ROW. `guard-precision.py` counts every non-REFUSED row
+# as an allow, so a crash that logs nothing is indistinguishable from a guard
+# with nothing to say -- a guard failing on EVERY call would read as a quiet
+# one. The row is best effort by construction: whatever raised may be the very
+# thing the log write needs, so its own failure is caught and said, never
+# raised on top of the first.
 if __name__ == "__main__":
     try:
         sys.exit(main())
@@ -1924,9 +1949,28 @@ if __name__ == "__main__":
         raise
     except Exception as e:                   # noqa: BLE001 -- announced, not raised
         import traceback
-        print(f"check-campaign-claim: the guard FAILED and did not judge this "
-              f"call ({e.__class__.__name__}: {e}). The call is allowed "
-              f"unjudged; this is a defect in the guard, not a verdict.",
-              file=sys.stderr)
+        decided = LAST.get("status")
+        LAST.update(verdict="GUARD FAILED",
+                    reason=f"the guard raised {e.__class__.__name__}: {e}")
+        crashed = LAST.get("payload") or {}
+        try:
+            note = log_verdict(crashed, 0 if decided is None else decided,
+                               LAST.get("target"),
+                               Path(crashed.get("cwd") or os.getcwd()))
+        except Exception as e2:              # noqa: BLE001 -- the log is not the verdict
+            note = (f"verdict not logged: the log write itself raised "
+                    f"{e2.__class__.__name__}")
+        if decided is None:
+            print(f"check-campaign-claim: the guard FAILED and did not judge "
+                  f"this call ({e.__class__.__name__}: {e}). The call is "
+                  f"allowed unjudged; this is a defect in the guard, not a "
+                  f"verdict. {note}")
+            traceback.print_exc(file=sys.stderr)
+            sys.exit(0)
+        print(f"check-campaign-claim: the verdict was reached and STANDS "
+              f"(exit {decided}); the guard then FAILED after it "
+              f"({e.__class__.__name__}: {e}). This is a defect in the guard, "
+              f"not a change to the verdict. {note}",
+              file=sys.stderr if decided else sys.stdout)
         traceback.print_exc(file=sys.stderr)
-        sys.exit(0)
+        sys.exit(decided)

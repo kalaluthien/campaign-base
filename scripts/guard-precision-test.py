@@ -212,6 +212,18 @@ def main():
               str(base / "spec" / "runtime" / "guard.log") not in out,
               out[:600])
 
+    # A `GUARD FAILED` ROW IS NOT AN ALLOW. The count used to be
+    # `len(rows) - len(refusals)`, so the guard's own crash rows were added to
+    # the allows and a guard failing on every call read as one permitting every
+    # call. Asserted on the printed counts, not on the exit status, which a
+    # miscount leaves at 0.
+    rc, out = run([row("00", S1, "GUARD FAILED", "the guard raised KeyError"),
+                   row("01", S1, "allowed", COVERED, "gh issue close 9")])
+    check("a GUARD FAILED row is counted apart from the allows",
+          "1 allow(s)" in out and "1 'GUARD FAILED'" in out, out[:400])
+    check("...and it is not folded into the refusals either",
+          "0 refusal(s)" in out, out[:400])
+
     if not RAN:
         print("FAIL  the suite ran no case at all")
         return 1

@@ -367,7 +367,9 @@ def main():
     # are in the list because `json.loads` returns them from a file a person
     # could plausibly leave behind, and neither is caught by the ValueError
     # branch above.
-    for body in ("[]", '"a string"', "5", "null", "true"):
+    for body, named in (("[]", "holds list"), ('"a string"', "holds str"),
+                        ("5", "holds int"), ("null", "holds NoneType"),
+                        ("true", "holds bool"), ("1.5", "holds float")):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
             root, home = Path(d), Path(h)
             (root / "scripts").mkdir()
@@ -380,12 +382,15 @@ def main():
                 [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
                 capture_output=True, text=True,
                 env=dict(os.environ, HOME=str(home)))
+            # `named` and not just the tail: the type is the only part of
+            # the message that varies across these, so a case reading the tail
+            # alone passes with the whole `type(...).__name__` replaced by a
+            # constant, and one fixture then stands in for all six.
             check(f"a settings file holding {body} is named as a shape this "
                   f"could not read, and the listing still arrives",
                   r.returncode == 0 and "run unasked" in r.stdout
-                  and "where an object was expected" in r.stdout
-                  and "Traceback" not in r.stderr,
-                  )
+                  and f"{named} where an object was expected" in r.stdout
+                  and "Traceback" not in r.stderr)
 
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed

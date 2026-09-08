@@ -192,7 +192,7 @@ def harness_run(settings_path, names):
     is this announcement stating something it did not observe -- the failure it
     exists to prevent, pointed at itself.
 
-    Four sentences, and two of them are also problems. Absent is a
+    Four sentences, and three of them are also problems. Only absence is a
     reading: three sources are read and two are absent on an ordinary checkout,
     so a `!!` each would put two lines of alarm into every session start. A
     file present but unreadable, and a `hooks` that is not an object, are

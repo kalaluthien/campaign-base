@@ -192,12 +192,16 @@ def harness_run(settings_path, names):
     is this announcement stating something it did not observe -- the failure it
     exists to prevent, pointed at itself.
 
-    Three sentences, and only one of them is also a problem. Absent is a
+    Four sentences, and two of them are also problems. Absent is a
     reading: three sources are read and two are absent on an ordinary checkout,
     so a `!!` each would put two lines of alarm into every session start. A
     file present but unreadable, and a `hooks` that is not an object, are
-    problems -- what the harness runs there is unknown. A file with NO `hooks`
-    key at all is neither: it was read and registers nothing, which is the
+    problems -- and so is a file whose top-level value is not an object at all,
+    which used to reach `.get` and raise an AttributeError no `except` here
+    caught, taking the WHOLE announcement down with it: a SessionStart hook that
+    exits non-zero has its stdout dropped, so one malformed settings file
+    deleted the listing rather than one line of it. A file with NO `hooks` key
+    at all is none of these: it was read and registers nothing, which is the
     ordinary shape of .claude/settings.local.json, holding a person's
     permissions and no hook.
 
@@ -216,6 +220,10 @@ def harness_run(settings_path, names):
     except (OSError, ValueError) as e:
         why = (f"would not read ({e.__class__.__name__}), so what the harness "
                f"runs there is unknown")
+        return why, [f"{settings_path} {why}"]
+    if not isinstance(settings, dict):
+        why = (f"holds {type(settings).__name__} where an object was expected, "
+               f"so what it registers is unknown")
         return why, [f"{settings_path} {why}"]
     hooks = settings.get("hooks")
     if hooks is None:

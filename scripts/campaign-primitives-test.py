@@ -349,14 +349,43 @@ def main():
               and not [l for l in out.splitlines() if "!!" in l and user in l])
         check("a `hooks` that is not an object is a problem, since what it "
               "registers is unknown",
-              [l for l in out.splitlines() if "!!" in l and proj in l]
+              [l for l in out.splitlines() if "!!" in l and proj in l
+               and "is not an object" in l]
               and f"harness hooks in {proj}" not in out)
         check("a settings file that would not read announces no count either, "
               "a count there being a reading it never made",
               [l for l in out.splitlines() if "!!" in l and local in l]
               and f"harness hooks in {local}" not in out)
-        check("...and none of the three suppresses the listing",
+        check("...and none of these suppresses the listing",
               r.returncode == 0 and "run unasked" in out)
+
+    # A TOP-LEVEL VALUE THAT IS NOT AN OBJECT reached `.get` and raised an
+    # AttributeError no `except` here caught. A SessionStart hook that exits
+    # non-zero has its stdout dropped, so one malformed settings file deleted
+    # the WHOLE listing rather than one line of it -- the direction this script
+    # exists to prevent, arriving through the script itself. `null` and `true`
+    # are in the list because `json.loads` returns them from a file a person
+    # could plausibly leave behind, and neither is caught by the ValueError
+    # branch above.
+    for body in ("[]", '"a string"', "5", "null", "true"):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+            root, home = Path(d), Path(h)
+            (root / "scripts").mkdir()
+            q = root / "scripts" / "asked.py"
+            q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+            q.chmod(0o755)
+            (home / ".claude").mkdir()
+            (home / ".claude" / "settings.json").write_text(body)
+            r = subprocess.run(
+                [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+                capture_output=True, text=True,
+                env=dict(os.environ, HOME=str(home)))
+            check(f"a settings file holding {body} is named as a shape this "
+                  f"could not read, and the listing still arrives",
+                  r.returncode == 0 and "run unasked" in r.stdout
+                  and "where an object was expected" in r.stdout
+                  and "Traceback" not in r.stderr,
+                  )
 
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed

@@ -609,8 +609,8 @@ Whether it still bites is `main`'s `required_status_checks.contexts`, and
 pull request head has no `check` at all**, so fast-forwarding `main` onto a
 topic branch is refused — `HTTP 409: Required status check "check" is expected`.
 Land through the pull request, whose head sha carries it: merge `main` *into* the
-topic branch and resolve there, because the machine-wide hook refusing direct
-commits to `main` blocks the resolution commit the other direction needs.
+topic branch and resolve there, because the machine-wide no-main-commits guard
+blocks the resolution commit the other direction needs.
 **Condition 2 has no automatic reader**: one `gh` account signs every session's
 merges, so it is held by whoever writes the review saying honestly that it did not
 write the code.

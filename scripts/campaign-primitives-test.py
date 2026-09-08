@@ -190,6 +190,208 @@ def main():
         check("an absent settings file says so rather than announcing nothing",
               "does not exist" in out and r.returncode == 0)
 
+    # TWO SETTINGS FILES AND EVERY SCRIPT ROOT. The machine's settings alone
+    # named ONE harness hook where three run: this repository registers its own
+    # SessionStart hook in .claude/settings.json, which was never read, and
+    # campaign-role-brief.py lives in a skill and so was never even offered as a
+    # name to match. A fixture tree, not the real one, because the real answer
+    # moves whenever somebody edits either settings file.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        (root / ".claude" / "skills" / "s" / "scripts").mkdir(parents=True)
+
+        def script(path, summ):
+            path.write_text(f"#!/bin/sh\n# {summ}\nexit 0\n")
+            path.chmod(0o755)
+
+        script(root / "scripts" / "in-project.py", "Registered by the checkout.")
+        script(root / "scripts" / "in-local.py", "Registered by the person.")
+        script(root / "scripts" / "in-machine.py", "Registered by the machine.")
+        script(root / "scripts" / "asked.py", "Registered nowhere.")
+        script(root / ".claude" / "skills" / "s" / "scripts" / "briefer.py",
+               "A skill's script the harness runs.")
+
+        def settings(*commands):
+            return json.dumps({"hooks": {"SessionStart": [{"hooks": [
+                {"type": "command", "command": c} for c in commands]}]}})
+
+        (root / ".claude" / "settings.json").write_text(
+            settings('"$CLAUDE_PROJECT_DIR"/scripts/in-project.py --brief'))
+        # The third source. It is untracked and holds only permissions on this
+        # machine today, so nothing in the tree would notice it being dropped
+        # -- which is exactly the omission this whole reading exists to stop.
+        (root / ".claude" / "settings.local.json").write_text(
+            settings("python3 /x/scripts/in-local.py"))
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(
+            settings("python3 /x/scripts/in-machine.py",
+                     "python3 /x/.claude/skills/s/scripts/briefer.py"))
+
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        # Section by section: a name anywhere in the output proves nothing --
+        # every one of these appears in the reader list too if it is misfiled,
+        # and that is exactly the defect.
+        out = r.stdout
+        unasked = out.split("run unasked, by git or by the harness")[-1]
+        unasked = unasked.split("a flow calls these")[0]
+        called = out.split("a flow calls these")[-1]
+        check("a hook the checkout's own settings register is announced as "
+              "running unasked",
+              "in-project.py" in unasked and "in-project.py" not in called)
+        check("...and so is one the machine's settings register",
+              "in-machine.py" in unasked and "in-machine.py" not in called)
+        check("...and so is one only the untracked local settings register",
+              "in-local.py" in unasked and "in-local.py" not in called)
+        check("a harness hook that is a skill's script is announced as running "
+              "unasked, not as one a flow calls",
+              "briefer.py" in unasked and "briefer.py" not in called)
+        check("a script neither settings file names is still a script a flow "
+              "calls",
+              "asked.py" in called and "asked.py" not in unasked)
+        check("each settings file is named beside what it registered",
+              f"harness hooks in {root / '.claude' / 'settings.json'} (1)" in out
+              and f"harness hooks in {home / '.claude' / 'settings.json'} (2)"
+              in out
+              and f"harness hooks in {root / '.claude' / 'settings.local.json'}"
+                  f" (1)" in out)
+
+    # AN ABSENT SOURCE IS A READING, NOT A WARNING. Two of the three are absent
+    # on an ordinary checkout, so a `!!` per absence would put two lines of
+    # alarm into every session start; the reader still has to be told the
+    # source was looked at, or a silent skip reads as a source that held
+    # nothing.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        q = root / "scripts" / "asked.py"
+        q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+        q.chmod(0o755)
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        out = r.stdout
+        check("a settings file that is not there is named as absent, for each "
+              "source",
+              out.count("does not exist, so it registers no harness hook") == 3)
+        check("...and no !! names a settings file, which three sources would "
+              "make two lines of alarm at every session start",
+              not [l for l in out.splitlines()
+                   if "!!" in l and "settings" in l]
+              and r.returncode == 0)
+
+    # THE GIT HALF'S NAME SET, THROUGH main() AND NOT THROUGH hook_run.
+    # A review found this wiring pinned by nothing: `all_names` sits one
+    # identifier away from `top_names` in the same scope, and passing it to
+    # hook_run left the suite at full marks, because the case above hands
+    # hook_run its names by hand and so pins the function while the call site
+    # goes unread. git resolves a hook's guard as <toplevel>/scripts/<name>, so
+    # a hook declaring a SKILL's script declares one git can never run, and
+    # announcing it as installed is the direction that makes a reader believe
+    # an unguarded tree is guarded.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "scripts").mkdir()
+        (root / ".claude" / "skills" / "s" / "scripts").mkdir(parents=True)
+        for f in (root / "scripts" / "asked.py",
+                  root / ".claude" / "skills" / "s" / "scripts" / "briefer.py"):
+            f.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+            f.chmod(0o755)
+        h = root / ".git" / "hooks" / "pre-commit"
+        h.write_text("#!/bin/sh\n# runs: briefer.py\nexit 0\n")
+        h.chmod(0o755)
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            cwd=root, capture_output=True, text=True)
+        out = r.stdout
+        unasked = out.split("run unasked, by git or by the harness")[-1]
+        unasked = unasked.split("a flow calls these")[0]
+        check("a git hook declaring a skill's script announces no guard, since "
+              "git resolves one under scripts/ alone",
+              "briefer.py" not in unasked)
+        check("...and the listing says the declaration named nothing git "
+              "could run",
+              "declares briefer.py, which is not a script" in out)
+
+    # READ-AND-REGISTERS-NOTHING IS NOT COULD-NOT-READ, and the third source is
+    # where the two used to collapse. .claude/settings.local.json ordinarily
+    # holds a person's permissions and no `hooks` key at all, which the reader
+    # counted as a malformed file and announced with a `!!` at every session
+    # start -- the alarm the absent-source line was reworked to avoid, arriving
+    # by the other door. A file it truly could not read went the other way: it
+    # printed "(0): none of this tree's scripts", the announcement stating a
+    # reading it never made.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        (root / ".claude").mkdir()
+        q = root / "scripts" / "asked.py"
+        q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+        q.chmod(0o755)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(
+            json.dumps({"permissions": {"allow": ["Bash(git *)"]}}))
+        (root / ".claude" / "settings.json").write_text(json.dumps({"hooks": []}))
+        (root / ".claude" / "settings.local.json").write_text("{ not json")
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        out = r.stdout
+        user = str(home / ".claude" / "settings.json")
+        proj = str(root / ".claude" / "settings.json")
+        local = str(root / ".claude" / "settings.local.json")
+        check("a settings file holding no `hooks` key is read, and counted as "
+              "registering none",
+              f"harness hooks in {user} (0): none of this tree's scripts" in out
+              and not [l for l in out.splitlines() if "!!" in l and user in l])
+        check("a `hooks` that is not an object is a problem, since what it "
+              "registers is unknown",
+              [l for l in out.splitlines() if "!!" in l and proj in l
+               and "is not an object" in l]
+              and f"harness hooks in {proj}" not in out)
+        check("a settings file that would not read announces no count either, "
+              "a count there being a reading it never made",
+              [l for l in out.splitlines() if "!!" in l and local in l]
+              and f"harness hooks in {local}" not in out)
+        check("...and none of these suppresses the listing",
+              r.returncode == 0 and "run unasked" in out)
+
+    # A TOP-LEVEL VALUE THAT IS NOT AN OBJECT reached `.get` and raised an
+    # AttributeError no `except` here caught. A SessionStart hook that exits
+    # non-zero has its stdout dropped, so one malformed settings file deleted
+    # the WHOLE listing rather than one line of it -- the direction this script
+    # exists to prevent, arriving through the script itself. `null` and `true`
+    # are in the list because `json.loads` returns them from a file a person
+    # could plausibly leave behind, and neither is caught by the ValueError
+    # branch above.
+    for body, named in (("[]", "holds list"), ('"a string"', "holds str"),
+                        ("5", "holds int"), ("null", "holds NoneType"),
+                        ("true", "holds bool"), ("1.5", "holds float")):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+            root, home = Path(d), Path(h)
+            (root / "scripts").mkdir()
+            q = root / "scripts" / "asked.py"
+            q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+            q.chmod(0o755)
+            (home / ".claude").mkdir()
+            (home / ".claude" / "settings.json").write_text(body)
+            r = subprocess.run(
+                [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+                capture_output=True, text=True,
+                env=dict(os.environ, HOME=str(home)))
+            # `named` and not just the tail: the type is the only part of
+            # the message that varies across these, so a case reading the tail
+            # alone passes with the whole `type(...).__name__` replaced by a
+            # constant, and one fixture then stands in for all six.
+            check(f"a settings file holding {body} is named as a shape this "
+                  f"could not read, and the listing still arrives",
+                  r.returncode == 0 and "run unasked" in r.stdout
+                  and f"{named} where an object was expected" in r.stdout
+                  and "Traceback" not in r.stderr)
+
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed
     # that git never runs.

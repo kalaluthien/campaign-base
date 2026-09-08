@@ -105,8 +105,8 @@ ROLES = _roles_module().ROLE_WORDS
 #     slug: `campaign-1` satisfies SLUG, and admitting it would re-open the
 #     two-form window #237 closed, this time with nothing marking it as old.
 #     And the last
-#     four are the base's own directories at its root, which is where a
-#     campaign's directory is created: a campaign slugged `docs` or `runtime`
+#     three are the base's own directories at its root, which is where a
+#     campaign's directory is created: a campaign slugged `runtime`
 #     would name a directory the base already owns, and `scripts/guard-corpus.py`
 #     -- which classifies a RECORDED path it cannot stat -- would read that
 #     campaign's whole tree as the base's own.
@@ -115,7 +115,7 @@ SLUG_CEILING = 20
 # directory there, and imported by scripts/guard-corpus.py, which excludes the
 # same words when it classifies a recorded path it cannot stat -- one set, one
 # owner, rather than two copies pointing at each other in prose.
-BASE_DIRS = ("scripts", "spec", "docs", "runtime")
+BASE_DIRS = ("scripts", "spec", "runtime")
 RESERVED = ("campaign", "planner", "worker") + BASE_DIRS
 SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 

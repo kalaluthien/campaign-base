@@ -16,7 +16,7 @@ from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-tree-shape.py"
 
-IGNORE = "/*\n!/.gitignore\n!/spec/\n!/docs/\n!/scripts/\n!/AGENTS.md\n"
+IGNORE = "/*\n!/.gitignore\n!/spec/\n!/.claude/\n!/scripts/\n!/AGENTS.md\n"
 
 # A fixture that spells a triple quote spells it with chr(), the way this
 # file already spells the single-quoted one: written out, the guard reading
@@ -28,16 +28,16 @@ SQ = chr(39) * 3
 CASES = [
     # R1 -- misfiled markdown, and the two shapes that are not it.
     ("R1 markdown under spec/", {"spec/x.md": "hi\n"}, "R1"),
-    ("R1 markdown under docs/", {"docs/x.md": "hi\n"}, "R1"),
     ("R1 markdown at the root is where it belongs", {"AGENTS.md": "hi\n"}, None),
-    ("R1 html under docs/ is the point of docs/", {"docs/x.html": "<p>hi</p>\n"}, None),
+    ("R1 html under spec/ is the diagram beside a model",
+     {"spec/x.html": "<p>hi</p>\n"}, None),
 
     # R2 -- the allowlist. The trailing slash is the shape every entry in the
     # real .gitignore has, so a guard that does not strip it passes nothing.
     ("R2 a tracked top-level name with no allowlist line",
      {"scratch/x.txt": "hi\n"}, "R2"),
     ("R2 an entry written with its trailing slash still matches",
-     {"docs/x.html": "<p>hi</p>\n"}, None),
+     {".claude/skills/s/SKILL.md": "hi\n"}, None),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -129,9 +129,9 @@ CASES = [
     # R3 html -- the language a path grep in one syntax cannot see.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 html: a retired path in markup",
-     {"docs/x.html": "<code>runtime/holder</code>\n"}, "R3b"),
+     {"spec/x.html": "<code>runtime/holder</code>\n"}, "R3b"),
     ("R3 html: the same path in an html comment",
-     {"docs/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
+     {"spec/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
 
     # The reading-versus-verdict rule: an unknown language is a file the sweep
     # cannot read, and an unread file must not come back as a clean tree.
@@ -163,10 +163,48 @@ CASES = [
     ("R4 still runs over a recorded path",
      {"scripts/fixtures/repos/member/x.jsonl": '{"a": 1}\n'}, "R4"),
 
+    # R5 -- a skill directory holds SKILL.md and the three directories a skill
+    # has. One refusal per branch, and one allow per shape somebody would
+    # otherwise widen it past: `assets/` DOES nest (the campaign scaffold ships
+    # `assets/agents/` and `assets/scripts/`), and `.claude/` holds directories
+    # that are not skills at all.
+    ("R5 a fourth name at a skill's root",
+     {".claude/skills/s/notes.md": "hi\n"}, "R5"),
+    ("R5 references/ two levels deep",
+     {".claude/skills/s/references/deep/x.md": "hi\n"}, "R5"),
+    ("R5 a loose file directly under .claude/skills/",
+     {".claude/skills/loose.md": "hi\n"}, "R5"),
+    ("R5 the SKILL.md itself is the point",
+     {".claude/skills/s/SKILL.md": "hi\n"}, None),
+    ("R5 a reference one level deep",
+     {".claude/skills/s/references/x.md": "hi\n"}, None),
+    ("R5 assets/ nests: it is a tree copied into a deliverable",
+     {".claude/skills/s/assets/agents/x.md": "hi\n"}, None),
+    ("R5 scripts/ beside a skill is not a reference",
+     {".claude/skills/s/scripts/x.py": "x = 1\n"}, None),
+    ("R5 a directory under .claude/ that is not a skill",
+     {".claude/agents/x.md": "hi\n"}, None),
+    ("R5 the skills root is anchored: one deeper in the tree is not it",
+     {"scripts/fixtures/.claude/skills/s/notes.md": "hi\n"}, None),
+
+    # R6 -- the extension. The refusal is the shape the retired deny list held
+    # by name (`scripts/<name>` with no extension); the allows are the two
+    # places a file may sit in a scripts/ tree without being a script.
+    ("R6 a script with no extension",
+     {"scripts/x": "hi\n"}, "R6"),
+    ("R6 a script named for something that is not its language",
+     {"scripts/x.html": "<p>hi</p>\n"}, "R6"),
+    ("R6 a shell script is a script too",
+     {"scripts/x.sh": "echo hi\n"}, None),
+    ("R6 data nested below a scripts/ is not a script",
+     {"scripts/fixtures/notes.html": "<p>hi</p>\n"}, None),
+    ("R6 a template under an assets/ is some other tree's script",
+     {".claude/skills/s/assets/scripts/x.html": "<p>hi</p>\n"}, None),
+
     # A file with no text in it at all -- a guard whose whole point is naming
     # which reading it could not make must not itself die in the decode.
     ("R0 a file that is not text is reported, not a traceback",
-     {"docs/x.png": "\x89PNG\r\n\x1a\n\x00\x01\x02\x03"}, "R0"),
+     {"spec/x.png": "\x89PNG\r\n\x1a\n\x00\x01\x02\x03"}, "R0"),
 
     # A known suffix whose bytes are not text: the decode branch, which the
     # PNG above does not reach because it is caught a step earlier by suffix.
@@ -233,13 +271,15 @@ CASES = [
      {"spec/x.md": "hi\n", ".gitignore": None}, "R1"),
 
     # An extensionless script -- the "" entry in the prose table, which the
-    # suffix cases never reach.
+    # suffix cases never reach. It sits under an assets/, because R6 refuses an
+    # extensionless file in a scripts/ of this tree's own.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 an extensionless script's docstring is prose",
-     {"scripts/x": "#!/usr/bin/env python3\n" + SQ
+     {".claude/skills/s/assets/scripts/x": "#!/usr/bin/env python3\n" + SQ
       + "about runtime/holder" + SQ + "\nx = 1\n"}, None),
     ("R3 ...and its code is still code",
-     {"scripts/x": "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3b"),
+     {".claude/skills/s/assets/scripts/x":
+      "#!/usr/bin/env python3\nopen('runtime/holder')\n"}, "R3b"),
 
     # Shell, which #105 gave a suffix of its own. Before it, every shell script
     # was extensionless and reached PROSE through the "" entry; a `.sh` with no
@@ -390,8 +430,8 @@ def committed_then_staged():
         subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
                         "commit", "-qm", "in", "--no-verify"], cwd=root, check=True)
         (root / "scripts").mkdir()
-        (root / "scripts" / "ok").write_text("#!/bin/sh\n")
-        subprocess.run(["git", "add", "scripts/ok"], cwd=root, check=True)
+        (root / "scripts" / "ok.sh").write_text("#!/bin/sh\n")
+        subprocess.run(["git", "add", "scripts/ok.sh"], cwd=root, check=True)
         return subprocess.run([sys.executable, str(GUARD), "--staged"], cwd=root,
                               capture_output=True, text=True)
 
@@ -417,13 +457,13 @@ def says_what_it_read():
     wrong checkout and an empty file list both look like -- and the count and
     the root are the two things that tell those apart from a clean tree.
     """
-    files = {"docs/x.html": "<p>hi</p>\n"}          # plus the .gitignore: 2
+    files = {"spec/x.html": "<p>hi</p>\n"}          # plus the .gitignore: 2
     wrong = []
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
         (root / ".gitignore").write_text(IGNORE)
-        (root / "docs").mkdir()
-        (root / "docs" / "x.html").write_text(files["docs/x.html"])
+        (root / "spec").mkdir()
+        (root / "spec" / "x.html").write_text(files["spec/x.html"])
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
         for args, where in ((["--staged"], "the index"), ([], "the working tree")):

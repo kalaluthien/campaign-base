@@ -10,7 +10,7 @@
 #   1. Never add `paths`, `paths-ignore`, or a `branches` filter to the
 #      `pull_request` trigger. A required check that a pull request does not
 #      produce is never "skipped" -- it stays pending forever, and with
-#      `enforce_admins` there is no override. A docs-only branch must still
+#      `enforce_admins` there is no override. A prose-only branch must still
 #      produce this check.
 #   2. Keep the job named `check`, and keep this file parseable. The required
 #      context is the job name, so renaming it, deleting this file, or leaving

@@ -1,6 +1,7 @@
 /*
  * The disciplines over sdlc/system, and the witnesses: a full chain, a chain
- * that skips by the rule, a docs waiver, and the tie broken by a rename.
+ * that skips by the rule, a docs waiver and its remedy, and the tie broken by
+ * a rename.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/scenarios
@@ -100,6 +101,19 @@ pred S3a_DocsDemanded {
   }
 }
 
+/* The remedy the landing check leaves: the same waiver, then a scenario that
+   grows a shape, and the change writes the view it had waived -- the write
+   retracts the skip -- and lands. The finding in checks.als is this chain
+   without the view; `write`'s comment in system.als names it. */
+pred S3b_DocsWrittenAfterAll {
+  allDisciplines
+  one c: Change {
+    developmentProfile[c.profile]
+    eventually (Now.event = Write and Now.at = Docs and Docs in c.skipped)
+    eventually c in Landed
+  }
+}
+
 /* A landed full chain, then its code path is renamed and no namer is
    rewritten: the tree is untied. Every discipline but the commit check holds,
    which is the point -- nothing else reads a tie. */
@@ -131,15 +145,15 @@ pred S4a_RenameKeepsItsNamers {
    and the development kind does not let Spec be skipped -- and the commit
    check is not what refuses it: the tie reads the tree, so a scenario and a
    test of ANOTHER change can tie the path, which is why the scope holds two
-   changes and the subject's kind is pinned. `S5a` is the same chain with the
-   commit check dropped, and it is refused all the same. */
+   changes and the subject's kind is pinned. `S5a` is the same chain under
+   the order and the worker's reading alone, and it is refused all the same. */
 pred codeBeforeSpec {
   eventually (Now.event = Write and Now.at = Code
               and developmentProfile[Now.subject.profile]
               and no writtenOf[Now.subject] & stage.Spec)
 }
 pred S5_CodeBeforeSpecRefused  { allDisciplines and codeBeforeSpec }
-pred S5a_RefusedWithoutTheTie  { orderDiscipline and skipDiscipline and landDiscipline and codeBeforeSpec }
+pred S5a_RefusedWithoutTheTie  { orderDiscipline and skipDiscipline and codeBeforeSpec }
 
 /* ---------------- commands ---------------- */
 
@@ -147,6 +161,7 @@ run S1_FullChain              for exactly 1 Change, exactly 1 Profile, exactly 6
 run S2_SkippedChain           for exactly 1 Change, exactly 1 Profile, exactly 2 Artifact, 10 steps expect 1
 run S3_DocsWaived             for exactly 1 Change, exactly 1 Profile, exactly 5 Artifact, 10 steps expect 1
 run S3a_DocsDemanded          for exactly 1 Change, exactly 1 Profile, 6 Artifact, 10 steps expect 0
+run S3b_DocsWrittenAfterAll   for exactly 1 Change, exactly 1 Profile, 7 Artifact, 12 steps expect 1
 run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S5_CodeBeforeSpecRefused  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0

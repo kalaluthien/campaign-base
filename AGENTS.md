@@ -60,14 +60,14 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/`, `scripts/`, `.github/` | this repository |
+| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `scripts/`, `.github/` | this repository |
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
 `spec/` is normative and is Alloy whose comments are the spec, and an HTML
-diagram may sit beside a model; `docs/` is views drawn for a reader, as HTML.
-Neither holds markdown, and that is the part a guard refuses. Two `pre-commit`
-guards refuse a commit that breaks either — `check-tree-shape` and
+diagram may sit beside a model; it holds no markdown, and that is the part a
+guard refuses. Two `pre-commit` guards refuse a commit that breaks the
+shape — `check-tree-shape` and
 `check-rule-readers`, whose header gives the syntax exempting a block that must
 hold a guarded form. **Do not write a second reader of a rule a script owns**:
 two of them drift.
@@ -632,15 +632,18 @@ the two knobs in full, the three wrong modes and the shape of a round are
 **Watch a delegate for `blocked`, not only for gone** — a session at a permission
 prompt is still listed and never proceeds, and clearing it is the person's
 decision. **Do not trust the absence of that reading either**: a usage-limit menu
-and the folder-trust dialog both report `idle`; silence is a liveness question.
+reports `idle` too; silence is a liveness question. The folder-trust dialog
+also reports `idle` (whether the external-import one does is unmeasured), but
+neither is a person's stop — the planner clears both itself
+(`opening-campaign`'s `launching.md`).
 
 **A release compacts the releasing session's own pane**, so a reused worker
 does not carry a finished sub-issue's transcript into the next one:
 `campaign-claim release` enqueues it, and says so when it could not.
 
-**The session limit is a first-class cause of death, and it kills in batches.** An
-agent it stopped looks exactly like one still thinking; when several go quiet
-together, read the reset time first — an outage to schedule around, not a retry.
+**The session limit is a first-class cause of death, and it kills in batches**;
+a planner's own pacing against it is `.claude/skills/assuming-role/references/planner.md`
+§ The planner's clock.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
 all three readings (`campaign-claim live`). A campaign may not close while a
@@ -669,3 +672,115 @@ different one; none may write this one's campaign issue body or its `bound:` lab
 into it. A campaign reaches another machine only by
 migration — the price of every staleness question being answerable from one
 machine's own disk.
+
+# Authoring a script or a skill
+
+**What a machine can decide here is a check, not a sentence.** `check-tree-shape`
+refuses a script with no language extension and a skill directory of the wrong
+shape, and `check-rule-readers` refuses a second reader of a rule a script owns,
+so none of those is written below. What is left needs judgement.
+
+## Scripts
+
+**Name by who calls it.** A script a flow asks a question is
+`<subject>-<question>`; one git or the harness runs unasked is `<verb>-<object>`.
+They separate on the call and not on the topic, which is why
+`campaign-primitives.py`'s listing groups them that way. **The line under the
+shebang is the purpose**, and that listing prints it, so a hand-kept inventory
+of scripts is never written. **Usage goes in the file** for a script anything
+calls by hand, since a reader should not need this document to call one; a
+script only a hook runs has no such caller and owes none.
+
+**Exit status has two conventions here, and a guard takes the one its caller
+reads.** A **harness hook** is read by the harness: **0 allows, 2 refuses, and
+nothing else blocks** — `check-campaign-claim.py` is the only harness hook here
+that refuses; the others announce. A **`pre-commit` guard** is read by git,
+which blocks on any non-zero, so it is free to number its own findings and each
+says which codes it uses in its docstring; take them from there rather than
+from a convention. Both put the reason on stderr.
+
+**Keep a guard's own crash apart from its refusal where the caller can act on
+the difference**, because a guard that could not run has permitted nothing.
+Under git it often cannot be kept apart — an unhandled exception exits 1, which
+is also what three of these guards return for a finding — so a guard whose
+caller must tell the two apart says so and handles its own errors.
+
+**A script that answers a question prints the answer as a word on stdout**, and
+the caller reads the word, never the status. The status says whether the
+reading was made at all, and one script may need more than one code to say so:
+`check-commit-claim.py --is-claim` answers `claim`, `no-claim` or `unknown` and
+gives each its own status, because a caller about to push must tell an answered
+no from a question it could not read.
+
+Three harness facts, each of which makes a hook enforce nothing when it is
+missed:
+
+- **Exit 2 blocks only on events that can block.** On `PostToolUse`,
+  `PermissionRequest`, `SessionStart`, `Notification` and their kind it prints
+  and execution continues.
+- **On `SessionStart`, `UserPromptSubmit` and their kind stdout is injected into
+  the model's context, and only on exit 0.** A script that announces something
+  always exits 0, or the announcement disappears.
+- **A hook needing more than allow-or-refuse exits 0 and prints JSON under
+  `hookSpecificOutput`**, which then decides. Exit 2 overrides that JSON, so
+  never write both.
+
+**One script answers one question.** A sequence with judgement in it is a skill;
+a sequence with no judgement is a script; a judgement with no sequence is a
+sentence. Prefer parsing formal syntax over prose: a claim extracted from a
+declaration cannot be forged by editing a comment, and something deleted leaves
+the extraction on its own.
+
+**Default to a skill's own `scripts/`**, so the script is deleted with the
+procedure that reaches it. The top-level `scripts/` is for what has no owning
+skill: a script small enough to need no procedure around it, one a hook runs,
+one CI runs, and one two skills call — whose alternative is a copy.
+
+**Handle your own errors and assume no tool is installed.** A script that dies
+on a missing binary reports a stack trace where it owed the caller a reading.
+
+## Skills
+
+**`description` carries the routing words in its first line**: one sentence of
+what the skill does, then a `Use when …` clause naming the situations and the
+words a person would actually type, third person. The listing truncates long
+entries and drops the least-used first, so a trigger buried at the end can
+disappear before the skill is ever considered. Add a `Not for …` clause when a
+sibling can claim the same request — negative scope stops over-triggering, more
+positive description does not. **`name` is the directory name**, and a
+model-loaded skill takes the gerund form, verb plus object; a user-typed one
+takes the voice of its pool.
+
+**Zero to three body sections**, noun phrases, ordered so the reader meets each
+one when it applies, and shaped to their material: a subject that reduces to a
+small rule gets the rule; one thick with exceptions gets a few worked examples;
+a term the skill encapsulates gets its definition; distinct situations get a
+catalogue, the situation in one column and the action it selects in the next. A
+row selecting a whole mode links a reference holding that mode — the row keeps
+the selector, the reference keeps the body — and **a reference nothing names is
+never read**. One over 100 lines opens with a summary or a table of contents,
+because an unsummarized file gets previewed instead of read.
+
+**State a finished state as a predicate the agent can check** ("every index
+entry resolves to a file"), never an adjective. Name the failure modes that
+raise no error. Match specificity to the cost of a wrong step: a narrow path
+with real hazards gets exact instructions, open work gets direction and the
+criteria that judge it.
+
+**Write only what the agent cannot derive** — house conventions, defaults that
+surprise, values that must match another file. **Cut a rule before you shorten
+it**, since compliance falls with the number of rules held at once. Plain
+imperative sentences, no capitals and no `MUST`: emphasis buys over-triggering,
+not compliance. Keep a prohibition as a prohibition. One term per concept, no
+dates or versions, no constant without the reason for its value. An example that
+repeats its instruction anchors the agent to the sample instead of the rule.
+
+**The body loads once and stays for the session**, so it holds standing
+instructions and not one-time steps; compaction keeps only the opening of a
+re-attached body, so a rule that must survive a long session sits near the top.
+An unused skill still costs its description every turn: a fact belongs in this
+file, and only a procedure earns a skill.
+
+**`.claude/skills/herdr/` is vendored**, and the first line of its body, under
+the frontmatter, names the upstream and the tag. An upgrade replaces the whole
+file; any edit breaks the identity that makes that replacement safe.

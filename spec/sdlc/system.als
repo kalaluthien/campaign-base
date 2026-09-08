@@ -191,7 +191,8 @@ pred sdlcFrame { Written' = Written and Landed' = Landed and skipped' = skipped 
    WRITING A SKIPPED STAGE RETRACTS THE SKIP: a stage is written or skipped,
    never both, and the write is the later word. This is the remedy the
    landing check leaves a worker whose waiver went stale
-   (`SkipReadAtTheTimeIsNotEnough`): write the view after all, and land. */
+   (`SkipReadAtTheTimeIsNotEnough`): write the view after all, and land,
+   which is `S3b_DocsWrittenAfterAll`. */
 pred write[a: Artifact] {
   a.change not in Landed
   Written' = Written + a

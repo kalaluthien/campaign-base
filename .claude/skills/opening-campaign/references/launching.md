@@ -134,10 +134,15 @@ an agent thinking.
 | the external-import question for an ancestor `CLAUDE.md` | declining it silently drops the campaign's principles. **Whether herdr classifies this one as `blocked` at all is unmeasured** -- do not inherit the row above's reading | 
 | the first shell-command permission prompt | `--permission-mode acceptEdits` covers edits but not shell, so it stalls on its first `ls`; it appears *after* the opening prompt is accepted, so `agent prompt` has nothing to refuse |
 
-**Read the pane once after every launch.** That is the only check that catches a
-delegate which stopped before it began. A usage-limit menu blocks a pane just as
-hard and also reports `idle`, so pair the `blocked` watch with a quiet timer and
-treat a long quiet as a question to go and look at rather than as progress.
+**Read the pane once after every launch, and answer the first two rows
+yourself.** That is the only check that catches a delegate which stopped
+before it began, and the folder-trust and external-import dialogs need no
+person to clear them: `## Repos` is the owner's own list, so the planner reads
+the pane and sends `herdr agent send-keys <pane> down` then `herdr agent
+send-keys <pane> enter` for each one it finds. A usage-limit menu blocks a pane
+just as hard and also reports `idle`, so pair the `blocked` watch with a quiet
+timer and treat a long quiet past those two as a question to go and look at
+rather than as progress.
 
 herdr's own Claude integration hook reports session identity, not state
 (`pane.report_agent_session` carries no status method), so nothing infers

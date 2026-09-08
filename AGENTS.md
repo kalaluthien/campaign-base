@@ -632,7 +632,9 @@ the two knobs in full, the three wrong modes and the shape of a round are
 **Watch a delegate for `blocked`, not only for gone** — a session at a permission
 prompt is still listed and never proceeds, and clearing it is the person's
 decision. **Do not trust the absence of that reading either**: a usage-limit menu
-and the folder-trust dialog both report `idle`; silence is a liveness question.
+reports `idle` too; silence is a liveness question. The folder-trust and
+external-import dialogs also report `idle`, but they are not a person's stop —
+the planner clears them itself (`opening-campaign`'s `launching.md`).
 
 **A release compacts the releasing session's own pane**, so a reused worker
 does not carry a finished sub-issue's transcript into the next one:

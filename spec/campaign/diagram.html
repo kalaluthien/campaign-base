@@ -225,14 +225,14 @@
   </ol>
 </figure>
 
-<p>파일은 <span class="ct">15&times; 파일</span> 이고 명령은 <span class="ct">143&times; 명령</span> 이다. 명령마다 자기 판정을 <code>expect</code> 절에 적고, 솔버가 그 절을 집행한다. 반례 없는 검사와 인스턴스 없는 실행이 <code>expect 0</code> 이고, SAT이 <code>expect 1</code> 이다. 앨로이는 절과 다르게 나온 명령을 이름으로 부르고 0이 아닌 값으로 끝난다. 판정을 되풀이하는 주석은 없다. 솔버가 이미 정한 것을 두 번째로 읽는 쪽이 되기 때문이다. <span class="src">spec/campaign/github/system.als:42-49 @ 03643fb</span></p>
+<p>파일은 <span class="ct">15&times; 파일</span> 이고 명령은 <span class="ct">227&times; 명령</span> 이다. 명령마다 자기 판정을 <code>expect</code> 절에 적고, 솔버가 그 절을 집행한다. 반례 없는 검사와 인스턴스 없는 실행이 <code>expect 0</code> 이고, SAT이 <code>expect 1</code> 이다. 앨로이는 절과 다르게 나온 명령을 이름으로 부르고 0이 아닌 값으로 끝난다. 판정을 되풀이하는 주석은 없다. 솔버가 이미 정한 것을 두 번째로 읽는 쪽이 되기 때문이다. <span class="src">spec/campaign/github/system.als:46-53 @ 3d8fd5b</span></p>
 
 <pre>scripts/alloy-check.py spec/campaign/github/scenarios.als -o /tmp/alloy-github
 scripts/alloy-check.py --commands spec</pre>
 
 <details>
   <summary>지워진 명령은 어떤 <code>expect</code> 도 놓치지 않으므로, 목록은 <code>commands.snapshot.json</code> 에 두 번째로 적힌다</summary>
-  <p>명령을 지운 사람은 놓칠 기대가 남아 있지 않고, 모형에서 생성한 것도 그 삭제를 보지 못한다. 그래서 명령 목록은 <code>spec/</code> 뿌리의 <code>commands.snapshot.json</code> 에 한 번 더 적힌다. 스냅샷 하나가 그 아래 모든 엔티티를 덮는다. 이 파일은 커밋되고, 다시 생성되는 대신 비교된다. 갱신은 <code>--write</code> 다. <span class="src">spec/campaign/github/system.als:50-58, spec/commands.snapshot.json @ 03643fb</span></p>
+  <p>명령을 지운 사람은 놓칠 기대가 남아 있지 않고, 모형에서 생성한 것도 그 삭제를 보지 못한다. 그래서 명령 목록은 <code>spec/</code> 뿌리의 <code>commands.snapshot.json</code> 에 한 번 더 적힌다. 스냅샷 하나가 그 아래 모든 엔티티를 덮는다. 이 파일은 커밋되고, 다시 생성되는 대신 비교된다. 갱신은 <code>--write</code> 다. <span class="src">spec/campaign/github/system.als:54-63, spec/commands.snapshot.json @ 3d8fd5b</span></p>
 </details>
 
 <h2>엔티티별 시그니처와 var 부분집합</h2>

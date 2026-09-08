@@ -21,7 +21,8 @@ leaves the others live and unflagged, so all four are here.
 
   S2  a literal `.claude/skills/...` path, against the filesystem.
 
-  S3  a literal `spec/campaign/...` path, against the filesystem.
+  S3  a literal `spec/...` path, against the filesystem -- any entity's, since
+      #246 put a second one beside spec/campaign/.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and
@@ -166,7 +167,7 @@ DEFAULT_TARGET = "AGENTS.md"
 
 # Which shape a run belongs to, by prefix. Order matters only in that the two
 # absolute prefixes are tested before the two relative ones.
-ABSOLUTE_PREFIXES = (".claude/skills/", "spec/campaign/")
+ABSOLUTE_PREFIXES = (".claude/skills/", "spec/")
 RELATIVE_PREFIXES = ("references/", "assets/")
 SCRIPT_PREFIX = "scripts/"
 SCRIPT_SUFFIXES = (".py", ".sh")

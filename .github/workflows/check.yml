@@ -48,6 +48,9 @@ jobs:
 
       # check-commit-claim.py is deliberately absent: it refuses a branch that
       # is not a claim, and a pull request runner's branch never is.
+      # check-sdlc-tie.py is absent too: it judges a change against HEAD, and
+      # the runner's HEAD is the merge commit with nothing left to judge. Its
+      # suite runs below, with every other.
       - name: The three guards that read the tree, as the pre-commit runs them
         run: |
           scripts/check-rule-readers.py

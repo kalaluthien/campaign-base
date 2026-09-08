@@ -1786,12 +1786,38 @@ pred P2_PlannerLaunchesDelegate {
   }
 }
 
+/* P3. #227 flagged `launch`'s checkout clause as the one that read
+   `Who.session.worksOn` where every other conjunct reads `a.task` -- fixed to
+   `campaignOf[a.task]`. Two campaigns, one machine: the launching session is
+   bound to `c` and the sub-issue is a member of the other, and the checkout
+   the launch must find sits in the TASK's own directory, not the launcher's --
+   pinned by requiring `c`'s own directory hold something else for that repo.
+   Reverting the fix to `Who.session.worksOn` makes this UNSAT, the same shape
+   R13e uses for `campaignDirAt` inside `commit`.
+
+   `some a.peer` -- a session launching itself onto its own claim -- so
+   nothing here also has to set up a live planner and a delegate's ref, which
+   `launch` only asks of the peerless shape. */
+pred P3_LaunchUsesTheTasksOwnCampaign {
+  some a: Agent, c: Campaign |
+    some a.peer and
+    eventually (Now.event = Launch and Target.agent = a
+                and some campaignOf[a.task]
+                and c != campaignOf[a.task]
+                and Who.session.worksOn = c
+                and campaignDirAt[c, a.host].checkedOut[a.task.repo] != a.branch)
+}
+
 /* ---------------- commands ---------------- */
 
 -- one sub-issue, one session, no planner
 run P1_SimpleRequestSettlesWithoutPlanner for 3 Issue, 1 PullRequest, 1 Campaign, exactly 1 Session, exactly 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- a planner's delegate does work
 run P2_PlannerLaunchesDelegate           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the launch checkout comes from the task's own campaign, not the launcher's;
+-- a second session sets up the OTHER campaign's directory, since a session's
+-- own CreateDir is tied to its own worksOn
+run P3_LaunchUsesTheTasksOwnCampaign     for 8 Issue, 2 PullRequest, 3 Campaign, 3 Session, 3 Agent, 2 Machine, 4 Repo, 2 Branch, 3 CampaignDir, 20 steps expect 1
 
 -- the whole retirement procedure runs
 run Sanity                          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1

@@ -6,8 +6,7 @@
      `scripts/campaign-tracker.py` and are not repeated here;
      `campaign-tracker.py check <N>` prints each one beside what it measured,
      and `campaign-tracker bind` prints that reading and never gates on it.
-     Design over the body ceiling is a file in `spec/` or `docs/`, linked from
-     here. -->
+     Design over the body ceiling is a file in `spec/`, linked from here. -->
 
 ## Intent
 

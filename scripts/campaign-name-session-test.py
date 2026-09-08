@@ -131,11 +131,10 @@ def main():
              "over the ceiling: 28 characters of slug"),
             ("campaign-machinery-worker-6", "a `campaign` segment"),
             ("machinery-planner-worker-6", "a `planner` segment"),
-            # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `docs` would
+            # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `spec` would
             # name a directory the base already owns, and guard-corpus -- which
             # classifies a recorded path it cannot stat -- would read that
             # campaign's whole tree as the base's own.
-            ("docs-worker-6", "a `docs` segment"),
             ("runtime-worker-6", "a `runtime` segment"),
             ("scripts-worker-6", "a `scripts` segment"),
             ("spec-worker-6", "a `spec` segment")]:

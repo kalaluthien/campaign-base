@@ -10,15 +10,26 @@ It is derived, never a hand-kept list -- a second copy of the inventory would
 drift exactly the way the prose copies this campaign is deleting drifted. Three
 facts already on this machine carry it: every script states its purpose on the
 line under its shebang, install-hooks names which of them git runs on its own,
-and ~/.claude/settings.json names which of them the HARNESS runs on its own. So
+and the settings files name which of them the HARNESS runs on its own. So
 adding a script changes this output with no second edit anywhere.
 
-The harness half is read from the settings file rather than from install-hooks,
+The harness half is read from the settings files rather than from install-hooks,
 for the same reason the git half is read from the installed hooks: what an
 installer writes can drift from what is installed, and what actually runs is the
-question a session is asking. It is also the half that can be true of no
-checkout at all -- the guard is registered machine-wide, so a session in a
-worktree sees it running over a script the worktree also holds.
+question a session is asking. There are two such files, and reading one of them
+omits as silently as reading none: ~/.claude/settings.json is the machine's,
+holds the guard install-hooks registers, and is true of no checkout at all -- so
+a session in a worktree sees that guard running over a script the worktree also
+holds -- while this checkout's own .claude/settings.json is where the repository
+registers hooks of its own, this announcement being one of them. A reading of
+the machine's alone named one harness hook where three run.
+
+The harness half is also the half that can name a script from any root. git
+resolves a hook's guard as <toplevel>/scripts/<name>, so only that root can
+answer a `# runs:` line; the harness is given an absolute path and runs a
+skill's script as readily as scripts/'s -- which is why the two halves are
+offered different name sets, and why a guard here is one whose name either half
+found rather than one that sits in scripts/.
 
 A script it cannot read, or one whose kind it cannot tell, is printed as such.
 An inventory that silently omits a primitive is worse than none: it reads as a
@@ -182,8 +193,8 @@ def harness_run(settings_path, names):
     try:
         settings = json.loads(settings_path.read_text())
     except FileNotFoundError:
-        return found, [f"{settings_path} does not exist, so no harness hook is "
-                       f"registered on this machine"]
+        return found, [f"{settings_path} does not exist, so no harness hook "
+                       f"is registered there"]
     except (OSError, ValueError) as e:
         return found, [f"{settings_path} would not read "
                        f"({e.__class__.__name__}), so what the harness runs is "
@@ -254,9 +265,22 @@ def main():
                for label, root in script_roots(here)
                for p in executables(root)]
     top_names = {p.name for _, p, top in scripts if top}
+    # The harness names a hook by absolute path, so it runs a skill's script as
+    # readily as scripts/'s: campaign-role-brief.py is registered in the
+    # machine's settings and was listed as a script a flow calls, because only
+    # scripts/ names were offered to this half.
+    all_names = {p.name for _, p, _ in scripts}
     runs, problems = hook_run(hook_texts, top_names)
-    harness, harness_problems = harness_run(HARNESS_SETTINGS, top_names)
-    runs |= harness
+    # Both files the harness reads, in the order it merges them. The second is
+    # the described checkout's rather than HERE's, so --scripts-dir moves it the
+    # way it moves the script roots and a fixture tree can exercise the reading.
+    settings_files = [HARNESS_SETTINGS, here.parent / ".claude" / "settings.json"]
+    harness, harness_problems = {}, []
+    for sp in settings_files:
+        found, probs = harness_run(sp, all_names)
+        harness[sp] = found
+        harness_problems += probs
+        runs |= found
     guards, readers, unknown = [], [], []
     for name, p, top in scripts:
         summ = summary(p)
@@ -265,7 +289,7 @@ def main():
             # both readings this inventory could not make, and the section that
             # says so is the one place a reader learns a script went unnamed.
             unknown.append((name, summ or "<no comment under the shebang>"))
-        elif top and p.name in runs:
+        elif p.name in runs:
             guards.append((name, summ))
         else:
             readers.append((name, summ))
@@ -287,9 +311,10 @@ def main():
             print("     !! no hook declares a script named below, so nothing "
                   "in this checkout is\n        known to be guarded.")
 
-    if harness:
-        print(f"\n  harness hooks in {HARNESS_SETTINGS} ({len(harness)}): "
-              f"{', '.join(sorted(harness))}")
+    for sp, found in harness.items():
+        if found:
+            print(f"\n  harness hooks in {sp} ({len(found)}): "
+                  f"{', '.join(sorted(found))}")
     for w in harness_problems:
         print(f"     !! {w}")
 

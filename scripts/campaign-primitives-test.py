@@ -190,6 +190,64 @@ def main():
         check("an absent settings file says so rather than announcing nothing",
               "does not exist" in out and r.returncode == 0)
 
+    # TWO SETTINGS FILES AND EVERY SCRIPT ROOT. The machine's settings alone
+    # named ONE harness hook where three run: this repository registers its own
+    # SessionStart hook in .claude/settings.json, which was never read, and
+    # campaign-role-brief.py lives in a skill and so was never even offered as a
+    # name to match. A fixture tree, not the real one, because the real answer
+    # moves whenever somebody edits either settings file.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        (root / ".claude" / "skills" / "s" / "scripts").mkdir(parents=True)
+
+        def script(path, summ):
+            path.write_text(f"#!/bin/sh\n# {summ}\nexit 0\n")
+            path.chmod(0o755)
+
+        script(root / "scripts" / "in-project.py", "Registered by the checkout.")
+        script(root / "scripts" / "in-machine.py", "Registered by the machine.")
+        script(root / "scripts" / "asked.py", "Registered nowhere.")
+        script(root / ".claude" / "skills" / "s" / "scripts" / "briefer.py",
+               "A skill's script the harness runs.")
+
+        def settings(*commands):
+            return json.dumps({"hooks": {"SessionStart": [{"hooks": [
+                {"type": "command", "command": c} for c in commands]}]}})
+
+        (root / ".claude" / "settings.json").write_text(
+            settings('"$CLAUDE_PROJECT_DIR"/scripts/in-project.py --brief'))
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(
+            settings("python3 /x/scripts/in-machine.py",
+                     "python3 /x/.claude/skills/s/scripts/briefer.py"))
+
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        # Section by section: a name anywhere in the output proves nothing --
+        # every one of these appears in the reader list too if it is misfiled,
+        # and that is exactly the defect.
+        out = r.stdout
+        unasked = out.split("run unasked, by git or by the harness")[-1]
+        unasked = unasked.split("a flow calls these")[0]
+        called = out.split("a flow calls these")[-1]
+        check("a hook the checkout's own settings register is announced as "
+              "running unasked",
+              "in-project.py" in unasked and "in-project.py" not in called)
+        check("...and so is one the machine's settings register",
+              "in-machine.py" in unasked and "in-machine.py" not in called)
+        check("a harness hook that is a skill's script is announced as running "
+              "unasked, not as one a flow calls",
+              "briefer.py" in unasked and "briefer.py" not in called)
+        check("a script neither settings file names is still a script a flow "
+              "calls",
+              "asked.py" in called and "asked.py" not in unasked)
+        check("each settings file is named beside what it registered",
+              f"harness hooks in {root / '.claude' / 'settings.json'} (1)" in out
+              and f"harness hooks in {home / '.claude' / 'settings.json'} (2)"
+              in out)
+
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed
     # that git never runs.

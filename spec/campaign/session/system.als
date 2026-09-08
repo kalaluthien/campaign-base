@@ -368,8 +368,18 @@ pred sessionLaunch[s: Session] {
   Now.event = Launch
   some s.worksOn
   Where.machine = s.machine
-  s.machine in machinesHolding[s.worksOn]
-  Now.issue in s.worksOn.memberIssues and Now.issue in Open
+  /* Same split as `sessionClaim`: a planner launches a delegate onto any
+     sub-issue of a campaign bound to its own machine, its own campaign
+     included -- filing is not a claim, so the sub-issue a planner distributes
+     may already belong to another campaign (#227). A worker's launch (onto
+     its own claim, the peer shape in orchestration/system.als's `launch`)
+     stays pinned to the campaign it works on -- and since a worker's
+     `s.worksOn` and `campaignOf[Now.issue]` then coincide, the machine-holds-
+     the-campaign check applies to both roles unconditionally, unlike
+     `sessionClaim`'s own worker branch, which never carried it. */
+  s.machine in machinesHolding[campaignOf[Now.issue]]
+  s.role != Planner implies Now.issue in s.worksOn.memberIssues
+  Now.issue in Open
   sessionFrame
   Who.session = s
 }

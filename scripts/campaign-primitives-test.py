@@ -316,6 +316,48 @@ def main():
               "could run",
               "declares briefer.py, which is not a script" in out)
 
+    # READ-AND-REGISTERS-NOTHING IS NOT COULD-NOT-READ, and the third source is
+    # where the two used to collapse. .claude/settings.local.json ordinarily
+    # holds a person's permissions and no `hooks` key at all, which the reader
+    # counted as a malformed file and announced with a `!!` at every session
+    # start -- the alarm the absent-source line was reworked to avoid, arriving
+    # by the other door. A file it truly could not read went the other way: it
+    # printed "(0): none of this tree's scripts", the announcement stating a
+    # reading it never made.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        (root / ".claude").mkdir()
+        q = root / "scripts" / "asked.py"
+        q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+        q.chmod(0o755)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(
+            json.dumps({"permissions": {"allow": ["Bash(git *)"]}}))
+        (root / ".claude" / "settings.json").write_text(json.dumps({"hooks": []}))
+        (root / ".claude" / "settings.local.json").write_text("{ not json")
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        out = r.stdout
+        user = str(home / ".claude" / "settings.json")
+        proj = str(root / ".claude" / "settings.json")
+        local = str(root / ".claude" / "settings.local.json")
+        check("a settings file holding no `hooks` key is read, and counted as "
+              "registering none",
+              f"harness hooks in {user} (0): none of this tree's scripts" in out
+              and not [l for l in out.splitlines() if "!!" in l and user in l])
+        check("a `hooks` that is not an object is a problem, since what it "
+              "registers is unknown",
+              [l for l in out.splitlines() if "!!" in l and proj in l]
+              and f"harness hooks in {proj}" not in out)
+        check("a settings file that would not read announces no count either, "
+              "a count there being a reading it never made",
+              [l for l in out.splitlines() if "!!" in l and local in l]
+              and f"harness hooks in {local}" not in out)
+        check("...and none of the three suppresses the listing",
+              r.returncode == 0 and "run unasked" in out)
+
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed
     # that git never runs.

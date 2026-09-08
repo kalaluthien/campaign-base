@@ -185,12 +185,21 @@ HARNESS_SETTINGS = Path.home() / ".claude" / "settings.json"
 def harness_run(settings_path, names):
     """Which of these scripts the harness runs unasked, from its settings.
 
-    Returns (found, problems), with `found` None when there is no such file --
-    three sources are read and two of them are absent on an ordinary checkout,
-    so their absence is a reading the listing states rather than a warning it
-    raises. Every OTHER failure to read is a problem rather than an empty set: a
-    settings file that would not parse is not a machine with no hooks, and the
-    difference decides whether a session is told the guard is there.
+    Returns (found, problems). `found` is the SET of names when the file was
+    read, and a SENTENCE saying why there is no reading when it was not. The
+    two must not collapse into one empty set: a file that would not parse is
+    not a machine with no hooks, and printing "(0)" about a source it never read
+    is this announcement stating something it did not observe -- the failure it
+    exists to prevent, pointed at itself.
+
+    Three sentences, and only one of them is also a problem. Absent is a
+    reading: three sources are read and two are absent on an ordinary checkout,
+    so a `!!` each would put two lines of alarm into every session start. A
+    file present but unreadable, and a `hooks` that is not an object, are
+    problems -- what the harness runs there is unknown. A file with NO `hooks`
+    key at all is neither: it was read and registers nothing, which is the
+    ordinary shape of .claude/settings.local.json, holding a person's
+    permissions and no hook.
 
     The match is on the script's basename as a whole token of a hook's
     `command` -- no word character, dot or hyphen touching it -- because a
@@ -203,14 +212,17 @@ def harness_run(settings_path, names):
     try:
         settings = json.loads(settings_path.read_text())
     except FileNotFoundError:
-        return None, []
+        return "does not exist, so it registers no harness hook", []
     except (OSError, ValueError) as e:
-        return found, [f"{settings_path} would not read "
-                       f"({e.__class__.__name__}), so what the harness runs is "
-                       f"unknown"]
+        why = (f"would not read ({e.__class__.__name__}), so what the harness "
+               f"runs there is unknown")
+        return why, [f"{settings_path} {why}"]
     hooks = settings.get("hooks")
+    if hooks is None:
+        return found, problems      # read, and registering no hook at all
     if not isinstance(hooks, dict):
-        return found, [f"{settings_path} has no `hooks` object this can read"]
+        why = "has a `hooks` that is not an object, so what it registers is unknown"
+        return why, [f"{settings_path} {why}"]
     for event, entries in sorted(hooks.items()):
         if not isinstance(entries, list):
             problems.append(f"{settings_path} {event} is not a list of entries")
@@ -291,7 +303,8 @@ def main():
         found, probs = harness_run(sp, all_names)
         harness[sp] = found
         harness_problems += probs
-        runs |= found or set()
+        if isinstance(found, set):
+            runs |= found
     guards, readers, unknown = [], [], []
     for name, p, top in scripts:
         summ = summary(p)
@@ -323,8 +336,8 @@ def main():
                   "in this checkout is\n        known to be guarded.")
 
     for sp, found in harness.items():
-        if found is None:
-            print(f"\n  {sp} does not exist, so it registers no harness hook")
+        if isinstance(found, str):
+            print(f"\n  {sp} {found}")
         else:
             print(f"\n  harness hooks in {sp} ({len(found)}): "
                   f"{', '.join(sorted(found)) or 'none of this tree\'s scripts'}")

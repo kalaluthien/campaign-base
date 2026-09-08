@@ -154,7 +154,7 @@
       <text x="186" y="152">feeds</text>
     </g>
   </svg>
-  <figcaption>화살표 하나가 <code>feeds</code> 의 짝 하나다. <code>Docs</code> 와 <code>Test</code> 는 둘 다 <code>Spec</code> 을 잇고 둘 다 <code>Code</code> 를 앞선다. 점이 찍힌 네 단계가 <code>skippable</code> 이다. <code>Intent</code> 와 <code>Plan</code> 은 그 안에 없다.</figcaption>
+  <figcaption>화살표 하나가 <code>feeds</code> 의 짝 하나다. <code>Docs</code> 와 <code>Test</code> 는 둘 다 <code>Spec</code> 을 잇고 둘 다 <code>Code</code> 를 앞선다. 점이 찍힌 네 단계가 <code>skippable</code> 이다. <code>Intent</code> 와 <code>Plan</code> 은 그 안에 없다. <span class="src">spec/sdlc/system.als:68-71 @ 3d8fd5b</span></figcaption>
 </figure>
 
 <pre>fun feeds: Stage -&gt; Stage {
@@ -209,13 +209,13 @@
       <text x="180" y="22" font-size="10" font-family="ui-monospace, Menlo, monospace">t</text>
       <text x="312" y="22" font-size="10" font-family="ui-monospace, Menlo, monospace">k</text>
       <text x="48" y="56" font-size="12.5" font-weight="bold">Spec</text>
-      <text x="48" y="74" font-size="9.5" font-family="ui-monospace, Menlo, monospace">Written</text>
+      <text x="48" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">Written</text>
       <text x="180" y="56" font-size="12.5" font-weight="bold">Test</text>
-      <text x="180" y="74" font-size="9.5" font-family="ui-monospace, Menlo, monospace">Written</text>
+      <text x="180" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">Written</text>
       <text x="312" y="56" font-size="12.5" font-weight="bold">Code</text>
-      <text x="312" y="74" font-size="9.5" font-family="ui-monospace, Menlo, monospace">stage.Code</text>
-      <text x="112" y="50" font-size="9.5" font-family="ui-monospace, Menlo, monospace">names</text>
-      <text x="244" y="50" font-size="9.5" font-family="ui-monospace, Menlo, monospace">names</text>
+      <text x="312" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">stage.Code</text>
+      <text x="112" y="50" font-size="10" font-family="ui-monospace, Menlo, monospace">names</text>
+      <text x="244" y="50" font-size="10" font-family="ui-monospace, Menlo, monospace">names</text>
       <text x="180" y="134" font-size="10.5" font-family="ui-monospace, Menlo, monospace">tied[k] = some tie.k</text>
     </g>
   </svg>
@@ -244,6 +244,8 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
   <tr><td>묶음이 끊긴 트리</td><td><code>TreeStaysTied_Bites</code>, <code>S4_RenameBreaksTheTie</code></td><td>검사가 거절해야 하는 것</td></tr>
   <tr><td>같은 커밋이 부르는 쪽도 다시 써서 묶음이 버틴다</td><td><code>S4a_RenameKeepsItsNamers</code></td><td>검사가 통과시켜야 하는 것</td></tr>
 </table>
+
+<p class="src">spec/sdlc/scenarios.als:39-45, spec/sdlc/scenarios.als:120-143, spec/sdlc/checks.als:29-38 @ 3d8fd5b</p>
 
 <h2>단계별 건너뛰기 규칙</h2>
 
@@ -290,7 +292,7 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
     <td><strong>Code</strong></td>
     <td>맞다</td>
     <td><code>no writtenOf[c] &amp; stage.(Test + Code)</code></td>
-    <td>도는 것이 없다. Test와 Code가 기준을 나누어 갖는 것은 일부러다 — 코드 경로 없는 테스트는 아무것도 목격하지 않고, 테스트 없는 코드 경로는 검사받지 않는다</td>
+    <td>도는 것이 없다. Test와 Code가 기준을 나누어 갖는 것은 의도적이다 — 코드 경로 없는 테스트는 아무것도 목격하지 않고, 테스트 없는 코드 경로는 검사받지 않는다</td>
   </tr>
 </table>
 
@@ -357,7 +359,7 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
   </tr>
   <tr>
     <td>변경이 착지할 때 다시 읽는다</td>
-    <td><code>landDiscipline</code> — <code>all s: absentStages[Now.subject] | maySkip[Now.subject, s]</code></td>
+    <td><code>landDiscipline</code> — <code>Now.event = Land implies all s: absentStages[Now.subject] | maySkip[Now.subject, s]</code></td>
     <td>착지는 병합이므로 병합을 막는 자리, 곧 풀 리퀘스트의 <code>check</code></td>
   </tr>
   <tr>
@@ -366,6 +368,8 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
     <td>검사와, 그 규율 없을 때의 반례</td>
   </tr>
 </table>
+
+<p class="src">spec/sdlc/scenarios.als:32-37, spec/sdlc/scenarios.als:47-55, spec/sdlc/checks.als:42-52 @ 3d8fd5b</p>
 
 <div class="callout">
   <div class="g">&#9888;</div>

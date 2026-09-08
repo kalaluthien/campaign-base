@@ -586,7 +586,10 @@ def main():
         (r.root / "spec" / "a.html").write_text("<p>a</p>\n")
         git(r.root, "add", "spec/a.html")
         c = r.commit()
-        check("an ordinary branch is not pushed", "push-campaign-branch" not in
+        # The hook's own verdict line, not its name: a pre-commit guard may
+        # NAME the script in its reading (check-sdlc-tie lists it among the
+        # untied code paths), and a name is not a push.
+        check("an ordinary branch is not pushed", "push-campaign-branch:" not in
               c.stdout + c.stderr, (c.stdout + c.stderr)[:160])
         # THE REF IS THE CLAIM, so the branch is on the remote before the
         # commit -- which is what `campaign-claim take` does, server-side,

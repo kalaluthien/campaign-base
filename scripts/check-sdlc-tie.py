@@ -21,10 +21,10 @@ THE THREE NAMES, as the tree carries them today
              file: `t -> s` and `t -> k`, so `tie` holds `s -> t -> k` and
              `tied[k]` asks whether some suite named after k names some
              scenario that exists.
-  code path  a `.py` or `.sh` sitting directly in one of those scripts/
-             directories whose stem does not end in `-test`. Nothing under
-             scripts/fixtures/ or an assets/ is a code path: the first is
-             data, the second a template for another tree.
+  code path  a script by check-tree-shape.py's R6 -- `.py` or `.sh`, sitting
+             directly in one of those scripts/ directories -- whose stem does
+             not end in `-test`. What R6 refuses or skips (no extension, a
+             nested path, scripts/fixtures/) is not a code path here either.
 
 The suite may sit in a different scripts/ directory from its code path --
 scripts/acquire-repo-test.py drives a skill's acquire-repo.sh -- so the pair is
@@ -36,7 +36,11 @@ WHAT IT JUDGES
 The commit's change, read as the model's events. Each code path in the tree
 after the commit is either tied or not, and the same is asked of the tree
 before it; a code path the commit renamed keeps its identity across the two
-readings. Three shapes are refused, one per cause:
+readings where git pairs the rename (`-M`), and a rewrite git cannot pair is a
+new path, judged as one. A path that was in the tree before but not a code
+path -- nested, extensionless, under fixtures/ -- ENTERS the code set when it
+is moved into a scripts/ slot, and is judged as new. Three shapes are refused,
+one per cause:
 
   T1  a code path the commit ADDS is untied: no suite carries its stem, or
       the suite names no scenario. The write that `TreeStaysTied_Bites`
@@ -79,8 +83,10 @@ would refuse every scenario spec/campaign holds.
 READING VERSUS VERDICT
 
 Every run prints what it read -- how many scenarios, suites and code paths,
-from which tree, and how many paths the change renamed -- so a clean run and a
-run that examined nothing do not read the same. Whether a code path is new is
+from which tree, under which root, and how many paths the change renamed -- so
+a clean run and a run that examined nothing do not read the same. Every
+listing and read is under the repository root, so a run from a subdirectory
+reads the same tree as one from the root. Whether a code path is new is
 read from the tree before the commit and never from the diff: an intent-to-add
 entry sits in the index and in no `diff --cached`. A finding is one line on
 stderr: the code, the path, and what was found; the exit status is 1. A
@@ -119,6 +125,13 @@ def load_decl():
 def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True,
                           check=True).stdout
+
+
+ROOT = None          # set once by judge(); every listing and read is root-relative
+
+
+def git_root(*args):
+    return git("-C", ROOT, *args)
 
 
 def in_scripts_dir(path):
@@ -168,18 +181,22 @@ class Tree:
 
 def head_tree(decl):
     try:
-        paths = git("ls-tree", "-r", "--name-only", "HEAD").splitlines()
+        paths = git_root("ls-tree", "-r", "--name-only", "HEAD").splitlines()
     except subprocess.CalledProcessError:
         return Tree("HEAD (no commit yet)", [], lambda p: "", decl)
-    return Tree("HEAD", paths, lambda p: git("show", f"HEAD:{p}"), decl)
+    return Tree("HEAD", paths, lambda p: git_root("show", f"HEAD:{p}"), decl)
 
 
 def after_tree(staged, decl):
-    paths = git("ls-files").splitlines()
+    paths = git_root("ls-files").splitlines()
     if staged:
-        return Tree("the index", paths, lambda p: git("show", f":{p}"), decl)
+        return Tree("the index", paths, lambda p: git_root("show", f":{p}"), decl)
+    # The working tree is what is ON DISK: a tracked file deleted there and
+    # not yet staged is gone from this reading, so a suite removed with `rm`
+    # is T2 and not a FileNotFoundError the last resort permits.
+    paths = [p for p in paths if (Path(ROOT) / p).is_file()]
     return Tree("the working tree", paths,
-                lambda p: Path(p).read_text(errors="replace"), decl)
+                lambda p: (Path(ROOT) / p).read_text(errors="replace"), decl)
 
 
 def renames(staged):
@@ -191,7 +208,7 @@ def renames(staged):
     args = ["diff", "--cached", "--name-status", "-M"] if staged \
         else ["diff", "HEAD", "--name-status", "-M"]
     try:
-        out = git(*args)
+        out = git_root(*args)
     except subprocess.CalledProcessError:
         return {}                                # no HEAD: nothing to rename from
     moved = {}
@@ -203,11 +220,15 @@ def renames(staged):
 
 
 def judge(staged):
+    global ROOT
+    # Root first, and every git call and disk read under it: run from a
+    # subdirectory, a bare `git ls-files` lists that directory alone, which
+    # reads as a tree with no scripts/ and passes.
+    ROOT = root = git("rev-parse", "--show-toplevel").strip()
     decl = load_decl()
     before = head_tree(decl)
     after = after_tree(staged, decl)
     moved = renames(staged)
-    root = git("rev-parse", "--show-toplevel").strip()
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
           f"{len(after.suites)} suite(s), {len(after.code)} code path(s) from "
           f"{after.label} under {root}; each judged against {before.label}, "
@@ -217,7 +238,7 @@ def judge(staged):
         if after.tied(k):
             continue
         was = moved.get(k, k)                    # its name in the tree before
-        if was not in before.paths:
+        if was not in before.code:
             why = ("no suite carries its stem" if not after.suites_of(k)
                    else "its suite names no scenario declared under spec/")
             findings.append(("T1", k, f"added untied: {why}. A code path is "

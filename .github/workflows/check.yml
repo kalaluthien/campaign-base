@@ -64,10 +64,13 @@ jobs:
       # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
       # and the extension names its language, so a shell suite is found too
       # rather than silently skipped by a glob that pins one interpreter.
+      # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
+      # reads a tie through a suite in either, and a tie through a suite this
+      # loop never ran would be a name and nothing else.
       - name: Every suite
         run: |
           n=0
-          for t in scripts/*-test.*; do
+          for t in $(find scripts .claude/skills/*/scripts -maxdepth 1 -name '*-test.*' | sort); do
             echo "== $t"
             "$t" || exit 1
             n=$((n + 1))

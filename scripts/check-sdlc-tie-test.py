@@ -42,6 +42,15 @@ CASES = [
      {}, {SPEC: DECL, "scripts/a.py": CODE}, "T1"),
     ("T1 a code path added in a skill's scripts/ with no suite anywhere",
      {SPEC: DECL}, {".claude/skills/s/scripts/a.sh": "#!/bin/sh\n"}, "T1"),
+    ("T1 a nested script moved into a scripts/ slot enters the code set untied",
+     {SPEC: DECL, "scripts/sub/a.py": CODE},
+     {"scripts/sub/a.py": None, "scripts/a.py": CODE}, "T1"),
+    ("T1 a fixture moved into a scripts/ slot enters the code set untied",
+     {SPEC: DECL, "scripts/fixtures/a.py": CODE},
+     {"scripts/fixtures/a.py": None, "scripts/a.py": CODE}, "T1"),
+    ("T1 an extensionless script given its extension enters the code set untied",
+     {SPEC: DECL, "scripts/a": CODE},
+     {"scripts/a": None, "scripts/a.py": CODE}, "T1"),
     # ---- T2: a tied code path loses its suite.
     ("T2 the code path renamed and its suite not",
      TIED, {"scripts/a.py": None, "scripts/b.py": CODE}, "T2"),
@@ -114,7 +123,7 @@ def stage(root, files):
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
 
 
-def run_case(before, after, args=("--staged",), on_disk=None):
+def run_case(before, after, args=("--staged",), on_disk=None, cwd=""):
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
@@ -128,7 +137,7 @@ def run_case(before, after, args=("--staged",), on_disk=None):
             else:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(body)
-        return subprocess.run([sys.executable, str(GUARD), *args], cwd=root,
+        return subprocess.run([sys.executable, str(GUARD), *args], cwd=root / cwd,
                               capture_output=True, text=True)
 
 
@@ -144,10 +153,11 @@ def judge(r, code):
 
 
 def main():
-    failed = 0
+    failed = ran = 0
 
     def check(name, ok, want, r):
-        nonlocal failed
+        nonlocal failed, ran
+        ran += 1
         if ok:
             print(f"ok    {name}")
         else:
@@ -184,6 +194,19 @@ def main():
     r = run_case(TIED, {}, args=(), on_disk={"scripts/a-test.py": "# gone\n"})
     check("without --staged, a suite edited on disk to name nothing is T3",
           r.returncode == 1 and "T3\t" in r.stderr, "T3 on stderr, exit 1", r)
+    r = run_case(TIED, {}, args=(), on_disk={"scripts/a-test.py": None})
+    check("without --staged, a suite deleted on disk and not staged is T2, not a permit",
+          r.returncode == 1 and "T2\t" in r.stderr and "PERMITTING" not in r.stderr,
+          "T2 on stderr, exit 1", r)
+    r = run_case(TIED, {}, args=(), on_disk={SPEC: None})
+    check("without --staged, a spec module deleted on disk and not staged is T3",
+          r.returncode == 1 and "T3\t" in r.stderr and "PERMITTING" not in r.stderr,
+          "T3 on stderr, exit 1", r)
+
+    # From a subdirectory the same tree is read.
+    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE}, cwd="spec")
+    ok, want = judge(r, "T1")
+    check("run from a subdirectory, the guard reads the whole tree", ok, want, r)
 
     # The legacy debt is reported by name on the allow that leaves it.
     r = run_case({SPEC: DECL, "scripts/a.py": CODE}, {"scripts/a.py": CODE + "y\n"})
@@ -205,8 +228,7 @@ def main():
     want = ("read 1 scenario name(s), 1 suite(s), 1 code path(s) from the index under")
     check("the reading names what it counted and where", want in r.stdout, want, r)
 
-    n = len(CASES) + 10
-    print(f"{n} case(s), {failed} failed")
+    print(f"{ran} case(s) ran, {failed} failed")
     return 1 if failed else 0
 
 

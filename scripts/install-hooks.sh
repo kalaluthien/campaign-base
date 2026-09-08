@@ -283,13 +283,13 @@ fi
 # whose event lived elsewhere would be registered on a slot nothing names.
 # installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit
 #
-# ...and the line below is what those guards IMPORT rather than run, which no
-# `# runs:` line can carry: a name there is executed as a guard. Nothing in this
+# ...and the line below is what the guards of EITHER half import rather than
+# run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this
 # installer reads it -- the base tree holds every script already, and a member
 # clone reaches them by absolute path -- but the suites that build a fixture
 # from these declarations do, and a fixture missing an import is a guard that
 # tracebacks where it meant to refuse.
-# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py
+# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py scripts/alloy-check.py
 #
 # REPO-RELATIVE since #227: a script either half names may live under
 # .claude/skills/<skill>/scripts/, so an entry carries the whole path and

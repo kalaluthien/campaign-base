@@ -2,7 +2,7 @@
 """Run one spec/ module, hold its command list, and digest its traces.
 
     scripts/alloy-check.py <file.als> [-o <dir>]
-    scripts/alloy-check.py --commands <dir> [--write]
+    scripts/alloy-check.py --commands spec [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
 
 Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
@@ -156,7 +156,7 @@ def commands_mode(directory, write):
     # of a triple on its own line: one command per line is the whole point, so
     # that a deletion is one removed line naming the command that went.
     head = {
-        "generated_by": "scripts/alloy-check.py --commands <dir> --write",
+        "generated_by": "scripts/alloy-check.py --commands spec --write",
         "why": "A deleted command misses no `expect` clause, and an inventory "
                "regenerated from the models cannot see the deletion either. "
                "This copy is committed so the diff is the reader.",

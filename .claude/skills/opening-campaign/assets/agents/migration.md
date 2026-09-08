@@ -38,6 +38,12 @@ cycle of real traffic.
 - Silence about a difference you found and accepted. Write it down with the
   reason; it is the thing an incident will point at.
 
+## SDLC profile
+
+`optional = Spec + Docs` -- this kind adds no shape and no new behaviour to
+formalise, and never waives the equivalence check: its test and the code path it
+drives are what says behaviour is unchanged.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

@@ -38,6 +38,12 @@ an argument, not a product, and it is expected to be deleted.
 - Quietly reporting a prototype as production-ready. Say what is hardcoded, what
   is unhandled, and what would have to be rewritten.
 
+## SDLC profile
+
+`optional = Spec + Docs` -- this kind defers the model and the view, and never
+the running thing: the test that shows it working and the code path it drives are
+the claim.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

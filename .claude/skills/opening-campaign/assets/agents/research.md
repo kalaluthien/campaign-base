@@ -39,6 +39,12 @@ re-derived and most likely to be repeated.
   decides whether it is a sub-issue or an item on work already open.
 - Answering a question the campaign did not ask because it was nearby.
 
+## SDLC profile
+
+`optional = skippable` -- a finding of this kind lands on an issue and runs
+nothing, so every stage below the plan may go; what one does write it still owes
+the stages above it.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

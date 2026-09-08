@@ -40,6 +40,12 @@ started.
 - Extrapolating a trend from two points, or from a window that includes a
   deploy, an incident, or a holiday, without saying so.
 
+## SDLC profile
+
+`optional = skippable` -- this kind refuses to change what it measures, so a
+change of it may run nothing at all; a measurement script it does write owes the
+scenario and the test above it like any other code path.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

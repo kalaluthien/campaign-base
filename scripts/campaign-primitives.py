@@ -301,9 +301,10 @@ def main():
     # scripts/ names were offered to this half.
     all_names = {p.name for _, p, _ in scripts}
     runs, problems = hook_run(hook_texts, top_names)
-    # Both files the harness reads, in the order it merges them. The second is
-    # the described checkout's rather than HERE's, so --scripts-dir moves it the
-    # way it moves the script roots and a fixture tree can exercise the reading.
+    # Every file the harness reads, in the order it merges them. The two under
+    # `claude` are the DESCRIBED checkout's rather than HERE's, so --scripts-dir
+    # moves them the way it moves the script roots and a fixture tree can
+    # exercise the reading.
     claude = here.parent / ".claude"
     settings_files = [HARNESS_SETTINGS, claude / "settings.json",
                       claude / "settings.local.json"]

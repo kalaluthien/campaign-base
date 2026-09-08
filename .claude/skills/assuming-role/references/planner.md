@@ -28,3 +28,22 @@ through a subagent, which carries the planner's session id and so its role.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.
+
+## The planner's clock
+
+A planner that has handed work out waits on a cron it sets itself
+(§ Watching and retiring in `AGENTS.md`). Three horizons decide the cadence,
+each a different cost:
+
+| horizon | length | crossing it costs | the cron that answers it |
+| --- | --- | --- | --- |
+| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run — required reads: `AGENTS.md` § Watching and retiring |
+| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking | one-shot, 1 minute after the reset, when a limit menu is read |
+| weekly limit | 1 week (`/usage`'s "Current week" reset) | stops everything until its own reset | stop, and a one-shot at the weekly reset |
+
+Two harness facts, from `CronCreate`'s own description:
+
+- A cron is session-only: it lives only in this session and is gone when the
+  session ends, so it is re-set after every restart.
+- A recurring cron auto-expires after 7 days — it fires once more, then is
+  deleted.

@@ -193,17 +193,18 @@ def harness_run(settings_path, names):
     exists to prevent, pointed at itself.
 
     Four sentences, and three of them are also problems. Only absence is a
-    reading: three sources are read and two are absent on an ordinary checkout,
-    so a `!!` each would put two lines of alarm into every session start. A
-    file present but unreadable, and a `hooks` that is not an object, are
-    problems -- and so is a file whose top-level value is not an object at all,
-    which used to reach `.get` and raise an AttributeError no `except` here
-    caught, taking the WHOLE announcement down with it: a SessionStart hook that
-    exits non-zero has its stdout dropped, so one malformed settings file
-    deleted the listing rather than one line of it. A file with NO `hooks` key
-    at all is none of these: it was read and registers nothing, which is the
-    ordinary shape of .claude/settings.local.json, holding a person's
-    permissions and no hook.
+    reading: of the three sources read, .claude/settings.json is tracked and the
+    machine's is written by install-hooks, so the one absent on an ordinary
+    checkout is .claude/settings.local.json -- and a `!!` for it would put a
+    line of alarm into every session start. A file present but unreadable, and a
+    `hooks` that is not an object, are problems -- and so is a file whose
+    top-level value is not an object at all, which used to reach `.get` and
+    raise an AttributeError no `except` here caught, taking the WHOLE
+    announcement down with it: a SessionStart hook that exits non-zero has its
+    stdout dropped, so one malformed settings file deleted the listing rather
+    than one line of it. A file with NO `hooks` key at all is none of these: it
+    was read and registers nothing, which is the ordinary shape of
+    .claude/settings.local.json, holding a person's permissions and no hook.
 
     The match is on the script's basename as a whole token of a hook's
     `command` -- no word character, dot or hyphen touching it -- because a

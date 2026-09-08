@@ -690,19 +690,24 @@ script only a hook runs has no such caller and owes none.
 
 **Exit status has two conventions here, and a guard takes the one its caller
 reads.** A **harness hook** is read by the harness: **0 allows, 2 refuses, and
-nothing else blocks** — `check-campaign-claim.py` is the one. A **`pre-commit`
-guard** is read by git, which blocks on any non-zero, so each names its own
-numbering in its `EXIT` section and a reader takes it from there rather than
-from a convention. Both put the reason on stderr, and both keep a status for
-their own crash apart from their refusal, because a guard that could not run
-has permitted nothing.
+nothing else blocks** — `check-campaign-claim.py` is the only harness hook here
+that refuses; the others announce. A **`pre-commit` guard** is read by git,
+which blocks on any non-zero, so it is free to number its own findings and each
+says which codes it uses in its docstring; take them from there rather than
+from a convention. Both put the reason on stderr.
+
+**Keep a guard's own crash apart from its refusal where the caller can act on
+the difference**, because a guard that could not run has permitted nothing.
+Under git it often cannot be kept apart — an unhandled exception exits 1, which
+is also what three of these guards return for a finding — so a guard whose
+caller must tell the two apart says so and handles its own errors.
 
 **A script that answers a question prints the answer as a word on stdout**, and
 the caller reads the word, never the status. The status says whether the
 reading was made at all, and one script may need more than one code to say so:
-`check-commit-claim.py --is-claim` exits 0, 1 and 2 for `claim`, `no-claim` and
-`unknown`, because a caller about to push must tell an answered no from a
-question it could not read.
+`check-commit-claim.py --is-claim` answers `claim`, `no-claim` or `unknown` and
+gives each its own status, because a caller about to push must tell an answered
+no from a question it could not read.
 
 Three harness facts, each of which makes a hook enforce nothing when it is
 missed:
@@ -774,5 +779,5 @@ An unused skill still costs its description every turn: a fact belongs in this
 file, and only a procedure earns a skill.
 
 **`.claude/skills/herdr/` is vendored**, and the first line of its body, under
-the frontmatter, names the upstream and the tag. An upgrade replaces the whole file; any edit breaks the
-identity that makes that replacement safe.
+the frontmatter, names the upstream and the tag. An upgrade replaces the whole
+file; any edit breaks the identity that makes that replacement safe.

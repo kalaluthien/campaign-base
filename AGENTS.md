@@ -678,9 +678,9 @@ what was observed, and recover the true outcome from a durable source.
 does not carry a finished sub-issue's transcript into the next one:
 `campaign-claim release` enqueues it, and says so when it could not.
 
-**The session limit is a first-class cause of death, and it kills in batches.** An
-agent it stopped looks exactly like one still thinking; when several go quiet
-together, read the reset time first — an outage to schedule around, not a retry.
+**The session limit is a first-class cause of death, and it kills in batches**;
+a planner's own pacing against it is `.claude/skills/assuming-role/references/planner.md`
+§ The planner's clock.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with
 all three readings (`campaign-claim live`). A campaign may not close while a

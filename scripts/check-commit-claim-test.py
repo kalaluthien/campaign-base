@@ -70,7 +70,7 @@ def build(d, **kw):
     f = m.Fixture(d, claims=())
     for n in _needed():
         place(n, f.base)
-    (f.base / "docs").mkdir()
+    (f.base / "spec").mkdir()
     m.git(f.base, "add", "-A")
     m.git(f.base, "commit", "-qm", "scripts", "--no-verify")
     m.git(f.base, "push", "-q", "origin", "HEAD")
@@ -99,10 +99,10 @@ def build(d, **kw):
 
 
 def commit(f, tree, env=None):
-    """A clean commit attempt in `tree`: one HTML page under docs/, which no
+    """A clean commit attempt in `tree`: one HTML page under spec/, which no
     other guard refuses, so the verdict is the claim gate's alone."""
-    (tree / "docs").mkdir(exist_ok=True)
-    p = tree / "docs" / "x.html"
+    (tree / "spec").mkdir(exist_ok=True)
+    p = tree / "spec" / "x.html"
     p.write_text("<p>x</p>\n")
     f.git(tree, "add", str(p))
     before = f.git(tree, "rev-parse", "HEAD").stdout.strip()
@@ -251,7 +251,7 @@ def main():
         for n in _needed():
             place(n, root)
         (root / ".gitignore").write_text(
-            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/docs/\n")
+            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n")
         subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",
                         "user.name=t", "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",
@@ -262,9 +262,9 @@ def main():
         subprocess.run([str(root / "scripts" / "install-hooks.sh"), "--git-only"],
                        cwd=root, capture_output=True, text=True,
                        env=dict(os.environ, HOME=str(home)), check=True)
-        (root / "docs").mkdir()
-        (root / "docs" / "x.html").write_text("<p>x</p>\n")
-        subprocess.run(["git", "-C", str(root), "add", "docs/x.html"], check=True)
+        (root / "spec").mkdir()
+        (root / "spec" / "x.html").write_text("<p>x</p>\n")
+        subprocess.run(["git", "-C", str(root), "add", "spec/x.html"], check=True)
         r = subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",
                             "user.name=t", "commit", "-qm", "c"],
                            capture_output=True, text=True,
@@ -281,7 +281,7 @@ def main():
         f = build(d)
         home = f.home
         (f.base / "scripts" / "check-campaign-claim.py").unlink()
-        (f.base / "docs" / "y.html").write_text("<p>y</p>\n")
+        (f.base / "spec" / "y.html").write_text("<p>y</p>\n")
         m = load_fixture()
         m.git(f.base, "add", "-A")
         before = m.git(f.base, "rev-parse", "HEAD").stdout.strip()
@@ -304,8 +304,8 @@ def main():
         f = build(d, feature="feature")
         home = f.home
         wt = f.trees["feature"]
-        (wt / "docs").mkdir(exist_ok=True)
-        (wt / "docs" / "z.html").write_text("<p>z</p>\n")
+        (wt / "spec").mkdir(exist_ok=True)
+        (wt / "spec" / "z.html").write_text("<p>z</p>\n")
         m = load_fixture()
         m.git(wt, "add", "-A")
         r = subprocess.run(["git", "-C", str(wt), "-c", "user.email=t@t", "-c",
@@ -388,9 +388,9 @@ def main():
             # A DISTINCT FILE PER ROUND: `commit` writes one fixed page, so a
             # second round had nothing to commit and every branch looked the
             # same as the last.
-            (tree / "docs").mkdir(exist_ok=True)
-            (tree / "docs" / f"{word}.html").write_text(f"<p>{word}</p>\n")
-            f.git(tree, "add", str(tree / "docs" / f"{word}.html"))
+            (tree / "spec").mkdir(exist_ok=True)
+            (tree / "spec" / f"{word}.html").write_text(f"<p>{word}</p>\n")
+            f.git(tree, "add", str(tree / "spec" / f"{word}.html"))
             r, moved = commit(f, tree)
             after = f.git(tree, "ls-remote", "origin",
                           "demo/9-topic").stdout.split()

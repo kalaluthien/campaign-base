@@ -80,7 +80,7 @@ class Fixture:
         # the campaign directory: the commit gate's suite commits through the
         # installed hooks over this same fixture.
         (self.base / ".gitignore").write_text(
-            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n")
+            "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n")
         git(self.base, "add", "-A")
         git(self.base, "commit", "-qm", "init")
         git(self.base, "push", "-q", "origin", "HEAD")
@@ -605,7 +605,7 @@ def main():
         check("a file path operand is not read as the issue number",
               r.returncode == 2 and "a write to #7" in r.stderr
               and "#123" not in r.stderr, out(r)[:300])
-        r = ask(f.base, tool="Bash", command="gh issue close docs/2024/9")
+        r = ask(f.base, tool="Bash", command="gh issue close notes/2024/9")
         check("...nor is any other slashed word that is not an issue URL",
               "a write to #9" not in r.stderr, out(r)[:300])
         # And a flag's value that IS a bare number must not be read as the

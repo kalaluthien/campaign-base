@@ -18,7 +18,7 @@ campaign-base/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
   .claude/skills/closing-campaign
-  spec/  docs/  scripts/
+  spec/  scripts/
   auth-refactor/                 a campaign, named for its slug, git-ignored
     .campaign                    the campaign issue number and the slug; what
                                  makes this directory a campaign's

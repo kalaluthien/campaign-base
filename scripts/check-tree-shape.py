@@ -9,12 +9,12 @@ alone, and each has already been broken once or is one careless commit from it.
 
 WHAT IT CHECKS
 
-  R1  spec/ and docs/ hold no markdown.
+  R1  spec/ holds no markdown.
       spec/ is Alloy whose comments are the spec, and an HTML diagram may sit
-      beside a model; docs/ is HTML drawn for a reader. What this refuses is
-      markdown under either, which is what "temporary" always turns out to be.
-      Nothing here counts the diagrams or checks where one sits: that would be
-      a rule with no reader, and this is the reader.
+      beside a model. What this refuses is markdown under it, which is what
+      "temporary" always turns out to be. Nothing here counts the diagrams or
+      checks where one sits: that would be a rule with no reader, and this is
+      the reader.
 
   R2  every tracked top-level entry is named in .gitignore's allowlist.
       The root is `/*` plus `!` lines. A directory that gets tracked without
@@ -42,11 +42,29 @@ WHAT IT CHECKS
       Three planes, and the base is one of them. R2 catches the ordinary
       route in (repos/ has no allowlist line); this catches the deliberate one.
 
+  R5  a skill directory holds SKILL.md and the three directories a skill has.
+      `scripts/` is executed, `references/` is read on demand, `assets/` is
+      copied into the deliverable, and the three differ in what reaches the
+      model's context -- so a fourth name is a file whose fate nobody decided.
+      references/ is one level deep as well: a reference is named by the
+      catalogue row that selects it, and a row cannot select a subtree.
+
+  R6  a script carries the extension of its language.
+      `.py` or `.sh`, on every file sitting directly in a `scripts/`. The
+      interpreter is a fact about the file, hiding it costs every reader a
+      `head -1`, and a glob selecting by language cannot select at all. R3a
+      says the same of a `scripts/<name>` a code line CALLS; this says it of
+      the file itself, so a script nothing calls yet is caught too. A path
+      under an `assets/` is a template for some other tree and is skipped,
+      and so is anything nested below the `scripts/` rather than in it --
+      `scripts/fixtures/` is data, not a script.
+
 WHAT IT DOES NOT CATCH
 
 R3 is a path check, not a concept check: reintroducing the holder role under a
 different word, or in a file that exists, passes. R1 does not read a file's contents, so HTML named .md is
-caught and markdown named .html is not. Both are floors -- they stop the commit
+caught and markdown named .html is not. R6 reads no contents either, so a
+shell script named `.py` passes. All are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
 EXEMPTING A BLOCK FROM R3
@@ -70,7 +88,7 @@ READING VERSUS VERDICT
 A file it cannot read is reported as R0 and refuses the commit. It is never
 skipped: a guard that skips what it cannot read reports nothing and reads
 exactly like a pass, which is the failure mode this whole family of checks
-exists to refuse. R0 is counted apart from R1-R4 because "I looked and found
+exists to refuse. R0 is counted apart from R1-R6 because "I looked and found
 nothing" and "I could not look" want different repairs.
 
 EXIT
@@ -110,6 +128,12 @@ from pathlib import Path
 #                                          and the concepts behind them are
 #                                          gone from the model; a word check
 #                                          could only catch the spelling.
+
+# R5. What a skill directory holds. The three differ in what reaches the
+# model's context -- a script's output only, a reference when it is read, an
+# asset never -- so a fourth name is a file whose fate nobody decided.
+SKILLS = ".claude/skills/"
+SKILL_DIRS = ("scripts", "references", "assets")
 
 # R3a. Every `scripts/<name>` a code line calls, skill-scoped or not. THE
 # RESOLUTION IS `check-cross-references.py`'s: its `Tree` is the one reader of
@@ -403,9 +427,10 @@ def main():
 
     # R1
     misfiled = [p for p in paths
-                if p.endswith(".md") and p.split("/")[0] in ("spec", "docs")]
+                if p.endswith(".md") and p.split("/")[0] == "spec"]
     for p in misfiled:
-        note("R1", p, "markdown under spec/ or docs/ -- spec/ is Alloy, docs/ is HTML")
+        note("R1", p, "markdown under spec/ -- spec/ is Alloy whose comments "
+                      "are the spec, and an HTML diagram may sit beside a model")
 
     # R2
     ignore = Path(".gitignore")
@@ -500,6 +525,34 @@ def main():
     for p in paths:
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
             note("R4", p, "a member repository's file in the base plane")
+
+    # R5
+    for p in paths:
+        if not p.startswith(SKILLS):
+            continue
+        inside = p[len(SKILLS):].split("/")[1:]      # below <skill>/
+        if not inside:
+            note("R5", p, "a loose file directly under .claude/skills/: a "
+                          "skill is a directory holding a SKILL.md")
+        elif inside == ["SKILL.md"]:
+            pass
+        elif inside[0] not in SKILL_DIRS:
+            note("R5", p, f"a skill holds SKILL.md and "
+                          f"{', '.join(sorted(d + '/' for d in SKILL_DIRS))} "
+                          f"and nothing else")
+        elif inside[0] == "references" and len(inside) != 2:
+            note("R5", p, "references/ is one level deep -- a reference is "
+                          "named by the catalogue row that selects it, and a "
+                          "row cannot select a subtree")
+
+    # R6
+    for p in paths:
+        parts = p.split("/")
+        if len(parts) < 2 or parts[-2] != "scripts" or "assets" in parts[:-1]:
+            continue                # not a script's own directory, or a template
+        if not p.endswith((".py", ".sh")):
+            note("R6", p, "a script carries the extension of its language: "
+                          "add .py or .sh, or move the file out of scripts/")
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

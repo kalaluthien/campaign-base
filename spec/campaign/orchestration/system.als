@@ -378,7 +378,19 @@ pred launch[a: Agent] {
      Planner atom on this sub-issue, the one that filed and distributes it. A
      session working its own claim needs none -- the one-worker shape. */
   no a.peer implies (some p: plannerAgents | p.peer = Who.session and p.task = a.task and p in Live)
-  campaignDirAt[Who.session.worksOn, a.host].checkedOut[a.task.repo] = a.branch
+  /* THE SUB-ISSUE'S OWN CAMPAIGN, not the launcher's `worksOn`. #227 flagged
+     this clause as the one that did not fit the rest of the predicate: every
+     other read of a.task goes through the sub-issue itself, and this one alone
+     read the launching session's campaign, which is only the same campaign by
+     the binding discipline holding -- a fact this predicate does not assume
+     anywhere else. `campaignOf[i]` is `memberIssues.i`, the function every
+     other checkout read in this file (line 252) and throughout scenarios.als
+     uses for a sub-issue; `campaignIssueOf[i]` is `campaignIssue.i` and is
+     `lone` empty on a memberIssue, since `campaignIssue` and `memberIssues`
+     are disjoint (`github/system.als` line 156) -- so a literal
+     `campaignIssueOf[a.task]` would leave `campaignDirAt[...]` with no
+     Campaign to look up and make this clause unsatisfiable for a.branch. */
+  campaignDirAt[campaignOf[a.task], a.host].checkedOut[a.task.repo] = a.branch
   Launched' = Launched + a
   Live'     = Live + a
   /* THE ASSIGNMENT GUARD, and it binds only when the agent IS a session --

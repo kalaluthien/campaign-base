@@ -105,6 +105,7 @@
     ["orchestration/scenarios.als", "run", "N7_UnnamedSessionOutsideTheTreeDoesNotBlock"],
     ["orchestration/scenarios.als", "run", "P1_SimpleRequestSettlesWithoutPlanner"],
     ["orchestration/scenarios.als", "run", "P2_PlannerLaunchesDelegate"],
+    ["orchestration/scenarios.als", "run", "P3_LaunchUsesTheTasksOwnCampaign"],
     ["orchestration/scenarios.als", "run", "Q10_PlannerClaimsOnAnotherBoundCampaign"],
     ["orchestration/scenarios.als", "run", "Q10b_WorkerClaimsOnAnotherBoundCampaign"],
     ["orchestration/scenarios.als", "run", "Q10c_WorkerClaimsOnAnotherBoundCampaignUnguarded"],

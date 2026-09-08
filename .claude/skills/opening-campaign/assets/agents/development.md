@@ -12,9 +12,10 @@ test that exercises it, and the test names the code path it drives.
 
 ## What a claim needs
 
-- The model before the code: a change is written first as the Alloy scenario
-  or check that its plan implies, and the solver's verdict on that model is the
-  first evidence the change is coherent.
+- The model before the code: a change is written first as the scenario or check
+  that its plan implies, in whatever language the repository's spec is written
+  in, and the checker's verdict on that model is the first evidence the change
+  is coherent.
 - A test that failed before the change and passes after it, named after the
   scenario it witnesses.
 - A view a person can read, when the model grew a shape a person has to
@@ -31,12 +32,12 @@ skipped by judgement is the tie broken silently.
 - Code before its scenario. A change whose plan was never formalised has not
   been checked for coherence, only for compiling.
 - A test that passes with the change reverted. It witnesses nothing.
-- A verdict restated in prose. The solver's `expect` is the one reader.
+- A verdict restated in prose. The checker is the one reader of its own verdict.
 
 ## SDLC profile
 
-`optional = Docs` -- a change of this kind waives its view when the model grew
-no shape, and never its scenario, its test or its code path.
+`optional = Docs` -- a change of this kind skips its view when the model grew no
+shape, and never its scenario, its test or its code path.
 
 ## Every session
 

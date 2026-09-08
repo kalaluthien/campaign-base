@@ -43,8 +43,10 @@ started.
 ## SDLC profile
 
 `optional = skippable` -- this kind refuses to change what it measures, so a
-change of it may run nothing at all; a measurement script it does write owes the
-scenario and the test above it like any other code path.
+change of it may land nothing runnable at all. A measurement script kept under
+the campaign's own `scripts/` never lands and so is never read here; one that
+lands in a repository owes the scenario and the test above it like any other
+code path.
 
 ## Every session
 

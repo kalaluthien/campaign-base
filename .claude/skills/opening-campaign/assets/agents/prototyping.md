@@ -40,9 +40,11 @@ an argument, not a product, and it is expected to be deleted.
 
 ## SDLC profile
 
-`optional = Spec + Docs` -- this kind defers the model and the view, and never
-the running thing: the test that shows it working and the code path it drives are
-the claim.
+`optional = Spec + Docs` -- the model and the view may go, and never the running
+thing: the test that shows it working and the code path it drives are the claim.
+The `Spec` half is live only while the code stays on its claim branch, which is
+where this kind's code stays; a prototype somebody decides to land owes a
+scenario like anything else.
 
 ## Every session
 

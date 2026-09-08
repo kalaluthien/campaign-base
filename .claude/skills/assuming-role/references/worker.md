@@ -12,7 +12,7 @@ and, on a claim, the code the sub-issue names.
    makes it atomic across machines; a survey-then-file is not.
 3. **Work in the checkout the claim names** — a worktree for the base, the
    clone for a member repository. The stages inside this step, what each
-   produces and when one may be waived, are
+   produces and when one may be skipped, are
    [landing a change](references/landing-a-change.md).
 4. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps

@@ -40,9 +40,9 @@ cycle of real traffic.
 
 ## SDLC profile
 
-`optional = Spec + Docs` -- this kind adds no shape and no new behaviour to
-formalise, and never waives the equivalence check: its test and the code path it
-drives are what says behaviour is unchanged.
+`optional = Docs` -- a migration always lands a code path, and `criterion` for
+`Spec` is that nothing below it exists, so its scenario is never skippable; the
+view is, because this kind changes no behaviour and so grows no shape.
 
 ## Every session
 

@@ -42,8 +42,8 @@ re-derived and most likely to be repeated.
 ## SDLC profile
 
 `optional = skippable` -- a finding of this kind lands on an issue and runs
-nothing, so every stage below the plan may go; what one does write it still owes
-the stages above it.
+nothing, so every stage below the plan may go; a change that does land something
+runnable owes the stages above it like any other.
 
 ## Every session
 

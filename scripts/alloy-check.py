@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Run one spec/campaign module, hold its command list, and digest its traces.
+"""Run one spec/ module, hold its command list, and digest its traces.
 
     scripts/alloy-check.py <file.als> [-o <dir>]
     scripts/alloy-check.py --commands <dir> [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
 
-Every command in spec/campaign/*/*.als carries its own verdict, in the `expect`
+Every command under spec/ -- spec/campaign/*/*.als and spec/sdlc/*.als -- carries its own verdict, in the `expect`
 clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
 with no counterexample, a run with no instance -- and `expect 1` where it says
 SAT. Alloy exits non-zero and names each command that came out other than its
@@ -32,12 +32,14 @@ second statement that does NOT regenerate can catch it.
 
 --commands is that statement. It extracts every `check`/`run` declaration from
 the .als files under <dir>, RECURSIVELY, and compares them to
-<dir>/commands.snapshot.json, naming each command that appeared or went.
+<dir>/commands.snapshot.json, naming each command that appeared or went. The
+committed one sits at spec/commands.snapshot.json, one snapshot over every
+entity, so `--commands spec` is the form CI runs.
 `--write` regenerates the snapshot, which is how a deliberate change is
 recorded. The snapshot holds the module, the kind and the name, and deliberately
 NOT the scope, which is tuned often, nor the `expect` value, which would put a
 verdict back in a file for a script to read. The module key is the path relative
-to <dir> -- `orchestration/checks.als` -- so a command moving between entities
+to <dir> -- `campaign/orchestration/checks.als` -- so a command moving between entities
 reads as one line gone and one line new, naming itself at both ends.
 
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
@@ -51,8 +53,9 @@ no command result to check at all.
 `--digest` condenses the traces the run above just wrote. The raw `-t text` dump
 repeats every static signature in every state, which buries the handful of
 relations a scenario is actually about; the digest prints the event, its
-arguments, and the varying relations only, one line per state. The five entities
-in spec/campaign/ are layered and open one another, so a composed trace names
+arguments, and the varying relations only, one line per state. The relations
+it knows are spec/campaign's; an sdlc trace digests to its events alone. The
+five entities in spec/campaign/ are layered and open one another, so a composed trace names
 every relation and every atom by its module path -- the chain of `system`
 modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It

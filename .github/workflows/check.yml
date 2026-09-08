@@ -120,9 +120,10 @@ jobs:
       # deleted command is the one thing the `expect` clauses below cannot
       # catch, having no clause left to miss.
       - name: The command snapshot still names every declared command
-        run: scripts/alloy-check.py --commands spec/campaign
+        run: scripts/alloy-check.py --commands spec
 
-      # Every module of every entity, system modules included: one that no
+      # Every module of every entity under the spec/ root -- campaign's five and
+      # sdlc -- system modules included: one that no
       # longer parses is a failure the two sibling modules would report only
       # indirectly, and a system module declares no command so running it costs
       # one trivial `Default`. `find`, not a depth-2 glob: the step above
@@ -132,10 +133,10 @@ jobs:
       - name: Every command comes out as its `expect` clause says
         run: |
           n=0
-          for m in $(find spec/campaign -name '*.als' | sort); do
+          for m in $(find spec -name '*.als' | sort); do
             echo "== $m"
             scripts/alloy-check.py "$m" || exit 1
             n=$((n + 1))
           done
-          [ "$n" -gt 0 ] || { echo "no .als module was found under spec/campaign"; exit 1; }
+          [ "$n" -gt 0 ] || { echo "no .als module was found under spec"; exit 1; }
           echo "$n module(s) ran"

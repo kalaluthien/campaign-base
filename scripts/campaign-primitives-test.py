@@ -206,6 +206,7 @@ def main():
             path.chmod(0o755)
 
         script(root / "scripts" / "in-project.py", "Registered by the checkout.")
+        script(root / "scripts" / "in-local.py", "Registered by the person.")
         script(root / "scripts" / "in-machine.py", "Registered by the machine.")
         script(root / "scripts" / "asked.py", "Registered nowhere.")
         script(root / ".claude" / "skills" / "s" / "scripts" / "briefer.py",
@@ -217,6 +218,11 @@ def main():
 
         (root / ".claude" / "settings.json").write_text(
             settings('"$CLAUDE_PROJECT_DIR"/scripts/in-project.py --brief'))
+        # The third source. It is untracked and holds only permissions on this
+        # machine today, so nothing in the tree would notice it being dropped
+        # -- which is exactly the omission this whole reading exists to stop.
+        (root / ".claude" / "settings.local.json").write_text(
+            settings("python3 /x/scripts/in-local.py"))
         (home / ".claude").mkdir()
         (home / ".claude" / "settings.json").write_text(
             settings("python3 /x/scripts/in-machine.py",
@@ -237,6 +243,8 @@ def main():
               "in-project.py" in unasked and "in-project.py" not in called)
         check("...and so is one the machine's settings register",
               "in-machine.py" in unasked and "in-machine.py" not in called)
+        check("...and so is one only the untracked local settings register",
+              "in-local.py" in unasked and "in-local.py" not in called)
         check("a harness hook that is a skill's script is announced as running "
               "unasked, not as one a flow calls",
               "briefer.py" in unasked and "briefer.py" not in called)
@@ -246,7 +254,67 @@ def main():
         check("each settings file is named beside what it registered",
               f"harness hooks in {root / '.claude' / 'settings.json'} (1)" in out
               and f"harness hooks in {home / '.claude' / 'settings.json'} (2)"
-              in out)
+              in out
+              and f"harness hooks in {root / '.claude' / 'settings.local.json'}"
+                  f" (1)" in out)
+
+    # AN ABSENT SOURCE IS A READING, NOT A WARNING. Two of the three are absent
+    # on an ordinary checkout, so a `!!` per absence would put two lines of
+    # alarm into every session start; the reader still has to be told the
+    # source was looked at, or a silent skip reads as a source that held
+    # nothing.
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h:
+        root, home = Path(d), Path(h)
+        (root / "scripts").mkdir()
+        q = root / "scripts" / "asked.py"
+        q.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+        q.chmod(0o755)
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            capture_output=True, text=True, env=dict(os.environ, HOME=str(home)))
+        out = r.stdout
+        check("a settings file that is not there is named as absent, for each "
+              "source",
+              out.count("does not exist, so it registers no harness hook") == 3)
+        check("...and no !! names a settings file, which three sources would "
+              "make two lines of alarm at every session start",
+              not [l for l in out.splitlines()
+                   if "!!" in l and "settings" in l]
+              and r.returncode == 0)
+
+    # THE GIT HALF'S NAME SET, THROUGH main() AND NOT THROUGH hook_run.
+    # A review found this wiring pinned by nothing: `all_names` sits one
+    # identifier away from `top_names` in the same scope, and passing it to
+    # hook_run left the suite at full marks, because the case above hands
+    # hook_run its names by hand and so pins the function while the call site
+    # goes unread. git resolves a hook's guard as <toplevel>/scripts/<name>, so
+    # a hook declaring a SKILL's script declares one git can never run, and
+    # announcing it as installed is the direction that makes a reader believe
+    # an unguarded tree is guarded.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "scripts").mkdir()
+        (root / ".claude" / "skills" / "s" / "scripts").mkdir(parents=True)
+        for f in (root / "scripts" / "asked.py",
+                  root / ".claude" / "skills" / "s" / "scripts" / "briefer.py"):
+            f.write_text("#!/bin/sh\n# A script.\nexit 0\n")
+            f.chmod(0o755)
+        h = root / ".git" / "hooks" / "pre-commit"
+        h.write_text("#!/bin/sh\n# runs: briefer.py\nexit 0\n")
+        h.chmod(0o755)
+        r = subprocess.run(
+            [sys.executable, str(PRIM), "--scripts-dir", str(root / "scripts")],
+            cwd=root, capture_output=True, text=True)
+        out = r.stdout
+        unasked = out.split("run unasked, by git or by the harness")[-1]
+        unasked = unasked.split("a flow calls these")[0]
+        check("a git hook declaring a skill's script announces no guard, since "
+              "git resolves one under scripts/ alone",
+              "briefer.py" not in unasked)
+        check("...and the listing says the declaration named nothing git "
+              "could run",
+              "declares briefer.py, which is not a script" in out)
 
     # core.hooksPath: git looks there and nowhere else, so resolving the hooks
     # directory by hand instead of asking git could report hooks as installed

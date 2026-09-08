@@ -16,13 +16,20 @@ adding a script changes this output with no second edit anywhere.
 The harness half is read from the settings files rather than from install-hooks,
 for the same reason the git half is read from the installed hooks: what an
 installer writes can drift from what is installed, and what actually runs is the
-question a session is asking. There are two such files, and reading one of them
-omits as silently as reading none: ~/.claude/settings.json is the machine's,
-holds the guard install-hooks registers, and is true of no checkout at all -- so
-a session in a worktree sees that guard running over a script the worktree also
-holds -- while this checkout's own .claude/settings.json is where the repository
-registers hooks of its own, this announcement being one of them. A reading of
-the machine's alone named one harness hook where three run.
+question a session is asking. There are THREE such files, and reading one of
+them omits as silently as reading none. In the harness's own order, lowest
+precedence first -- they accumulate rather than override, so the order changes
+what a conflict resolves to and not what runs:
+
+  ~/.claude/settings.json          the machine's, holding the guard install-hooks
+                                   registers. True of no checkout at all, so a
+                                   session in a worktree sees that guard running
+                                   over a script the worktree also holds.
+  <checkout>/.claude/settings.json the repository's own, this announcement being
+                                   one of them.
+  <checkout>/.claude/settings.local.json  a person's, for this checkout, untracked.
+
+A reading of the machine's alone named one harness hook where three run.
 
 The harness half is also the half that can name a script from any root. git
 resolves a hook's guard as <toplevel>/scripts/<name>, so only that root can
@@ -167,7 +174,8 @@ def hook_run(hook_texts, names):
                 found.add(word)
             else:
                 problems.append(f"{name} declares {word}, which is not a "
-                                f"script in this checkout")
+                                f"script in this checkout's scripts/, where "
+                                f"git resolves a hook's guard")
     return found, problems
 
 
@@ -177,10 +185,12 @@ HARNESS_SETTINGS = Path.home() / ".claude" / "settings.json"
 def harness_run(settings_path, names):
     """Which of these scripts the harness runs unasked, from its settings.
 
-    Returns (found, problems). Every failure to read is a problem rather than
-    an empty set: a settings file that would not parse is not a machine with no
-    hooks, and the difference decides whether a session is told the guard is
-    there.
+    Returns (found, problems), with `found` None when there is no such file --
+    three sources are read and two of them are absent on an ordinary checkout,
+    so their absence is a reading the listing states rather than a warning it
+    raises. Every OTHER failure to read is a problem rather than an empty set: a
+    settings file that would not parse is not a machine with no hooks, and the
+    difference decides whether a session is told the guard is there.
 
     The match is on the script's basename as a whole token of a hook's
     `command` -- no word character, dot or hyphen touching it -- because a
@@ -193,8 +203,7 @@ def harness_run(settings_path, names):
     try:
         settings = json.loads(settings_path.read_text())
     except FileNotFoundError:
-        return found, [f"{settings_path} does not exist, so no harness hook "
-                       f"is registered there"]
+        return None, []
     except (OSError, ValueError) as e:
         return found, [f"{settings_path} would not read "
                        f"({e.__class__.__name__}), so what the harness runs is "
@@ -274,13 +283,15 @@ def main():
     # Both files the harness reads, in the order it merges them. The second is
     # the described checkout's rather than HERE's, so --scripts-dir moves it the
     # way it moves the script roots and a fixture tree can exercise the reading.
-    settings_files = [HARNESS_SETTINGS, here.parent / ".claude" / "settings.json"]
+    claude = here.parent / ".claude"
+    settings_files = [HARNESS_SETTINGS, claude / "settings.json",
+                      claude / "settings.local.json"]
     harness, harness_problems = {}, []
     for sp in settings_files:
         found, probs = harness_run(sp, all_names)
         harness[sp] = found
         harness_problems += probs
-        runs |= found
+        runs |= found or set()
     guards, readers, unknown = [], [], []
     for name, p, top in scripts:
         summ = summary(p)
@@ -312,9 +323,11 @@ def main():
                   "in this checkout is\n        known to be guarded.")
 
     for sp, found in harness.items():
-        if found:
+        if found is None:
+            print(f"\n  {sp} does not exist, so it registers no harness hook")
+        else:
             print(f"\n  harness hooks in {sp} ({len(found)}): "
-                  f"{', '.join(sorted(found))}")
+                  f"{', '.join(sorted(found)) or 'none of this tree\'s scripts'}")
     for w in harness_problems:
         print(f"     !! {w}")
 

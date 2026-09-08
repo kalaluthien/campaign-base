@@ -22,7 +22,8 @@ pred researchProfile[p: Profile]    { p.optional = skippable }
 /* ---------------- disciplines ---------------- */
 
 /* A STAGE IS WRITTEN OR SKIPPED ONLY AFTER WHAT FEEDS IT IS DONE. The
-   procedure's own order; `S5_CodeBeforeSpecRefused` is its sharpest case. */
+   procedure's own order; `S5_CodeBeforeSpecRefused` is its sharpest case,
+   with `skipDiscipline` closing the skip. */
 pred orderDiscipline {
   always ((Now.event in Write + Skip) implies all p: feeds.(Now.at) | done[Now.subject, p])
 }
@@ -124,12 +125,21 @@ pred S4a_RenameKeepsItsNamers {
   }
 }
 
-/* Code before its scenario: under the order and the commit check together,
-   no trace writes a code path while its change has no scenario. */
-pred S5_CodeBeforeSpecRefused {
-  allDisciplines
-  eventually (Now.event = Write and Now.at = Code and no writtenOf[Now.subject] & stage.Spec)
+/* Code before its scenario: no trace writes a development change's code
+   path while the change has no scenario. The order and the worker's reading
+   of the skip rule refuse it between them -- Code waits on Spec being done,
+   and the development kind does not let Spec be skipped -- and the commit
+   check is not what refuses it: the tie reads the tree, so a scenario and a
+   test of ANOTHER change can tie the path, which is why the scope holds two
+   changes and the subject's kind is pinned. `S5a` is the same chain with the
+   commit check dropped, and it is refused all the same. */
+pred codeBeforeSpec {
+  eventually (Now.event = Write and Now.at = Code
+              and developmentProfile[Now.subject.profile]
+              and no writtenOf[Now.subject] & stage.Spec)
 }
+pred S5_CodeBeforeSpecRefused  { allDisciplines and codeBeforeSpec }
+pred S5a_RefusedWithoutTheTie  { orderDiscipline and skipDiscipline and landDiscipline and codeBeforeSpec }
 
 /* ---------------- commands ---------------- */
 
@@ -139,4 +149,5 @@ run S3_DocsWaived             for exactly 1 Change, exactly 1 Profile, exactly 5
 run S3a_DocsDemanded          for exactly 1 Change, exactly 1 Profile, 6 Artifact, 10 steps expect 0
 run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
-run S5_CodeBeforeSpecRefused  for exactly 1 Change, exactly 1 Profile, 6 Artifact, 10 steps expect 0
+run S5_CodeBeforeSpecRefused  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
+run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0

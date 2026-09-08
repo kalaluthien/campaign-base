@@ -5,7 +5,7 @@
     scripts/alloy-check.py --commands <dir> [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
 
-Every command under spec/ -- spec/campaign/*/*.als and spec/sdlc/*.als -- carries its own verdict, in the `expect`
+Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
 clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
 with no counterexample, a run with no instance -- and `expect 1` where it says
 SAT. Alloy exits non-zero and names each command that came out other than its

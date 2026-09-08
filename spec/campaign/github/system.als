@@ -54,11 +54,12 @@
  *
  * A command someone DELETES misses no expectation, having none left to miss,
  * and nothing generated from these files can see that either. So the command
- * list is stated a second time, in commands.snapshot.json beside them, which is
- * committed and compared rather than regenerated:
+ * list is stated a second time, in commands.snapshot.json at the spec/ root,
+ * one snapshot over every entity there, which is committed and compared
+ * rather than regenerated:
  *
  *   scripts/alloy-check.py spec/campaign/github/scenarios.als -o /tmp/alloy-github
- *   scripts/alloy-check.py --commands spec/campaign      -- and --write to update
+ *   scripts/alloy-check.py --commands spec               -- and --write to update
  *   scripts/alloy-check.py --digest /tmp/alloy-github/S1_HappyPath-solution-0.txt
  *
  * HOW THE ENTITIES COMPOSE

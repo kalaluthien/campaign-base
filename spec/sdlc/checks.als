@@ -11,8 +11,9 @@ open sdlc/scenarios
 /* ---------------- the order ---------------- */
 
 /* Under `orderDiscipline`, no artifact exists whose feeding stages are not
-   done. Monotonic on its own -- Written and skipped only grow -- so the
-   discipline at each write is the invariant between them. Without it the
+   done. Monotonic on its own -- `done` only grows, since the one event that
+   shrinks `skipped` writes the stage it retracts -- so the discipline at each
+   write is the invariant between them. Without it the
    same shape has a counterexample, and `OrderedByFeeds_Bites` demands it:
    a code path written before the scenario that would have described it. */
 assert OrderedByFeeds {
@@ -59,7 +60,7 @@ pred AbsenceLicensed_Bites {
    rather than the worker's reading restated. */
 pred SkipReadAtTheTimeIsNotEnough {
   orderDiscipline and skipDiscipline and tieDiscipline
-  eventually some c: Landed | Docs in absentStages[c] and not maySkip[c, Docs]
+  eventually some c: Landed | developmentProfile[c.profile] and Docs in absentStages[c] and not maySkip[c, Docs]
 }
 
 /* ---------------- reachability floor ----------------

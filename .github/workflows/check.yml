@@ -122,8 +122,8 @@ jobs:
       - name: The command snapshot still names every declared command
         run: scripts/alloy-check.py --commands spec
 
-      # Every module of every entity under the spec/ root -- campaign's five and
-      # sdlc -- system modules included: one that no
+      # Every module of every entity under the spec/ root, system modules
+      # included: one that no
       # longer parses is a failure the two sibling modules would report only
       # indirectly, and a system module declares no command so running it costs
       # one trivial `Default`. `find`, not a depth-2 glob: the step above

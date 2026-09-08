@@ -245,6 +245,7 @@
     ["sdlc/scenarios.als", "run", "S3a_DocsDemanded"],
     ["sdlc/scenarios.als", "run", "S4_RenameBreaksTheTie"],
     ["sdlc/scenarios.als", "run", "S4a_RenameKeepsItsNamers"],
-    ["sdlc/scenarios.als", "run", "S5_CodeBeforeSpecRefused"]
+    ["sdlc/scenarios.als", "run", "S5_CodeBeforeSpecRefused"],
+    ["sdlc/scenarios.als", "run", "S5a_RefusedWithoutTheTie"]
   ]
 }

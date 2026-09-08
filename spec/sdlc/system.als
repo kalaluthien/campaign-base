@@ -73,11 +73,12 @@ fun skippable: set Stage { Spec + Docs + Test + Code }
 /* A CAMPAIGN KIND'S PROFILE: which of the skippable stages the kind lets a
    change skip at all. One input to `maySkip`, the criterion being the other;
    neither alone licenses a skip. A kind is a file under
-   .claude/skills/opening-campaign/assets/agents/, and its profile is one line
-   in it, which the procedure derives from the witnesses in scenarios.als
-   (`developmentProfile`, `researchProfile`). No kind is an atom here: the
-   model owns how a profile and a change combine, and the kinds own their
-   profiles, so adding a kind changes no model. */
+   .claude/skills/opening-campaign/assets/agents/; the profile line each will
+   carry is the procedure's to write (#247), in this vocabulary, and the two
+   witnesses in scenarios.als (`developmentProfile`, `researchProfile`) are
+   what it derives them from. No kind is an atom here: the model owns how a
+   profile and a change combine, and the kinds own their profiles, so adding a
+   kind changes no model. */
 sig Profile { optional: set Stage }
 
 sig Change {
@@ -145,8 +146,9 @@ pred treeTied { all k: Written & stage.Code | tied[k] }
    skippable stage, each a fact about the change's artifacts and none a
    judgement:
 
-     Spec   nothing runs: the change has written no test and no code path,
-            so there is no behaviour to formalise.
+     Spec   nothing below it exists: the change has written no view, no
+            test and no code path, so there is nothing to formalise and
+            nothing drawn for a model that is not there.
      Docs   the model grew no shape: no spec artifact of the change is in
             GrowsShape, so there is nothing a person has to be shown.
      Test   nothing runs -- the same reading as Spec's.
@@ -160,7 +162,7 @@ pred treeTied { all k: Written & stage.Code | tied[k] }
    later artifact of the same change turned its criterion false. The moment
    that decides is `land`, under `landDiscipline`. */
 pred criterion[c: Change, s: Stage] {
-  s = Spec          implies no writtenOf[c] & stage.(Test + Code)
+  s = Spec          implies no writtenOf[c] & stage.(Docs + Test + Code)
   s = Docs          implies no writtenOf[c] & GrowsShape
   s in Test + Code  implies no writtenOf[c] & stage.(Test + Code)
 }
@@ -178,21 +180,24 @@ one sig Now {
   var at:       lone Stage
 }
 
-fun sdlcEvents: set Event { Write + Skip + Rename + Land }
-
 pred sdlcFrame { Written' = Written and Landed' = Landed and skipped' = skipped and names' = names }
 
 /* ONE COMMIT WRITING ONE ARTIFACT. Loose on the order (`orderDiscipline`) and
    on the tie (`tieDiscipline`). A second write of the same artifact is a
    rewrite, which is how a test takes a renamed code path's new name. What
    the artifact names is authored here and nowhere else; everything else's
-   names hold. */
+   names hold.
+
+   WRITING A SKIPPED STAGE RETRACTS THE SKIP: a stage is written or skipped,
+   never both, and the write is the later word. This is the remedy the
+   landing check leaves a worker whose waiver went stale
+   (`SkipReadAtTheTimeIsNotEnough`): write the view after all, and land. */
 pred write[a: Artifact] {
   a.change not in Landed
-  a.stage not in a.change.skipped      -- a stage is written or skipped, never both
   Written' = Written + a
+  skipped' = skipped - a.change->a.stage
   names' - a->Artifact = names - a->Artifact
-  Landed' = Landed and skipped' = skipped
+  Landed' = Landed
   Now.event = Write and Now.subject = a.change and Now.artifact = a and Now.at = a.stage
 }
 
@@ -224,8 +229,10 @@ pred rename[a: Artifact] {
    written or skipped -- because a change with a stage that is neither is not
    finished, and that is a definition, not a mechanism. Whether each absence
    was LICENSED is `landDiscipline`'s, and whether what was written TIES is
-   `tieDiscipline`'s. After landing a change writes nothing more: a later
-   commit on the same files is another change. */
+   `tieDiscipline`'s. After landing a change writes and skips nothing more,
+   but what it wrote can still be renamed: a rename is a later commit on the
+   tree, and the check that reads it is the commit's, not the landing's
+   (`S4_RenameBreaksTheTie` renames a landed chain's code path). */
 pred land[c: Change] {
   c not in Landed
   all s: Stage | done[c, s]

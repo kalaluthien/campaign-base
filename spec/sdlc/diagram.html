@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDLC 모형</title>
+<style>
+  :root { --ink:#111; --mute:#555; --hair:#e4e4e4; --wash:#f4f4f4; }
+  html { font-size: 16px; }
+  body { max-width: 42rem; margin: 0 auto; padding: 4rem 1.5rem 8rem;
+         background: #ffffff; color: var(--ink);
+         font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+         line-height: 1.55; overflow-wrap: break-word; }
+  h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 .9rem; font-weight: 700; letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; margin: 3rem 0 .5rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 2rem 0 .3rem; font-weight: 700; }
+  h4 { font-size: .95rem; margin: 0 0 .4rem; font-weight: 700; }
+  p, li { margin: .6rem 0; }
+  ul, ol { padding-left: 1.2rem; }
+  ol.steps { padding-left: 1.6rem; }
+  ol.steps > li { margin: 1.3rem 0; }
+  ol.steps > li::marker { font-weight: 700; }
+  ol.keys { list-style: none; padding-left: 0; margin: 1rem 0; }
+  ol.keys > li { display: grid; grid-template-columns: 1.6rem 1fr; gap: .6rem; margin: .8rem 0; }
+  ol.keys > li > p, ol.keys > li > div { min-width: 0; }
+  ol.keys > li > p, ol.keys > li > div > p { margin: 0; }
+  ol.keys ul { margin: .3rem 0 0; padding-left: 1.05rem; }
+  ol.keys ul li { margin: .2rem 0; }
+  .k { display: inline-flex; align-items: center; justify-content: center; width: 1.45rem; height: 1.45rem;
+    border: 1px solid var(--ink); border-radius: 50%; font-size: .72rem; font-weight: 700; }
+  a { color: #14459b; text-decoration-color: #9bb0d8; }
+  code, pre, .provenance dd, .src { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+  pre { overflow-x: auto; background: var(--wash); padding: 1rem; line-height: 1.45; margin: 1.4rem 0; }
+  .src { color: var(--mute); }
+  table { border-collapse: collapse; width: 100%; margin: 1.4rem 0; font-size: .9rem; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .8rem .45rem 0; border-bottom: 1px solid var(--hair); }
+  th { font-weight: 700; }
+  tr.grp td { background: var(--wash); font-weight: 700; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; }
+  @media (max-width: 42rem) {
+    table { font-size: .85rem; }
+    th, td { padding-right: .5rem; }
+  }
+  .provenance { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem;
+    margin: 0 0 2.4rem; font-size: .85rem; color: var(--mute); }
+  .provenance dt { font-variant: small-caps; letter-spacing: .04em; }
+  .provenance dd { margin: 0; }
+  figure { margin: 2.2rem 0; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figure pre { margin: 0; }
+  figure.pan { overflow-x: auto; }
+  figcaption { margin-top: .7rem; font-size: .85rem; color: var(--mute); line-height: 1.5; }
+  .figure-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1.2rem; margin: 2.2rem 0; }
+  .figure-row figure { margin: 0; }
+  table.filemap td { border-bottom: none; padding: .12rem .8rem .12rem 0; }
+  table.filemap td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .85em; white-space: pre; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; margin: 1.4rem 0; }
+  .do, .dont { border: 2px solid var(--ink); padding: .8rem 1rem; }
+  .dont { border-style: dashed; }
+  .do h4::before { content: "\2713\00a0"; }
+  .dont h4::before { content: "\2715\00a0"; }
+  .recs { display: grid; gap: .9rem; margin: 1.4rem 0; }
+  .rec { border: 1px solid var(--ink); }
+  .rec-n { margin: 0; padding: .35rem .75rem; background: var(--wash);
+    border-bottom: 1px solid var(--ink); font-weight: 700; font-size: .92rem; }
+  .rec-t { font-weight: 400; color: var(--mute); font-size: .78rem; }
+  .rec dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem;
+    margin: 0; padding: .55rem .75rem .65rem; font-size: .9rem; }
+  .rec dt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .74rem;
+    color: var(--mute); padding-top: .22rem; white-space: nowrap; }
+  .rec dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .rec dd ul { margin: .1rem 0 0; padding-left: 1.05rem; }
+  .rec dd li { margin: .15rem 0; }
+  .ct { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem;
+    border: 1px solid var(--ink); border-radius: 3px; padding: 1px 4px; white-space: nowrap; }
+  .hum { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem;
+    border: 1px solid var(--ink); border-radius: 11px; padding: 1px 8px; }
+  .chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem;
+    background: var(--wash); border-radius: 3px; padding: 1px 5px; }
+  .callout { display: grid; grid-template-columns: 1.5rem 1fr; gap: .7rem; align-items: start;
+    background: var(--wash); border-left: 3px solid var(--hair); padding: .8rem 1rem; margin: 1.4rem 0; }
+  .callout .g { font-size: 1.05rem; line-height: 1.35; }
+  .callout p { margin: 0; font-size: .92rem; }
+  .callout strong { font-weight: 700; }
+  details { border: 1px solid var(--hair); border-radius: 3px; padding: .45rem .9rem;
+    margin: 1.2rem 0; font-size: .92rem; }
+  details summary { cursor: pointer; font-weight: 600; font-size: .92rem; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "\25B8\00a0\00a0"; color: var(--mute); }
+  details[open] summary::before { content: "\25BE\00a0\00a0"; }
+  details[open] summary { margin-bottom: .5rem; }
+  @media (max-width: 42rem) { .pair { grid-template-columns: 1fr; } }
+</style>
+<body>
+<article>
+
+<h1>SDLC 모형</h1>
+<dl class="provenance">
+  <dt>Doctype</dt>  <dd>explanation</dd>
+  <dt>Question</dt> <dd>변경 하나는 어떤 단계를 지나고, 무엇이 무엇을 이름으로 묶으며, 단계를 건너뛸 수 있는 조건은 무엇인가?</dd>
+  <dt>Updated</dt>  <dd>2026-09-09</dd>
+</dl>
+
+<h2>여섯 단계와 <code>feeds</code></h2>
+
+<figure id="fig-feeds">
+  <svg viewBox="0 0 360 396" role="img" aria-labelledby="f1t">
+    <title id="f1t">Intent에서 Code까지 여섯 단계가 이어지고, Spec에서 Docs와 Test로 갈렸다가 Code에서 합친다</title>
+    <defs>
+      <marker id="arrow-feeds" viewBox="0 0 8 8" refX="7" refY="4"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g fill="none" stroke="currentColor" stroke-width="1.4">
+      <rect x="112" y="14" width="136" height="42"/>
+      <rect x="112" y="90" width="136" height="42"/>
+      <rect x="112" y="166" width="136" height="42"/>
+      <rect x="8" y="242" width="152" height="42"/>
+      <rect x="200" y="242" width="152" height="42"/>
+      <rect x="112" y="318" width="136" height="42"/>
+    </g>
+    <g fill="currentColor">
+      <circle cx="242" cy="172" r="3.4"/>
+      <circle cx="154" cy="248" r="3.4"/>
+      <circle cx="346" cy="248" r="3.4"/>
+      <circle cx="242" cy="324" r="3.4"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow-feeds)">
+      <path d="M180,56 L180,86"/>
+      <path d="M180,132 L180,162"/>
+      <path d="M156,208 L96,238"/>
+      <path d="M204,208 L264,238"/>
+      <path d="M96,284 L156,314"/>
+      <path d="M264,284 L204,314"/>
+    </g>
+    <g text-anchor="middle" fill="currentColor">
+      <text x="180" y="34" font-size="14" font-weight="bold">Intent</text>
+      <text x="180" y="48" font-size="10" font-family="ui-monospace, Menlo, monospace">## Intent</text>
+      <text x="180" y="110" font-size="14" font-weight="bold">Plan</text>
+      <text x="180" y="124" font-size="10" font-family="ui-monospace, Menlo, monospace">## Plan</text>
+      <text x="180" y="186" font-size="14" font-weight="bold">Spec</text>
+      <text x="180" y="200" font-size="10" font-family="ui-monospace, Menlo, monospace">spec/*.als</text>
+      <text x="84" y="262" font-size="14" font-weight="bold">Docs</text>
+      <text x="84" y="276" font-size="10" font-family="ui-monospace, Menlo, monospace">spec/*/diagram.html</text>
+      <text x="276" y="262" font-size="14" font-weight="bold">Test</text>
+      <text x="276" y="276" font-size="10" font-family="ui-monospace, Menlo, monospace">scripts/*-test.*</text>
+      <text x="180" y="338" font-size="14" font-weight="bold">Code</text>
+      <text x="180" y="352" font-size="10" font-family="ui-monospace, Menlo, monospace">scripts/ · .claude/</text>
+    </g>
+    <g font-size="10" fill="currentColor" font-family="ui-monospace, Menlo, monospace">
+      <text x="186" y="76">feeds</text>
+      <text x="186" y="152">feeds</text>
+    </g>
+  </svg>
+  <figcaption>화살표 하나가 <code>feeds</code> 의 짝 하나다. <code>Docs</code> 와 <code>Test</code> 는 둘 다 <code>Spec</code> 을 잇고 둘 다 <code>Code</code> 를 앞선다. 점이 찍힌 네 단계가 <code>skippable</code> 이다. <code>Intent</code> 와 <code>Plan</code> 은 그 안에 없다. <span class="src">spec/sdlc/system.als:68-71 @ 3d8fd5b</span></figcaption>
+</figure>
+
+<pre>fun feeds: Stage -&gt; Stage {
+  Intent-&gt;Plan + Plan-&gt;Spec + Spec-&gt;Docs + Spec-&gt;Test + Docs-&gt;Code + Test-&gt;Code
+}</pre>
+
+<p>"단계는 자기 아래 단계에 무엇을 빚지는가 — 자기 산출물, 아니면 허가된 건너뜀. 다음 단계의 산출물이 쓰이기 전에." <code>Spec, Docs 또는 Test, Code</code> 이므로 뷰와 테스트를 둘 다 쓰는 변경은 그 둘을 어느 순서로든 쓰고 코드를 그 뒤에 쓴다. <span class="src">spec/sdlc/system.als:58-66 @ 3d8fd5b</span></p>
+
+<p>이 관계를 읽는 것은 <code>orderDiscipline</code> 하나이고 구조는 아무것도 읽지 않는다. 순서를 어긴 <code>write</code> 가 무엇인지는 <code>OrderedByFeeds_Bites</code> 가 보인다. <span class="src">spec/sdlc/scenarios.als:25-30, spec/sdlc/checks.als:19-25 @ 3d8fd5b</span></p>
+
+<h3>이 베이스에서 각 단계의 산출물</h3>
+
+<table class="filemap">
+  <tr><td>Intent</td><td>하위 이슈의 <code>## Intent</code></td></tr>
+  <tr><td>Plan</td><td>하위 이슈의 <code>## Plan</code></td></tr>
+  <tr><td>Spec</td><td><code>spec/</code> 안의 시나리오 하나 또는 검사 하나</td></tr>
+  <tr><td>Docs</td><td><code>spec/</code> 안에서 모형 옆에 앉은 HTML 다이어그램 — 이 파일이 그것이다</td></tr>
+  <tr><td>Test</td><td><code>scripts/*-test.*</code> 스위트 안의 케이스 하나</td></tr>
+  <tr><td>Code</td><td>테스트가 모는 <code>scripts/</code> 나 <code>.claude/</code> 의 경로 하나</td></tr>
+</table>
+
+<p>멤버 저장소는 아래 네 단계를 자기 트리에 대응시키고, 그 저장소가 속한 캠페인 종류의 프로파일 줄이 그 가운데 무엇을 아예 가지는지 말한다. <span class="src">spec/sdlc/system.als:48-54 @ 3d8fd5b</span></p>
+
+<h2>시나리오 · 테스트 · 코드를 묶는 <code>names</code></h2>
+
+<figure id="fig-tie">
+  <svg viewBox="0 0 360 150" role="img" aria-labelledby="f2t">
+    <title id="f2t">시나리오가 테스트를 이름으로 부르고 테스트가 코드 경로를 이름으로 부르며, tied는 코드 경로에서 거꾸로 읽는다</title>
+    <defs>
+      <marker id="arrow-tie" viewBox="0 0 8 8" refX="7" refY="4"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g fill="none" stroke="currentColor" stroke-width="1.4">
+      <rect x="4" y="32" width="88" height="54"/>
+      <rect x="136" y="32" width="88" height="54"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 3">
+      <rect x="268" y="32" width="88" height="54"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow-tie)">
+      <path d="M92,59 L132,59"/>
+      <path d="M224,59 L264,59"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 3"
+       marker-end="url(#arrow-tie)">
+      <path d="M312,86 L312,118 L48,118 L48,90"/>
+    </g>
+    <g text-anchor="middle" fill="currentColor">
+      <text x="48" y="22" font-size="10" font-family="ui-monospace, Menlo, monospace">s</text>
+      <text x="180" y="22" font-size="10" font-family="ui-monospace, Menlo, monospace">t</text>
+      <text x="312" y="22" font-size="10" font-family="ui-monospace, Menlo, monospace">k</text>
+      <text x="48" y="56" font-size="12.5" font-weight="bold">Spec</text>
+      <text x="48" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">Written</text>
+      <text x="180" y="56" font-size="12.5" font-weight="bold">Test</text>
+      <text x="180" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">Written</text>
+      <text x="312" y="56" font-size="12.5" font-weight="bold">Code</text>
+      <text x="312" y="74" font-size="10" font-family="ui-monospace, Menlo, monospace">stage.Code</text>
+      <text x="112" y="50" font-size="10" font-family="ui-monospace, Menlo, monospace">names</text>
+      <text x="244" y="50" font-size="10" font-family="ui-monospace, Menlo, monospace">names</text>
+      <text x="180" y="134" font-size="10.5" font-family="ui-monospace, Menlo, monospace">tied[k] = some tie.k</text>
+    </g>
+  </svg>
+  <figcaption>실선 상자는 <code>Written</code> 이어야 하는 것이고, 점선 상자는 그렇지 않은 것이다 &mdash; <code>k</code> 에는 <code>Written &amp;</code> 가 붙지 않는다. 테스트는 자기가 몰 코드 경로가 생기기 전에 그 이름을 부른다.</figcaption>
+</figure>
+
+<pre>fun tie: Artifact -&gt; Artifact -&gt; Artifact {
+  { s: Written &amp; stage.Spec, t: Written &amp; stage.Test, k: stage.Code |
+    s-&gt;t in names and t-&gt;k in names }
+}
+pred tied[k: Artifact] { some tie.k }
+pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
+
+<p>"<code>a -&gt; b</code> 는 a의 텍스트가 b의 현재 이름을 담고 있다는 뜻이다." <code>names</code> 가 <code>var</code> 인 이유는 하나다. b의 이름이 바뀌면 옛 이름을 아직 담고 있는 모든 텍스트가 b를 부르기를 그친다. <span class="src">spec/sdlc/system.als:97-102 @ 3d8fd5b</span></p>
+
+<div class="callout">
+  <div class="g">&#9755;</div>
+  <p><strong>코드 경로에서 거꾸로 읽는다.</strong> <code>tied[k]</code> 는 어떤 시나리오가 k에 닿는지를 묻지, 시나리오에서 내려가며 묻지 않는다. 테스트가 없는 시나리오는 솔버가 혼자 검사하는 주장이고, 반대 방향으로 읽으면 <code>spec/campaign</code> 이 오늘 들고 있는 모든 시나리오를 거절하게 된다. <span class="src">spec/sdlc/system.als:128-135 @ 3d8fd5b</span></p>
+</div>
+
+<table>
+  <tr><th>이름을 쓰거나 끊는 자리</th><th>모형의 식별자</th><th>무엇인가</th></tr>
+  <tr><td>산출물 하나가 쓰이며 자기가 부르는 이름을 적는다</td><td><code>write[a]</code> — <code>names' - a-&gt;Artifact = names - a-&gt;Artifact</code></td><td>여기서만 적힌다</td></tr>
+  <tr><td>이름이 바뀌고, 같은 커밋이 다시 쓰지 않은 텍스트는 부르기를 그친다</td><td><code>rename[a]</code> — <code>names' in names</code></td><td>묶음을 없애는 하나뿐인 이벤트</td></tr>
+  <tr><td>커밋이 남긴 트리가 묶여 있어야 한다</td><td><code>tieDiscipline</code></td><td>캠페인 Scope가 부르는 <code>pre-commit</code> 검사</td></tr>
+  <tr><td>묶음이 끊긴 트리</td><td><code>TreeStaysTied_Bites</code>, <code>S4_RenameBreaksTheTie</code></td><td>검사가 거절해야 하는 것</td></tr>
+  <tr><td>같은 커밋이 부르는 쪽도 다시 써서 묶음이 버틴다</td><td><code>S4a_RenameKeepsItsNamers</code></td><td>검사가 통과시켜야 하는 것</td></tr>
+</table>
+
+<p class="src">spec/sdlc/system.als:196-203, spec/sdlc/system.als:216-227, spec/sdlc/scenarios.als:39-45, spec/sdlc/scenarios.als:120-143, spec/sdlc/checks.als:29-38 @ 3d8fd5b</p>
+
+<h2>단계별 건너뛰기 규칙</h2>
+
+<p>두 입력이 있고 어느 하나만으로는 건너뜀이 허가되지 않는다. <code>maySkip[c, s]</code> 는 <code>s in c.profile.optional and criterion[c, s]</code> 다. <span class="src">spec/sdlc/system.als:144-169 @ 3d8fd5b</span></p>
+
+<table>
+  <tr>
+    <th>단계</th>
+    <th><code>skippable</code></th>
+    <th>기준 — <code>criterion[c, s]</code></th>
+    <th>기준이 말하는 것</th>
+  </tr>
+  <tr>
+    <td><strong>Intent</strong></td>
+    <td>아니다</td>
+    <td>없음</td>
+    <td>의도가 없는 변경은 그 아래 무엇으로도 판정할 수 없다</td>
+  </tr>
+  <tr>
+    <td><strong>Plan</strong></td>
+    <td>아니다</td>
+    <td>없음</td>
+    <td><code>campaign-claim take</code> 가 <code>## Plan</code> 없는 하위 이슈의 클레임을 이미 거절한다</td>
+  </tr>
+  <tr>
+    <td><strong>Spec</strong></td>
+    <td>맞다</td>
+    <td><code>no writtenOf[c] &amp; stage.(Docs + Test + Code)</code></td>
+    <td>그 아래에 아무것도 없다 — 형식화할 것도, 없는 모형을 두고 그릴 것도 없다</td>
+  </tr>
+  <tr>
+    <td><strong>Docs</strong></td>
+    <td>맞다</td>
+    <td><code>no writtenOf[c] &amp; GrowsShape</code></td>
+    <td>모형이 모양을 키우지 않았다 — 사람에게 보일 것이 없다</td>
+  </tr>
+  <tr>
+    <td><strong>Test</strong></td>
+    <td>맞다</td>
+    <td><code>no writtenOf[c] &amp; stage.(Test + Code)</code></td>
+    <td>도는 것이 없다</td>
+  </tr>
+  <tr>
+    <td><strong>Code</strong></td>
+    <td>맞다</td>
+    <td><code>no writtenOf[c] &amp; stage.(Test + Code)</code></td>
+    <td>도는 것이 없다. Test와 Code가 기준을 나누어 갖는 것은 의도적이다 — 코드 경로 없는 테스트는 아무것도 목격하지 않고, 테스트 없는 코드 경로는 검사받지 않는다</td>
+  </tr>
+</table>
+
+<p><code>GrowsShape</code> 는 <code>spec/</code> 아래 더해진 <code>sig</code>, <code>var</code>, 또는 <code>one sig ... extends Event</code> 이고, 차이만 보고 읽힌다. 그래서 Docs의 기준은 작업자가 아니라 검사가 정한다. <span class="src">spec/sdlc/system.als:108-113 @ 3d8fd5b</span></p>
+
+<h3>종류의 프로파일</h3>
+
+<table class="filemap">
+  <tr><td>developmentProfile</td><td><code>p.optional = Docs</code> — 모형이 코드보다 먼저, 먼저 실패한 테스트, 모양이 자랐을 때만 뷰</td></tr>
+  <tr><td>researchProfile</td><td><code>p.optional = skippable</code> — 저장소를 스크래치 탐침 너머로 바꾸기를 거절하므로 Plan 아래 모든 단계가 건너뛸 수 있다</td></tr>
+</table>
+
+<p>여기에 종류의 원자는 없다. 모형은 프로파일과 변경이 어떻게 합쳐지는지를 갖고, 종류가 자기 프로파일을 갖는다. 그래서 종류를 더해도 모형은 바뀌지 않는다. 나머지 종류의 프로파일 줄은 <code>.claude/skills/opening-campaign/assets/agents/</code> 밑 파일이 이 어휘로 쓴다. <span class="src">spec/sdlc/system.als:73-82, spec/sdlc/scenarios.als:13-21 @ 3d8fd5b</span></p>
+
+<h2>건너뛰기 규칙을 읽는 두 자리</h2>
+
+<figure id="fig-stale" class="pan" style="min-width:22rem">
+  <svg viewBox="0 0 480 176" role="img" aria-labelledby="f3t">
+    <title id="f3t">Docs를 허가받아 건너뛴 뒤 모양을 키운 시나리오가 쓰이고, 착지에서 그 건너뜀이 허가되지 않은 것이 된다</title>
+    <defs>
+      <marker id="arrow-stale" viewBox="0 0 8 8" refX="7" refY="4"
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow-stale)">
+      <path d="M20,60 L466,60"/>
+    </g>
+    <g fill="currentColor">
+      <circle cx="80" cy="60" r="4"/>
+      <circle cx="240" cy="60" r="4"/>
+      <circle cx="400" cy="60" r="4"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.2">
+      <path d="M80,60 L80,36"/>
+      <path d="M240,60 L240,36"/>
+      <path d="M400,60 L400,36"/>
+    </g>
+    <g text-anchor="middle" fill="currentColor">
+      <text x="80" y="28" font-size="11" font-family="ui-monospace, Menlo, monospace">skip[c, Docs]</text>
+      <text x="240" y="28" font-size="11" font-family="ui-monospace, Menlo, monospace">write[a]</text>
+      <text x="400" y="28" font-size="11" font-family="ui-monospace, Menlo, monospace">land[c]</text>
+      <text x="80" y="82" font-size="10.5">그때는 <tspan font-family="ui-monospace, Menlo, monospace">GrowsShape</tspan> 가 없다</text>
+      <text x="80" y="96" font-size="10.5" font-weight="bold">허가됨</text>
+      <text x="240" y="82" font-size="10.5"><tspan font-family="ui-monospace, Menlo, monospace">a in GrowsShape</tspan></text>
+      <text x="240" y="96" font-size="10.5">기준이 거짓이 된다</text>
+      <text x="400" y="82" font-size="10.5">같은 건너뜀을 다시 읽는다</text>
+      <text x="400" y="96" font-size="10.5" font-weight="bold">허가되지 않음</text>
+      <text x="80" y="128" font-size="10.5" font-family="ui-monospace, Menlo, monospace">skipDiscipline</text>
+      <text x="400" y="128" font-size="10.5" font-family="ui-monospace, Menlo, monospace">landDiscipline</text>
+      <text x="240" y="152" font-size="10.5" font-family="ui-monospace, Menlo, monospace">SkipReadAtTheTimeIsNotEnough</text>
+      <text x="240" y="166" font-size="10.5">두 읽기 사이에 있는 것</text>
+    </g>
+  </svg>
+  <figcaption>기준은 <code>writtenOf[c]</code> 를 읽고, 그것은 변경이 쓰여 가는 동안 바뀐다. 작업자가 단계에 닿았을 때 허가된 건너뜀은 같은 변경의 나중 산출물이 기준을 거짓으로 만들면 착지에서 낡은 것이 된다.</figcaption>
+</figure>
+
+<table>
+  <tr><th>읽는 자리</th><th>모형의 식별자</th><th>무엇인가</th></tr>
+  <tr>
+    <td>작업자가 단계에 닿아서 읽는다</td>
+    <td><code>skipDiscipline</code> — <code>Now.event = Skip implies maySkip[Now.subject, Now.at]</code></td>
+    <td>정하는 읽기가 아닌 이른 읽기</td>
+  </tr>
+  <tr>
+    <td>변경이 착지할 때 다시 읽는다</td>
+    <td><code>landDiscipline</code> — <code>Now.event = Land implies all s: absentStages[Now.subject] | maySkip[Now.subject, s]</code></td>
+    <td>착지는 병합이므로 병합을 막는 자리, 곧 풀 리퀘스트의 <code>check</code></td>
+  </tr>
+  <tr>
+    <td>착지한 변경의 빠진 단계는 모두 허가받은 것이다</td>
+    <td><code>AbsenceLicensed</code> / <code>AbsenceLicensed_Bites</code></td>
+    <td>검사와, 그 규율 없을 때의 반례</td>
+  </tr>
+</table>
+
+<p class="src">spec/sdlc/scenarios.als:32-37, spec/sdlc/scenarios.als:47-55, spec/sdlc/checks.als:42-52 @ 3d8fd5b</p>
+
+<div class="callout">
+  <div class="g">&#9888;</div>
+  <p><strong>구제책은 뷰를 결국 쓰는 것이다.</strong> 건너뛴 단계를 쓰면 그 건너뜀이 철회된다 — 단계는 쓰이거나 건너뛰어지지, 둘 다는 아니고, 쓴 쪽이 나중 말이다. <code>S3b_DocsWrittenAfterAll</code> 이 그 사슬이고, 철회를 읽는 하나뿐인 명령이다. <span class="src">spec/sdlc/system.als:191-195, spec/sdlc/scenarios.als:104-118 @ 3d8fd5b</span></p>
+</div>
+
+<p><code>land[c]</code> 는 구조적으로 모든 단계가 <em>끝났음</em> — 쓰였거나 건너뛰어졌음 — 을 기다린다. 그것은 정의이지 기계가 아니다. 그 빠짐이 <em>허가되었는지</em> 는 <code>landDiscipline</code> 의 것이고, 쓰인 것이 <em>묶이는지</em> 는 <code>tieDiscipline</code> 의 것이다. <span class="src">spec/sdlc/system.als:229-243 @ 3d8fd5b</span></p>
+
+<h2>모형 밖에 남긴 것</h2>
+
+<ul>
+  <li><strong>세 기계는 규율이지 사실이 아니다</strong> — <code>orderDiscipline</code>, <code>tieDiscipline</code>, <code>landDiscipline</code> 은 각각 검사 하나가 가정하고 그 <code>_Bites</code> 가 떨어뜨린다. 이벤트에 써 넣은 규칙은 모형이 인정하는 모든 세계에서 참이고, 어떤 명령도 그것의 부재를 보일 수 없기 때문이다. 그래서 이벤트는 <em>느슨하다</em>: <code>write</code> 는 순서를 읽지 않고, <code>skip</code> 은 기준을 읽지 않고, <code>land</code> 는 묶음을 읽지 않는다. <span class="src">spec/sdlc/system.als:38-44 @ 3d8fd5b</span></li>
+  <li><strong>아무것도 <code>open</code> 하지 않는다</strong> — 검사가 도는 순간은 커밋이고, <code>campaign/github</code> 는 커밋을 모형화하지 않는다. 묶음은 트리 하나 안 파일들 사이의 것이고, <code>spec/campaign</code> 의 어떤 개체도 그것을 들고 있지 않다. <code>Change</code> 를 <code>Issue</code> 와, <code>Land</code> 를 <code>MergePullRequest</code> 와 합치는 것은 이 층 위의 층이다. <span class="src">spec/sdlc/system.als:6-11 @ 3d8fd5b</span></li>
+  <li><strong>누가 파일을 처음 썼는지 말하지 않는다</strong> — 변경이 <em>다시 쓰는</em> 산출물, 이미 있던 시나리오를 목격하는 테스트 같은 것도 여기서는 그 변경이 쓴 것만큼이나 그 변경의 산출물이다. 검사는 이름을 차이가 아니라 트리에 대고 읽는다. <span class="src">spec/sdlc/system.als:91-95 @ 3d8fd5b</span></li>
+  <li><strong>검사가 트리를 읽는지 차이만 읽는지는 검사의 것이다</strong> — 모형은 묶음이 무엇인지와 언제 하나가 읽히는지를 말한다. <span class="src">spec/sdlc/system.als:134-135 @ 3d8fd5b</span></li>
+  <li><strong>이름 바꾸기 뒤 무엇이 살아남는지는 솔버에게 맡긴다</strong> — <code>names'</code> 는 a의 들어오는 짝 가운데 아무것이나 남기고 나머지를 떨어뜨린다. 같은 커밋이 다시 쓴 텍스트를 모형이 따로 세지 않기 때문이다. <span class="src">spec/sdlc/system.als:216-227 @ 3d8fd5b</span></li>
+  <li><strong>도달 가능성 바닥이 따로 있다</strong> — 어떤 흔적도 닿지 못하는 이벤트는 명령들에서 질문 하나를 조용히 없애고, 너무 조인 프레임이 어떤 명령도 빨갛게 하지 않으면서 그것을 일으키는 가장 싼 길이다. 그래서 <code>Cov_Write</code>, <code>Cov_Skip</code>, <code>Cov_Rename</code>, <code>Cov_Land</code> 가 있다. <span class="src">spec/sdlc/checks.als:66-74 @ 3d8fd5b</span></li>
+</ul>
+
+<pre>scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc
+scripts/alloy-check.py --commands spec</pre>
+
+<p>명령마다 자기 <code>expect</code> 를 들고 다니고, 판정을 읽는 것은 솔버 하나이며, 명령 목록은 <code>spec/commands.snapshot.json</code> 에 두 번째로 적힌다 — <code>spec/</code> 전체를 덮는 스냅샷 하나다. 갱신은 <code>--write</code> 다. <span class="src">spec/sdlc/system.als:30-36 @ 3d8fd5b</span></p>
+
+</article>
+</body>
+</html>

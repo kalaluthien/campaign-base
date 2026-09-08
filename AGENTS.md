@@ -13,6 +13,8 @@ every GitHub operation; it is authenticated here.
 
 **Ask the person only what no check can settle** — preference, scope, a
 destructive stake. Everything else, decide and do, and report the decision.
+**Report outcomes, not operations**: what changed and the artifact that proves
+it — a path, a commit, a URL — with the journey only when the person asks how.
 
 # The campaign
 
@@ -94,7 +96,9 @@ BASE=$(cd "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 
 The base root is the main checkout by definition, and this form returns it
 from a linked worktree too, where `--show-toplevel` returns the worktree instead.
-Never run one git command across member repositories.
+Never run one git command across member repositories. **Operate on a worktree
+from the main checkout with `git -C <path>`**, edit through the worktree's own
+absolute paths, and never `cd` into one a later step merges or removes.
 
 ### Installed repositories
 
@@ -280,6 +284,13 @@ for the other, and a missing slug refuses rather than being guessed at.
   refuses it by name either: `campaign` is a barred slug segment, so
   `campaign-1` is not a slug and no name or branch can be read as one.
 
+**Before adopting a word for a renamed value, grep the tree *and* `git log -S`
+it**: a word absent from the tree may be pinned by an assertion that it is not
+there, and a word the tree holds may already carry another meaning. **Retiring a
+name or a rule sweeps every place it is stated** — its path, its role word, the
+prose aliases, the spec that calls itself the contract, and any validator whose
+pattern encodes it — in every language the tree is written in.
+
 # Campaign work
 
 **Open** — load `opening-campaign` when the request opens a campaign, or joins one
@@ -433,6 +444,11 @@ so what is written here is the habit, and the setting is the owner's.
 for the base it is the mode of last resort. All modes share the mechanics —
 the branch is claimed by `campaign-claim take` after the issue exists, because the
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
+**Write atomic commits with a search-optimized message and land them without
+waiting to be asked**, since work is not finished until it is merged and pushed.
+**A hook is never bypassed** — not with `--no-verify`, and not by moving
+`core.hooksPath`, which is the same bypass shaped like configuration; report what
+it refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
@@ -481,7 +497,9 @@ outcome names, and the three dialogs — is
 
 ## Completion, liveness, and local-only work
 
-Three readings, and never answer one with another.
+Three readings, and never answer one with another. **A signal means less than
+its name promises**: before acting on one, enumerate everything that produces it
+and everything that reads it.
 
 - **Completion is a GitHub fact.** A sub-issue is settled when its issue is closed —
   as completed with its pull request merged, or as **not planned**, which is how a
@@ -503,9 +521,17 @@ Three readings, and never answer one with another.
   whether any claim is still occupied. **A session is addressed by `ListAgents`**
   and asked which claim it holds. Read a delegate's progress from its
   transcript, never from `agent_status`, which reports the screen and calls a
-  mid-turn pause `idle`.
+  mid-turn pause `idle`. **A liveness verdict needs a delta, never a snapshot**:
+  read the screen or the counters twice and diff the target artifacts between
+  the reads. **A delegate killed mid-task is not proof its work is lost** — diff
+  its artifacts before re-running it.
 - **What exists only on this machine is the third question**, and
   `scripts/campaign-local-work.py <N> [dir]` is its one reader.
+
+**State the set beside every count, and count it yourself**; a number a delegate
+reported is that delegate's until you re-derive it, so relay it as theirs or run
+it. **Assert a loop's iteration count**, because a body that never ran still
+prints one line per iteration.
 
 ## The four messages
 
@@ -540,6 +566,10 @@ work it is, and counts a name that says nothing whenever the session sits under
 the base root. There is no `STOOD DOWN` comment,
 because a close reads `herdr agent list` and a peer still listed is asked, never
 killed.
+
+**Shape a briefing the way its final, clarified version would read**: the state
+in one line, then what is open as a table or a list, then the reasons, then the
+decisions that are the reader's, each under its own heading.
 
 **A verdict, a fix report, or a `REPORT` that does not pin its sha is
 unactionable**: verdicts and pushes race. **Between sessions, a relay is never the
@@ -576,9 +606,11 @@ push retires the review**, and the next merge needs a review at the combined sha
 **Condition 3 is enforced by GitHub; condition 1 is readable and read by nothing.**
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
-pull request head has no `check` at all**, so the fast-forward of `main` that
-~/.claude/CLAUDE.md § Git prescribes is refused — `HTTP 409: Required status check
-"check" is expected`. Land through the pull request, whose head sha carries it.
+pull request head has no `check` at all**, so fast-forwarding `main` onto a
+topic branch is refused — `HTTP 409: Required status check "check" is expected`.
+Land through the pull request, whose head sha carries it: merge `main` *into* the
+topic branch and resolve there, because the machine-wide no-main-commits guard
+blocks the resolution commit the other direction needs.
 **Condition 2 has no automatic reader**: one `gh` account signs every session's
 merges, so it is held by whoever writes the review saying honestly that it did not
 write the code.
@@ -637,6 +669,11 @@ also reports `idle` (whether the external-import one does is unmeasured), but
 neither is a person's stop — the planner clears both itself
 (`opening-campaign`'s `launching.md`).
 
+**Anchor a wait on the run's own marker**, or write the run to a fresh file: an
+appended log holds every previous run's success line. **Give a polling loop's
+no-evidence verdict a terminal branch** — count the quiet polls, exit reporting
+what was observed, and recover the true outcome from a durable source.
+
 **A release compacts the releasing session's own pane**, so a reused worker
 does not carry a finished sub-issue's transcript into the next one:
 `campaign-claim release` enqueues it, and says so when it could not.
@@ -652,11 +689,19 @@ listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
 can say which claim it holds.
 
+**Delete any local branch whose commits already sit on `main` or the remote**,
+whoever created it, and report a branch holding the only copy of its work instead
+of deleting it.
+
 # Concurrency
 
 One campaign, one machine settles the hard half: no lock is ever judged stale
 across a network. It does not settle the campaign's own writes — the binding
 serializes neither the campaign issue body nor the shared directory.
+
+**`HEAD` is shared state**: do not assume the shared checkout stays on your
+branch, read `git branch --show-current` before each commit, and read a branch's
+log for commits you did not author before fast-forwarding it.
 
 **Two open pull requests over the same normative files are normal, and the second
 to land reconciles** — **the gate is condition 3**. The merge is a push, so
@@ -697,7 +742,8 @@ nothing else blocks** — `check-campaign-claim.py` is the only harness hook her
 that refuses; the others announce. A **`pre-commit` guard** is read by git,
 which blocks on any non-zero, so it is free to number its own findings and each
 says which codes it uses in its docstring; take them from there rather than
-from a convention. Both put the reason on stderr.
+from a convention. Both put the reason on stderr, and **a failure message names
+only the conditions the code actually read**.
 
 **Keep a guard's own crash apart from its refusal where the caller can act on
 the difference**, because a guard that could not run has permitted nothing.
@@ -705,12 +751,28 @@ Under git it often cannot be kept apart — an unhandled exception exits 1, whic
 is also what three of these guards return for a finding — so a guard whose
 caller must tell the two apart says so and handles its own errors.
 
+**A check separates *I looked and found nothing* from *I could not look***,
+because a stale input reaches it as an absence indistinguishable from a pass.
+**Its last-resort handler permits**, so a bug in the check costs one unjudged
+call that names itself rather than a wall across everything it guards.
+
 **A script that answers a question prints the answer as a word on stdout**, and
 the caller reads the word, never the status. The status says whether the
 reading was made at all, and one script may need more than one code to say so:
 `check-commit-claim.py --is-claim` answers `claim`, `no-claim` or `unknown` and
 gives each its own status, because a caller about to push must tell an answered
 no from a question it could not read.
+
+**A case asserting an exit status is satisfied by every other cause that shares
+it**, a crash and a refusal alike, so assert on what the run said: the diagnosis,
+and the finding that must be absent. **Break each branch separately, not the
+feature** — disable one alternation, flag or code path at a time, require a named
+case to fail for each, and assert on what the mutation changes rather than on a
+neighbour it leaves alone.
+
+**Scope a dedupe or idempotency check to unsettled records only**, so a failed
+record stays repeatable: a key naming what was asked for rather than which
+attempt repeats whenever its subject returns to a state it has held.
 
 Three harness facts, each of which makes a hook enforce nothing when it is
 missed:

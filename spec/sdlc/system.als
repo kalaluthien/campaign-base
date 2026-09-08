@@ -47,8 +47,8 @@ module sdlc/system
 
 /* THE SIX STAGES. Two names are what a stage is called and what its artifact
    is at this base: intent and plan are the sub-issue's `## Intent` and
-   `## Plan`; spec is a scenario or check in spec/; docs is an HTML view under
-   docs/; test is a case in a scripts/*-test.* suite; code is a path in
+   `## Plan`; spec is a scenario or check in spec/; docs is the HTML diagram
+   beside a model in spec/; test is a case in a scripts/*-test.* suite; code is a path in
    scripts/ or .claude/ that a test drives. A member repository maps the last
    four onto its own tree, and the profile line of its campaign's kind says
    which of them it has at all. */

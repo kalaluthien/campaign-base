@@ -109,7 +109,8 @@ pred S3b_DocsWrittenAfterAll {
   allDisciplines
   one c: Change {
     developmentProfile[c.profile]
-    eventually (Now.event = Write and Now.at = Docs and Docs in c.skipped)
+    eventually (Now.event = Write and Now.at = Docs and Docs in c.skipped
+                and some writtenOf[c] & GrowsShape)
     eventually c in Landed
   }
 }

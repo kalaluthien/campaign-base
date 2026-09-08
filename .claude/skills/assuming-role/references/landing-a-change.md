@@ -1,7 +1,7 @@
 # Landing a change
 
 The inside of a worker's step 3: which stage comes first, what each one
-produces, and when one may be skipped. `spec/sdlc/system.als` is normative --
+produces, and when one may be skipped. `spec/sdlc/system.als` is normative —
 every row below cites the identifier that decides it and states no rule of its
 own, so a disagreement is settled by reading the model, never this page.
 
@@ -34,21 +34,25 @@ change.
 You read `maySkip` when you reach the stage (`skipDiscipline`), and the merge
 reads it again against the change as it finally stands (`landDiscipline`). The
 second is not the first restated: `criterion` reads `writtenOf`, which grows, so
-a skip licensed when you reached the stage can be stale by the merge --
+a skip licensed when you reached the stage can be stale by the merge —
 `SkipReadAtTheTimeIsNotEnough` is a chain that keeps the first reading and still
 lands wrong. The remedy is to write the stage after all, which retracts the skip
 (`write`, `S3b_DocsWrittenAfterAll`).
 
-So a profile is permission and not a plan, and the criteria chain. `criterion`
-for `Spec` is that nothing below it exists, so any change that writes a test or
-a code path owes a scenario whatever its kind allows; a profile naming `Spec` is
-live only for a change that lands nothing runnable, or that never lands at all.
+So a profile is permission and not a plan, and two readings narrow it further.
+`criterion` for `Spec` is that nothing below it exists, so a change that writes
+a test or a code path cannot skip its scenario whatever its kind allows. And
+`tieDiscipline` reads at every commit, not at the merge, so a code path a
+commit leaves in the tree owes a scenario even on a branch that never lands.
+A profile naming `Spec` is live only where neither reading bites: a change that
+commits no code path, or one whose code path ties through a scenario and a test
+already in the tree.
 
 ## The tie
 
 `tie` reads a scenario naming the test that witnesses it and that test naming
 the code path it drives. `treeTied` asks it of every code path in the tree, read
-from the code path up and never from the scenario down -- a scenario with no
+from the code path up and never from the scenario down — a scenario with no
 test is a claim the solver checks on its own. `tieDiscipline` is the reading at
 the commit.
 

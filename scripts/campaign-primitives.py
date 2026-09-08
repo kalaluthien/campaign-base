@@ -26,13 +26,11 @@ complete list, and the reader concludes the thing is not there.
 
 WHAT IS LOCAL TO THIS REPOSITORY
 
-How a script is named and where it lives are `~/.claude/rules/script-authoring.md`,
-which loads whenever anyone opens one of these files. Three facts are this
-repository's own and are stated only here.
-
-The listing splits by *who calls it* -- a reader is asked a question by a flow,
-and a guard acts without being asked -- which is why the output has two sections
-rather than one alphabetical list.
+How a script is named and where it lives are AGENTS.md's, under "Authoring a
+script or a skill". It states the rule this listing's two sections are the
+consequence of -- a reader is asked a question by a flow, and a guard acts
+without being asked -- which is why the output has two sections rather than one
+alphabetical list. Two facts are this repository's own and are stated only here.
 
 A reader's subject is one of AGENTS.md's three planes, so `campaign-` prefixes a
 reading of the campaign plane and nothing else. By that, `campaign-primitives`

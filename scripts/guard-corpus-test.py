@@ -119,7 +119,6 @@ def main():
             ("/b/spec/campaign/x.als", "base", "spec/campaign/x.als"),
             ("/b/.claude/skills/s/x.md", "base", ".claude/skills/s/x.md"),
             ("/b/runtime/guard.log", "base", "runtime/guard.log"),
-            ("/b/spec/campaign/x.html", "base", "spec/campaign/x.html"),
             ("/b/README.md", "base", "README.md"),
             ("/b/machinery/notes.md", "campaign", "notes.md"),
             ("/b/machinery/worktrees/7/scripts/x.py", "worktree",

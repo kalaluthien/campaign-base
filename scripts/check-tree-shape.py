@@ -57,7 +57,9 @@ WHAT IT CHECKS
       the file itself, so a script nothing calls yet is caught too. A path
       under an `assets/` is a template for some other tree and is skipped,
       and so is anything nested below the `scripts/` rather than in it --
-      `scripts/fixtures/` is data, not a script.
+      `scripts/fixtures/` is data, not a script. A `README.md` laid beside the
+      scripts is refused for the same reason and on purpose: what sits in a
+      `scripts/` is a script, and prose about them goes where prose goes.
 
 WHAT IT DOES NOT CATCH
 

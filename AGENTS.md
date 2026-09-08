@@ -684,18 +684,27 @@ so none of those is written below. What is left needs judgement.
 They separate on the call and not on the topic, which is why
 `campaign-primitives.py`'s listing groups them that way. **The line under the
 shebang is the purpose**, and that listing prints it, so a hand-kept inventory
-of scripts is never written. Usage goes in the file: a reader should not need
-this document to call one.
+of scripts is never written. **Usage goes in the file** for a script anything
+calls by hand, since a reader should not need this document to call one; a
+script only a hook runs has no such caller and owes none.
 
-**Exit status carries the hook meanings from the start**, since any script may
-end up on a hook: **0 succeeded, 2 refuses, any other non-zero is the script's
-own failure and refuses nothing.** A script that *answers a question* prints the
-answer as a word on stdout and exits 0 — the caller reads the word, never the
-status — and non-zero there means *I could not look*. A script that *guards*
-exits 2 with the reason on stderr, where the model reads it; its own crash is a
-different code, because a guard that cannot run has permitted nothing.
+**Exit status has two conventions here, and a guard takes the one its caller
+reads.** A **harness hook** is read by the harness: **0 allows, 2 refuses, and
+nothing else blocks** — `check-campaign-claim.py` is the one. A **`pre-commit`
+guard** is read by git, which blocks on any non-zero, so each names its own
+numbering in its `EXIT` section and a reader takes it from there rather than
+from a convention. Both put the reason on stderr, and both keep a status for
+their own crash apart from their refusal, because a guard that could not run
+has permitted nothing.
 
-Three harness facts, each of which makes a check enforce nothing when it is
+**A script that answers a question prints the answer as a word on stdout**, and
+the caller reads the word, never the status. The status says whether the
+reading was made at all, and one script may need more than one code to say so:
+`check-commit-claim.py --is-claim` exits 0, 1 and 2 for `claim`, `no-claim` and
+`unknown`, because a caller about to push must tell an answered no from a
+question it could not read.
+
+Three harness facts, each of which makes a hook enforce nothing when it is
 missed:
 
 - **Exit 2 blocks only on events that can block.** On `PostToolUse`,
@@ -740,8 +749,8 @@ small rule gets the rule; one thick with exceptions gets a few worked examples;
 a term the skill encapsulates gets its definition; distinct situations get a
 catalogue, the situation in one column and the action it selects in the next. A
 row selecting a whole mode links a reference holding that mode — the row keeps
-the selector, the reference keeps the body — and **a reference no row names is
-never read**. One over 100 lines opens with its own table of contents,
+the selector, the reference keeps the body — and **a reference nothing names is
+never read**. One over 100 lines opens with a summary or a table of contents,
 because an unsummarized file gets previewed instead of read.
 
 **State a finished state as a predicate the agent can check** ("every index
@@ -764,6 +773,6 @@ re-attached body, so a rule that must survive a long session sits near the top.
 An unused skill still costs its description every turn: a fact belongs in this
 file, and only a procedure earns a skill.
 
-**`.claude/skills/herdr/` is vendored**, and its own first line names the
-upstream and the tag. An upgrade replaces the whole file; any edit breaks the
+**`.claude/skills/herdr/` is vendored**, and the first line of its body, under
+the frontmatter, names the upstream and the tag. An upgrade replaces the whole file; any edit breaks the
 identity that makes that replacement safe.

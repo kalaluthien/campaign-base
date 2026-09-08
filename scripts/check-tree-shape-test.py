@@ -37,7 +37,7 @@ CASES = [
     ("R2 a tracked top-level name with no allowlist line",
      {"scratch/x.txt": "hi\n"}, "R2"),
     ("R2 an entry written with its trailing slash still matches",
-     {"spec/x.html": "<p>hi</p>\n"}, None),
+     {".claude/skills/s/SKILL.md": "hi\n"}, None),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -184,6 +184,8 @@ CASES = [
      {".claude/skills/s/scripts/x.py": "x = 1\n"}, None),
     ("R5 a directory under .claude/ that is not a skill",
      {".claude/agents/x.md": "hi\n"}, None),
+    ("R5 the skills root is anchored: one deeper in the tree is not it",
+     {"scripts/fixtures/.claude/skills/s/notes.md": "hi\n"}, None),
 
     # R6 -- the extension. The refusal is the shape the retired deny list held
     # by name (`scripts/<name>` with no extension); the allows are the two

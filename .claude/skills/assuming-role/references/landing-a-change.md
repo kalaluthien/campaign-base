@@ -45,7 +45,7 @@ a test or a code path cannot skip its scenario whatever its kind allows. And
 `tieDiscipline` reads at every commit, not at the merge, so a code path a
 commit leaves in the tree owes a scenario even on a branch that never lands.
 A profile naming `Spec` is live only where neither reading bites: a change that
-commits no code path, or one whose code path ties through a scenario and a test
+writes nothing below its plan, or one whose code path ties through a scenario
 already in the tree.
 
 ## The tie

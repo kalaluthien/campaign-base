@@ -37,7 +37,7 @@ each a different cost:
 
 | horizon | length | crossing it costs | the cron that answers it |
 | --- | --- | --- | --- |
-| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run — required reads: `AGENTS.md` § Watching and retiring |
+| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run |
 | usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking | one-shot, 1 minute after the reset, when a limit menu is read |
 | weekly limit | 1 week (`/usage`'s "Current week" reset) | stops everything until its own reset | stop, and a one-shot at the weekly reset |
 
@@ -45,5 +45,6 @@ Two harness facts, from `CronCreate`'s own description:
 
 - A cron is session-only: it lives only in this session and is gone when the
   session ends, so it is re-set after every restart.
-- A recurring cron auto-expires after 7 days — it fires once more, then is
-  deleted.
+- A recurring cron auto-expires after 7 days, firing once more first — a
+  campaign running longer than a week re-arms the recurring cron then, or the
+  cache heartbeat lapses silently.

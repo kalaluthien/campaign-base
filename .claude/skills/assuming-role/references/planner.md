@@ -38,7 +38,7 @@ each a different cost:
 | horizon | length | crossing it costs | the cron that answers it |
 | --- | --- | --- | --- |
 | prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run |
-| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking | one-shot, 1 minute after the reset, when a limit menu is read |
+| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking, and it kills in batches — several workers going quiet together is an outage to schedule around, not a retry | one-shot, 1 minute after the reset, when a limit menu is read |
 | weekly limit | 1 week (`/usage`'s "Current week" reset) | stops everything until its own reset | stop, and a one-shot at the weekly reset |
 
 Two harness facts, from `CronCreate`'s own description:

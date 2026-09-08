@@ -66,7 +66,7 @@ def place(n, root):
 
 
 NEEDED = _needed()
-IGNORE = "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n!/docs/\n"
+IGNORE = "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n"
 
 
 def git(root, *args, **kw):
@@ -175,9 +175,9 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
-        (r.root / "docs").mkdir()
-        (r.root / "docs" / "x.html").write_text("<p>ok</p>\n")
-        git(r.root, "add", "docs/x.html")
+        (r.root / "spec").mkdir()
+        (r.root / "spec" / "x.html").write_text("<p>ok</p>\n")
+        git(r.root, "add", "spec/x.html")
         c = r.commit()
         check("a clean commit is not blocked", c.returncode == 0,
               (c.stdout + c.stderr)[:160])
@@ -312,9 +312,9 @@ def main():
         # Chaining, exercised and not read: the fake guard refuses every commit
         # with its own words, so a clean commit going through would mean the
         # adopted slot lost the guard the shim carried.
-        (r.root / "docs").mkdir()
-        (r.root / "docs" / "x.html").write_text("<p>ok</p>\n")
-        git(r.root, "add", "docs/x.html")
+        (r.root / "spec").mkdir()
+        (r.root / "spec" / "x.html").write_text("<p>ok</p>\n")
+        git(r.root, "add", "spec/x.html")
         c = r.commit(env={"HOME": str(home)})
         # Pinned to the hook install-hooks wrote: the un-adopted shim also
         # prints the fake guard's words, so the `# runs:` line is what
@@ -582,9 +582,9 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
         installer(r.root)
-        (r.root / "docs").mkdir()
-        (r.root / "docs" / "a.html").write_text("<p>a</p>\n")
-        git(r.root, "add", "docs/a.html")
+        (r.root / "spec").mkdir()
+        (r.root / "spec" / "a.html").write_text("<p>a</p>\n")
+        git(r.root, "add", "spec/a.html")
         c = r.commit()
         check("an ordinary branch is not pushed", "push-campaign-branch" not in
               c.stdout + c.stderr, (c.stdout + c.stderr)[:160])
@@ -595,8 +595,8 @@ def main():
         # name with no ref behind it is not one.
         git(r.root, "switch", "-qc", "demo/1-x")
         git(r.root, "push", "-q", "origin", "demo/1-x")
-        (r.root / "docs" / "b.html").write_text("<p>b</p>\n")
-        git(r.root, "add", "docs/b.html")
+        (r.root / "spec" / "b.html").write_text("<p>b</p>\n")
+        git(r.root, "add", "spec/b.html")
         c = r.commit()
         check("a campaign branch is pushed by the hook",
               "pushed demo/1-x" in c.stdout + c.stderr,
@@ -628,8 +628,8 @@ def main():
         # any branch a person happened to name that way was published by a
         # commit. Nothing here is a claim, so nothing is pushed.
         git(r.root, "switch", "-qc", "demo/2-unclaimed")
-        (r.root / "docs" / "d.html").write_text("<p>d</p>\n")
-        git(r.root, "add", "docs/d.html")
+        (r.root / "spec" / "d.html").write_text("<p>d</p>\n")
+        git(r.root, "add", "spec/d.html")
         c = r.commit()
         ls2 = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
                               "demo/2-unclaimed"],
@@ -655,8 +655,8 @@ def main():
               "mktemp failed" in p.stdout + p.stderr, (p.stdout + p.stderr)[:160])
 
         (r.root / "scripts" / "push-campaign-branch.sh").chmod(0o644)
-        (r.root / "docs" / "c.html").write_text("<p>c</p>\n")
-        git(r.root, "add", "docs/c.html")
+        (r.root / "spec" / "c.html").write_text("<p>c</p>\n")
+        git(r.root, "add", "spec/c.html")
         c = r.commit()
         check("a missing push script says the commit was not pushed",
               "NOT pushed" in c.stdout + c.stderr, (c.stdout + c.stderr)[:200])

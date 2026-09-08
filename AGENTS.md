@@ -13,6 +13,8 @@ every GitHub operation; it is authenticated here.
 
 **Ask the person only what no check can settle** — preference, scope, a
 destructive stake. Everything else, decide and do, and report the decision.
+**Report outcomes, not operations**: what changed and the artifact that proves
+it — a path, a commit, a URL — with the journey only when the person asks how.
 
 # The campaign
 
@@ -442,9 +444,11 @@ so what is written here is the habit, and the setting is the owner's.
 for the base it is the mode of last resort. All modes share the mechanics —
 the branch is claimed by `campaign-claim take` after the issue exists, because the
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
-**Work is finished when it is committed, merged and pushed**, and a hook is never
-bypassed — not with `--no-verify`, and not by moving `core.hooksPath`, which is
-the same bypass shaped like configuration; report what it refused and ask.
+**Write atomic commits with a search-optimized message and land them without
+waiting to be asked**, since work is not finished until it is merged and pushed.
+**A hook is never bypassed** — not with `--no-verify`, and not by moving
+`core.hooksPath`, which is the same bypass shaped like configuration; report what
+it refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
@@ -519,12 +523,15 @@ and everything that reads it.
   transcript, never from `agent_status`, which reports the screen and calls a
   mid-turn pause `idle`. **A liveness verdict needs a delta, never a snapshot**:
   read the screen or the counters twice and diff the target artifacts between
-  the reads.
+  the reads. **A delegate killed mid-task is not proof its work is lost** — diff
+  its artifacts before re-running it.
 - **What exists only on this machine is the third question**, and
   `scripts/campaign-local-work.py <N> [dir]` is its one reader.
 
 **State the set beside every count, and count it yourself**; a number a delegate
-reported is that delegate's until you re-derive it, so relay it as theirs or run it.
+reported is that delegate's until you re-derive it, so relay it as theirs or run
+it. **Assert a loop's iteration count**, because a body that never ran still
+prints one line per iteration.
 
 ## The four messages
 
@@ -602,8 +609,8 @@ Whether it still bites is `main`'s `required_status_checks.contexts`, and
 pull request head has no `check` at all**, so fast-forwarding `main` onto a
 topic branch is refused — `HTTP 409: Required status check "check" is expected`.
 Land through the pull request, whose head sha carries it: merge `main` *into* the
-topic branch and resolve there, because a resolution commit on `main` is what the
-no-direct-commits guard blocks.
+topic branch and resolve there, because the machine-wide hook refusing direct
+commits to `main` blocks the resolution commit the other direction needs.
 **Condition 2 has no automatic reader**: one `gh` account signs every session's
 merges, so it is held by whoever writes the review saying honestly that it did not
 write the code.
@@ -744,8 +751,8 @@ Under git it often cannot be kept apart — an unhandled exception exits 1, whic
 is also what three of these guards return for a finding — so a guard whose
 caller must tell the two apart says so and handles its own errors.
 
-**A check says what it observed** — what was read, from where, and which branch
-was taken — and separates *I looked and found nothing* from *I could not look*.
+**A check separates *I looked and found nothing* from *I could not look***,
+because a stale input reaches it as an absence indistinguishable from a pass.
 **Its last-resort handler permits**, so a bug in the check costs one unjudged
 call that names itself rather than a wall across everything it guards.
 
@@ -761,8 +768,11 @@ it**, a crash and a refusal alike, so assert on what the run said: the diagnosis
 and the finding that must be absent. **Break each branch separately, not the
 feature** — disable one alternation, flag or code path at a time, require a named
 case to fail for each, and assert on what the mutation changes rather than on a
-neighbour it leaves alone. **Scope a dedupe or idempotency check to unsettled
-records only**, so a failed record stays repeatable.
+neighbour it leaves alone.
+
+**Scope a dedupe or idempotency check to unsettled records only**, so a failed
+record stays repeatable: a key naming what was asked for rather than which
+attempt repeats whenever its subject returns to a state it has held.
 
 Three harness facts, each of which makes a hook enforce nothing when it is
 missed:

@@ -103,14 +103,16 @@ pred S3a_DocsDemanded {
 
 /* The remedy the landing check leaves: the same waiver, then a scenario that
    grows a shape, and the change writes the view it had waived -- the write
-   retracts the skip -- and lands. The finding in checks.als is this chain
+   retracts the skip, and this is the one command that reads the retraction --
+   and lands. The finding in checks.als is this chain
    without the view; `write`'s comment in system.als names it. */
 pred S3b_DocsWrittenAfterAll {
   allDisciplines
   one c: Change {
     developmentProfile[c.profile]
     eventually (Now.event = Write and Now.at = Docs and Docs in c.skipped
-                and some writtenOf[c] & GrowsShape)
+                and some writtenOf[c] & GrowsShape
+                and after Docs not in c.skipped)
     eventually c in Landed
   }
 }

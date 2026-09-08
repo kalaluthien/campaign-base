@@ -151,7 +151,7 @@ pred treeTied { all k: Written & stage.Code | tied[k] }
             nothing drawn for a model that is not there.
      Docs   the model grew no shape: no spec artifact of the change is in
             GrowsShape, so there is nothing a person has to be shown.
-     Test   nothing runs -- the same reading as Spec's.
+     Test   nothing runs: the change has written no test and no code path.
      Code   nothing runs. Test and Code share a criterion on purpose: a test
             with no code path witnesses nothing, and a code path with no test
             is unchecked, so a change has both or neither.

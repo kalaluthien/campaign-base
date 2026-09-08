@@ -148,9 +148,9 @@ def commands_mode(directory, write):
     gone = [c for c in was if c not in found]
     new = [c for c in found if c not in was]
     for mod, kind, name in gone:
-        print(f"GONE      {mod:<22} {kind:<6} {name}")
+        print(f"GONE      {mod:<40} {kind:<6} {name}")
     for mod, kind, name in new:
-        print(f"NEW       {mod:<22} {kind:<6} {name}")
+        print(f"NEW       {mod:<40} {kind:<6} {name}")
     if gone or new:
         print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
               f"rerun with --write and commit {SNAPSHOT}")

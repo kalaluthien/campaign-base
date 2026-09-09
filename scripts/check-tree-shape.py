@@ -253,8 +253,20 @@ def claim_subcommands(root):
 # under `scripts/fixtures/` is as wrong as anywhere else, and only the
 # retired-name reading has a reason to stand down. Every run says how many
 # paths it skipped and why, because an exemption that prints nothing is a rule
-# silently gone.
-RECORDED = ("scripts/fixtures/",)
+# silently gone. A skill's own `scripts/fixtures/` is the same corpus one
+# level down -- #279's captured pane screens, which spell whatever the pane
+# showed -- so the path rule is "a fixtures/ directly under a scripts/",
+# at the root or in a skill, and not the root's alone.
+RECORDED = ("scripts/fixtures/", ".claude/skills/")
+
+
+def is_recorded(path):
+    """Whether `path` is a recorded corpus R3 stands down over: under the
+    root's scripts/fixtures/, or a skill's."""
+    root, skills = RECORDED
+    if path.startswith(root):
+        return True
+    return path.startswith(skills) and "/scripts/fixtures/" in path
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 
@@ -481,7 +493,7 @@ def main():
              + ("(it could not be read)" if subs is False
                 else "(its argparse defines none this could find)"))
         subs = None
-    recorded = [p for p in paths if p.startswith(RECORDED)]
+    recorded = [p for p in paths if is_recorded(p)]
     for p in paths:
         if p in recorded:
             continue
@@ -570,7 +582,7 @@ def main():
               f"fixture names a path on purpose that is not there")
     if recorded:
         print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
-              f"{', '.join(RECORDED)}: a corpus of calls that were really made "
+              f"a scripts/fixtures/, the root's or a skill's: a corpus of calls that were really made "
               f"is evidence, and a retired name in one records when it was "
               f"typed")
     unread = sum(1 for f in findings if f.startswith("R0\t"))

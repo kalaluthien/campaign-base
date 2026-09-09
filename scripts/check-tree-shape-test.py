@@ -144,6 +144,13 @@ CASES = [
      {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
       ".claude/skills/s/scripts/fixtures/banner.txt":
       "  \u23bf  You've hit your session limit \u00b7 resets 9pm (Asia/Seoul)\n"}, None),
+    # unguarded: check-tree-shape -- fixtures must spell the names it bans
+    ("R3 stands down over a skill's scripts/fixtures/ as over the root's",
+     {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
+      ".claude/skills/s/scripts/fixtures/screen.txt": "cat $CAMPAIGN/runtime/holder\n"}, None),
+    ("R3 still runs over a skill's scripts/ itself",
+     {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
+      ".claude/skills/s/scripts/screen.txt": "cat $CAMPAIGN/runtime/holder\n"}, "R3b"),
 
     # A language with no comment syntax at all: every line is code, and the
     # empty marker lists must not make the whole file read as prose.

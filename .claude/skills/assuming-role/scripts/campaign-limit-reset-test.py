@@ -4,17 +4,22 @@
 and fires one detached prompt after the reset -- and that each branch of it is
 pinned by a named case.
 
-The banner is read from FIXTURES captured off real stops (fixtures/), never
-from a string this suite made up, because the shape being parsed is Claude
-Code's and a fixture is the only evidence of it. The pane and the prompt go
-through a fake `herdr` on PATH that records what it was asked; nothing here
-drives a real pane. The allow side is tested as hard as the refuse side: a
-`/usage` screen, prose about the limit, and an empty pane all read `no limit`.
+The banner's SHAPE is read from fixtures captured off real stops (fixtures/):
+a made-up screen would prove only that the parser reads what its author
+imagined. Where a case needs a clause no screen capture holds, `banner()`
+builds one line in the captured shape and its docstring says which real
+records the clause was seen in. The pane and the prompt go through a fake
+`herdr` on PATH that records what it was asked; nothing here drives a real
+pane. The allow side is tested as hard as the refuse side: a `/usage` screen,
+prose quoting the banner, a diff showing it, an empty pane, and a pane woken
+since its banner all read `no limit`.
 
 Then EVERY BRANCH IS BROKEN IN TURN, on a copy of the script, and the case
-named for it must go red -- a parser that returns a plausible time however
-wrong it is proves less than a green suite usually does. A mutation that
-survives, or whose anchor no longer matches, fails the suite by name.
+named for it must go red BY ITS OWN ASSERTION -- a parser that returns a
+plausible time however wrong it is proves less than a green suite usually
+does, and a case that goes red by crashing has asserted nothing. A mutation
+that survives, whose case crashed, or whose anchor no longer matches, fails
+the suite by name.
 
 Usage: .claude/skills/assuming-role/scripts/campaign-limit-reset-test.py
 """
@@ -35,6 +40,9 @@ FIX = HERE / "fixtures"
 SESSION = (FIX / "limit-banner-session.txt").read_text()
 WEEKLY = (FIX / "limit-banner-weekly.txt").read_text()
 NONE = (FIX / "no-banner.txt").read_text()
+# the weekly capture cut at its second banner: a pane that was woken after its
+# first banner and went back to work -- a real screen, not a composed one
+RESUMED = WEEKLY[:WEEKLY.index("You've hit your weekly")].rsplit("\n", 1)[0] + "\n"
 KST = dt.timezone(dt.timedelta(hours=9))
 
 RAN, FAILED = [], []
@@ -46,12 +54,28 @@ def check(name, ok, detail=""):
         FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
 
 
+LOADED = {}
+
+
 def load(script):
-    """The script as a module, from its path, so a mutated copy loads too."""
-    spec = importlib.util.spec_from_file_location(f"clr_{abs(hash(str(script)))}", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """The script as a module, from its path, so a mutated copy loads too;
+    once per path, so a case's `mod.Unparsed` is the class `read` raised."""
+    if script not in LOADED:
+        spec = importlib.util.spec_from_file_location(f"clr_{len(LOADED)}", script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        LOADED[script] = mod
+    return LOADED[script]
+
+
+def read(script, text, now):
+    """What `reading` returned, or the exception it raised -- so a case
+    asserts on a crash rather than being ended by one."""
+    mod = load(script)
+    try:
+        return mod.reading(text, now)
+    except Exception as e:  # noqa: BLE001 -- the case decides what a raise means
+        return e
 
 
 def at(y, mo, d, h, mi=0, tz=KST):
@@ -59,8 +83,12 @@ def at(y, mo, d, h, mi=0, tz=KST):
 
 
 def banner(kind, clause):
-    """One banner line in the captured shape, with a made-up clause -- used only
-    where no capture holds the shape, and said so in the case name."""
+    """One banner in the captured shape with a clause no screen capture holds.
+    The clauses used below were each seen in a real stop's transcript record
+    (the API's own text, `You've hit your … limit · resets …`): `1:30am`
+    2026-09-08, `Sep 1 at 10pm (Asia/Seoul)` 2026-08-29, `1:10am` with no
+    zone 2026-08-27, `12am`/`12pm` and `Dec 30 at 10pm` not seen -- those two
+    are the parser's own edge and year rule, on the shape's grammar."""
     return f"  ⎿  You've hit your {kind} limit · resets {clause}\n     /upgrade to increase your usage limit.\n"
 
 
@@ -68,112 +96,120 @@ def banner(kind, clause):
 # Each returns (ok, detail); `script` is the path of the copy under test.
 
 def case_session_on_the_hour(script):
-    got = load(script).reading(SESSION, at(2026, 9, 8, 18, 47))
+    got = read(script, SESSION, at(2026, 9, 8, 18, 47))
     want = ("session", at(2026, 9, 8, 21, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_weekly_undated_is_todays(script):
-    got = load(script).reading(WEEKLY, at(2026, 9, 8, 13, 0))
+    got = read(script, WEEKLY, at(2026, 9, 8, 13, 0))
     want = ("weekly", at(2026, 9, 8, 22, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_last_banner_wins(script):
     # the weekly fixture holds a session banner above the weekly one
-    got = load(script).reading(WEEKLY, at(2026, 9, 8, 13, 0))
-    return got is not None and got[0] == "weekly", f"{got}"
+    got = read(script, WEEKLY, at(2026, 9, 8, 13, 0))
+    return isinstance(got, tuple) and got[0] == "weekly", f"{got}"
+
+
+def case_woken_pane_is_no_limit(script):
+    got = [read(script, RESUMED, at(2026, 9, 8, 19, 0)), read(script, RESUMED, at(2026, 9, 8, 21, 30))]
+    return got == [None, None], f"{got}"
+
+
+def case_idle_prompt_after_banner_still_stands(script):
+    # the session fixture ends in an EMPTY prompt line: stopped, not woken
+    return case_session_on_the_hour(script)
 
 
 def case_minutes_kept(script):
-    got = load(script).reading(banner("session", "1:30am (Asia/Seoul)"), at(2026, 9, 8, 0, 10))
+    got = read(script, banner("session", "1:30am (Asia/Seoul)"), at(2026, 9, 8, 0, 10))
     want = ("session", at(2026, 9, 8, 1, 30))
     return got == want, f"{got} != {want}"
 
 
 def case_session_wraps_to_tomorrow(script):
-    got = load(script).reading(banner("session", "1:30am (Asia/Seoul)"), at(2026, 9, 8, 23, 0))
+    got = read(script, banner("session", "1:30am (Asia/Seoul)"), at(2026, 9, 8, 23, 0))
     want = ("session", at(2026, 9, 9, 1, 30))
     return got == want, f"{got} != {want}"
 
 
 def case_session_passed(script):
-    got = load(script).reading(SESSION, at(2026, 9, 8, 21, 30))
+    got = read(script, SESSION, at(2026, 9, 8, 21, 30))
     want = ("passed", at(2026, 9, 8, 21, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_session_read_next_morning_is_yesterdays(script):
-    got = load(script).reading(SESSION, at(2026, 9, 9, 3, 0))
+    got = read(script, SESSION, at(2026, 9, 9, 3, 0))
     want = ("passed", at(2026, 9, 8, 21, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_weekly_passed(script):
-    got = load(script).reading(WEEKLY, at(2026, 9, 8, 23, 0))
+    got = read(script, WEEKLY, at(2026, 9, 8, 23, 0))
     want = ("passed", at(2026, 9, 8, 22, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_weekly_dated(script):
-    got = load(script).reading(banner("weekly", "Sep 1 at 10pm (Asia/Seoul)"), at(2026, 8, 29, 10, 57))
+    got = read(script, banner("weekly", "Sep 1 at 10pm (Asia/Seoul)"), at(2026, 8, 29, 10, 57))
     want = ("weekly", at(2026, 9, 1, 22, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_dated_december_read_in_january_has_passed(script):
-    got = load(script).reading(banner("weekly", "Dec 30 at 10pm (Asia/Seoul)"), at(2027, 1, 2, 9, 0))
+    got = read(script, banner("weekly", "Dec 30 at 10pm (Asia/Seoul)"), at(2027, 1, 2, 9, 0))
     want = ("passed", at(2026, 12, 30, 22, 0))
     return got == want, f"{got} != {want}"
 
 
 def case_noon_and_midnight(script):
-    mod = load(script)
-    noon = mod.reading(banner("session", "12pm (Asia/Seoul)"), at(2026, 9, 8, 9, 0))
-    midnight = mod.reading(banner("session", "12am (Asia/Seoul)"), at(2026, 9, 8, 22, 0))
+    noon = read(script, banner("session", "12pm (Asia/Seoul)"), at(2026, 9, 8, 9, 0))
+    midnight = read(script, banner("session", "12am (Asia/Seoul)"), at(2026, 9, 8, 22, 0))
     ok = noon == ("session", at(2026, 9, 8, 12, 0)) and midnight == ("session", at(2026, 9, 9, 0, 0))
     return ok, f"noon {noon}, midnight {midnight}"
 
 
 def case_zone_from_banner_not_from_now(script):
     # now in UTC; the banner's zone decides which instant 9pm is
-    got = load(script).reading(SESSION, at(2026, 9, 8, 9, 47, tz=dt.timezone.utc))
+    got = read(script, SESSION, at(2026, 9, 8, 9, 47, tz=dt.timezone.utc))
     want = ("session", at(2026, 9, 8, 21, 0))
     return got == want and got[1].utcoffset() == dt.timedelta(hours=9), f"{got} != {want}"
 
 
 def case_no_zone_takes_nows(script):
-    # one real capture read `resets 1:10am` with no parenthesis
-    got = load(script).reading(banner("session", "1:10am"), at(2026, 9, 8, 0, 55))
+    got = read(script, banner("session", "1:10am"), at(2026, 9, 8, 0, 55))
     want = ("session", at(2026, 9, 8, 1, 10))
     return got == want, f"{got} != {want}"
 
 
 def case_unknown_zone_is_unparsed(script):
     mod = load(script)
-    try:
-        got = mod.reading(banner("session", "9pm (Mars/Olympus)"), at(2026, 9, 8, 18, 0))
-    except mod.Unparsed:
-        return True, ""
-    return False, f"returned {got}"
+    got = read(script, banner("session", "9pm (Mars/Olympus)"), at(2026, 9, 8, 18, 0))
+    return isinstance(got, mod.Unparsed), f"returned {got!r}"
 
 
 def case_unknown_clause_is_unparsed(script):
     mod = load(script)
-    try:
-        got = mod.reading("  ⎿  You've hit your session limit · resets soon\n", at(2026, 9, 8, 18, 0))
-    except mod.Unparsed:
-        return True, ""
-    return False, f"returned {got}"
+    got = read(script, "  ⎿  You've hit your session limit · resets soon\n", at(2026, 9, 8, 18, 0))
+    return isinstance(got, mod.Unparsed), f"returned {got!r}"
 
 
 def case_allow_no_banner(script):
-    mod = load(script)
     usage = ("Current session: 92% used · resets Sep 7 at 1:30am (Asia/Seoul)\n"
              "Current week (all models): 72% used · resets Sep 8 at 10pm (Asia/Seoul)\n")
-    prose = "the limit banner names the reset; a session at its usage limit is idle\n"
-    got = [mod.reading(t, at(2026, 9, 8, 18, 0)) for t in (NONE, usage, prose, "")]
-    return got == [None] * 4, f"{got}"
+    got = [read(script, t, at(2026, 9, 8, 18, 0)) for t in (NONE, usage, "")]
+    return got == [None] * 3, f"{got}"
+
+
+def case_allow_prose_quoting_the_banner(script):
+    quoted = ("NOTE planner-1: the banner reads `You've hit your session limit · resets 9pm (Asia/Seoul)`\n"
+              "and the limit menu is idle.\n")
+    diff = "+  ⎿  You've hit your session limit · resets 9pm (Asia/Seoul)\n+     /upgrade to increase your usage limit.\n"
+    got = [read(script, t, at(2026, 9, 8, 18, 0)) for t in (quoted, diff)]
+    return got == [None, None], f"{got}"
 
 
 # ---------------- the command, through a fake herdr ----------------
@@ -189,8 +225,10 @@ exit ${FAKE_EXIT:-0}
 """
 
 
-def run(script, args, screen, env=None, herdr=True):
-    """(stdout, exit, asked) -- `asked` is every argv the fake herdr saw."""
+def run(script, args, screen, env=None, herdr=True, until=None):
+    """(stdout, exit, asked) -- `asked` is every argv the fake herdr saw.
+    `until(asked)` is polled for up to two seconds before the fake is torn
+    down, for a sleeper that calls herdr after the script has returned."""
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "bin").mkdir()
@@ -204,14 +242,23 @@ def run(script, args, screen, env=None, herdr=True):
         e.update(env or {})
         out = subprocess.run([sys.executable, str(script), *args],
                              capture_output=True, text=True, env=e)
-        asked = log.read_text().splitlines() if log.exists() else []
-        return out.stdout + out.stderr, out.returncode, asked
+
+        def asked():
+            return log.read_text().splitlines() if log.exists() else []
+        if until:
+            for _ in range(40):
+                if until(asked()):
+                    break
+                time.sleep(0.05)
+        return out.stdout + out.stderr, out.returncode, asked()
 
 
 def case_cli_reads_the_pane(script):
     out, code, asked = run(script, ["w40:p1", "--now", "2026-09-08T18:47+09:00"], SESSION)
-    ok = (out.startswith("session 2026-09-08T21:00+09:00") and code == 0
-          and any(a.startswith("pane read w40:p1 ") and "--source recent-unwrapped" in a for a in asked))
+    reads = [a for a in asked if a.startswith("pane read w40:p1 ")]
+    ok = (out.startswith("session 2026-09-08T21:00+09:00") and code == 0 and len(reads) == 1
+          and "--source recent-unwrapped" in reads[0] and "--lines 200" in reads[0]
+          and "--format text" in reads[0])
     return ok, f"{out!r} exit {code} asked {asked}"
 
 
@@ -236,6 +283,18 @@ def case_cli_unparsed_is_could_not_read(script):
     return out.startswith("could not read: a banner is on screen") and code == 1, f"{out!r} exit {code}"
 
 
+def case_cli_now_without_offset_is_local(script):
+    # TZ pins the local zone, so the assertion is the same on every machine
+    out, code, _ = run(script, ["w40:p1", "--now", "2026-09-08T18:47"], SESSION, env={"TZ": "Asia/Tokyo"})
+    return out.startswith("session 2026-09-08T21:00+09:00") and code == 0, f"{out!r} exit {code}"
+
+
+def case_cli_now_malformed_is_could_not_read(script):
+    out, code, asked = run(script, ["w40:p1", "--now", "tomorrow 9pm"], SESSION)
+    ok = out.startswith("could not read: --now 'tomorrow 9pm' is not ISO 8601") and code == 1 and not asked
+    return ok, f"{out!r} exit {code} asked {asked}"
+
+
 def case_fire_refused_without_herdr_env(script):
     out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--now", "2026-09-08T21:30+09:00"], SESSION)
     prompted = [a for a in asked if a.startswith("agent prompt")]
@@ -253,41 +312,44 @@ def case_fire_refused_on_no_banner(script):
 def case_fire_passed_prompts_now(script):
     with tempfile.TemporaryDirectory() as d:
         log = Path(d) / "sleeper.log"
-        out, code, _ = run(script, ["w40:p1", "--fire", "w40:p7", "--text", "wake up",
-                                    "--log", str(log), "--now", "2026-09-08T21:30+09:00"],
-                           SESSION, env={"HERDR_ENV": "1"})
-        # the fake herdr on PATH is gone with run()'s temp dir; the sleeper
-        # with delay 0 has already called it by the time run() returns, or
-        # within a moment -- give it one
-        for _ in range(40):
-            if log.exists() and "agent prompt" in log.read_text():
-                break
-            time.sleep(0.05)
-        text = log.read_text() if log.exists() else ""
+        out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--text", "wake up",
+                                        "--log", str(log), "--now", "2026-09-08T21:30+09:00"],
+                               SESSION, env={"HERDR_ENV": "1"},
+                               until=lambda a: any(x.startswith("agent prompt") for x in a))
+        logged = log.read_text() if log.exists() else ""
+    prompted = [a for a in asked if a.startswith("agent prompt")]
     ok = ("passed 2026-09-08T21:00+09:00" in out and "scheduled pid " in out
-          and " at 2026-09-08T21:30+09:00 into w40:p7: wake up" in out and code == 0)
-    return ok, f"{out!r} exit {code} log {text!r}"
+          and " at 2026-09-08T21:30+09:00 into w40:p7: wake up" in out and code == 0
+          and prompted == ["agent prompt w40:p7 wake up"]
+          and logged.startswith("== 2026-09-08T21:30+09:00 pid ") and " into w40:p7: wake up\n" in logged
+          and '{"ok":true}' in logged)
+    return ok, f"{out!r} exit {code} prompted {prompted} log {logged!r}"
 
 
 def case_fire_ahead_sleeps_until_lead(script):
     out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--now", "2026-09-08T18:47+09:00"],
                            SESSION, env={"HERDR_ENV": "1"})
-    pid = None
+    pid, log_line = None, None
     for line in out.splitlines():
         if line.startswith("scheduled pid "):
             pid = int(line.split()[2])
-    alive = False
+        if line.startswith("  log "):
+            log_line = line
+    own_session = False
     if pid:
         try:
-            os.kill(pid, 0)
-            alive = True
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            own_session = os.getpgid(pid) != os.getpgid(0)
+        except OSError:
+            pass
+        try:
+            os.kill(pid, signal.SIGTERM)  # the pid, never its group: see own_session
         except OSError:
             pass
     prompted = [a for a in asked if a.startswith("agent prompt")]
     ok = (" at 2026-09-08T21:01+09:00 into w40:p7: The usage window reset at 2026-09-08T21:00+09:00" in out
-          and code == 0 and alive and not prompted)
-    return ok, f"{out!r} exit {code} alive {alive} prompted {prompted}"
+          and code == 0 and own_session and not prompted
+          and log_line is not None and Path(log_line[len("  log "):]).exists())
+    return ok, f"{out!r} exit {code} own_session {own_session} prompted {prompted}"
 
 
 CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
@@ -295,9 +357,12 @@ CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
 # ---------------- each branch broken in turn ----------------
 # (what is broken, anchor in the script, its replacement, the case that must go red)
 MUTATIONS = [
+    ("the glyph that makes a line a banner", r'r"^[ \t]*⎿[ \t]+You.ve hit your (?P<rest>.*)$"',
+     r'r"You.ve hit your (?P<rest>.*)$"', case_allow_prose_quoting_the_banner),
+    ("the prompt entered since", "if RESUMED.search(text, last.end()):", "if False:", case_woken_pane_is_no_limit),
     ("the weekly kind", "(?P<kind>session|weekly)", "(?P<kind>session|weekl)", case_weekly_undated_is_todays),
     ("pm adds twelve", '(12 if ampm == "pm" else 0)', "0", case_session_on_the_hour),
-    ("twelve o'clock wraps", 'int(m.group("hour")) % 12', 'int(m.group("hour"))', case_noon_and_midnight),
+    ("twelve o'clock wraps", 'int(m.group("hour")) % 12', 'int(m.group("hour")) % 13', case_noon_and_midnight),
     ("the minutes", 'int(m.group("minute") or 0)', "0", case_minutes_kept),
     ("the banner's zone", "tz = ZoneInfo(zone)", "tz = now.tzinfo", case_zone_from_banner_not_from_now),
     ("the unknown zone", 'raise Unparsed(f"zone {zone!r} is not one this machine knows")', "pass",
@@ -308,22 +373,31 @@ MUTATIONS = [
      case_session_wraps_to_tomorrow),
     ("yesterday's reset", "max(w for w in days if w <= now)", "at", case_session_read_next_morning_is_yesterdays),
     ("passed", '"passed" if when <= now else', '"passed" if False else', case_session_passed),
-    ("the last banner", "resolve(matches[-1], now)", "resolve(matches[0], now)", case_last_banner_wins),
-    ("the unknown clause", "if BANNER_WORDS in text:", "if False:", case_unknown_clause_is_unparsed),
+    ("the last banner", "last = banners[-1]", "last = banners[0]", case_last_banner_wins),
+    ("the unknown clause", "if not clause:\n        raise", "if False:\n        raise", case_unknown_clause_is_unparsed),
     ("herdr missing", 'return None, "herdr is not installed"', "return '', None", case_cli_herdr_missing),
     ("herdr's exit", "if out.returncode != 0:", "if False:", case_cli_herdr_refuses),
+    ("how far back the pane is read", 'LINES = "200"', 'LINES = "5"', case_cli_reads_the_pane),
+    ("the text format", '"--format", "text"', '"--format", "json"', case_cli_reads_the_pane),
     ("could not read's status", 'print(f"could not read: {e}")\n        return 1', 'print(f"could not read: {e}")\n        return 0',
      case_cli_unparsed_is_could_not_read),
+    ("a clock with no offset is local", "now = now.astimezone()", "now = now.replace(tzinfo=dt.timezone.utc)",
+     case_cli_now_without_offset_is_local),
+    ("a clock that is not one", 'return None, f"--now {text!r} is not ISO 8601"', "return dt.datetime.now().astimezone(), None",
+     case_cli_now_malformed_is_could_not_read),
     ("the HERDR_ENV guard", 'os.environ.get("HERDR_ENV") != "1"', 'os.environ.get("HERDR_ENV") == "1"',
      case_fire_refused_without_herdr_env),
     ("no banner fires nothing", "if a.fire:\n            print", "if False:\n            print", case_fire_refused_on_no_banner),
     ("now for a passed reset", 'now if kind == "passed" else when + LEAD', "when + LEAD", case_fire_passed_prompts_now),
     ("the lead minute", 'now if kind == "passed" else when + LEAD', 'now if kind == "passed" else when',
      case_fire_ahead_sleeps_until_lead),
+    ("the sleeper's own session", "start_new_session=True", "start_new_session=False", case_fire_ahead_sleeps_until_lead),
+    ("the run's marker in the log", 'fh.write(f"== {iso(now)} pid', 'fh.write(f"-- {iso(now)} pid', case_fire_passed_prompts_now),
+    ("the log line", 'f"  log {log}"', 'f"  LOG {log}"', case_fire_ahead_sleeps_until_lead),
 ]
 
 
-def mutated(name, old, new):
+def mutated(old, new):
     """A copy of the script with one anchor replaced; None when the anchor is
     not exactly once in it."""
     src = SCRIPT.read_text()
@@ -338,22 +412,24 @@ def mutated(name, old, new):
 
 def main():
     for case in CASES:
-        ok, detail = case(SCRIPT)
+        try:
+            ok, detail = case(SCRIPT)
+        except Exception as e:  # noqa: BLE001 -- a crashed case is a failed case, named
+            ok, detail = False, f"the case crashed: {e!r}"
         check(case.__name__, ok, detail)
     for what, old, new, case in MUTATIONS:
-        copy = mutated(what, old, new)
+        copy = mutated(old, new)
         name = f"mutation: {what} broken -> {case.__name__} goes red"
         if copy is None:
             check(name, False, f"anchor not found exactly once: {old!r}")
             continue
         try:
             ok, _ = case(copy)
-        except Exception as e:  # a crash is a failure of the case, which is what is wanted
-            ok = False
-            _ = repr(e)
+            check(name, not ok, "the case stayed green")
+        except Exception as e:  # noqa: BLE001 -- red by a crash asserted nothing
+            check(name, False, f"the case crashed instead of asserting: {e!r}")
         finally:
             shutil.rmtree(copy.parent, ignore_errors=True)
-        check(name, not ok, "the case stayed green")
     n_cases, n_mut = len(CASES), len(MUTATIONS)
     print(f"campaign-limit-reset-test: {len(RAN)} ran ({n_cases} cases, {n_mut} mutations), "
           f"{len(FAILED)} failed, script {SCRIPT}")

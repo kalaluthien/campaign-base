@@ -37,20 +37,21 @@ each a different cost:
 
 | horizon | length | crossing it costs | the cron that answers it |
 | --- | --- | --- | --- |
-| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run |
-| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking, and it kills in batches — several workers going quiet together is an outage to schedule around, not a retry | none while a banner stands: `scripts/campaign-limit-reset.py <pane> --fire <own pane>` fires the one prompt after the reset it read |
+| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run and no banner stands |
+| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking, and it kills in batches — several workers going quiet together is an outage to schedule around, not a retry | none while a banner stands: `.claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane> --fire <own pane>` fires the one prompt after the reset it read |
 | weekly limit | 1 week (`/usage`'s "Current week" reset) | stops everything until its own reset | stop; the same `--fire`, which reads the weekly banner too |
 
 **A limit banner on any pane is the moment to fire, never to poll.**
-`scripts/campaign-limit-reset.py <pane>` reads the banner off the pane and
-prints the reset as a word -- `session`, `weekly`, `passed`, `no limit`, or
-`could not read`; `--fire <own pane>` spawns a detached sleeper that prompts
-this pane one minute after the reset, and it lands even when this session
-stops on the same limit a turn later. A cron in this session does not: it
-fires into the banner, which is what #244's 65 firings did, ~11 per window.
-So on a banner: fire, delete the recurring cron, and stop; re-arm the
-recurring cron on the wake. `--log <campaign>/runtime/limit-wake.log` keeps
-herdr's answer to the prompt where a log belongs.
+`.claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane>` reads
+the banner off the pane and prints the reset as a word its header lists;
+`--fire <own pane>` spawns a detached sleeper that prompts this pane one
+minute after the reset, and it lands even when this session stops on the
+same limit a turn later. A cron in this session does not: it fires into the
+banner, which is what #244's 65 firings did, ~11 per window. So on a banner:
+fire, delete the recurring cron, and stop; re-arm the recurring cron on the
+wake. `--log <campaign>/runtime/limit-wake.log` keeps herdr's answer to the
+prompt where a log belongs; each run writes its own marker line there first,
+so read under the last marker and never the file's first success line.
 
 Two harness facts, from `CronCreate`'s own description:
 

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Read a pane's usage-limit banner, say when the window resets, and fire one prompt after it.
 
-    scripts/campaign-limit-reset.py <pane> [--now <iso>]
-    scripts/campaign-limit-reset.py <pane> --fire <wake-pane> [--text <prompt>] [--log <path>]
+    .claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane> [--now <iso>]
+    .claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane> --fire <wake-pane> [--text <prompt>] [--log <path>]
 
 WHAT IT ANSWERS. One line on stdout, a word first, and the caller reads the
 word and never the status:
 
     session <iso>   the pane sits at a session-limit banner; the window resets at <iso>
     weekly <iso>    the same for the weekly limit
-    passed <iso>    a banner whose reset is already behind now -- the pane stopped
-                    and nothing has prompted it since, so the wake is due now
-    no limit        the pane was read and its recent screen holds no banner
+    passed <iso>    a banner whose reset is already behind now, with no prompt
+                    entered since: the wake is due now
+    no limit        the pane was read and no banner stands on it -- none at all,
+                    or one a later prompt has been entered after
     could not read: <why>   herdr is not installed, the pane is not one herdr
-                    can read, or a banner is on screen whose clause this
-                    parser does not know
+                    can read, --now is not a clock, or a banner is on screen
+                    whose clause this parser does not know
 
     exit 0   a reading was made -- any of the first four -- and, with --fire,
              the sleeper was spawned
@@ -26,12 +27,19 @@ on 2026-09-08 (fixtures/limit-banner-*.txt are those screens):
     ⎿  You've hit your session limit · resets 9pm (Asia/Seoul)
        /upgrade to increase your usage limit.
 
-The clause is `resets <time>` for a reset on the day it was painted and
-`resets <Mon> <d> at <time>` for a later day, which is the weekly limit's
-shape; the minutes drop on the hour, so `9pm` and `1:30am` are both seen. The
-zone is the account's, in parentheses; one capture carried none, so it is
-optional and the local zone stands in. The LAST banner on the screen is the
-reading, since a pane that stopped twice shows both.
+Only a line that OPENS with the `⎿` glyph is a banner: the same words quoted
+in prose, in a NOTE, or in a diff a pane is showing are not, and read
+`no limit`. A screen displaying a capture of the banner itself -- a `cat` of
+a fixture, or of this file -- is indistinguishable from the banner, and reads
+as one. The clause is `resets <time>` for a reset on the day it was painted
+and `resets <Mon> <d> at <time>` for a later day, which the weekly limit
+paints; the minutes drop on the hour, so `9pm` and `1:30am` are both seen.
+The zone is the account's, in parentheses; one stop was recorded without it,
+so it is optional and the local zone stands in. The LAST banner on the screen
+is the reading, since a pane that stopped twice shows both -- and a banner
+followed by a prompt line with text on it (`❯ continue …`) is a pane that was
+woken since, which reads `no limit`: the prompt is what a wake is, so the
+wake has happened.
 
 RESOLVING A CLOCK TIME, because the banner carries no date and the reader
 does not know when it was painted. A session window is five hours
@@ -40,11 +48,16 @@ five hours after the stop -- `WINDOW`. Of the clock time's three nearest
 days, the one within five hours ahead of now is the reset; when none is, the
 most recent one behind now is, and the reading is `passed`. So `1:30am` read
 at 23:00 is tomorrow's, `9pm` read at 21:30 has passed, and `9pm` read at
-03:00 is yesterday's and passed. An undated WEEKLY clause is today's, ahead or
-passed by the clock; painted before midnight and read after it, it reads a
-day ahead, which the screen does not carry enough to tell. A dated clause
-takes the nearest of three years, so a December banner read in January has
-passed rather than being eleven months ahead.
+03:00 is yesterday's and passed. The rule errs LATE and never early: a
+banner painted a day ago whose clock time is ahead of now reads as today's,
+which wakes a pane that is already free an hour or so late, and a `passed`
+reading always names a reset that has really passed. An undated WEEKLY clause
+is today's, ahead or passed by the clock, and a weekly banner stands for
+days: painted on an earlier day it reads a reset later than the real one --
+again late, never into a pane still stopped, since a weekly reset on an
+earlier day has passed. A dated clause takes the nearest of three years, so
+a December banner read in January has passed rather than being eleven months
+ahead. At a fall-back hour the earlier of the two wall clocks is taken.
 
 --fire <wake-pane> SCHEDULES THE ONE-SHOT: a detached
 `sleep <seconds>; herdr agent prompt <wake-pane> <text>` under its own
@@ -53,17 +66,20 @@ session that reads a banner is on the same account and stops on the same
 limit a turn later, which is why a cron in that session cannot do this. The
 prompt goes in at the reset plus `LEAD`, one minute, since the reset is a
 clock the server rounds; for a `passed` reading it goes in now. It prints
-`scheduled pid <n> at <iso> into <wake-pane>: <text>` and the log path, and
-the log is where herdr's own answer lands: a prompt into a working pane is
-queued by the harness, one into a pane at a dialog is refused as
-agent_blocked, and this process is gone by then, so the caller reads the log.
-It drives a pane, so it is refused (`could not fire: ...`, exit 1) unless
-HERDR_ENV is 1 (AGENTS.md § Delegate launch) -- the target is explicit by
-construction, there is no default. A `no limit` reading fires nothing:
-there is no reset to wait for.
+`scheduled pid <n> at <iso> into <wake-pane>: <text>` and the log path. The
+log opens with this run's own marker line, `== <now> pid <n> at <iso> into
+<wake-pane>: <text>`, and herdr's answer follows under it: a prompt into a
+working pane is queued by the harness, one into a pane at a dialog is
+refused as agent_blocked, and this process is gone by then, so the caller
+reads the log under the marker. It drives a pane, so it is refused
+(`could not fire: ...`, exit 1) unless HERDR_ENV is 1 (AGENTS.md § Delegate
+launch); the target is explicit by construction, there is no default. A
+`no limit` reading fires nothing: there is no reset to wait for.
 
---now <iso> is the clock, for the suite and for a screen captured earlier;
-default is now, in the local zone.
+--now <iso> is the clock, for the suite and for reading a screen captured
+earlier; default is now, in the local zone, and a clock with no offset is
+local. The sleeper's delay is measured from that clock too, so `--fire` with
+`--now` lands off by however stale the clock is: a planner passes neither.
 """
 import argparse
 import datetime as dt
@@ -78,15 +94,16 @@ try:
 except ImportError:  # pragma: no cover -- python < 3.9 has no zoneinfo
     ZoneInfo = None
 
-BANNER = re.compile(
-    r"hit your (?P<kind>session|weekly) limit\W+resets\s+"
+# A banner line: the glyph the harness paints a tool-result line with, then the words.
+SHAPE = re.compile(r"^[ \t]*⎿[ \t]+You.ve hit your (?P<rest>.*)$", re.MULTILINE)
+CLAUSE = re.compile(
+    r"^(?P<kind>session|weekly) limit\W+resets\s+"
     r"(?:(?P<mon>[A-Za-z]{3})\s+(?P<day>\d{1,2})\s+at\s+)?"
     r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)"
     r"(?:\s*\((?P<zone>[^)]+)\))?",
     re.IGNORECASE)
-# The words every banner carries, whatever its clause: a screen holding them
-# and matching nothing above holds a shape this parser does not know.
-BANNER_WORDS = "hit your"
+# A prompt line with text on it: a wake that has happened.
+RESUMED = re.compile(r"^❯[ \t]+\S", re.MULTILINE)
 MONTHS = {m: i for i, m in enumerate(
     "jan feb mar apr may jun jul aug sep oct nov dec".split(), 1)}
 # A session window is five hours, so its reset is at most five hours after the stop.
@@ -116,7 +133,7 @@ def read_pane(pane):
 
 
 def resolve(m, now):
-    """(kind, when) for one banner match, against `now`. Pure. Raises Unparsed."""
+    """(kind, when) for one clause match, against `now`. Pure. Raises Unparsed."""
     zone = m.group("zone")
     tz = now.tzinfo
     if zone:
@@ -150,18 +167,35 @@ def resolve(m, now):
 
 
 def reading(text, now):
-    """(kind, when) for the last banner on the screen, or None for none. Pure.
-    Raises Unparsed when a banner is on screen and its clause is not known."""
-    matches = list(BANNER.finditer(text))
-    if not matches:
-        if BANNER_WORDS in text:
-            raise Unparsed("a banner is on screen and its clause is not one this parser knows")
+    """(kind, when) for the banner standing on the screen, or None for none.
+    Pure. Raises Unparsed when a banner is on screen and its clause is not known."""
+    banners = list(SHAPE.finditer(text))
+    if not banners:
         return None
-    return resolve(matches[-1], now)
+    last = banners[-1]
+    if RESUMED.search(text, last.end()):
+        return None
+    clause = CLAUSE.match(last.group("rest"))
+    if not clause:
+        raise Unparsed("a banner is on screen and its clause is not one this parser knows")
+    return resolve(clause, now)
 
 
 def iso(when):
     return when.isoformat(timespec="minutes")
+
+
+def clock(text):
+    """(now, None) from --now, or (None, why). Default the local clock."""
+    if text is None:
+        return dt.datetime.now().astimezone(), None
+    try:
+        now = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None, f"--now {text!r} is not ISO 8601"
+    if now.tzinfo is None:
+        now = now.astimezone()
+    return now, None
 
 
 def fire(kind, when, wake_pane, text, log, now):
@@ -169,7 +203,7 @@ def fire(kind, when, wake_pane, text, log, now):
     if os.environ.get("HERDR_ENV") != "1":
         return None, "HERDR_ENV is not 1, and --fire drives a pane"
     at = now if kind == "passed" else when + LEAD
-    delay = max(0, int((at - now).total_seconds()))
+    delay = int((at - now).total_seconds())
     if text is None:
         text = (f"The usage window reset at {iso(when)}: read every worker's pane "
                 "and resume each one stopped at the banner.")
@@ -183,6 +217,7 @@ def fire(kind, when, wake_pane, text, log, now):
                  str(delay), wake_pane, text],
                 stdin=subprocess.DEVNULL, stdout=fh, stderr=fh,
                 start_new_session=True)
+            fh.write(f"== {iso(now)} pid {proc.pid} at {iso(at)} into {wake_pane}: {text}\n".encode())
     except OSError as e:
         return None, f"the sleeper could not be spawned: {e}"
     return (f"scheduled pid {proc.pid} at {iso(at)} into {wake_pane}: {text}\n"
@@ -192,16 +227,16 @@ def fire(kind, when, wake_pane, text, log, now):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("pane", help="the pane to read the banner from")
-    p.add_argument("--now", help="the clock, ISO 8601 with offset; default now")
+    p.add_argument("--now", help="the clock, ISO 8601; default now, no offset means local")
     p.add_argument("--fire", metavar="WAKE_PANE",
                    help="prompt this pane one minute after the reset, detached")
     p.add_argument("--text", help="the prompt --fire sends; default names the reset")
     p.add_argument("--log", help="where the sleeper writes; default a temp file")
     a = p.parse_args(argv)
-    now = dt.datetime.fromisoformat(a.now) if a.now else dt.datetime.now().astimezone()
-    if now.tzinfo is None:
-        now = now.astimezone()
-
+    now, why = clock(a.now)
+    if why:
+        print(f"could not read: {why}")
+        return 1
     text, why = read_pane(a.pane)
     if why:
         print(f"could not read: {why}")

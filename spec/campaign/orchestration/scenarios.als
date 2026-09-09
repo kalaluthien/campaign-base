@@ -411,6 +411,7 @@ pred mergedOnCurrentReview {
                     a in Confirmed and coLocated[Who.session, a])))
 }
 
+
 /* ---------------- witnesses ---------------- */
 
 /* SAT means the disciplines forbid a counterexample rather than the protocol. */
@@ -1763,6 +1764,43 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i)
 }
 
+/* M2. THE TIGHTEST CASE OF THE CURRENCY HALF, which A13 and A16b between them
+   do not have: A13 stops at the bit being cleared, and A16b needs a whole
+   suffix with no `Review` in it. This is the single step -- a push, and a merge
+   in the very next state. It is the REPORT that pinned the pre-push sha, asking
+   for a review at a revision nobody is going to merge, and it is what
+   scripts/check-merge-review.py refuses on the machine.
+
+   The rule it exercises is `mergedOnCurrentReview` and nothing new. #274 asked
+   for a READER of merge condition 1, and a reader is not a fact this vocabulary
+   can hold: nothing here has a sha or a check run to hang one on. SAT without
+   the rule, which is what makes M2b a measurement and not a vacuity. */
+pred M2_MergeInTheStateAfterAPush {
+  some a: Agent |
+    eventually (Now.event = Push and Target.agent = a
+                and after (Now.event = MergePullRequest and Now.issue = a.task))
+}
+
+/* M2b. CONTROL: `push` clears `Reviewed`, so in that state the rule has nothing
+   to read and the merge cannot happen. */
+pred M2b_TheRuleExcludesTheStalePush {
+  mergedOnCurrentReview and M2_MergeInTheStateAfterAPush
+}
+
+/* M2c. ...and a review taken AFTER the push still lands, or M2b would be the
+   rule that no pushed branch ever merges. */
+pred M2c_AFreshReviewAfterThePushLands {
+  mergedOnCurrentReview
+  some s: Session, a: Agent {
+    a.peer = s
+    eventually (Now.event = Push and Target.agent = a
+                and after eventually (Now.event = Review and Who.session = s
+                                      and Now.issue = a.task
+                                      and after eventually (Now.event = MergePullRequest
+                                                            and Now.issue = a.task)))
+  }
+}
+
 /* A17. THE RESIDUAL GAP OF THE DERIVED READING, and the only one: an agent
    is live and listed, and the checkout it was attributed by has moved off its
    branch, so `holder` no longer names it. R4c is how the checkout moves;
@@ -2017,4 +2055,9 @@ run A17_LiveButNoLongerTheHolder             for 3 Issue, 1 PullRequest, 1 Campa
 run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
 run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+
+/* #274. The tightest case of the currency half. */
+run M2_MergeInTheStateAfterAPush              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M2b_TheRuleExcludesTheStalePush           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 

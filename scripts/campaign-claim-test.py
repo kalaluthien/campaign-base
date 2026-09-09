@@ -412,14 +412,81 @@ def pure_cases(m):
     check("the ref's own endpoint separates gone from unanswered",
           m.ref_probe(0, "") == "present" and m.ref_probe(1, "HTTP 404") == "gone"
           and m.ref_probe(1, "HTTP 500") == "unanswered")
-    ok, text = m.merged_head_verdict(0, "[]", "o/r", "b")
+    ok, text, number = m.merged_head_verdict(0, "[]", "o/r", "b")
     check("a vanished branch with no merged pull request is reported",
-          not ok and "never released" in text)
-    ok, text = m.merged_head_verdict(0, '[{"number": 9}]', "o/r", "b")
+          not ok and "never released" in text and number is None)
+    ok, text, number = m.merged_head_verdict(0, '[{"number": 9}]', "o/r", "b")
     check("...and one with a merged pull request is nothing beyond main",
           ok and "#9" in text)
-    ok, text = m.merged_head_verdict(1, "", "o/r", "b")
-    check("a pull request question that failed is not an absence", not ok)
+    # THE NUMBER, NOT THE SENTENCE. `release` hands it to the review gate, and
+    # a case asserting only on `text` would pass with the number dropped.
+    check("...and the number comes back as a number", number == 9, repr(number))
+    ok, text, number = m.merged_head_verdict(1, "", "o/r", "b")
+    check("a pull request question that failed is not an absence",
+          not ok and number is None)
+
+    # The review gate's three answers, told apart by the WORD. A reader that
+    # crashed exits 1 exactly as a refusal does, so a caller reading the status
+    # would call a bug in the reader an unreviewed merge.
+    check("a pull request number nobody knows is not a review",
+          m.review_verdict("o/r", None)[0] is None)
+    was = m.CHECK_MERGE_REVIEW
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            fake = Path(d) / "reader.py"
+            for said, status, want in (
+                    ("reviewed check-merge-review: a REVIEW names the head", 0,
+                     "reviewed"),
+                    ("unreviewed check-merge-review: no REVIEW names it", 1,
+                     "unreviewed"),
+                    ("unknown check-merge-review: gh exited 1", 2, "unknown")):
+                # THE STAND-IN CARRIES THE REAL INTERFACE: the words, read by
+                # importing it, and the print guarded so the import does not
+                # run it. A fake that exited at import took the suite down with
+                # it, which is the hole the caller now catches.
+                fake.write_text(
+                    f"GATE_WORDS = {('reviewed', 'unreviewed', 'unknown')!r}\n"
+                    f"if __name__ == '__main__':\n"
+                    f"    import sys\n"
+                    f"    print({said!r})\n"
+                    f"    sys.exit({status})\n")
+                m.CHECK_MERGE_REVIEW = fake
+                word, line = m.review_verdict("o/r", 9)
+                check(f"the review gate reads the word {want!r}, not the "
+                      f"status {status}", word == want, f"{word} {line}")
+            # A reader that crashed prints a traceback and exits 1 -- the same
+            # status as a refusal. The word is what tells them apart, and
+            # neither of the other two branches can see this.
+            # THE WORDS COME FROM THE GATE, and this is what says so. The
+            # stand-in declares a vocabulary of its own; a caller carrying its
+            # own copy would accept `reviewed` here, and this refuses it.
+            fake.write_text("GATE_WORDS = ('yes', 'no', 'dunno')\n"
+                            "if __name__ == '__main__':\n"
+                            "    print('reviewed x: a REVIEW names the head')\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("the three words are the gate's own, not a copy here",
+                  word is None and "none of yes, no, dunno" in why, str(why))
+
+            fake.write_text("GATE_WORDS = ('reviewed', 'unreviewed', 'unknown')\n"
+                            "if __name__ == '__main__':\n"
+                            "    raise SystemExit('boom')\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("a reader that answered none of the three words is not a "
+                  "verdict", word is None and "none of" in why, str(why))
+
+            # ...and one that exits while being IMPORTED does not end the
+            # caller. SystemExit is not an Exception, so this branch is
+            # invisible to a handler that catches only Exception -- and the
+            # caller here is `release`, mid-way through deciding a delete.
+            fake.write_text("import sys\nsys.exit(3)\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("a gate that exits while being imported is reported, not "
+                  "obeyed", word is None and "SystemExit" in why, str(why))
+    finally:
+        m.CHECK_MERGE_REVIEW = was
 
 
 def git_cases(m):
@@ -1213,6 +1280,101 @@ exit 1
               "directly",
               "--branch" in out, out[:300])
 
+def local_sweep_cases(m):
+    """Row 6: the local branch the released ref leaves behind.
+
+    REAL GIT, not a stub. What is being judged is containment and which
+    repository a clone is of, and both are git's answers; a fake returning them
+    would test the fixture."""
+    # THE MACHINE'S OWN GIT CONFIG IS EMPTIED, or a global `init.defaultBranch`,
+    # a global gitignore or a commit template decides what these fixtures are
+    # and the case measures this Mac rather than the reading.
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_CONFIG_SYSTEM=os.devnull)
+
+    def git(root, *a, check=True):
+        r = subprocess.run(["git", "-C", str(root), *a], capture_output=True,
+                           text=True, env=env)
+        if check and r.returncode != 0:
+            raise AssertionError(f"git {' '.join(a)}: {r.stderr}")
+        return r
+
+    def a_repo(root, remote):
+        root.mkdir(parents=True)
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "t@example.invalid")
+        git(root, "config", "user.name", "t")
+        git(root, "remote", "add", "origin", f"git@github.com:{remote}.git")
+        (root / "f").write_text("one")
+        git(root, "add", "f")
+        git(root, "commit", "-qm", "one")
+        # `origin/main` by hand: no network, and the reading is of the ref.
+        git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+        return root
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        mine = a_repo(d / "mine", "o/r")
+
+        # Contained: the branch points at origin/main, which is every claim cut
+        # and never worked, and every branch landed by a merge commit.
+        git(mine, "branch", "b/1-topic")
+        lines = m.sweep_local([str(mine)], "o/r", "b/1-topic")
+        check("a local branch whose tip is on origin/main is deleted",
+              any("deleted" in x for x in lines), str(lines))
+        check("...and it is really gone",
+              git(mine, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/1-topic", check=False).returncode != 0)
+
+        # Not contained: what a squash merge leaves. Kept, and said so.
+        git(mine, "checkout", "-q", "-b", "b/2-topic")
+        (mine / "g").write_text("two")
+        git(mine, "add", "g")
+        git(mine, "commit", "-qm", "two")
+        git(mine, "checkout", "-q", "main")
+        lines = m.sweep_local([str(mine)], "o/r", "b/2-topic")
+        check("a local branch holding commits off origin/main is kept",
+              any("kept" in x and "not on origin/main" in x for x in lines),
+              str(lines))
+        check("...and it is still there",
+              git(mine, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/2-topic", check=False).returncode == 0)
+
+        # THE SAME NAME IN ANOTHER REPOSITORY IS NOT THIS ONE'S. Deleting by
+        # name alone would take a delegate's clone of a different repository.
+        other = a_repo(d / "other", "o/other")
+        git(other, "branch", "b/3-topic")
+        lines = m.sweep_local([str(mine), str(other)], "o/r", "b/3-topic")
+        check("a branch of that name in another repository is not touched",
+              git(other, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/3-topic", check=False).returncode == 0,
+              str(lines))
+        check("...and the sweep says it found none here",
+              any("no local" in x for x in lines), str(lines))
+
+        # No origin/main to compare against is could-not-ask, and could-not-ask
+        # keeps. Reading it as "not contained" would be right by accident here
+        # and wrong the moment the test is inverted.
+        bare = a_repo(d / "bare", "o/r")
+        git(bare, "branch", "b/4-topic")
+        git(bare, "update-ref", "-d", "refs/remotes/origin/main")
+        lines = m.sweep_local([str(bare)], "o/r", "b/4-topic")
+        check("a root with no origin/main keeps the branch and says why",
+              any("kept" in x and "no origin/main" in x for x in lines),
+              str(lines))
+        check("...and it is still there",
+              git(bare, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/4-topic", check=False).returncode == 0)
+
+        # A root whose origin cannot be read is a note, never a target.
+        noremote = d / "noremote"
+        noremote.mkdir()
+        git(noremote, "init", "-q", "-b", "main")
+        lines = m.sweep_local([str(noremote)], "o/r", "b/5-topic")
+        check("a root whose origin will not read is named, not swept",
+              any("origin could not be read" in x for x in lines), str(lines))
+
+
 def scope_cases(m):
     """#187 Q4: which campaign directory a reading is about."""
     # The walk, as a calculation. Driven by a path rather than by where this
@@ -1993,7 +2155,7 @@ def main():
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
                compact_cases,
-               scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
+               local_sweep_cases, scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):
         fn(m)

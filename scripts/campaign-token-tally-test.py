@@ -61,6 +61,12 @@ def write(path, records):
             fh.write(json.dumps(record) + "\n")
 
 
+def write_meta(path, data):
+    """A subagent's own `.meta.json`, one JSON object -- never JSON-lines."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
+
+
 def run(root, base, command, pr_map, extra=()):
     out = subprocess.run(
         [sys.executable, str(SCRIPT), command, "--root", str(root),
@@ -213,9 +219,46 @@ def build(tmp):
         # one records on every record it writes.
         user(day + "03:00:00Z", wt, "/code-review high 400\n\nreview it",
              session="s1", agent="a1"),
-        assistant("m-review", day + "03:01:00Z", wt, out=30, session="s1",
+        # Later than every child's own turn below (03:03-03:07), on purpose:
+        # the round's `issue`/`model`/`started` columns must come from the
+        # ROOT's own turn, never from whichever turn in the round is merely
+        # earliest -- a1's model here (fable) differs from every child's
+        # default (opus), so reading the wrong turn is a visible wrong answer.
+        assistant("m-review", day + "03:20:00Z", wt, out=30, session="s1",
                   model="claude-fable-5-1", agent="a1"),
     ])
+    # A reviewer's own fan-out: a4 is its child, a5 and a6 are a4's -- none of
+    # the three carries a `/code-review` brief of its own, which is exactly
+    # why the old grouping (by an agent's own immediate id) dropped them. A
+    # depth-1 subagent's meta.json carries no `parentAgentId` at all (a1's,
+    # above, is never written for the fixture since nothing needs it); a
+    # deeper one's is the only place its parent's id is written -- never in
+    # either transcript.
+    review_wt = str(base / "camp-260101" / "worktrees" / "309")
+    write(root / "proj" / "s1" / "subagents" / "agent-a4.jsonl", [
+        user(day + "03:02:00Z", review_wt, "verify the finder's claim",
+             session="s1", agent="a4"),
+        assistant("m-a4", day + "03:03:00Z", review_wt, out=210, session="s1",
+                  agent="a4"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a4.meta.json",
+               {"parentAgentId": "a1", "spawnDepth": 2})
+    write(root / "proj" / "s1" / "subagents" / "agent-a5.jsonl", [
+        user(day + "03:04:00Z", review_wt, "confirm finding one",
+             session="s1", agent="a5"),
+        assistant("m-a5", day + "03:05:00Z", review_wt, out=300, session="s1",
+                  agent="a5"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a5.meta.json",
+               {"parentAgentId": "a4", "spawnDepth": 3})
+    write(root / "proj" / "s1" / "subagents" / "agent-a6.jsonl", [
+        user(day + "03:06:00Z", review_wt, "confirm finding two",
+             session="s1", agent="a6"),
+        assistant("m-a6", day + "03:07:00Z", review_wt, out=150, session="s1",
+                  agent="a6"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a6.meta.json",
+               {"parentAgentId": "a4", "spawnDepth": 3})
     write(root / "proj" / "s1" / "subagents" / "agent-a2.jsonl", [
         user(day + "02:05:00Z", str(base), "find every reader of the guard",
              session="s1", agent="a2"),
@@ -233,6 +276,81 @@ def build(tmp):
         assistant("m-verify", day + "03:31:00Z", str(base), out=25, session="s1",
                   agent="a3"),
     ])
+    # The plain-brief form REVIEW_CMD's own second alternative reads: no
+    # `/code-review`, so a reviewer launched this way still shows up as a
+    # round -- the whole reason for writing this alternative in the first
+    # place, since #273's own prose tells a launcher to use it.
+    # Its own worktree, not str(base): PR 401 is not in `pr_map`, so nothing
+    # names its issue and it would otherwise fall through to session s1's
+    # timeline (the "parent" rule), corrupting whichever issue that session
+    # was on at this timestamp.
+    a7_wt = str(base / "camp-260101" / "worktrees" / "311")
+    write(root / "proj" / "s1" / "subagents" / "agent-a7.jsonl", [
+        user(day + "03:25:00Z", a7_wt, "review PR 401 at medium\n\ncheck the guard",
+             session="s1", agent="a7"),
+        assistant("m-a7", day + "03:26:00Z", a7_wt, out=40, session="s1",
+                  agent="a7"),
+    ])
+    # Capitalized the way an English sentence starts -- reviewing.md's own
+    # call block writes "Review PR <N>" capitalized one line above the
+    # lowercase prompt, so a launcher copying that capitalization must not
+    # vanish from the table.
+    a10_wt = str(base / "camp-260101" / "worktrees" / "312")
+    write(root / "proj" / "s1" / "subagents" / "agent-a10.jsonl", [
+        user(day + "03:27:00Z", a10_wt, "Review PR 403 at medium\n\ncheck the fixture",
+             session="s1", agent="a10"),
+        assistant("m-a10", day + "03:28:00Z", a10_wt, out=45, session="s1",
+                  agent="a10"),
+    ])
+    # A fix-round brief quoting the review it answers, not launching one --
+    # the plain-brief form must not fire on a mere MENTION mid-sentence.
+    a11_wt = str(base / "camp-260101" / "worktrees" / "313")
+    write(root / "proj" / "s1" / "subagents" / "agent-a11.jsonl", [
+        user(day + "03:29:00Z", a11_wt,
+             "address the findings from review PR 276 at medium",
+             session="s1", agent="a11"),
+        # Not 999 -- that value is reserved elsewhere to prove a window-dropped
+        # turn never appears anywhere in the `issues` table's text at all.
+        assistant("m-a11", day + "03:30:00Z", a11_wt, out=35, session="s1",
+                  agent="a11"),
+    ])
+    # The `#` GitHub itself writes before a pull request number.
+    a12_wt = str(base / "camp-260101" / "worktrees" / "314")
+    write(root / "proj" / "s1" / "subagents" / "agent-a12.jsonl", [
+        user(day + "03:31:00Z", a12_wt, "review PR #404 at low\n\ncheck the fixture",
+             session="s1", agent="a12"),
+        assistant("m-a12", day + "03:32:00Z", a12_wt, out=15, session="s1",
+                  agent="a12"),
+    ])
+    # A round whose ROOT's own turn falls outside the window, so it never
+    # becomes one of `corpus.turns` -- only its child's does. The round's
+    # file is still found by the directory walk `load_subagent_lineage` does
+    # (never window-filtered), so its brief still names the round; a lookup
+    # built only from turns would find no file for the id and drop the round
+    # entirely, silently, even though a child's cost is sitting right there.
+    # Its own worktree, issue 310 -- not str(base), which would fall through
+    # to session s1's timeline (the "parent" rule) and silently move turns
+    # into whichever issue that session's OWN turns were on at this timestamp,
+    # corrupting checks this fixture makes elsewhere.
+    orphan_wt = str(base / "camp-260101" / "worktrees" / "310")
+    write(root / "proj" / "s1" / "subagents" / "agent-a8.jsonl", [
+        user("2026-01-01T00:00:00Z", orphan_wt, "/code-review low 402\n\nreview it",
+             session="s1", agent="a8"),
+        assistant("m-a8", "2026-01-01T00:01:00Z", orphan_wt, out=999, session="s1",
+                  agent="a8"),
+    ])
+    write(root / "proj" / "s1" / "subagents" / "agent-a9.jsonl", [
+        user(day + "03:40:00Z", orphan_wt, "second angle", session="s1", agent="a9"),
+        # A model distinct from every default elsewhere in this fixture, so
+        # the row's `model` column pins that it came from a9 -- the only
+        # child WITH a turn in the window -- and not from a8, whose own turn
+        # never entered `corpus.turns` at all and so cannot be the row's
+        # source of `issue`/`model`/`started` however `head` is picked.
+        assistant("m-a9", day + "03:41:00Z", orphan_wt, out=60, session="s1",
+                  model="claude-sonnet-5", agent="a9"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a9.meta.json",
+               {"parentAgentId": "a8", "spawnDepth": 2})
     pr_map = tmp / "prs.json"
     pr_map.write_text(json.dumps([{"number": 400, "headRefName": "machinery/303-x"}]))
     return root, base, pr_map
@@ -294,8 +412,10 @@ def main():
 
         # THE WINDOW IS THE MESSAGE'S OWN TIMESTAMP. The file was written now;
         # the turn inside it is from yesterday.
+        # Two now: m-old, and a8's own turn (its round is still found by the
+        # directory walk, below, though this turn of it is dropped here).
         check("a turn older than the window is dropped though its file is new",
-              "999" not in issues and "1 outside the window" in issues, issues[:400])
+              "999" not in issues and "2 outside the window" in issues, issues[:400])
         check("a cwd outside every base root is dropped and counted",
               "888" not in issues and "1 with a cwd outside" in issues, issues[:400])
         check("a turn in the boundary second itself is kept",
@@ -333,9 +453,60 @@ def main():
               "(subagent of machinery-worker-9)" in sessions, sessions)
 
         # REVIEWS READ THE LEVEL AND THE PULL REQUEST FROM THE BRIEF.
+        r400 = row(reviews, "400")
         check("a review round is one row, with its pull request and level",
-              row(reviews, "400") and row(reviews, "400")["level"] == "high",
-              reviews)
+              r400 and r400["level"] == "high", reviews)
+
+        # A NESTED FAN-OUT ROLLS INTO THE ROUND THAT SPAWNED IT. a4 is a1's
+        # child and a5, a6 are a4's -- none carries a `/code-review` brief of
+        # its own, so grouping by an agent's own immediate id (the old
+        # behaviour) drops all three from the table; this is the case that
+        # goes red if the rollup is removed.
+        check("a reviewer's own fan-out is priced into its round, not dropped",
+              r400 and r400["output"] == str(30 + 210 + 300 + 150)
+              and r400["turns"] == "4", str(r400))
+        check("...and the row says how many nested transcripts it folded",
+              r400 and r400.get("nested") == "3", str(r400))
+        check("...and issue/model/started come from the ROOT's own turn, "
+              "not merely the round's earliest",
+              r400 and r400["model"] == "claude-fable-5-1"
+              and r400["started"] == "2026-01-02T03:20", str(r400))
+
+        # A REVIEWER LAUNCHED WITH A PLAIN BRIEF STILL SHOWS UP AS A ROUND --
+        # #273's own prose tells a launcher to write one instead of
+        # `/code-review`, so the second form REVIEW_CMD reads is what keeps a
+        # plain-brief round from vanishing off this table entirely.
+        r401 = row(reviews, "401")
+        check("the plain-brief form `review PR <N> at <level>` is a round too",
+              r401 and r401["level"] == "medium" and r401["output"] == "40",
+              str(r401))
+
+        # CAPITALIZED THE WAY A SENTENCE STARTS IS STILL RECOGNIZED.
+        r403 = row(reviews, "403")
+        check("a capitalized plain brief is a round too, not just the lowercase form",
+              r403 and r403["level"] == "medium" and r403["output"] == "45",
+              str(r403))
+
+        # A MERE MENTION, NOT THE BRIEF'S OWN OPENING, IS NOT A ROUND. A
+        # fix-round worker's brief quoting "review PR 276 at medium" mid-
+        # sentence must not promote that subagent into a round of PR 276's own
+        # -- there is no genuine PR-276 round in this fixture at all.
+        check("a brief that only mentions a review is not read as launching one",
+              row(reviews, "276") is None, reviews)
+
+        # `#` BEFORE THE NUMBER IS ALSO A ROUND -- GitHub's own UI writes one.
+        r404 = row(reviews, "404")
+        check("`review PR #<N> at <level>` is a round too",
+              r404 and r404["level"] == "low" and r404["output"] == "15",
+              str(r404))
+        r402 = row(reviews, "402")
+        check("a round survives its root's own turn falling outside the window",
+              r402 and r402["level"] == "low" and r402["output"] == "60",
+              str(r402))
+        check("...and its issue/model/started fall back to the one child "
+              "that IS in the window, provably (a9's model, not a default)",
+              r402 and r402["model"] == "claude-sonnet-5"
+              and r402["started"] == "2026-01-02T03:41", str(r402))
 
         # TOOL-ECHO COUNTS A CALL, NOT A MENTION, AND PARTITIONS THE BYTES.
         # The fixture runs campaign-tracker and campaign-repos in one command,

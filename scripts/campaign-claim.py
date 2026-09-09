@@ -1683,6 +1683,94 @@ def delete_path(repo, branch):
     return f"repos/{repo}/git/refs/heads/{branch}"
 
 
+def local_copies(roots, repo, branch):
+    """[(root, tip)] holding a local `branch`, and [note] for what was not asked.
+
+    SCOPED TO THE REPOSITORY THE REF WAS ON, by `remote_of`. The same branch
+    name exists in every member repository this campaign touches -- that is the
+    whole reason the remote delete is aimed by `found[branch]` -- so a sweep
+    that deleted by name alone would take a clone of some other repository's
+    work. A root whose remote cannot be read is a note, never a target."""
+    out, unread = [], []
+    for root in roots:
+        where = remote_of(root)
+        if where is None:
+            unread.append(f"{root}: its origin could not be read, so whether "
+                          f"it is a clone of {repo} is unknown")
+            continue
+        if REPOS.key(where) != REPOS.key(repo):
+            continue
+        r = run("git", "-C", root, "rev-parse", "--verify", "--quiet",
+                f"refs/heads/{branch}")
+        if r.returncode == 0 and r.stdout.strip():
+            out.append((root, r.stdout.strip()))
+    return out, unread
+
+
+def contained(root, tip):
+    """(bool or None, why) -- is `tip` an ancestor of this root's `origin/main`?
+
+    None IS COULD-NOT-ASK and is not False: a root with no `origin/main` -- a
+    fetch that never ran, a clone of something else -- would otherwise read as
+    a branch holding unmerged work and be kept for the wrong reason, or, with
+    the test the other way round, deleted for one."""
+    r = run("git", "-C", root, "rev-parse", "--verify", "--quiet",
+            "refs/remotes/origin/main")
+    if r.returncode != 0 or not r.stdout.strip():
+        return None, f"{root} has no origin/main to compare against"
+    r = run("git", "-C", root, "merge-base", "--is-ancestor", tip,
+            "refs/remotes/origin/main")
+    if r.returncode == 0:
+        return True, None
+    if r.returncode == 1:
+        return False, None
+    return None, (f"{root}: merge-base --is-ancestor exited {r.returncode}: "
+                  f"{' '.join(r.stderr.split())[:120]}")
+
+
+def sweep_local(roots, repo, branch):
+    """Delete the local branches the released ref left behind. [line] to print.
+
+    ROW 6 OF #275'S LEDGER, mechanised where the ref it belongs to is retired:
+    AGENTS.md says to delete any local branch whose commits already sit on
+    `main`, and nothing did, so 19 of them had accumulated by 0096b56. This is
+    the narrow half -- the branch this release just deleted remotely, in the
+    repository it was on -- and it is narrow ON PURPOSE. A general sweep would
+    take a FRESH CLAIM: a ref cut and not yet worked points at `main`, so
+    `--merged origin/main` lists it beside the finished work, and deleting one
+    lets a second `take` succeed on the same sub-issue.
+
+    NOTHING IS DELETED THAT HOLDS COMMITS. Containment is asked per root, and a
+    branch that is not contained -- a squash merge leaves one -- is reported and
+    kept, which is AGENTS.md's "report a branch holding the only copy of its
+    work instead of deleting it". So is a root that could not answer."""
+    lines = []
+    copies, unread = local_copies(roots, repo, branch)
+    lines += [f"not swept for a local {branch}: {note}" for note in unread]
+    if not copies:
+        lines.append(f"no local {branch} in any clone of {repo} swept")
+        return lines
+    for root, tip in copies:
+        ok, why = contained(root, tip)
+        if ok is None:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): {why}")
+            continue
+        if not ok:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): it holds commits "
+                         f"that are not on origin/main -- read them before "
+                         f"deleting it by hand")
+            continue
+        r = run("git", "-C", root, "branch", "-D", branch)
+        if r.returncode != 0:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): git branch -D "
+                         f"exited {r.returncode}: "
+                         f"{' '.join(r.stderr.split())[:120]}")
+        else:
+            lines.append(f"deleted {root}'s local {branch} ({tip[:8]}, on "
+                         f"origin/main)")
+    return lines
+
+
 def which_branch(branches, campaign_issue, issue, branch_arg, slug=None):
     """(branch, refusal) -- which ref this release is about. Pure.
 
@@ -1759,22 +1847,78 @@ def ref_probe(returncode, err):
 
 
 def merged_head_verdict(returncode, out, repo, branch):
-    """Read `gh pr list --head <branch> --state merged`. Returns (ok, text):
-    the merged pull request's number when ok, the refusal otherwise."""
+    """Read `gh pr list --head <branch> --state merged`. Returns
+    (ok, text, number): the merged pull request's number when ok, the refusal
+    otherwise. THE NUMBER IS RETURNED AND NOT ONLY SPELT INTO `text`, because
+    the review gate below is handed a pull request and parsing one back out of
+    a sentence is a second reader of this answer."""
     if returncode != 0:
         return False, (f"could not ask {repo} for a merged pull request whose "
                        f"head was {branch}. A question that did not get "
-                       f"answered is not an absence.")
+                       f"answered is not an absence."), None
     try:
         prs = json.loads(out or "[]")
     except json.JSONDecodeError:
         return False, (f"{repo} answered the pull request question with "
-                       f"something that is not JSON: {(out or '')[:120]!r}")
+                       f"something that is not JSON: {(out or '')[:120]!r}"), None
     if not prs:
         return False, (f"{repo} has no ref {branch} and no merged pull request "
                        f"whose head was it. A branch that vanished without "
-                       f"merging is reported, never released.")
-    return True, f"merged as #{prs[0].get('number', '?')}"
+                       f"merging is reported, never released."), None
+    number = prs[0].get("number")
+    return True, f"merged as #{number if number is not None else '?'}", number
+
+
+CHECK_MERGE_REVIEW = HERE / "check-merge-review.py"
+
+
+def _review_words():
+    """The three words the gate answers with, from the script that owns them.
+
+    IMPORTED AND NOT RETYPED. A copy here would drift the way `DEFAULT_REPO`
+    would if the base's name were retyped: fail-closed -- a renamed word makes
+    every `release` refuse with "which is none of" -- but still the same rule
+    with two readers. A module that will not load leaves the words unknown,
+    which `review_verdict` reports rather than guessing."""
+    try:
+        spec = importlib.util.spec_from_loader(
+            "check_merge_review", importlib.machinery.SourceFileLoader(
+                "check_merge_review", str(CHECK_MERGE_REVIEW)))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.GATE_WORDS, None
+    # BaseException, NOT Exception. Reading a constant out of another script
+    # means EXECUTING that script, and a `sys.exit` reached at its import level
+    # raises SystemExit -- which is not an Exception, so it would leave this
+    # function and end `release` with that script's status and no message at
+    # all. Found by the suite: its stand-in reader exited at import and the
+    # whole run stopped, silently, at 0.
+    except BaseException as e:                  # noqa: BLE001 -- reported
+        return None, f"{CHECK_MERGE_REVIEW.name}: {e.__class__.__name__}: {e}"
+
+
+def review_verdict(repo, pr):
+    """(word, what it printed) -- check-merge-review.py on this merge, or
+    (None, why) when it answered with nothing this recognises.
+
+    THE WORD, NEVER THE STATUS. That script exits 1 for a refusal and 2 for a
+    reading it could not make, and Python exits 1 on an uncaught exception too,
+    so a bug in the reader would read here as `a merge with no review` -- a
+    refusal, which is safe, but one whose reason would be a lie. The word says
+    which of the three actually happened."""
+    if pr is None:
+        return None, (f"{repo} named no pull request number, so there is "
+                      f"nothing to read a review against")
+    words, why = _review_words()
+    if why:
+        return None, f"could not read the gate's own vocabulary -- {why}"
+    r = run(sys.executable, str(CHECK_MERGE_REVIEW), str(pr), "--repo", repo)
+    text = ((r.stdout or "") + (r.stderr or "")).strip()
+    word = text.split(" ", 1)[0] if text else ""
+    if word not in words:
+        return None, (f"{CHECK_MERGE_REVIEW.name} answered {text[:160]!r}, "
+                      f"which is none of {', '.join(words)}")
+    return word, text.splitlines()[0]
 
 
 def cmd_release(args):
@@ -1885,10 +2029,16 @@ def cmd_release(args):
             return 1
         p = run("gh", "pr", "list", "-R", repo, "--head", branch,
                 "--state", "merged", "--json", "number")
-        ok, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
+        ok, text, _number = merged_head_verdict(p.returncode, p.stdout, repo,
+                                                branch)
         if not ok:
             print(f"refusing: {text}", file=sys.stderr)
             return 1
+        # NO REVIEW GATE ON THIS PATH, and the asymmetry is deliberate. The ref
+        # is already gone, so there is nothing here to delete and nothing to
+        # hold back; refusing would leave a claim that can never be retired and
+        # a campaign that can never close, over a merge that already happened.
+        # The gate belongs where the delete is.
         print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
         release_line(compact_own_pane(sessions,
@@ -1932,10 +2082,33 @@ def cmd_release(args):
     # work rather than merely losing an address.
     p = run("gh", "pr", "list", "-R", repo, "--head", branch,
             "--state", "merged", "--json", "number")
-    merged, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
+    merged, text, number = merged_head_verdict(p.returncode, p.stdout, repo,
+                                               branch)
     if merged:
         print(f"{branch} was {text}, so it is finished work and not a fresh "
               f"claim")
+        # MERGE CONDITION 1, READ WHERE THE CLAIM IS RETIRED
+        # (kalaluthien/campaign-base#274). The condition was readable and read
+        # by nothing, so a merge with no REVIEW at its head landed and its ref
+        # was released behind it with nothing noticing. This is the last moment
+        # anything on this machine looks at that merge.
+        word, said = review_verdict(repo, number)
+        if word is None:
+            print(f"refusing: {said}\n  A reader that did not answer is not a "
+                  f"review, and this deletes.", file=sys.stderr)
+            return 1
+        if word != "reviewed":
+            print(f"refusing: {said}", file=sys.stderr)
+            print(f"  {branch} merged, and merge condition 1 wants a review "
+                  f"read AT the sha that merged.\n"
+                  f"  Post the REVIEW at that sha on the pull request, or -- "
+                  f"having read what landed --\n"
+                  f"  delete the ref by hand and leave a NOTE on the sub-issue "
+                  f"naming what you deleted:\n"
+                  f"    gh api -X DELETE {delete_path(repo, branch)}",
+                  file=sys.stderr)
+            return 1
+        print(said)
     elif p.returncode != 0:
         print(f"refusing: could not ask {repo} whether {branch} was ever "
               f"merged, so whether this is finished work or an unstarted claim "
@@ -1984,6 +2157,11 @@ def cmd_release(args):
               file=sys.stderr)
         return 1
     print(f"deleted {branch}")
+    # ...and the local copies the ref left behind, which nothing deleted before
+    # #274. Never a reason to fail the release: the ref is gone, which is what
+    # `release` is for, and every branch here prints.
+    for line in sweep_local(roots, repo, branch):
+        print(line)
     # LAST, and after the delete rather than before it: the release is what
     # this command is for, and compaction is a cost rule that must not be able
     # to stop one. Last also because the prompt fires when the turn ends, so

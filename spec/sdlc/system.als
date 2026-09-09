@@ -74,9 +74,11 @@ fun skippable: set Stage { Spec + Docs + Test + Code }
    change skip at all. One input to `maySkip`, the criterion being the other;
    neither alone licenses a skip. A kind is a file under
    .claude/skills/opening-campaign/assets/agents/; the profile line each will
-   carry is the procedure's to write (#247), in this vocabulary, and the two
-   witnesses in scenarios.als (`developmentProfile`, `researchProfile`) are
-   what it derives them from. No kind is an atom here: the model owns how a
+   carry is the procedure's to write (#247), in this vocabulary, and the three
+   witnesses in scenarios.als (`developmentProfile`, `prototypingProfile`,
+   `researchProfile`) are what it derives them from -- the middle one being the
+   only one that narrows anything, and so the only one that witnesses this
+   half of `maySkip`. No kind is an atom here: the model owns how a
    profile and a change combine, and the kinds own their profiles, so adding a
    kind changes no model. */
 sig Profile { optional: set Stage }

@@ -40,15 +40,18 @@ an argument, not a product, and it is expected to be deleted.
 
 ## SDLC profile
 
-`optional = Spec + Docs` -- the model and the view may go, and never the running
-thing: the test that shows it working and the code path it drives are the claim.
-The `Spec` half is narrow, and not by the tie. `tieDiscipline` reads at every
-commit, so a code path this kind commits owes a scenario in the tree even on a
-branch that never lands, and one already there will do -- but that does not
-license the waiver: `criterion` reads what the CHANGE wrote, so a change of this
-kind that lands a code path cannot skip its scenario however that path ties
-(`S5_CodeWithoutSpecRefused`). What is left is a change writing nothing below
-its plan.
+`optional = Spec + Docs` -- the running thing is what this kind never goes
+without: the test that shows it working and the code path it drives are the
+claim. The `Spec` half is dead rather than narrow, and not by the tie.
+`tieDiscipline` reads at every commit, so a code path this kind commits owes a
+scenario in the tree even on a branch that never lands, and one already there
+will do -- but that does not license the waiver: `criterion` reads what the
+CHANGE wrote, so a change of this kind that lands a code path cannot skip its
+scenario however that path ties (`S5_CodeWithoutSpecRefused`), and one that
+could skip it by criterion wrote nothing in Docs, Test or Code and so cannot
+land under a kind that lets neither Test nor Code go
+(`S7_PrototypingNeverWaivesItsScenario`). What the profile leaves live is the
+Docs waiver, and only where the scenario grew no shape.
 
 ## Every session
 

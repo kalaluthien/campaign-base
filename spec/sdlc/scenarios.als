@@ -10,26 +10,34 @@ open sdlc/system
 
 /* ---------------- profiles ---------------- */
 
-/* THE TWO KINDS THE WITNESSES RUN UNDER, and both leave every skippable stage
-   optional. `development` is this campaign's own kind: the model before the
-   code, a test that failed first, and a view only when the model grew a shape.
-   None of those is a stage the KIND forbids skipping, because each is already
-   refused by its own criterion wherever there is anything to refuse -- a
-   change that wrote a code path may skip neither Spec nor Test, and one whose
-   scenario grew a shape may not skip Docs. WHAT THE WIDENING ADMITS IS EVERY
-   CHANGE THAT WRITES NO TEST AND NO CODE PATH, and that is wider than a change
-   with nothing below its plan: a scenario and a view alone land too, which is
-   `S6a_TheSameWaiverTheKindAllows`. `S2a_ProseOnlyChange` is the narrowest of
-   them, and the one a profile naming Docs alone refused outright, before any
-   criterion was read. `research` refuses changing a repository beyond a
-   scratch probe, so its changes are findings on an issue.
+/* THE THREE KINDS THE WITNESSES RUN UNDER. `development` is this campaign's
+   own kind: the model before the code, a test that failed first, and a view
+   only when the model grew a shape. None of those is a stage the KIND forbids
+   skipping, because each is already refused by its own criterion wherever
+   there is anything to refuse -- a change that wrote a code path may skip
+   neither Spec nor Test, and one whose scenario grew a shape may not skip
+   Docs. WHAT THE WIDENING ADMITS IS A CHANGE THAT WRITES NO TEST AND NO CODE
+   PATH AND GREW NO SHAPE, which is wider than a change with nothing below its
+   plan: a scenario and a view alone land too, which is
+   `S6a_TheSameWaiverTheKindAllows`. It is not every change writing no test and
+   no code path: one whose scenario grew a shape still owes its view, and the
+   Docs criterion refuses that skip whatever the profile says
+   (`S3a_DocsDemanded`). `S2a_ProseOnlyChange` is the narrowest of them, and
+   the one a profile naming Docs alone refused outright, before any criterion
+   was read. `research` refuses changing a repository beyond a scratch probe,
+   so its changes are findings on an issue.
 
-   THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and these two narrow
+   THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and those two narrow
    nothing -- so neither witnesses that half of `maySkip`, and `prototyping` is
-   here to. It lets the model and the view go and never the running thing, and
+   here to. It keeps the running thing, and
    `S6_ProfileRefusesWhatTheCriterionAllows` is the profile half on its own.
-   The other kinds' profile lines are the procedure's to state, one line each
-   in assets/agents/*.md, in this vocabulary. */
+   Its `Spec` is dead as a waiver rather than narrow: a change that could skip
+   Spec by criterion wrote nothing in Docs, Test or Code, and this kind lets
+   neither Test nor Code go, so no landing change of it ever skips its scenario
+   (`S7_PrototypingNeverWaivesItsScenario`, against `S7a_TheKindThatDoes` at
+   the same scope). What the profile leaves live is the Docs waiver. The other
+   kinds' profile lines are the procedure's to state, one line each in
+   assets/agents/*.md, in this vocabulary. */
 pred developmentProfile[p: Profile] { p.optional = skippable }
 pred researchProfile[p: Profile]    { p.optional = skippable }
 pred prototypingProfile[p: Profile] { p.optional = Spec + Docs }
@@ -237,6 +245,22 @@ pred S6a_TheSameWaiverTheKindAllows {
   }
 }
 
+/* THE `Spec` HALF OF `prototypingProfile` LICENSES NOTHING A LANDING CHANGE
+   CAN USE, which is not the same as being narrow. `criterion` lets a change
+   skip Spec only when it wrote nothing in Docs, Test or Code; this kind lets
+   neither Test nor Code go, so such a change cannot land, and one that does
+   land wrote a code path and is refused Spec by the criterion
+   (`S5_CodeWithoutSpecRefused`). `S7a` is the same question under a kind that
+   narrows nothing, so neither the shape nor the scope is what refuses `S7`. */
+pred S7_PrototypingNeverWaivesItsScenario {
+  allDisciplines
+  one c: Change { prototypingProfile[c.profile] and eventually (c in Landed and Spec in c.skipped) }
+}
+pred S7a_TheKindThatDoes {
+  allDisciplines
+  one c: Change { developmentProfile[c.profile] and eventually (c in Landed and Spec in c.skipped) }
+}
+
 /* ---------------- commands ---------------- */
 
 run S1_FullChain              for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
@@ -253,3 +277,5 @@ run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expe
 run S5b_LandsWithoutTheLanding for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
 run S6_ProfileRefusesWhatTheCriterionAllows for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 0
 run S6a_TheSameWaiverTheKindAllows          for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 1
+run S7_PrototypingNeverWaivesItsScenario    for exactly 1 Change, exactly 1 Profile, 6 Artifact, 12 steps expect 0
+run S7a_TheKindThatDoes                    for exactly 1 Change, exactly 1 Profile, 6 Artifact, 12 steps expect 1

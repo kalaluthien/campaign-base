@@ -242,13 +242,20 @@
     ["sdlc/checks.als", "run", "TreeStaysTied_Bites"],
     ["sdlc/scenarios.als", "run", "S1_FullChain"],
     ["sdlc/scenarios.als", "run", "S2_SkippedChain"],
+    ["sdlc/scenarios.als", "run", "S2a_ProseOnlyChange"],
     ["sdlc/scenarios.als", "run", "S3_DocsWaived"],
     ["sdlc/scenarios.als", "run", "S3a_DocsDemanded"],
     ["sdlc/scenarios.als", "run", "S3b_DocsWrittenAfterAll"],
     ["sdlc/scenarios.als", "run", "S4_RenameBreaksTheTie"],
     ["sdlc/scenarios.als", "run", "S4a_RenameKeepsItsNamers"],
     ["sdlc/scenarios.als", "run", "S4b_RenameOfTheScenarioBreaksTheTie"],
-    ["sdlc/scenarios.als", "run", "S5_CodeBeforeSpecRefused"],
-    ["sdlc/scenarios.als", "run", "S5a_RefusedWithoutTheTie"]
+    ["sdlc/scenarios.als", "run", "S5_CodeWithoutSpecRefused"],
+    ["sdlc/scenarios.als", "run", "S5a_RefusedWithoutTheTie"],
+    ["sdlc/scenarios.als", "run", "S5b_LandsWithoutTheLanding"],
+    ["sdlc/scenarios.als", "run", "S6_ProfileRefusesWhatTheCriterionAllows"],
+    ["sdlc/scenarios.als", "run", "S6a_TheSameWaiverTheKindAllows"],
+    ["sdlc/scenarios.als", "run", "S6b_TheWaiverSurvivesAShape"],
+    ["sdlc/scenarios.als", "run", "S7_PrototypingNeverWaivesItsScenario"],
+    ["sdlc/scenarios.als", "run", "S7a_TheKindThatDoes"]
   ]
 }

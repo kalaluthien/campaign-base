@@ -29,19 +29,18 @@ on 2026-09-08 (fixtures/limit-banner-*.txt are those screens):
        /upgrade to increase your usage limit.
 
 Only a line that OPENS with the `⎿` glyph is a banner: the same words quoted
-in prose, in a NOTE, or in a diff a pane is showing are not, and read
-`no limit`. That glyph is the tool-result column, and every stop captured so
-far was painted in it; a banner painted in some other column has no evidence
-behind it and reads `no limit` too, unremarked. A screen displaying a capture
-of the banner itself -- a `cat` of a fixture, or of this file -- is
-indistinguishable from the banner, and reads as one. The clause is
-`resets <time>` for a reset on the day it was painted and
-`resets <Mon> <d> at <time>` for a later day, which the weekly limit
-paints; the minutes drop on the hour, so `9pm` and `1:30am` are both seen.
-The zone is the account's, in parentheses; one stop was recorded without
-it, so it is
-optional and the local zone stands in. The LAST banner on the screen is the
-reading, since a pane that stopped twice shows both.
+in prose, in a NOTE, or in a diff a pane is showing are not, and read `no
+limit`. That glyph is the tool-result column, and every stop captured so far
+was painted in it; a banner painted in some other column has no evidence
+behind it and reads `no limit` too, unremarked. A screen displaying a
+capture of the banner itself -- a `cat` of a fixture, or of this file -- is
+indistinguishable from the banner, and reads as one. The clause is `resets
+<time>` for a reset on the day it was painted and `resets <Mon> <d> at
+<time>` for a later day, which the weekly limit paints; the minutes drop on
+the hour, so `9pm` and `1:30am` are both seen. The zone is the account's, in
+parentheses; one stop was recorded without it, so it is optional and the
+local zone stands in. The LAST banner on the screen is the reading, since a
+pane that stopped twice shows both.
 
 A BANNER STAYS ON SCREEN AFTER THE PANE IS WOKEN, so the screen alone cannot
 say whether it still stands. What can is herdr's liveness, read through
@@ -56,13 +55,14 @@ costs the whole window. Two things the status cannot separate: the seconds
 of the aborting turn in which the banner is painted, and THE READER'S OWN
 PANE, which is working for as long as the reader runs -- so a pane equal to
 `HERDR_PANE_ID` skips the liveness reading and its banner stands. That
-variable is the id the pane had at launch; a pane moved to another
-workspace gets a new id and keeps the old one in its environment, and such
-a pane's own read falls through to the liveness reading. The cheap key is
-still the right one here: `campaign-claim.py live`'s join answers whose
-claim a session holds, a different question, and this needs only "is this
-me". The screen's own `❯` lines say nothing here: a queued command, a paste, and
-text typed but not sent all paint one.
+variable is the id the pane had at launch; the herdr skill says a pane moved
+to another workspace gets a new id, and whether the old one stays in its
+environment is unmeasured here -- if it does, such a pane's own read falls
+through to the liveness reading. The cheap key is still the right one here:
+`campaign-claim.py live`'s join answers whose claim a session holds, a
+different question, and this needs only "is this me". The screen's own `❯`
+lines say nothing here: a queued command, a paste, and text typed but not
+sent all paint one.
 
 RESOLVING A CLOCK TIME, because the banner carries no date and the reader
 does not know when it was painted. A session window is five hours
@@ -74,34 +74,33 @@ at 23:00 is tomorrow's, `9pm` read at 21:30 has passed, and `9pm` read at
 03:00 is yesterday's and passed. The rule errs LATE and never early, with
 one exception below: a banner painted a day ago whose clock time is ahead of
 now reads as today's, which wakes a pane that is already free an hour or so
-late, and a `passed` reading always names a reset that has really passed.
-An undated WEEKLY clause is today's, ahead or passed by the clock, and a
-weekly banner stands for days: painted on an earlier day it reads a reset
-later than the real one -- again late, never into a pane still stopped,
-since a weekly reset on an
-earlier day has passed. A dated clause takes the nearest of three years, so
-a December banner read in January has passed rather than being eleven months
-ahead. The exception: in the one fall-back hour of a zone that observes it
-the earlier of the two wall clocks is taken, up to an hour early.
+late, and a `passed` reading always names a reset that has really passed. An
+undated WEEKLY clause is today's, ahead or passed by the clock, and a weekly
+banner stands for days: painted on an earlier day it reads a reset later
+than the real one -- again late, never into a pane still stopped, since a
+weekly reset on an earlier day has passed. A dated clause takes the nearest
+of three years, so a December banner read in January has passed rather than
+being eleven months ahead. The exception: in the one fall-back hour of a
+zone that observes it the earlier of the two wall clocks is taken, up to an
+hour early.
 
---fire <wake-pane> SCHEDULES THE ONE-SHOT: a detached
-`sleep <seconds>; herdr agent prompt <wake-pane> <text>` under its own
-session, so it outlives this process and the session that ran it -- the
-session that reads a banner is on the same account and stops on the same
-limit a turn later, which is why a cron in that session cannot do this. The
-prompt goes in at the reset plus `LEAD`, one minute, since the reset is a
-clock the server rounds; for a `passed` reading it goes in now. It prints
-`scheduled pid <n> at <iso> into <wake-pane>: <text>` and the log path. The
-log takes this run's own marker line first, `== <now> at <iso> into
-<wake-pane>: <text>`, written and flushed before the sleeper is spawned so
-nothing of the sleeper's can land above it, and herdr's answer follows: a
-prompt into a working pane is queued by the harness, one into a pane at a
-dialog is refused as agent_blocked, and this process is gone by then, so
-the caller reads the log under the marker. It drives a pane, so it is
-refused
-(`could not fire: ...`, exit 1) unless HERDR_ENV is 1 (AGENTS.md § Delegate
-launch); the target is explicit by construction, there is no default. A
-`no limit` reading fires nothing: there is no reset to wait for.
+--fire <wake-pane> SCHEDULES THE ONE-SHOT: a detached `sleep <seconds>;
+herdr agent prompt <wake-pane> <text>` under its own session, so it outlives
+this process and the session that ran it -- the session that reads a banner
+is on the same account and stops on the same limit a turn later, which is
+why a cron in that session cannot do this. The prompt goes in at the reset
+plus `LEAD`, one minute, since the reset is a clock the server rounds; for a
+`passed` reading it goes in now. It prints `scheduled pid <n> at <iso> into
+<wake-pane>: <text>` and the log path. The log takes this run's own marker
+line first, `== <now> at <iso> into <wake-pane>: <text>`, written and
+flushed before the sleeper is spawned so nothing of the sleeper's can land
+above it, and herdr's answer follows: a prompt into a working pane is queued
+by the harness, one into a pane at a dialog is refused as agent_blocked, and
+this process is gone by then, so the caller reads the log under the marker.
+It drives a pane, so it is refused (`could not fire: ...`, exit 1) unless
+HERDR_ENV is 1 (AGENTS.md § Delegate launch); the target is explicit by
+construction, there is no default. A `no limit` reading fires nothing: there
+is no reset to wait for.
 
 --now <iso> is the clock, for the suite and for reading a screen captured
 earlier; default is now, in the local zone, and a clock with no offset is
@@ -162,8 +161,8 @@ def read_pane(pane):
 
 def pane_status(pane):
     """(agent_status, None) or (None, why), by campaign-name-session.py's
-    reader of `herdr agent list`, loaded by path so this file is not a second
-    reader of that listing."""
+    reader of `herdr agent list`, loaded by path so this file adds no reader
+    of that listing."""
     sibling = pathlib.Path(__file__).resolve().parent / "campaign-name-session.py"
     try:
         spec = importlib.util.spec_from_loader("cns", SourceFileLoader("cns", str(sibling)))

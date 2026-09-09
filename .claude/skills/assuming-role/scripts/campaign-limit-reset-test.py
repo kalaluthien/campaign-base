@@ -21,6 +21,9 @@ does, and a case that goes red by crashing has asserted nothing. `read`
 hands a case the script's own `Unparsed` as a value, since raising it is the
 script's designed answer, and lets any other exception through to the
 harness, where it fails the mutation by name rather than counting as red.
+A copy carries the two siblings the script loads by path, and a CONTROL run
+of every case on an unmutated copy precedes the mutations: a copy red before
+any mutation would make every mutation red for the copy's reason.
 
 Usage: .claude/skills/assuming-role/scripts/campaign-limit-reset-test.py
 """
@@ -289,6 +292,20 @@ def case_cli_listing_failed_banner_stands(script):
     return out.startswith("session 2026-09-08T21:00+09:00 (liveness unread: ") and code == 0, f"{out!r} exit {code}"
 
 
+def case_cli_listing_reader_missing_names_it(script):
+    # the script alone in a directory: the sibling it loads is absent, and the
+    # reading says which file, which is what a bare class name would hide
+    d = Path(tempfile.mkdtemp(prefix="clr-alone-"))
+    try:
+        alone = d / SCRIPT.name
+        alone.write_text(Path(script).read_text())
+        out, code, _ = run(alone, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], SESSION)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    want = "session 2026-09-08T21:00+09:00 (liveness unread: could not read the listing (FileNotFoundError: "
+    return out.startswith(want) and "campaign-name-session.py" in out and code == 0, f"{out!r} exit {code}"
+
+
 def case_cli_unlisted_pane_banner_stands(script):
     out, code, _ = run(script, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], SESSION,
                        env={"FAKE_PANE": "w40:p2"})
@@ -377,6 +394,38 @@ def case_fire_ahead_sleeps_until_lead(script):
         return fire_ahead(script, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+        for stray in STRAY_LOGS:  # a copy that ignored TMPDIR wrote elsewhere
+            stray.unlink(missing_ok=True)
+        STRAY_LOGS.clear()
+
+
+STRAY_LOGS = []
+
+
+def reap(pid, own_session):
+    """Kill the sleeper -- the sh and the sleep it forks -- and keep killing
+    until none of them is left: one signal races the sh's fork of its child,
+    and a sleep that slipped through lives for hours (measured once in fifteen
+    launches). A group this runner is in is never signalled; then the sh's
+    children go by parent pid, and the sh after them."""
+    for _ in range(20):
+        try:
+            if own_session:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                subprocess.run(["pkill", "-TERM", "-P", str(pid)], capture_output=True)
+                os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        time.sleep(0.05)
+        left = subprocess.run(["pgrep", "-g" if own_session else "-P", str(pid)], capture_output=True, text=True)
+        try:
+            os.kill(pid, 0)
+            sh_alive = True
+        except OSError:
+            sh_alive = False
+        if not left.stdout.strip() and not sh_alive:
+            return
 
 
 def fire_ahead(script, tmp):
@@ -394,17 +443,11 @@ def fire_ahead(script, tmp):
             own_session = os.getpgid(pid) != os.getpgid(0)
         except OSError:
             pass
-        try:
-            if own_session:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)  # the sh and its sleep, in their own group
-            else:
-                # a group this runner is in is never signalled: the sh's children by parent, then the sh
-                subprocess.run(["pkill", "-TERM", "-P", str(pid)], capture_output=True)
-                os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
+        reap(pid, own_session)
     prompted = [a for a in asked if a.startswith("agent prompt")]
     log = Path(log_line[len("  log "):]) if log_line else None
+    if log and log.parent != tmp:
+        STRAY_LOGS.append(log)
     logged = log.read_text() if log and log.exists() else ""
     ok = (" at 2026-09-08T21:01+09:00 into w40:p7: The usage window reset at 2026-09-08T21:00+09:00" in out
           and code == 0 and own_session and not prompted
@@ -460,6 +503,10 @@ MUTATIONS = [
     ("the sleeper's own session", "start_new_session=True", "start_new_session=False", case_fire_ahead_sleeps_until_lead),
     ("the run's marker in the log", 'fh.write(f"== {iso(now)} at', 'fh.write(f"-- {iso(now)} at', case_fire_passed_prompts_now),
     ("the log line", 'f"  log {log}"', 'f"  LOG {log}"', case_fire_ahead_sleeps_until_lead),
+    ("the default log under TMPDIR", 'tempfile.mkstemp(prefix="campaign-limit-reset-", suffix=".log")',
+     'tempfile.mkstemp(prefix="campaign-limit-reset-", suffix=".log", dir="/tmp")', case_fire_ahead_sleeps_until_lead),
+    ("what failed in the listing reader", 'f"could not read the listing ({e.__class__.__name__}: {e})"',
+     'f"could not read the listing ({e.__class__.__name__})"', case_cli_listing_reader_missing_names_it),
 ]
 
 
@@ -495,8 +542,15 @@ def main():
     # the control: every case is green on an unmutated copy in the same
     # layout, or a mutation's red would be the layout's and not its own
     control = copied()
+    red = []
     try:
-        red = [c.__name__ for c in CASES if not c(control)[0]]
+        for c in CASES:
+            try:
+                ok, _ = c(control)
+            except Exception as e:  # noqa: BLE001 -- a crashed control is a red control, named
+                ok, _ = False, repr(e)
+            if not ok:
+                red.append(c.__name__)
     finally:
         shutil.rmtree(control.parent, ignore_errors=True)
     check("control: every case green on an unmutated copy beside its siblings", not red, f"red: {red}")

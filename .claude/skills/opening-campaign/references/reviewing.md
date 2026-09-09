@@ -33,11 +33,11 @@ round that spawned it (`nested` counts how many). PR #255's five fanned rounds
 cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
 for one narrowed round below (NOTE on #1, 2026-09-09;
 `campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
-Write the brief as `"review PR <N> at <level>"` -- **the level right after
-`at`, exactly where `/code-review`'s own level sits after the command, and
-nowhere else in the brief** -- naming what to check after a blank line, and
-reserve `/code-review` for a reviewer once a fanned round prices under that
-figure.
+Write the brief as `"review PR <N> at <level>"`, level right after `at` --
+that position sets nothing mechanically the way `/code-review`'s own does
+below, it is only where `campaign-token-tally.py` and a reader both know to
+look -- naming what to check after a blank line, and reserve `/code-review`
+for a reviewer once a fanned round prices under that figure.
 
 ## The two knobs
 
@@ -120,9 +120,9 @@ method on #195): one round runs **57,374 to 134,222 input tokens** at `medium` o
 `high` on Opus. **This range predates #273's rollup**, which edited `reviews`
 itself: it was read before the rollup existed, so it undercounts any round in
 that window that fanned out the way #273's own NOTE describes. It remains the
-working threshold cited elsewhere in this file and in `AGENTS.md` § Review
-until a rollup-aware re-derivation over the same window replaces it — a
-follow-up, not done here. The shape this replaces is what the range hides —
+working threshold wherever it is cited until a rollup-aware re-derivation over
+the same window replaces it — a follow-up, not done here. The shape this
+replaces is what the range hides —
 PR #184 ran seven rounds at 800,567 input tokens, 38% of #177's *new input*,
 because each round re-read the entire pull request to check a handful of
 fixes.

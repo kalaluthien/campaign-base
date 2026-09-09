@@ -114,7 +114,9 @@ REVIEW_CMD = re.compile(
     # block writes "Review PR <N>" capitalized one line above the lowercase
     # prompt, and a launcher who capitalizes the sentence the way English
     # sentences start would otherwise vanish from every round this exists to
-    # price.
+    # price. `#?` because "review PR #276" is as plausible a way to write the
+    # number as "review PR 276", and GitHub's own UI writes a pull request
+    # with the `#`.
     r"|\A\s*review PR\s+#?(?P<pr2>\d+)\s+at\s+(?P<level2>\w+)",
     re.IGNORECASE)
 

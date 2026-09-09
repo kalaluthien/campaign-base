@@ -314,6 +314,14 @@ def build(tmp):
         assistant("m-a11", day + "03:30:00Z", a11_wt, out=35, session="s1",
                   agent="a11"),
     ])
+    # The `#` GitHub itself writes before a pull request number.
+    a12_wt = str(base / "camp-260101" / "worktrees" / "314")
+    write(root / "proj" / "s1" / "subagents" / "agent-a12.jsonl", [
+        user(day + "03:31:00Z", a12_wt, "review PR #404 at low\n\ncheck the fixture",
+             session="s1", agent="a12"),
+        assistant("m-a12", day + "03:32:00Z", a12_wt, out=15, session="s1",
+                  agent="a12"),
+    ])
     # A round whose ROOT's own turn falls outside the window, so it never
     # becomes one of `corpus.turns` -- only its child's does. The round's
     # file is still found by the directory walk `load_subagent_lineage` does
@@ -485,6 +493,12 @@ def main():
         # -- there is no genuine PR-276 round in this fixture at all.
         check("a brief that only mentions a review is not read as launching one",
               row(reviews, "276") is None, reviews)
+
+        # `#` BEFORE THE NUMBER IS ALSO A ROUND -- GitHub's own UI writes one.
+        r404 = row(reviews, "404")
+        check("`review PR #<N> at <level>` is a round too",
+              r404 and r404["level"] == "low" and r404["output"] == "15",
+              str(r404))
         r402 = row(reviews, "402")
         check("a round survives its root's own turn falling outside the window",
               r402 and r402["level"] == "low" and r402["output"] == "60",

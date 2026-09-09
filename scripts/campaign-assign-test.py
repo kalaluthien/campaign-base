@@ -5,11 +5,13 @@ AN ALLOW CASE BESIDE EVERY REFUSAL. A guard is only worth its refusals if the
 thing it admits still gets through, and a refusing check with no allow case
 reads identically to one that refuses everything.
 
-The stub answers three subcommands -- `agent list`, `agent read`, `agent
-prompt` -- and logs every prompt, so "the assignment was sent" is asserted on
-what herdr was ASKED, never on an exit status: a run that refused and a run
-that sent the prompt to the wrong pane both exit 0 or 1 for reasons this suite
-has to separate.
+The stub answers four subcommands -- `agent list`, `pane read`, `agent read`,
+`agent prompt` -- and logs every prompt, so "the assignment was sent" is
+asserted on what herdr was ASKED, never on an exit status: a run that refused
+and a run that sent the prompt to the wrong pane both exit 0 or 1 for reasons
+this suite has to separate. `read_pane` only ever calls `pane read`; the stub
+answers `agent read` too, but only one case (the one proving that) tells its
+answer apart from `pane read`'s.
 """
 import json
 import os
@@ -38,7 +40,7 @@ MARKER = "Compacted (ctrl+o to see full summary)"
 # The anchor as `campaign-claim.py` prints it, PANE AND ALL. Spelled here
 # rather than imported so that a case fails if the two ever disagree.
 RELEASED = "campaign-claim: released machinery/195-token-tally in w1:p2"
-# The same release, printed in somebody else's pane. `herdr agent read` puts
+# The same release, printed in somebody else's pane. `herdr pane read` puts
 # another session's output into the reader's own scrollback, which is the
 # ordinary planner move -- so this string turns up in a pane that did not
 # release, and must not answer for it.
@@ -58,8 +60,10 @@ case "$1 $2" in
 %s
 JSON
     exit 0 ;;
-  "agent read")
+  "pane read")
     printf 'read %%s %%s\\n' "$3" "$5" >> "$log"
+    %s ;;
+  "agent read")
     %s ;;
   "agent prompt")
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
@@ -70,20 +74,41 @@ exit 1
 """
 
 
-def shims(d, rows, screen="", read_exit=0, prompt_exit=0):
+def _read_arm(screen, read_exit):
+    """The shell body of a read-like `case` arm: prints `screen` and exits 0,
+    or answers herdr's own `agent_not_idle` shape and exits `read_exit`. One
+    function so `pane read`'s arm and `agent read`'s arm in the stub cannot
+    drift from each other's quoting or exit convention."""
+    if read_exit == 0:
+        return "cat <<'SCREEN'\n%s\nSCREEN\n    exit 0" % screen
+    return ('echo \'{"error":{"code":"agent_not_idle"}}\' >&2; exit %d'
+            % read_exit)
+
+
+def shims(d, rows, screen="", read_exit=0, prompt_exit=0, agent_screen=None):
     """A PATH holding only the stub. PATH is this directory ALONE, so a call
     that escaped the stub would run nothing rather than silently reaching the
-    real herdr and driving somebody's pane."""
+    real herdr and driving somebody's pane.
+
+    `read_pane` asks `pane read`, never `agent read` -- `agent_screen` is ONLY
+    for a case proving that: it answers `agent read` with different content
+    than `pane read`'s `screen`, the way the two really diverge across a
+    compaction (NOTE on #1). Left at its default, `agent read` echoes the same
+    `screen` `pane read` does, so no case that does not pass it is testing
+    which subcommand was asked."""
     b = Path(d) / "bin"
     b.mkdir(parents=True, exist_ok=True)
-    if read_exit == 0:
-        read_arm = "cat <<'SCREEN'\n%s\nSCREEN\n    exit 0" % screen
-    else:
-        read_arm = ('echo \'{"error":{"code":"agent_not_idle"}}\' >&2; exit %d'
-                    % read_exit)
+    read_arm = _read_arm(screen, read_exit)
+    # ONE FORMAT, ASKED TWICE. `agent_arm` used to hand-roll its own copy of
+    # this heredoc; a later change to its quoting or exit convention applied
+    # to one copy and missed in the other would silently reintroduce the
+    # pane-read/agent-read divergence this file exists to catch.
+    agent_arm = _read_arm(screen if agent_screen is None else agent_screen,
+                          read_exit)
     listing = json.dumps({"result": {"agents": rows}})
     (b / "herdr").write_text(
-        HERDR % (str(Path(d) / "prompts.log"), listing, read_arm, prompt_exit))
+        HERDR % (str(Path(d) / "prompts.log"), listing, read_arm, agent_arm,
+                 prompt_exit))
     (b / "herdr").chmod(0o755)
     for tool in ("sh", "cat", "printf", "python3", "git"):
         found = shutil.which(tool)
@@ -93,10 +118,11 @@ def shims(d, rows, screen="", read_exit=0, prompt_exit=0):
 
 
 def calls(path_dir, kind):
-    """Every `agent <kind>` the stub was asked to make, in order. One log for
-    both, so a case can assert the window `agent read` was given as well as the
-    prompt `agent prompt` carried -- the window was plumbed by nothing until a
-    review mutated it away and the suite stayed green."""
+    """Every call of `kind` the stub was asked to make, in order. One log for
+    both `pane read` and `agent prompt`, so a case can assert the window
+    `pane read` was given as well as the prompt `agent prompt` carried -- the
+    window was plumbed by nothing until a review mutated it away and the
+    suite stayed green."""
     log = Path(path_dir).parent / "prompts.log"
     if not log.exists():
         return []
@@ -310,6 +336,26 @@ def end_to_end_cases():
               "assigning anyway" not in out and "--force" not in out
               and "--assume-fresh" not in out, out[:400])
 
+        # THE NOTE ON #1, REPRODUCED: `pane read` carries a pane's scrollback
+        # across its own compaction; `agent read` scopes to the agent's own
+        # turn, which a release-then-compact resets. Measured live 2026-09-09:
+        # `agent read` on a just-compacted pane answered 62 lines with no
+        # release line in them, `pane read` on the same pane and `--lines`
+        # answered 530+ holding both the release and the marker. `agent_screen`
+        # answers `agent read` with a screen carrying no anchor at all, so this
+        # case only passes if `read_pane` asked `pane read`, whose `screen`
+        # carries the release and the marker.
+        agentread = shims(Path(d) / "agentread", rows,
+                          screen=f"{RELEASED}\n{MARKER}\n",
+                          agent_screen="a fresh session, no anchor here\n")
+        r = assign(["w1:p2", "198"], agentread)
+        out = r.stdout + r.stderr
+        check("read_pane asks herdr for `pane read`, not `agent read`, so "
+              "the release scrolled past `agent read`'s narrower window "
+              "is still seen",
+              r.returncode == 0 and "assigned kalaluthien/campaign-base#198"
+              in out, f"exit {r.returncode}: {out[:400]}")
+
         # THE REVERSAL. A pane with no release line USED to be assigned, on
         # the reasoning that a fresh session's context is small. Nothing here
         # can tell a fresh session from one whose release scrolled out of a
@@ -456,7 +502,7 @@ def end_to_end_cases():
         out = r.stdout + r.stderr
         check("a scrollback that would not read refuses, saying it could not look",
               r.returncode == 1 and "an unknown is not" in out
-              and "agent read" in out and prompts(unread) == [],
+              and "pane read" in out and prompts(unread) == [],
               f"exit {r.returncode}: {out[:300]}")
         forced_unread = shims(Path(d) / "forcedunread", rows, read_exit=1)
         r = assign(["w1:p2", "198", "--assume-fresh"], forced_unread)

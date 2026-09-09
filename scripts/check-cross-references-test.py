@@ -129,6 +129,15 @@ CASES = [
     ("S3 a spec file that is not there",
      {"a.md": "The contract is `spec/campaign/orchestration/gone.als`.\n"},
      ("DANGLING", "S3: nothing at this path")),
+    ("S3 a spec file of a second entity, there",
+     {"a.md": "The model is `spec/sdlc/system.als`.\n",
+      "spec/sdlc/system.als": "sig S {}\n"}, None),
+    ("S3 a spec file of a second entity, not there",
+     {"a.md": "The model is `spec/sdlc/gone.als`.\n"},
+     ("DANGLING", "S3: nothing at this path")),
+    ("S3 the snapshot at the spec root",
+     {"a.md": "Compared to `spec/commands.snapshot.json`.\n",
+      "spec/commands.snapshot.json": "{}\n"}, None),
 
     # ---- S4: relative, and resolved against the SKILL ROOT rather than the
     # citing file's own directory. The second row is the one that fails when

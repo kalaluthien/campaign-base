@@ -2,7 +2,7 @@
 """Run one spec/ module, hold its command list, and digest its traces.
 
     scripts/alloy-check.py <file.als> [-o <dir>]
-    scripts/alloy-check.py --commands <dir> [--write]
+    scripts/alloy-check.py --commands spec [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
 
 Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
@@ -34,7 +34,9 @@ second statement that does NOT regenerate can catch it.
 the .als files under <dir>, RECURSIVELY, and compares them to
 <dir>/commands.snapshot.json, naming each command that appeared or went. The
 committed one sits at spec/commands.snapshot.json, one snapshot over every
-entity, so `--commands spec` is the form CI runs.
+entity, so `--commands spec` is the form CI runs -- and the only form: a <dir>
+that is not the spec root of its repository is refused, because a snapshot
+written under one entity is a subset the next reader diffs against (#250).
 `--write` regenerates the snapshot, which is how a deliberate change is
 recorded. The snapshot holds the module, the kind and the name, and deliberately
 NOT the scope, which is tuned often, nor the `expect` value, which would put a
@@ -54,7 +56,7 @@ no command result to check at all.
 repeats every static signature in every state, which buries the handful of
 relations a scenario is actually about; the digest prints the event, its
 arguments, and the varying relations only, one line per state. The relations
-it knows are spec/campaign's; an sdlc trace digests to its events alone. The
+it knows are the two tables below, spec/campaign's and spec/sdlc's. The
 five entities in spec/campaign/ are layered and open one another, so a composed trace names
 every relation and every atom by its module path -- the chain of `system`
 modules, `system/system/system/system/system/Now<:event`. The path is stripped:
@@ -76,6 +78,13 @@ RESULT = re.compile(r"^\d+\.\s+(check|run)\s+(\S+)\s+\d+\s+(?:\d+/\d+\s+)?(SAT|U
 # A command declaration, which always opens its line: `check Name for ...`.
 DECL = re.compile(r"^(check|run)\s+(\w+)\b")
 SNAPSHOT = "commands.snapshot.json"
+# THE ONE DIRECTORY --commands TAKES: the spec root, under the repository root
+# of whatever tree <dir> sits in. The snapshot is one statement over every
+# entity, and a snapshot written under an entity's own directory is a subset
+# that the next reader diffs against and the tree keeps (check-tree-shape
+# refuses only markdown under spec/). So a <dir> that is not this is refused
+# rather than inventoried, and --write never lands a second snapshot.
+SNAPSHOT_ROOT = "spec"
 
 
 def inventory(directory):
@@ -114,16 +123,40 @@ def inventory(directory):
     return sorted(found)
 
 
+def snapshot_root(directory):
+    """The one directory the snapshot sits in for the tree holding <directory>:
+    `<repository root>/spec`, or a SystemExit naming why it could not be found."""
+    try:
+        top = subprocess.run(["git", "-C", directory, "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as e:
+        raise SystemExit(f"alloy-check --commands: could not resolve the repository "
+                         f"root above {directory} ({e.__class__.__name__}), so "
+                         f"nothing was compared; the snapshot sits at "
+                         f"<root>/{SNAPSHOT_ROOT}/{SNAPSHOT}")
+    return os.path.realpath(os.path.join(top, SNAPSHOT_ROOT))
+
+
 def commands_mode(directory, write):
-    """Compare the models' declarations to the committed snapshot beside them."""
+    """Compare the models' declarations to the committed snapshot at the spec root."""
     directory = os.path.abspath(directory)
+    if not os.path.isdir(directory):
+        inventory(directory)                     # raises with the right words
+    root = snapshot_root(directory)
+    if os.path.realpath(directory) != root:
+        print(f"alloy-check --commands: {directory} is not the snapshot's root "
+              f"{root}; the snapshot is one statement over the whole of "
+              f"{SNAPSHOT_ROOT}/, and one written under an entity's directory "
+              f"is a subset the next reader diffs against. Name {root}.",
+              file=sys.stderr)
+        return 1
     snapshot = os.path.join(directory, SNAPSHOT)
     found = inventory(directory)
     # Hand-rolled rather than json.dumps(indent=...), which puts every element
     # of a triple on its own line: one command per line is the whole point, so
     # that a deletion is one removed line naming the command that went.
     head = {
-        "generated_by": "scripts/alloy-check.py --commands <dir> --write",
+        "generated_by": "scripts/alloy-check.py --commands spec --write",
         "why": "A deleted command misses no `expect` clause, and an inventory "
                "regenerated from the models cannot see the deletion either. "
                "This copy is committed so the diff is the reader.",
@@ -188,6 +221,14 @@ VARYING = [
     ("Target<:agent", "agentArg"),
     ("Where<:machine", "on"),
     ("Where<:repo", "repoArg"),
+    # sdlc: the observer's three arguments, then what a commit moves
+    ("Now<:subject", "change"),
+    ("Now<:artifact", "artifact"),
+    ("Now<:at", "at"),
+    ("Written", "written"),
+    ("Landed", "landed"),
+    ("Change<:skipped", "skipped"),
+    ("Artifact<:names", "names"),
     # github
     ("Open", "open"),
     ("Merged", "merged"),
@@ -227,7 +268,12 @@ VARYING = [
 STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
           "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
-          "Agent<:branch"]
+          "Agent<:branch",
+          # sdlc: which change an artifact is of and at which stage, the
+          # change's kind, what the kind lets it skip, and which spec
+          # artifacts grew a shape
+          "Artifact<:change", "Artifact<:stage", "Change<:profile",
+          "Profile<:optional", "GrowsShape"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
@@ -241,9 +287,14 @@ ATOM = re.compile(r"(\w+)\$(\d+)")
 # every cell.
 QUALIFIER = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*/")
 
+# Two letters for the sdlc signatures, so `Ch0` is never read as a Campaign
+# and `Ar0` never as an Agent; the two entities open nothing of each other,
+# but a reader of both should not have to know that. A stage or an event is
+# a `one sig` and keeps its name.
 LETTER = {"Issue": "I", "PullRequest": "P", "Campaign": "C", "Machine": "M",
           "Repo": "R", "Agent": "A", "Session": "S", "Branch": "B",
-          "CampaignDir": "D"}
+          "CampaignDir": "D",
+          "Change": "Ch", "Artifact": "Ar", "Profile": "Pf"}
 
 
 def unqualify(text):

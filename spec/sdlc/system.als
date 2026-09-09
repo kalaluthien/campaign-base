@@ -125,16 +125,18 @@ fun writtenStages[c: Change]: set Stage    { writtenOf[c].stage }
 fun absentStages[c: Change]:  set Stage    { Stage - writtenStages[c] }
 pred done[c: Change, s: Stage]             { s in writtenStages[c] or s in c.skipped }
 
-/* THE TIE. A scenario names the test that witnesses it, and the test names
-   the code path it drives: `s -> t -> k` where the two names hold and the
-   scenario and the test exist. Read from the CODE PATH UP -- `tied[k]` asks
+/* THE TIE. A test names the scenario it witnesses and the code path it
+   drives -- `t -> s` and `t -> k` in `names`, both read off the test's own
+   text and name, which is how scripts/check-sdlc-tie.py reads them -- so
+   `s -> t -> k` holds where the two names hold and the scenario and the
+   test exist. Read from the CODE PATH UP -- `tied[k]` asks
    whether some scenario reaches k -- and not from the scenario down, because
    a scenario with no test is a claim the solver checks on its own, and
    reading it the other way would refuse every scenario spec/campaign holds
    today. Whether the check reads the tree or only the diff is the check's;
    the model says what a tie is and when one is read. */
 fun tie: Artifact -> Artifact -> Artifact {
-  { s: Written & stage.Spec, t: Written & stage.Test, k: stage.Code | s->t in names and t->k in names }
+  { s: Written & stage.Spec, t: Written & stage.Test, k: stage.Code | t->s in names and t->k in names }
 }
 pred tied[k: Artifact] { some tie.k }
 /* EVERY CODE PATH IN THE TREE WALKS BACK TO A SCENARIO. The invariant

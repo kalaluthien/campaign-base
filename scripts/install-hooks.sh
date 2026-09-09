@@ -16,8 +16,9 @@
 #
 # pre-commit chains the machine-wide guard at ~/.claude/git-hooks/no-main-commits
 # (if present), then this repository's own: check-rule-readers, check-tree-shape,
-# check-cross-references, and check-commit-claim -- the commit half of the
-# claim gate, whose pre-tool-use half is the harness hook below.
+# check-cross-references, check-sdlc-tie -- the commit reader of
+# spec/sdlc's tie -- and check-commit-claim, the commit half of the claim
+# gate, whose pre-tool-use half is the harness hook below.
 # post-commit pushes a campaign-*/ branch as soon as it has a commit, so a
 # worker never sits on a finished commit unpushed; it touches no other branch.
 #
@@ -189,7 +190,7 @@ $marker Re-run it after changing this file.
 #
 # The line below is the one list of what this hook runs; campaign-primitives
 # reads it too. Add a guard by adding it here.
-# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py check-commit-claim.py
+# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py check-sdlc-tie.py check-commit-claim.py
 set -e
 # \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
 # without the shared guard would have every commit blocked with no message.
@@ -282,13 +283,13 @@ fi
 # whose event lived elsewhere would be registered on a slot nothing names.
 # installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit
 #
-# ...and the line below is what those guards IMPORT rather than run, which no
-# `# runs:` line can carry: a name there is executed as a guard. Nothing in this
+# ...and the line below is what the guards of EITHER half import rather than
+# run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this
 # installer reads it -- the base tree holds every script already, and a member
 # clone reaches them by absolute path -- but the suites that build a fixture
 # from these declarations do, and a fixture missing an import is a guard that
 # tracebacks where it meant to refuse.
-# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py
+# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py scripts/alloy-check.py
 #
 # REPO-RELATIVE since #227: a script either half names may live under
 # .claude/skills/<skill>/scripts/, so an entry carries the whole path and

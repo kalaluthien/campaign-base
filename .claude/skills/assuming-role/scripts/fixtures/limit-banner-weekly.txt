@@ -1,0 +1,11 @@
+❯ collie 서비스좀 켜줘
+  ⎿  You've hit your session limit · resets 9pm (Asia/Seoul)
+     /upgrade to increase your usage limit.
+✻ Cogitated for 0s · done 6:47 PM
+❯ The usage window has reset; continue #251 on PR 254. Then launch the narrowed review of the diff since c406cbf as reviewing.md says, REPORT with the sha, and merge when the three conditions hold.
+  Ran 1 shell command
+  ⎿  You've hit your weekly limit · resets 10pm (Asia/Seoul)
+     /upgrade to increase your usage limit.
+✻ Brewed for 0s · done 1:00 PM
+❯ 
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · PR #254                                                                                                                                                               

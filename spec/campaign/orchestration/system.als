@@ -153,9 +153,9 @@ var sig Retired  in Agent {}
    per window, each reading the banner. The window is the account's, not the
    agent's, so `limitReset` clears every stopped agent at once -- the limit
    "kills in batches" (AGENTS.md § Watching and retiring) and wakes them the
-   same way. What ends the silence is the reset, a clock the banner names,
-   which the assuming-role skill's reset reader takes off the pane to schedule
-   the one prompt that lands after it. */
+   same way. What ends the silence is the reset, a clock the banner names;
+   `.claude/skills/assuming-role/scripts/campaign-limit-reset.py` reads it off
+   the pane and schedules the one prompt that lands after it. */
 var sig Stopped in Agent {}
 
 /* THE SESSION'S CONTEXT IS SMALL. A bit on the SESSION and not on the agent,

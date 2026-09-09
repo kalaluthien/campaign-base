@@ -312,6 +312,7 @@ PROSE = {
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
     ".jsonl": {"block": [], "line": []},       # ditto, one object per line
+    ".txt":  {"block": [], "line": []},        # a captured screen, a suite's fixture: all code
     "":      {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
 }
 

@@ -139,7 +139,11 @@ CASES = [
     ("R0 an unknown suffix is reported, not skipped",
      {"scripts/x.rb": 'puts "runtime/holder"\n'}, "R0"),
     ("R0 an unread file does not hide what the other rules found",
-     {"scratch/x.txt": "hi\n"}, "R2"),
+     {"scratch/x.rb": "hi\n"}, "R2"),
+    ("R0 absent: a captured screen under a skill's scripts/fixtures/ is read",
+     {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
+      ".claude/skills/s/scripts/fixtures/banner.txt":
+      "  \u23bf  You've hit your session limit \u00b7 resets 9pm (Asia/Seoul)\n"}, None),
 
     # A language with no comment syntax at all: every line is code, and the
     # empty marker lists must not make the whole file read as prose.

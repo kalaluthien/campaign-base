@@ -48,6 +48,16 @@ FORM_CASES = [
     ("campaign issues: an issue list that reads neither is outside the claim",
      fence("gh issue list -R o/r --state closed --json number,title"), 0),
     ("sub-issues: the index read", fence("gh api --paginate repos/o/r/issues/1/sub_issues"), 1),
+    # The claim-ref listing, in the stale spelling that outlived #237 and in
+    # the current one: the endpoint is the form, so both fire.
+    ("claim refs: the retired number-form listing",
+     fence('gh api "repos/o/r/git/matching-refs/heads/campaign-$N/" --jq ".[].ref"'), 1),
+    ("claim refs: the slug-form listing",
+     fence('gh api "repos/o/r/git/matching-refs/heads/$SLUG/" --jq ".[].ref"'), 1),
+    ("claim refs: a single ref read is not a listing",
+     fence('gh api "repos/o/r/git/ref/heads/x/1-y"'), 0),
+    ("claim refs: the endpoint named in prose is a mention",
+     "# t\n\nStep 5 reads every ref with `matching-refs`.\n", 0),
     ("sub-issues: the endpoint named in prose is a mention",
      "# t\n\nRead it back from `sub_issues`.\n", 0),
     # The binding reading: the `bound:` label picked out of the campaign

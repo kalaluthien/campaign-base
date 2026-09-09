@@ -283,10 +283,17 @@ and read back through `campaign-repos` after.
 Only after the person confirms. **Say it on the campaign issue first, and read who
 answers** — the campaign issue is the one place a machine working this campaign
 against its `bound:` label could answer. Say what the delete will destroy in the
-same comment.
+same comment. **Both comments this step posts open with `NOTE <session name>:`**,
+the kind line every comment carries (`AGENTS.md` § Sub-issues): the guard refused
+the announcement as it used to be written, measured closing #245. `ME` is this
+session's own name, as `herdr agent list` shows it. The body goes through a
+file at a literal path: the guard reads `--body-file`'s path as typed, so one
+holding `$CAMPAIGN_DIR` is refused as unreadable, and `--body "$BODY"` is
+refused for a first line reading `$BODY`.
 
 ```sh
 HOST=$(hostname -s)
+ME=<this session's name>
 [ -n "${CAMPAIGN_DIR-}" ] ||
   { echo "REFUSE: CAMPAIGN_DIR was never bound; step 0 did not run"; exit 1; }
 [ -d "$CAMPAIGN_DIR/runtime" ] ||
@@ -295,9 +302,9 @@ LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
   \( -path "$CAMPAIGN_DIR/runtime" -o -path "$CAMPAIGN_DIR/repos" \) -prune -o -print \
   | sed "s|^$CAMPAIGN_DIR/||" | sort \
   | grep . || echo "no entries outside runtime/ and repos/")
-BODY=$(printf 'Closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
-  "$N" "$HOST" "$LEFTOVERS")
-gh issue comment "$N" -R kalaluthien/campaign-base --body "$BODY"
+printf 'NOTE %s: closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
+  "$ME" "$N" "$HOST" "$LEFTOVERS" > /tmp/closing-comment.md
+gh issue comment "$N" -R kalaluthien/campaign-base --body-file /tmp/closing-comment.md
 gh issue view "$N" -R kalaluthien/campaign-base --comments
 ```
 
@@ -309,34 +316,41 @@ scaffold, so skip those rows. It is a record, not a to-do — anything wanted ou
 of the tree is saved before close. A peer's note that it is working or closing:
 stop and name it.
 
-**Release the campaign's own claim refs on the base** — an unlanded sub-issue
-leaves its branch outliving the campaign; step 3 makes this sighted.
+**Release every claim ref the campaign left behind, on the base and on each
+member repository** — a landed sub-issue leaves its ref where
+`delete_branch_on_merge` is off, an unlanded one leaves its branch outliving the
+campaign, and step 3 makes both sighted. The rows are step 1's **claims checked
+out nowhere on this machine**, and `campaign-claim release` is the one reader:
+it lists under the campaign's slug prefix across the base, every clone here and
+every `## Repos` entry, deletes a ref holding nothing beyond `main` whose work
+is over, and refuses one holding commits, naming them. A hand-rolled listing
+here read `heads/campaign-$N/`, the number form retired by #237, so it released
+nothing and left a member repository's merged ref behind, measured closing #245;
+`check-rule-readers` now refuses that copy.
 
 ```sh
-gh api "repos/kalaluthien/campaign-base/git/matching-refs/heads/campaign-$N/" \
-  --jq '.[] | "\(.ref)\t\(.object.sha)"' |
-while IFS="$(printf '\t')" read -r REF SHA; do
-  AHEAD=$(gh api "repos/kalaluthien/campaign-base/compare/main...$SHA" --jq .ahead_by) || exit 1
-  if [ "$AHEAD" = 0 ]; then
-    gh api -X DELETE "repos/kalaluthien/campaign-base/git/$REF" && echo "released $REF"
-  else
-    echo "REFUSE-ROW: $REF holds $AHEAD commit(s) beyond main — push a PR or say to discard"
-  fi
+"$BASE/scripts/campaign-claim.py" live "$N" |
+  sed -n '/^claims checked out nowhere/,/^$/p' | awk -v p="$SLUG/" 'index($1, p) == 1 {print $1}' |
+while read -r BRANCH; do
+  ISSUE=${BRANCH#"$SLUG/"}; ISSUE=${ISSUE%%-*}
+  "$BASE/scripts/campaign-claim.py" release "$N" "$ISSUE" --branch "$BRANCH" ||
+    echo "REFUSE-ROW: $BRANCH was not released — read the refusal above"
 done
 ```
 
-**No `--paginate`** — `git/matching-refs` returns every ref in one response
-(`references/gotchas.md`); the flag would claim otherwise. **Ancestry, not
-equality**: `main` moves after the claim, so `ahead_by` catches what a sha
-comparison would miss. Print a row that holds commits and never delete it; member
-repositories' refs are released by their pull request merge.
+Read every `REFUSE-ROW`: a branch holding commits is never deleted here, and the
+refusal says whether to land them or to delete the ref by hand having read them.
+**A release compacts the releasing session's own pane** when the turn ends, so
+run this loop as the last thing in its turn and expect to come back compacted.
 
 Then close, in this order — the issue first, then a check that nobody else on
 this machine is in the directory, then the delete of the bound path itself, not a
-path retyped here, not its parent, not a wildcard.
+path retyped here, not its parent, not a wildcard. **Type the session name into
+the close comment**: `--comment` takes text and no file, and the guard reads a
+`$ME` there as the literal word.
 
 ```sh
-gh issue close "$N" -R kalaluthien/campaign-base --comment "Campaign closed."
+gh issue close "$N" -R kalaluthien/campaign-base --comment "NOTE <this session's name>: campaign closed."
 lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
 ls -A "$CAMPAIGN_DIR"
 rm -rf -- "$CAMPAIGN_DIR"

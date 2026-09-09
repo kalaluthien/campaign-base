@@ -39,6 +39,10 @@ on:
 
 permissions:
   contents: read
+  # The review gate below reads a pull request's comments. `contents: read`
+  # does not carry them, and the gate answers `unknown` rather than passing
+  # when it cannot look -- which fails the job for the wrong reason.
+  pull-requests: read
 
 jobs:
   check:
@@ -170,3 +174,47 @@ jobs:
           done
           [ "$n" -gt 0 ] || { echo "no .als module was found under spec"; exit 1; }
           echo "$n module(s) ran"
+
+      # MERGE CONDITION 1, GIVEN A READER (kalaluthien/campaign-base#274).
+      # AGENTS.md wants a review read at the sha being merged; nothing read it,
+      # and PR #262 merged at 8ca2609 with no REVIEW comment on it at all. This
+      # is the required-status half: with `check` in
+      # `required_status_checks.contexts` on `main`, a merge without a REVIEW
+      # at the head is refused by GitHub rather than by whoever remembers.
+      #
+      # LAST, and that is the whole placement argument. A pull request with no
+      # review yet is the ORDINARY state of one just pushed, so a gate running
+      # first would paint every fresh push red over the one thing that is not
+      # about the code, and hide the guards and the suites behind it. Running
+      # last, everything that judges the change has already reported.
+      #
+      # `if:` ON THE STEP, never a filter on the trigger. The job still runs on
+      # a push to `main` and still reports the `check` context; only this step
+      # stands down, because a push has no pull request to read comments on.
+      # Constraint 1 at the head of this file is about the trigger and this does
+      # not touch it.
+      #
+      # It answers `unreviewed` (1) or `unknown` (2) on the same non-zero
+      # status, and both fail the job on purpose: a pull request whose comments
+      # went unread is not a pull request with a review on it.
+      #
+      # `--head` IS NOT OPTIONAL HERE. The status this step produces is recorded
+      # against `github.event.pull_request.head.sha`, and without the flag the
+      # reader would answer about whatever the branch tip is when the runner
+      # gets there. Those come apart: a run queued for sha A while the author
+      # pushes B and posts a REVIEW naming B would mark A green with nothing
+      # ever naming A. Naming the sha makes the run's verdict about the run's
+      # own commit.
+      #
+      # TURNING IT GREEN TAKES A RE-RUN. A comment fires no workflow, so posting
+      # the REVIEW does not re-trigger this: `gh run rerun <id>` does, and the
+      # whole job replays including the Alloy step. That is the cost of the gate
+      # and it is on the path of every merge here.
+      - name: A REVIEW at the head sha, which is merge condition 1
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/check-merge-review.py ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --head ${{ github.event.pull_request.head.sha }}

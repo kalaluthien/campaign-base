@@ -603,7 +603,17 @@ merge, the author included; a session that cannot satisfy one may not.
 Condition 3 serializes landings: 1 and 2 are each true of a branch *in isolation*,
 so containing a `main` that moved means merging it in, that merge is a push, **a
 push retires the review**, and the next merge needs a review at the combined sha.
-**Condition 3 is enforced by GitHub; condition 1 is readable and read by nothing.**
+**Conditions 1 and 3 are both enforced by GitHub**, through the same `check` job.
+Condition 1's reader is `scripts/check-merge-review.py`: it answers `reviewed`,
+`unreviewed` or `unknown` over the sha the run is recorded against and the
+comments opening `REVIEW` that name it, and a pull request it could not read
+fails the job exactly as one with no review does. `campaign-claim release` reads
+it again before deleting a merged claim's ref, the last moment anything here
+looks at that merge. **Posting the REVIEW does not turn the check green**: a
+comment fires no workflow, so the merge waits on `gh run rerun <id>`.
+`--report` asks the same sha from the writer's end — a `REPORT` pinning
+anything but it — and **nothing calls that mode**: a session runs it or does
+not.
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
 pull request head has no `check` at all**, so fast-forwarding `main` onto a
@@ -702,7 +712,11 @@ can say which claim it holds.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead
-of deleting it.
+of deleting it. `campaign-claim release` does the half it can see: after the ref
+goes, it deletes that branch's local copies in clones of the repository it was
+on, and keeps and reports one whose tip is not on `origin/main`. **It is narrow
+on purpose** — a general sweep would take a fresh claim, which points at `main`
+until it is worked, and let a second `take` succeed on the same sub-issue.
 
 # Concurrency
 

@@ -148,3 +148,19 @@ moment they consolidate, before anything else is launched, and a reviewer that
 runs long writes them out as it goes -- findings held only in a session's context
 do not survive the session limit, while findings on the pull request do, and let
 a fix start while the rest of the review is still running.
+
+## What the REVIEW comment has to carry
+
+`scripts/check-merge-review.py` reads it, and the merge waits on what it says,
+so two things about the comment are now load-bearing rather than tidy.
+
+- **The first line is `REVIEW <session name|owner>: <one line>`**, the shape
+  `check-campaign-claim.py` owns. A comment that opens any other way is not a
+  REVIEW to the gate, whatever it says below.
+- **The body names the sha it was read at**, seven hex characters or more, and
+  that sha is the pull request's head. A REVIEW at the sha before the last push
+  is the round it was; it is not the review the merge needs.
+
+Both cost a red required check rather than a wasted round, and posting the
+comment does not re-run the job -- `gh run rerun <id>` does.
+

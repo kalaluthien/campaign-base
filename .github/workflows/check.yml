@@ -66,19 +66,20 @@ jobs:
       # rather than silently skipped by a glob that pins one interpreter.
       # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
       # reads a tie through a suite in either, and a tie through a suite this
-      # loop never ran would be a name and nothing else. Two fixed roots and
-      # no glob: a skill with no scripts/ would leave a glob literal and
-      # `find` printing an error the `for` never reads. Nothing nested --
-      # a suite sits directly in its scripts/, as the guard reads it.
+      # loop never ran would be a name and nothing else. Two shell globs under
+      # nullglob, not `find`: a glob never spans a slash, so nothing nested is
+      # taken, a root with no suite contributes nothing rather than a literal,
+      # and there is no command substitution whose status the loop drops.
       - name: Every suite
         run: |
+          shopt -s nullglob
           n=0
-          for t in $(find scripts .claude/skills -name '*-test.*' \( -path 'scripts/*' -o -path '.claude/skills/*/scripts/*' \) -not -path '*scripts/*/*' | sort); do
+          for t in scripts/*-test.* .claude/skills/*/scripts/*-test.*; do
             echo "== $t"
             "$t" || exit 1
             n=$((n + 1))
           done
-          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/"; exit 1; }
+          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/ or .claude/skills/*/scripts/"; exit 1; }
           echo "$n suite(s) ran"
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1

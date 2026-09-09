@@ -204,6 +204,15 @@ def load_tree(staged):
         return None, f"{e.__class__.__name__}: {e}"
 
 
+def in_scripts_dir(path):
+    """R6's membership: whether `path` sits directly in a `scripts/`, in this
+    repository's own or a skill's, and not under an `assets/` template tree.
+    ONE READER of what a script's own directory is: check-sdlc-tie.py imports
+    it for what a code path and a suite are, rather than restating it."""
+    parts = path.split("/")
+    return len(parts) >= 2 and parts[-2] == "scripts" and "assets" not in parts[:-1]
+
+
 def claim_subcommands(root):
     """Every subcommand `campaign-claim.py` defines.
 
@@ -549,8 +558,7 @@ def main():
 
     # R6
     for p in paths:
-        parts = p.split("/")
-        if len(parts) < 2 or parts[-2] != "scripts" or "assets" in parts[:-1]:
+        if not in_scripts_dir(p):
             continue                # not a script's own directory, or a template
         if not p.endswith((".py", ".sh")):
             note("R6", p, "a script carries the extension of its language: "

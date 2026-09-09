@@ -22,9 +22,11 @@ THE THREE NAMES, as the tree carries them today
              `tied[k]` asks whether some suite named after k names some
              scenario that exists.
   code path  a script by check-tree-shape.py's R6 -- `.py` or `.sh`, sitting
-             directly in one of those scripts/ directories -- whose stem does
-             not end in `-test`. What R6 refuses or skips (no extension, a
-             nested path, scripts/fixtures/) is not a code path here either.
+             directly in a scripts/ directory -- whose stem does not end in
+             `-test`. R6's membership is IMPORTED (`in_scripts_dir`), so what
+             R6 skips (a nested path, scripts/fixtures/, an assets/ template)
+             is not a code path here either, and what it refuses (no
+             extension) is not one until it has one.
 
 The suite may sit in a different scripts/ directory from its code path --
 scripts/acquire-repo-test.py drives a skill's acquire-repo.sh -- so the pair is
@@ -107,19 +109,21 @@ import sys
 from pathlib import Path, PurePosixPath
 
 CODE_SUFFIXES = (".py", ".sh")
-SKILL_SCRIPTS = re.compile(r"^\.claude/skills/[^/]+/scripts/[^/]+$")
-TOP_SCRIPTS = re.compile(r"^scripts/[^/]+$")
 
 
-def load_decl():
-    """alloy-check.py's `DECL`: the one reader of what a command declaration
-    looks like. Imported by path because these are scripts, not a package."""
-    src = Path(__file__).resolve().parent / "alloy-check.py"
+def load_sibling(name):
+    """A sibling script as a module, by path, because these are scripts and
+    not a package. Two rules are read this way rather than restated:
+    alloy-check.py's `DECL`, what a command declaration looks like, and
+    check-tree-shape.py's `in_scripts_dir`, R6's reading of a script's own
+    directory."""
+    src = Path(__file__).resolve().parent / name
+    key = name.replace("-", "_").replace(".py", "")
     spec = importlib.util.spec_from_loader(
-        "alloycheck", importlib.machinery.SourceFileLoader("alloycheck", str(src)))
+        key, importlib.machinery.SourceFileLoader(key, str(src)))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.DECL
+    return mod
 
 
 def git(*args):
@@ -134,10 +138,6 @@ def git_root(*args):
     return git("-C", ROOT, *args)
 
 
-def in_scripts_dir(path):
-    return bool(TOP_SCRIPTS.match(path) or SKILL_SCRIPTS.match(path))
-
-
 def stem(path):
     return PurePosixPath(path).stem
 
@@ -145,7 +145,7 @@ def stem(path):
 class Tree:
     """One reading of one tree: HEAD, the index, or the working tree."""
 
-    def __init__(self, label, paths, reader, decl):
+    def __init__(self, label, paths, reader, decl, in_scripts_dir):
         self.label = label
         self.paths = paths
         self.read = reader
@@ -179,24 +179,24 @@ class Tree:
         return any(self.names_a_scenario(s) for s in self.suites_of(code_path))
 
 
-def head_tree(decl):
+def head_tree(*rules):
     try:
         paths = git_root("ls-tree", "-r", "--name-only", "HEAD").splitlines()
     except subprocess.CalledProcessError:
-        return Tree("HEAD (no commit yet)", [], lambda p: "", decl)
-    return Tree("HEAD", paths, lambda p: git_root("show", f"HEAD:{p}"), decl)
+        return Tree("HEAD (no commit yet)", [], lambda p: "", *rules)
+    return Tree("HEAD", paths, lambda p: git_root("show", f"HEAD:{p}"), *rules)
 
 
-def after_tree(staged, decl):
+def after_tree(staged, *rules):
     paths = git_root("ls-files").splitlines()
     if staged:
-        return Tree("the index", paths, lambda p: git_root("show", f":{p}"), decl)
+        return Tree("the index", paths, lambda p: git_root("show", f":{p}"), *rules)
     # The working tree is what is ON DISK: a tracked file deleted there and
     # not yet staged is gone from this reading, so a suite removed with `rm`
     # is T2 and not a FileNotFoundError the last resort permits.
     paths = [p for p in paths if (Path(ROOT) / p).is_file()]
     return Tree("the working tree", paths,
-                lambda p: (Path(ROOT) / p).read_text(errors="replace"), decl)
+                lambda p: (Path(ROOT) / p).read_text(errors="replace"), *rules)
 
 
 def renames(staged):
@@ -225,9 +225,10 @@ def judge(staged):
     # subdirectory, a bare `git ls-files` lists that directory alone, which
     # reads as a tree with no scripts/ and passes.
     ROOT = root = git("rev-parse", "--show-toplevel").strip()
-    decl = load_decl()
-    before = head_tree(decl)
-    after = after_tree(staged, decl)
+    rules = (load_sibling("alloy-check.py").DECL,
+             load_sibling("check-tree-shape.py").in_scripts_dir)
+    before = head_tree(*rules)
+    after = after_tree(staged, *rules)
     moved = renames(staged)
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
           f"{len(after.suites)} suite(s), {len(after.code)} code path(s) from "
@@ -245,7 +246,7 @@ def judge(staged):
                                       f"tied by a `{stem(k)}-test` suite whose "
                                       f"text names a `run` or `check` under spec/"))
             continue
-        if was in before.code and before.tied(was):
+        if before.tied(was):                     # `was` is in before.code here
             if not after.suites_of(k):
                 gone = ", ".join(before.suites_of(was))
                 findings.append(("T2", k, f"was tied through {gone}; after this "

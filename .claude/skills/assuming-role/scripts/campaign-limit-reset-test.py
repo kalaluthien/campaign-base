@@ -213,7 +213,7 @@ printf '%s\\n' "$*" >> "$FAKE_LOG"
 case "$1 $2" in
   "pane read") cat "$FAKE_SCREEN" ;;
   "agent list") [ -n "$FAKE_LIST_EXIT" ] && exit "$FAKE_LIST_EXIT"
-                printf '{"result":{"agents":[{"pane_id":"w40:p1","agent_status":"%s"}]}}\\n' "${FAKE_STATUS:-idle}" ;;
+                printf '{"result":{"agents":[{"pane_id":"%s","agent_status":"%s"}]}}\\n' "${FAKE_PANE:-w40:p1}" "${FAKE_STATUS:-idle}" ;;
   "agent prompt") echo '{"ok":true}' ;;
 esac
 exit ${FAKE_EXIT:-0}
@@ -232,7 +232,8 @@ def run(script, args, screen, env=None, herdr=True, until=None):
             (d / "bin" / "herdr").chmod(0o755)
         (d / "screen.txt").write_text(screen)
         log = d / "asked.txt"
-        e = {"PATH": f"{d / 'bin'}:/usr/bin:/bin", "FAKE_LOG": str(log),
+        # TMPDIR inside the case's directory, so a default log lands where it is cleaned
+        e = {"PATH": f"{d / 'bin'}:/usr/bin:/bin", "FAKE_LOG": str(log), "TMPDIR": str(d),
              "FAKE_SCREEN": str(d / "screen.txt"), "HOME": os.environ.get("HOME", "/")}
         e.update(env or {})
         out = subprocess.run([sys.executable, str(script), *args],
@@ -263,26 +264,45 @@ def case_cli_no_limit(script):
 
 
 def case_cli_working_pane_banner_is_stale(script):
-    out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--now", "2026-09-08T19:00+09:00"],
-                           WOKEN_SCREEN, env={"HERDR_ENV": "1", "FAKE_STATUS": "working"})
+    # a passed reset, so a broken overrule fires at once and leaks no sleeper
+    out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--now", "2026-09-08T21:30+09:00"],
+                           WOKEN_SCREEN, env={"HERDR_ENV": "1", "FAKE_STATUS": "working"},
+                           until=lambda a: any(x.startswith("agent prompt") for x in a))
     prompted = [a for a in asked if a.startswith("agent prompt")]
-    ok = (out.startswith("no limit\ncould not fire: no banner on w40:p1") and code == 1 and not prompted
+    ok = (out.startswith("no limit (a banner stands, and herdr lists w40:p1 working: stale)\n"
+                         "could not fire: no banner on w40:p1") and code == 1 and not prompted
           and "agent list" in asked)
     return ok, f"{out!r} exit {code} asked {asked}"
 
 
 def case_cli_idle_pane_banner_stands(script):
-    # the same woken screen: idle, the banner is read and the wake is scheduled
+    # the same woken screen: idle, the banner is read and the line says what was read
     out, code, _ = run(script, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], WOKEN_SCREEN,
                        env={"FAKE_STATUS": "idle"})
-    return out.startswith("session 2026-09-08T21:00+09:00") and code == 0, f"{out!r} exit {code}"
+    return out.startswith("session 2026-09-08T21:00+09:00 (herdr lists w40:p1 idle)") and code == 0, f"{out!r} exit {code}"
+
+
+def case_cli_listing_failed_banner_stands(script):
+    # the listing cannot be read: the banner stands, erring toward the wake, and says so
+    out, code, _ = run(script, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], SESSION,
+                       env={"FAKE_LIST_EXIT": "2"})
+    return out.startswith("session 2026-09-08T21:00+09:00 (liveness unread: ") and code == 0, f"{out!r} exit {code}"
 
 
 def case_cli_unlisted_pane_banner_stands(script):
-    # the listing cannot be read: the banner stands, erring toward the wake
     out, code, _ = run(script, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], SESSION,
-                       env={"FAKE_LIST_EXIT": "2"})
-    return out.startswith("session 2026-09-08T21:00+09:00") and code == 0, f"{out!r} exit {code}"
+                       env={"FAKE_PANE": "w40:p2"})
+    ok = out.startswith("session 2026-09-08T21:00+09:00 (liveness unread: w40:p1 is not in herdr agent list)") and code == 0
+    return ok, f"{out!r} exit {code}"
+
+
+def case_cli_own_pane_skips_liveness(script):
+    # the reader's own pane is working for as long as the reader runs: its banner stands, unasked
+    out, code, asked = run(script, ["w40:p1", "--now", "2026-09-08T19:00+09:00"], SESSION,
+                           env={"HERDR_PANE_ID": "w40:p1", "FAKE_STATUS": "working"})
+    ok = (out.startswith("session 2026-09-08T21:00+09:00 (own pane: ") and code == 0
+          and "agent list" not in asked)
+    return ok, f"{out!r} exit {code} asked {asked}"
 
 
 def case_cli_no_banner_asks_no_status(script):
@@ -338,7 +358,8 @@ def case_fire_passed_prompts_now(script):
         out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--text", "wake up",
                                         "--log", str(log), "--now", "2026-09-08T21:30+09:00"],
                                SESSION, env={"HERDR_ENV": "1"},
-                               until=lambda a: any(x.startswith("agent prompt") for x in a))
+                               # anchored on the artifact the assertion reads
+                               until=lambda a: log.exists() and log.read_text().endswith('{"ok":true}\n'))
         logged = log.read_text() if log.exists() else ""
     prompted = [a for a in asked if a.startswith("agent prompt")]
     ok = ("passed 2026-09-08T21:00+09:00" in out and "scheduled pid " in out
@@ -376,7 +397,7 @@ def case_fire_ahead_sleeps_until_lead(script):
     prompted = [a for a in asked if a.startswith("agent prompt")]
     ok = (" at 2026-09-08T21:01+09:00 into w40:p7: The usage window reset at 2026-09-08T21:00+09:00" in out
           and code == 0 and own_session and not prompted
-          and log_line is not None and Path(log_line[len("  log "):]).exists())
+          and log_line is not None and log_line.endswith(".log"))
     return ok, f"{out!r} exit {code} own_session {own_session} prompted {prompted}"
 
 
@@ -388,6 +409,8 @@ MUTATIONS = [
     ("the glyph that makes a line a banner", r'r"^[ \t]*⎿[ \t]+You.ve hit your (?P<rest>.*)$"',
      r'r"You.ve hit your (?P<rest>.*)$"', case_allow_prose_and_an_added_diff_line),
     ("a working pane's banner is stale", 'if status == "working":', "if False:", case_cli_working_pane_banner_is_stale),
+    ("the reader's own pane", 'if a.pane == os.environ.get("HERDR_PANE_ID"):', "if False:", case_cli_own_pane_skips_liveness),
+    ("what the listing said", 'note = f" (herdr lists {a.pane} {status})"', 'note = ""', case_cli_idle_pane_banner_stands),
     ("the weekly kind", "(?P<kind>session|weekly)", "(?P<kind>session|weekl)", case_weekly_undated_is_todays),
     ("pm adds twelve", '(12 if ampm == "pm" else 0)', "0", case_session_on_the_hour),
     ("twelve o'clock wraps", 'int(m.group("hour")) % 12', 'int(m.group("hour")) % 13', case_noon_and_midnight),

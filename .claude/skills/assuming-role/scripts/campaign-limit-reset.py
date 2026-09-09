@@ -13,7 +13,7 @@ word and never the status:
                     entered since: the wake is due now
     no limit        the pane was read and no banner stands on it -- none at all,
                     or one on a pane herdr lists as working, which a stopped
-                    pane cannot be
+                    pane is not; the line says which
     could not read: <why>   herdr is not installed, the pane is not one herdr
                     can read, --now is not a clock, or a banner is on screen
                     whose clause this parser does not know
@@ -36,20 +36,28 @@ behind it and reads `no limit` too, unremarked. A screen displaying a capture
 of the banner itself -- a `cat` of a fixture, or of this file -- is
 indistinguishable from the banner, and reads as one. The clause is
 `resets <time>` for a reset on the day it was painted and
-`resets <Mon> <d> at <time>` for a later day, which the weekly limit paints;
+`resets <Mon> <d> at <time>` for a later day, which the weekly limit
+paints;
 the minutes drop on the hour, so `9pm` and `1:30am` are both seen. The zone
 is the account's, in parentheses; one stop was recorded without it, so it is
 optional and the local zone stands in. The LAST banner on the screen is the
 reading, since a pane that stopped twice shows both.
 
 A BANNER STAYS ON SCREEN AFTER THE PANE IS WOKEN, so the screen alone cannot
-say whether it still stands. What can is herdr's liveness: a pane it lists as
-`working` has taken a turn, which a stopped pane cannot, so its banner is
-stale and reads `no limit`. Any other status, and a listing that cannot be
-read, leaves the banner standing -- the reading errs toward the wake, since a
-prompt into a free pane costs one turn and a wake never sent costs the whole
-window. The screen's own `❯` lines say nothing here: a queued command, a
-paste, and text typed but not sent all paint one.
+say whether it still stands. What can is herdr's liveness, read through
+campaign-name-session.py's `pane_status` so there is one reader of the
+listing: a pane listed `working` is mid-turn, which a pane stopped at the
+banner is not (AGENTS.md § Watching and retiring: a limit menu reports
+`idle`), so its banner is stale and reads `no limit`, and the line says so.
+Any other status, and a listing that cannot be read, leaves the banner
+standing and the line says what was read -- the reading errs toward the
+wake, since a prompt into a free pane costs one turn and a wake never sent
+costs the whole window. Two things the status cannot separate: the seconds
+of the aborting turn in which the banner is painted, and THE READER'S OWN
+PANE, which is working for as long as the reader runs -- so a pane equal to
+`HERDR_PANE_ID` skips the liveness reading and its banner stands. The
+screen's own `❯` lines say nothing here: a queued command, a paste, and
+text typed but not sent all paint one.
 
 RESOLVING A CLOCK TIME, because the banner carries no date and the reader
 does not know when it was painted. A session window is five hours
@@ -61,8 +69,9 @@ at 23:00 is tomorrow's, `9pm` read at 21:30 has passed, and `9pm` read at
 03:00 is yesterday's and passed. The rule errs LATE and never early, with
 one exception below: a banner painted a day ago whose clock time is ahead of
 now reads as today's, which wakes a pane that is already free an hour or so
-late, and a `passed` reading always names a reset that has really passed. An undated WEEKLY clause
-is today's, ahead or passed by the clock, and a weekly banner stands for
+late, and a `passed` reading always names a reset that has really passed.
+An undated WEEKLY clause is today's, ahead or passed by the clock, and a
+weekly banner stands for
 days: painted on an earlier day it reads a reset later than the real one --
 again late, never into a pane still stopped, since a weekly reset on an
 earlier day has passed. A dated clause takes the nearest of three years, so
@@ -80,8 +89,9 @@ clock the server rounds; for a `passed` reading it goes in now. It prints
 `scheduled pid <n> at <iso> into <wake-pane>: <text>` and the log path. The
 log takes this run's own marker line first, `== <now> at <iso> into
 <wake-pane>: <text>`, written and flushed before the sleeper is spawned so
-nothing of the sleeper's can land above it, and herdr's answer follows: a prompt into a
-working pane is queued by the harness, one into a pane at a dialog is
+nothing of the sleeper's can land above it, and herdr's answer follows: a
+prompt into a working pane is queued by the harness, one into a pane at a
+dialog is
 refused as agent_blocked, and this process is gone by then, so the caller
 reads the log under the marker. It drives a pane, so it is refused
 (`could not fire: ...`, exit 1) unless HERDR_ENV is 1 (AGENTS.md § Delegate
@@ -95,8 +105,9 @@ local. The sleeper's delay is measured from that clock too, so `--fire` with
 """
 import argparse
 import datetime as dt
-import json
+import importlib.util
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -144,22 +155,17 @@ def read_pane(pane):
 
 
 def pane_status(pane):
-    """(agent_status, None) from `herdr agent list`, or (None, why) when the
-    listing could not be read or does not hold the pane."""
+    """(agent_status, None) or (None, why), by campaign-name-session.py's
+    reader of `herdr agent list`, loaded by path so this file is not a second
+    reader of that listing."""
+    sibling = pathlib.Path(__file__).resolve().parent / "campaign-name-session.py"
     try:
-        out = subprocess.run(["herdr", "agent", "list"], capture_output=True, text=True)
-    except FileNotFoundError:
-        return None, "herdr is not installed"
-    if out.returncode != 0:
-        return None, f"herdr agent list exited {out.returncode}"
-    try:
-        agents = ((json.loads(out.stdout) or {}).get("result") or {}).get("agents") or []
-    except json.JSONDecodeError:
-        return None, "herdr agent list is not json"
-    for agent in agents:
-        if agent.get("pane_id") == pane:
-            return agent.get("agent_status") or "unknown", None
-    return None, f"{pane} is not in herdr agent list"
+        spec = importlib.util.spec_from_file_location("cns", sibling)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.pane_status(pane)
+    except Exception as e:  # noqa: BLE001 -- a reading not made, said so
+        return None, f"could not read the listing ({e.__class__.__name__})"
 
 
 def resolve(m, now):
@@ -275,18 +281,26 @@ def main(argv=None):
     except Unparsed as e:
         print(f"could not read: {e}")
         return 1
+    note = ""
     if got is not None:
-        status, _ = pane_status(a.pane)
-        if status == "working":
-            got = None
+        if a.pane == os.environ.get("HERDR_PANE_ID"):
+            note = " (own pane: its liveness is unread, this session is working)"
+        else:
+            status, why = pane_status(a.pane)
+            if status == "working":
+                got, note = None, f" (a banner stands, and herdr lists {a.pane} working: stale)"
+            elif status:
+                note = f" (herdr lists {a.pane} {status})"
+            else:
+                note = f" (liveness unread: {why})"
     if got is None:
-        print("no limit")
+        print("no limit" + note)
         if a.fire:
             print(f"could not fire: no banner on {a.pane}")
             return 1
         return 0
     kind, when = got
-    print(f"{kind} {iso(when)}")
+    print(f"{kind} {iso(when)}{note}")
     if not a.fire:
         return 0
     line, why = fire(kind, when, a.fire, a.text, a.log, now)

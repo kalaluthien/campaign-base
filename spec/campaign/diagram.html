@@ -315,7 +315,7 @@ scripts/alloy-check.py --commands spec</pre>
         <li><code>abstract sig Role</code>, 그리고 <code>one sig Worker extends Role</code>, <code>one sig Planner extends Role</code></li>
       </ul></dd>
       <dt>var</dt>
-      <dd><code>Agent</code> 의 부분집합 <span class="ct">11&times; 부분집합</span> — <code>Launched</code> <code>Live</code> <code>LocalOnly</code> <code>PushedToRemote</code> <code>Reported</code> <code>Asked</code> <code>Answered</code> <code>Waiting</code> <code>Confirmed</code> <code>StandDownTaken</code> <code>Retired</code>. 그리고 <code>PullRequest</code> 위의 두 비트, <code>Reviewed</code> 와 <code>ReviewRead</code>.</dd>
+      <dd><code>Agent</code> 의 부분집합 <span class="ct">11&times; 부분집합</span> — <code>Launched</code> <code>Live</code> <code>LocalOnly</code> <code>PushedToRemote</code> <code>Reported</code> <code>Asked</code> <code>Answered</code> <code>Waiting</code> <code>Confirmed</code> <code>StandDownTaken</code> <code>Retired</code>. 그리고 <code>Reviewed in PullRequest</code>.</dd>
       <dt>events</dt>
       <dd><code>Work</code> <code>Push</code> <code>Status</code> <code>Answer</code> <code>Report</code> <code>Blocked</code> <code>Decide</code> <code>Confirm</code> <code>ConfirmElsewhere</code> <code>Review</code> <code>StandDown</code> <code>Retire</code> <code>AgentDie</code></dd>
     </dl>
@@ -324,9 +324,7 @@ scripts/alloy-check.py --commands spec</pre>
 
 <p><code>Event</code> 원자는 다섯 엔티티를 합쳐 <span class="ct">35&times; 이벤트</span> 다. <code>Reviewed</code> 하나만 <code>Agent</code> 가 아니라 <code>PullRequest</code> 위에 앉는다. 리뷰는 풀 리퀘스트가 살아 있는 만큼 살고, 리뷰로 브리핑받은 새 에이전트가 그것을 물려받는다. <span class="src">spec/campaign/orchestration/system.als:88-91 @ 03643fb</span></p>
 
-<p><code>ReviewRead</code> 는 <code>Reviewed</code> 옆에 앉은 두 번째 비트다. 둘의 차이는 <strong>누가 말했느냐</strong>다. <code>Reviewed</code> 는 리뷰가 쓰였다는 사실이고, <code>ReviewRead</code> 는 기계가 그것을 <em>읽었다</em>는 사실이다. 병합 조건 1 은 규율로만 적혀 있어서 아무도 읽지 않았고, PR #262 는 <code>REVIEW</code> 로 시작하는 댓글 하나 없이 8ca2609 에서 병합됐다. <code>mergeReadsTheReview</code> 는 병합을 뒤쪽 비트에 건다. <span class="src">spec/campaign/orchestration/scenarios.als:425-427 @ e5c5ca1</span></p>
-
-<p>두 비트를 잇는 것은 사실 하나뿐이다. <code>AReadingIsOfAReview</code> — 읽기는 리뷰를 앞지를 수 없다. 그래서 이 비트에는 프레임 조건도 없고 <code>push</code> 안에 지우는 줄도 없다. <code>push</code> 가 <code>Reviewed</code> 를 줄이면 읽기도 같이 줄고, 밀어 올린 다음 상태에서의 병합은 읽을 것이 없어 막힌다. 리뷰가 리비전에 매인다는 말을 두 번 적지 않고 한 번 적는 자리다. 이 사실을 빼면 <code>M1d</code> 와 <code>M2b</code> 만 <code>expect</code> 를 어긴다. <span class="src">spec/campaign/orchestration/system.als:201-203 @ e5c5ca1</span></p>
+<p>병합 조건 1 — 병합하는 sha 에서 읽은 리뷰 — 은 <code>mergedOnCurrentReview</code> 가 이미 말하고 A6, A7, A16b 가 증언한다. 없던 것은 <strong>그것을 읽는 쪽</strong>이었고, PR #262 는 <code>REVIEW</code> 로 시작하는 댓글 하나 없이 8ca2609 에서 병합됐다. 읽는 쪽은 <code>scripts/check-merge-review.py</code> 이고, 이 어휘 밖에 산다: 여기에는 sha 도 체크 런도 없어서 걸 자리가 없다. <code>M2</code> 는 그 규율의 가장 좁은 경우 하나만 더한다 — 밀어 올린 바로 다음 상태의 병합. <span class="src">spec/campaign/orchestration/scenarios.als:1753-1789 @ PENDING</span></p>
 
 <p><code>CampaignDir</code> 은 캠페인과 기계를 원자 하나로 묶는다. 그 둘을 소유자 위의 두 열로 들고 가면 다섯 항 관계가 되고, Kodkod은 합쳐진 우주가 원자 일흔 개를 넘는 순간 그것을 표현하지 못한다. <span class="src">spec/campaign/directory/system.als:30-38 @ 03643fb</span></p>
 

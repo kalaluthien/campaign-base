@@ -1782,9 +1782,31 @@ def merged_head_verdict(returncode, out, repo, branch):
 
 
 CHECK_MERGE_REVIEW = HERE / "check-merge-review.py"
-# The three words that script answers with. Anything else is its own failure,
-# and this tells the two apart because it is about to DELETE.
-REVIEW_WORDS = ("reviewed", "unreviewed", "unknown")
+
+
+def _review_words():
+    """The three words the gate answers with, from the script that owns them.
+
+    IMPORTED AND NOT RETYPED. A copy here would drift the way `DEFAULT_REPO`
+    would if the base's name were retyped: fail-closed -- a renamed word makes
+    every `release` refuse with "which is none of" -- but still the same rule
+    with two readers. A module that will not load leaves the words unknown,
+    which `review_verdict` reports rather than guessing."""
+    try:
+        spec = importlib.util.spec_from_loader(
+            "check_merge_review", importlib.machinery.SourceFileLoader(
+                "check_merge_review", str(CHECK_MERGE_REVIEW)))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.GATE_WORDS, None
+    # BaseException, NOT Exception. Reading a constant out of another script
+    # means EXECUTING that script, and a `sys.exit` reached at its import level
+    # raises SystemExit -- which is not an Exception, so it would leave this
+    # function and end `release` with that script's status and no message at
+    # all. Found by the suite: its stand-in reader exited at import and the
+    # whole run stopped, silently, at 0.
+    except BaseException as e:                  # noqa: BLE001 -- reported
+        return None, f"{CHECK_MERGE_REVIEW.name}: {e.__class__.__name__}: {e}"
 
 
 def review_verdict(repo, pr):
@@ -1799,12 +1821,15 @@ def review_verdict(repo, pr):
     if pr is None:
         return None, (f"{repo} named no pull request number, so there is "
                       f"nothing to read a review against")
+    words, why = _review_words()
+    if why:
+        return None, f"could not read the gate's own vocabulary -- {why}"
     r = run(sys.executable, str(CHECK_MERGE_REVIEW), str(pr), "--repo", repo)
     text = ((r.stdout or "") + (r.stderr or "")).strip()
     word = text.split(" ", 1)[0] if text else ""
-    if word not in REVIEW_WORDS:
+    if word not in words:
         return None, (f"{CHECK_MERGE_REVIEW.name} answered {text[:160]!r}, "
-                      f"which is none of {', '.join(REVIEW_WORDS)}")
+                      f"which is none of {', '.join(words)}")
     return word, text.splitlines()[0]
 
 
@@ -1990,7 +2015,8 @@ def cmd_release(args):
                   f"read AT the sha that merged.\n"
                   f"  Post the REVIEW at that sha on the pull request, or -- "
                   f"having read what landed --\n"
-                  f"  delete the ref by hand and re-take:\n"
+                  f"  delete the ref by hand and leave a NOTE on the sub-issue "
+                  f"naming what you deleted:\n"
                   f"    gh api -X DELETE {delete_path(repo, branch)}",
                   file=sys.stderr)
             return 1

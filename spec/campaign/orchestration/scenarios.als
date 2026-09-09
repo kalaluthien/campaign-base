@@ -411,20 +411,6 @@ pred mergedOnCurrentReview {
                     a in Confirmed and coLocated[Who.session, a])))
 }
 
-/* THE SAME CONDITION WITH A READER UNDER IT (kalaluthien/campaign-base#274).
-   `mergedOnCurrentReview` is a discipline nothing on the machine asked, so
-   AGENTS.md could say of it "condition 1 is readable and read by nothing" and
-   be right. This says the merge is gated on a READING of the review rather than
-   on the merger's word for it, and `AReadingIsOfAReview` in system.als is what
-   makes the reading imply the condition -- so this is strictly the stronger
-   statement and M1d is that pinned.
-
-   Only the review half. The confirm half stays `mergedOnCurrentReview`'s: a
-   check that reads GitHub can see a comment on a pull request and cannot see
-   whether a session looked at an agent. */
-pred mergeReadsTheReview {
-  always (Now.event = MergePullRequest implies Now.issue.pullRequest in ReviewRead)
-}
 
 /* ---------------- witnesses ---------------- */
 
@@ -1764,63 +1750,33 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i)
 }
 
-/* M1. THE DEFECT, without the reader: a merge on a pull request nobody
-   reviewed and no check looked at. PR #262's shape, and `claimBeforeCommit` is
-   asserted throughout so a reader can see what this is NOT -- every claim rule
-   holding perfectly over a merge nothing judged. */
-pred M1_MergedWithNothingReadingTheReview {
-  claimBeforeCommit
-  some s: Session, i: Issue |
-    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
-                and no i.pullRequest & ReviewRead
-                and no i.pullRequest & Reviewed)
-}
+/* M2. THE TIGHTEST CASE OF THE CURRENCY HALF, which A13 and A16b between them
+   do not have: A13 stops at the bit being cleared, and A16b needs a whole
+   suffix with no `Review` in it. This is the single step -- a push, and a merge
+   in the very next state. It is the REPORT that pinned the pre-push sha, asking
+   for a review at a revision nobody is going to merge, and it is what
+   scripts/check-merge-review.py refuses on the machine.
 
-/* M1b. CONTROL: the reader excludes it. */
-pred M1b_TheReaderExcludesIt {
-  mergeReadsTheReview and M1_MergedWithNothingReadingTheReview
-}
-
-/* M1c. ...and still admits the merge whose review WAS read, or the gate would
-   be one that forbids landing at all. */
-pred M1c_TheReaderAdmitsTheReadMerge {
-  mergeReadsTheReview
-  some s: Session, i: Issue |
-    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
-                and i.pullRequest in ReviewRead)
-}
-
-/* M1d. THE READING IS WHAT MAKES CONDITION 1 HOLD, pinned. M1c is satisfied by
-   a `ReviewRead` the solver simply set, so on its own it says nothing about
-   where a reading may come from. Dropping `AReadingIsOfAReview` turns this SAT:
-   a merge gated on a reading of a review that was never written. */
-pred M1d_TheReadingIsWhatMakesConditionOneHold {
-  mergeReadsTheReview
-  some i: Issue |
-    eventually (Now.event = MergePullRequest and Now.issue = i
-                and no i.pullRequest & Reviewed)
-}
-
-/* M2. THE SAME GAP FROM THE SHA'S END: a push, and a merge in the very next
-   state. The REPORT that pinned the pre-push sha asked for a review at a
-   revision nobody was going to merge. SAT without the reader, which is what
-   makes M2b a measurement rather than a vacuity. */
+   The rule it exercises is `mergedOnCurrentReview` and nothing new. #274 asked
+   for a READER of merge condition 1, and a reader is not a fact this vocabulary
+   can hold: nothing here has a sha or a check run to hang one on. SAT without
+   the rule, which is what makes M2b a measurement and not a vacuity. */
 pred M2_MergeInTheStateAfterAPush {
   some a: Agent |
     eventually (Now.event = Push and Target.agent = a
                 and after (Now.event = MergePullRequest and Now.issue = a.task))
 }
 
-/* M2b. CONTROL: `push` clears `Reviewed`, `AReadingIsOfAReview` clears the
-   reading with it, so the gate has nothing to read in that state. */
-pred M2b_TheReaderExcludesTheStalePush {
-  mergeReadsTheReview and M2_MergeInTheStateAfterAPush
+/* M2b. CONTROL: `push` clears `Reviewed`, so in that state the rule has nothing
+   to read and the merge cannot happen. */
+pred M2b_TheRuleExcludesTheStalePush {
+  mergedOnCurrentReview and M2_MergeInTheStateAfterAPush
 }
 
-/* M2c. ...and a reading taken AFTER the push still lands, or M2b would be the
+/* M2c. ...and a review taken AFTER the push still lands, or M2b would be the
    rule that no pushed branch ever merges. */
-pred M2c_AFreshReadingAfterThePushLands {
-  mergeReadsTheReview
+pred M2c_AFreshReviewAfterThePushLands {
+  mergedOnCurrentReview
   some s: Session, a: Agent {
     a.peer = s
     eventually (Now.event = Push and Target.agent = a
@@ -2082,12 +2038,8 @@ run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PullRequest, 1 Campa
 -- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
 run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
-/* #274. The reader under merge condition 1. */
-run M1_MergedWithNothingReadingTheReview     for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run M1b_TheReaderExcludesIt                  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run M1c_TheReaderAdmitsTheReadMerge          for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run M1d_TheReadingIsWhatMakesConditionOneHold for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run M2_MergeInTheStateAfterAPush             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run M2b_TheReaderExcludesTheStalePush        for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run M2c_AFreshReadingAfterThePushLands       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+/* #274. The tightest case of the currency half. */
+run M2_MergeInTheStateAfterAPush              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M2b_TheRuleExcludesTheStalePush           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 

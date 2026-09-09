@@ -197,8 +197,24 @@ jobs:
       # It answers `unreviewed` (1) or `unknown` (2) on the same non-zero
       # status, and both fail the job on purpose: a pull request whose comments
       # went unread is not a pull request with a review on it.
+      #
+      # `--head` IS NOT OPTIONAL HERE. The status this step produces is recorded
+      # against `github.event.pull_request.head.sha`, and without the flag the
+      # reader would answer about whatever the branch tip is when the runner
+      # gets there. Those come apart: a run queued for sha A while the author
+      # pushes B and posts a REVIEW naming B would mark A green with nothing
+      # ever naming A. Naming the sha makes the run's verdict about the run's
+      # own commit.
+      #
+      # TURNING IT GREEN TAKES A RE-RUN. A comment fires no workflow, so posting
+      # the REVIEW does not re-trigger this: `gh run rerun <id>` does, and the
+      # whole job replays including the Alloy step. That is the cost of the gate
+      # and it is on the path of every merge here.
       - name: A REVIEW at the head sha, which is merge condition 1
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/check-merge-review.py ${{ github.event.pull_request.number }} --repo ${{ github.repository }}
+        run: |
+          scripts/check-merge-review.py ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --head ${{ github.event.pull_request.head.sha }}

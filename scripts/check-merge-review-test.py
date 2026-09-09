@@ -38,19 +38,40 @@ def check(name, ok, detail=""):
 
 
 def comment(body):
-    return {"author": {"login": "kalaluthien"}, "body": body}
+    """The REST shape, `user.login` -- not `gh pr view`'s `author.login`. The
+    reader changed channels and a fixture still speaking the old one would test
+    a mapping nothing performs."""
+    return {"user": {"login": "kalaluthien"}, "body": body}
 
 
-def fake_gh(bindir, payload=None, status=0, stdout=None):
-    """A `gh` on PATH that answers `pr view` with this payload and nothing else.
+def fake_gh(bindir, head=HEAD, comments=(), reviews=(), status=0, stdout=None,
+            view_stdout=None):
+    """A `gh` on PATH answering the three calls this reader makes.
 
-    `status` and `stdout` are the two ways the answer goes wrong -- a call that
-    failed, and one that answered with something that is not JSON."""
-    text = stdout if stdout is not None else json.dumps(payload or {})
+    THREE, not one, since the reader stopped taking its comments from
+    `gh pr view`: the head comes from `pr view --json headRefOid`, and the two
+    comment channels from `gh api --paginate` over their REST endpoints. The
+    fake dispatches on the argument list exactly as the real one would, so a
+    case cannot pass by answering a call the script does not make.
+
+    `status` and `stdout` are the two ways an answer goes wrong -- a call that
+    failed, and one that is not JSON -- and they apply to the `gh api` calls;
+    `view_stdout` is the same for the head call."""
+    body = json.dumps({"headRefOid": head} if head else {})
+    if view_stdout is not None:
+        body = view_stdout
+    payloads = {"issues": json.dumps(list(comments)),
+                "pulls": json.dumps(list(reviews))}
+    if stdout is not None:
+        payloads = {"issues": stdout, "pulls": stdout}
     gh = Path(bindir) / "gh"
-    gh.write_text("#!/bin/sh\n"
-                  f"cat <<'JSON'\n{text}\nJSON\n"
-                  f"exit {status}\n")
+    gh.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f"  *'pr view'*) cat <<'JSON'\n{body}\nJSON\n    exit 0 ;;\n"
+        f"  *issues*) cat <<'JSON'\n{payloads['issues']}\nJSON\n    exit {status} ;;\n"
+        f"  *pulls*) cat <<'JSON'\n{payloads['pulls']}\nJSON\n    exit {status} ;;\n"
+        "esac\n")
     gh.chmod(0o755)
     return gh
 
@@ -74,10 +95,8 @@ def main() -> int:
 
         # PR #262's shape: comments on the pull request, and not one of them
         # opens REVIEW. This is the branch that had no reader at all.
-        fake_gh(bindir, {"headRefOid": HEAD,
-                         "comments": [comment(f"REPORT upkeep-worker-3: at {HEAD[:7]}"),
-                                      comment("NOTE upkeep-worker-3: a note")],
-                         "reviews": []})
+        fake_gh(bindir, comments=[comment(f"REPORT upkeep-worker-3: at {HEAD[:7]}"),
+                                  comment("NOTE upkeep-worker-3: a note")])
         word, code, text = call(bindir, "274", "--repo", "o/r")
         check("a pull request whose comments hold no REVIEW is unreviewed",
               (word, code) == ("unreviewed", 1), f"{word} {code}")
@@ -88,10 +107,8 @@ def main() -> int:
 
         # A REVIEW that names an older sha is the same refusal from the sha's
         # end: the review it points at is at a revision nobody will merge.
-        fake_gh(bindir, {"headRefOid": HEAD,
-                         "comments": [comment(f"REVIEW upkeep-worker-3: full round at "
-                                              f"{OTHER[:7]}, no findings")],
-                         "reviews": []})
+        fake_gh(bindir, comments=[comment(f"REVIEW upkeep-worker-3: full round at "
+                                          f"{OTHER[:7]}, no findings")])
         word, code, text = call(bindir, "274", "--repo", "o/r")
         check("a REVIEW naming a sha that is not the head is unreviewed",
               (word, code) == ("unreviewed", 1), f"{word} {code}")
@@ -99,10 +116,8 @@ def main() -> int:
               OTHER[:7] in text, text)
 
         # CONTROL: the gate is not one that refuses every pull request.
-        fake_gh(bindir, {"headRefOid": HEAD,
-                         "comments": [comment(f"REVIEW upkeep-worker-3: full round at "
-                                              f"{HEAD[:7]}, no findings")],
-                         "reviews": []})
+        fake_gh(bindir, comments=[comment(f"REVIEW upkeep-worker-3: full round at "
+                                          f"{HEAD[:7]}, no findings")])
         word, code, _ = call(bindir, "274", "--repo", "o/r")
         check("a REVIEW naming the head is reviewed", (word, code) == ("reviewed", 0),
               f"{word} {code}")
@@ -110,8 +125,7 @@ def main() -> int:
         # ...and a REVIEW posted as a pull-request review, not as a comment,
         # counts too. `gh pr review --comment -b` is a spelling AGENTS.md
         # admits, and reading only `comments` refused it.
-        fake_gh(bindir, {"headRefOid": HEAD, "comments": [],
-                         "reviews": [comment(f"REVIEW upkeep-worker-3: at {HEAD[:7]}")]})
+        fake_gh(bindir, reviews=[comment(f"REVIEW upkeep-worker-3: at {HEAD[:7]}")])
         word, code, _ = call(bindir, "274", "--repo", "o/r")
         check("a REVIEW posted as a pull-request review counts",
               (word, code) == ("reviewed", 0), f"{word} {code}")
@@ -119,26 +133,38 @@ def main() -> int:
         # A sha too short to be one is not one: six hex characters is an issue
         # number or a colour, and matching it would pass a REVIEW that pins
         # nothing.
-        fake_gh(bindir, {"headRefOid": HEAD,
-                         "comments": [comment(f"REVIEW upkeep-worker-3: at {HEAD[:6]}")],
-                         "reviews": []})
+        fake_gh(bindir, comments=[comment(f"REVIEW upkeep-worker-3: at {HEAD[:6]}")])
         word, code, _ = call(bindir, "274", "--repo", "o/r")
         check("six hex characters do not name a sha",
               (word, code) == ("unreviewed", 1), f"{word} {code}")
 
         # ---- could not look, which is never a pass -------------------------
 
-        fake_gh(bindir, {"headRefOid": HEAD}, status=1)
+        fake_gh(bindir, status=1)
         word, code, _ = call(bindir, "274", "--repo", "o/r")
         check("a gh call that failed is unknown, not a pass",
               (word, code) == ("unknown", 2), f"{word} {code}")
 
+        # THE LINE, NOT ONLY THE WORD -- the same lesson as the unreadable
+        # body below, and this case did not carry it. A `json` handler replaced
+        # by a silent `data = {}` lands on the no-head branch, which answers
+        # `unknown` too, so the word alone left that branch deletable.
         fake_gh(bindir, stdout="not json at all")
-        word, code, _ = call(bindir, "274", "--repo", "o/r")
+        word, code, text = call(bindir, "274", "--repo", "o/r")
         check("an answer that is not JSON is unknown",
-              (word, code) == ("unknown", 2), f"{word} {code}")
+              (word, code) == ("unknown", 2) and "not JSON" in text,
+              f"{word} {code} {text}")
 
-        fake_gh(bindir, {"comments": [], "reviews": []})
+        # A well-formed answer of the wrong SHAPE is not an empty list of
+        # comments. Reading it as one would report "looked and found nothing"
+        # for a channel that was never read.
+        fake_gh(bindir, stdout='{"message": "Not Found"}')
+        word, code, text = call(bindir, "274", "--repo", "o/r")
+        check("a comment channel that answered an object is unknown",
+              (word, code) == ("unknown", 2) and "not a list" in text,
+              f"{word} {code} {text}")
+
+        fake_gh(bindir, head=None)
         word, code, text = call(bindir, "274", "--repo", "o/r")
         check("a pull request with no headRefOid is unknown",
               (word, code) == ("unknown", 2), f"{word} {code}")
@@ -147,7 +173,7 @@ def main() -> int:
 
         # ---- the REPORT's end ----------------------------------------------
 
-        fake_gh(bindir, {"headRefOid": HEAD, "comments": [], "reviews": []})
+        fake_gh(bindir)
 
         word, code, text = call(bindir, "274", "--repo", "o/r", "--report", "-",
                                 stdin=f"REPORT upkeep-worker-3: #274 at {OTHER[:7]}\n")
@@ -197,6 +223,40 @@ def main() -> int:
         word, code, _ = call(bindir, "274", "--repo", "o/r", "--report", str(body))
         check("--report reads a file as well as stdin",
               (word, code) == ("pinned", 0), f"{word} {code}")
+
+        # ---- the sha the run is recorded against ----------------------------
+
+        # `--head` IS THE SUBJECT, and the live tip is a different question.
+        # A REVIEW naming the live tip must not turn a run for an older sha
+        # green: that is the whole reason the flag exists.
+        fake_gh(bindir, head=HEAD,
+                comments=[comment(f"REVIEW upkeep-worker-3: at {HEAD[:7]}")])
+        word, code, text = call(bindir, "274", "--repo", "o/r", "--head", OTHER)
+        check("a REVIEW at the live tip does not review the sha given",
+              (word, code) == ("unreviewed", 1), f"{word} {code}")
+        check("...and the trail says the branch has moved off it",
+              "has since moved to" in text, text)
+
+        fake_gh(bindir, head=HEAD,
+                comments=[comment(f"REVIEW upkeep-worker-3: at {OTHER[:7]}")])
+        word, code, text = call(bindir, "274", "--repo", "o/r", "--head", OTHER)
+        check("...and a REVIEW at the sha given is a review of it",
+              (word, code) == ("reviewed", 0), f"{word} {code}")
+
+        fake_gh(bindir, head=HEAD,
+                comments=[comment(f"REVIEW upkeep-worker-3: at {HEAD[:7]}")])
+        word, code, text = call(bindir, "274", "--repo", "o/r", "--head", HEAD)
+        check("a --head that IS the tip says so rather than warning",
+              (word, code) == ("reviewed", 0) and "still the branch tip" in text,
+              f"{word} {code}")
+
+        # ---- every exit lands on one of the words ---------------------------
+
+        # argparse prints `usage:` and exits 2 -- `unknown`'s status with a
+        # different first word, and the first word is what every caller reads.
+        word, code, text = call(bindir, "not-a-number")
+        check("a call this reader does not take answers unknown, word first",
+              (word, code) == ("unknown", 2), f"{word} {code} {text}")
 
     for name in FAILED:
         print(f"FAIL  {name}")

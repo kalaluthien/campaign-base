@@ -605,13 +605,15 @@ so containing a `main` that moved means merging it in, that merge is a push, **a
 push retires the review**, and the next merge needs a review at the combined sha.
 **Conditions 1 and 3 are both enforced by GitHub**, through the same `check` job.
 Condition 1's reader is `scripts/check-merge-review.py`: it answers `reviewed`,
-`unreviewed` or `unknown` over the pull request's head sha and the comments
-opening `REVIEW` that name it, and a pull request it could not read fails the job
-exactly as one with no review does. `--report` asks the same head from the other
-end, so a `REPORT` pinning anything but the head is refused rather than left to
-ask for a review nobody will merge at. `campaign-claim release` reads it once
-more before deleting a merged claim's ref, which is the last moment anything on
-this machine looks at that merge.
+`unreviewed` or `unknown` over the sha the run is recorded against and the
+comments opening `REVIEW` that name it, and a pull request it could not read
+fails the job exactly as one with no review does. `campaign-claim release` reads
+it again before deleting a merged claim's ref, the last moment anything here
+looks at that merge. **Posting the REVIEW does not turn the check green**: a
+comment fires no workflow, so the merge waits on `gh run rerun <id>`.
+`--report` asks the same sha from the writer's end — a `REPORT` pinning
+anything but it — and **nothing calls that mode**: a session runs it or does
+not.
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
 pull request head has no `check` at all**, so fast-forwarding `main` onto a

@@ -440,8 +440,16 @@ def pure_cases(m):
                     ("unreviewed check-merge-review: no REVIEW names it", 1,
                      "unreviewed"),
                     ("unknown check-merge-review: gh exited 1", 2, "unknown")):
-                fake.write_text(f"import sys\nprint({said!r})\n"
-                                f"sys.exit({status})\n")
+                # THE STAND-IN CARRIES THE REAL INTERFACE: the words, read by
+                # importing it, and the print guarded so the import does not
+                # run it. A fake that exited at import took the suite down with
+                # it, which is the hole the caller now catches.
+                fake.write_text(
+                    f"GATE_WORDS = {('reviewed', 'unreviewed', 'unknown')!r}\n"
+                    f"if __name__ == '__main__':\n"
+                    f"    import sys\n"
+                    f"    print({said!r})\n"
+                    f"    sys.exit({status})\n")
                 m.CHECK_MERGE_REVIEW = fake
                 word, line = m.review_verdict("o/r", 9)
                 check(f"the review gate reads the word {want!r}, not the "
@@ -449,11 +457,34 @@ def pure_cases(m):
             # A reader that crashed prints a traceback and exits 1 -- the same
             # status as a refusal. The word is what tells them apart, and
             # neither of the other two branches can see this.
-            fake.write_text("raise SystemExit('boom')\n")
+            # THE WORDS COME FROM THE GATE, and this is what says so. The
+            # stand-in declares a vocabulary of its own; a caller carrying its
+            # own copy would accept `reviewed` here, and this refuses it.
+            fake.write_text("GATE_WORDS = ('yes', 'no', 'dunno')\n"
+                            "if __name__ == '__main__':\n"
+                            "    print('reviewed x: a REVIEW names the head')\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("the three words are the gate's own, not a copy here",
+                  word is None and "none of yes, no, dunno" in why, str(why))
+
+            fake.write_text("GATE_WORDS = ('reviewed', 'unreviewed', 'unknown')\n"
+                            "if __name__ == '__main__':\n"
+                            "    raise SystemExit('boom')\n")
             m.CHECK_MERGE_REVIEW = fake
             word, why = m.review_verdict("o/r", 9)
             check("a reader that answered none of the three words is not a "
                   "verdict", word is None and "none of" in why, str(why))
+
+            # ...and one that exits while being IMPORTED does not end the
+            # caller. SystemExit is not an Exception, so this branch is
+            # invisible to a handler that catches only Exception -- and the
+            # caller here is `release`, mid-way through deciding a delete.
+            fake.write_text("import sys\nsys.exit(3)\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("a gate that exits while being imported is reported, not "
+                  "obeyed", word is None and "SystemExit" in why, str(why))
     finally:
         m.CHECK_MERGE_REVIEW = was
 

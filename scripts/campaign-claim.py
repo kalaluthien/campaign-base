@@ -1683,6 +1683,94 @@ def delete_path(repo, branch):
     return f"repos/{repo}/git/refs/heads/{branch}"
 
 
+def local_copies(roots, repo, branch):
+    """[(root, tip)] holding a local `branch`, and [note] for what was not asked.
+
+    SCOPED TO THE REPOSITORY THE REF WAS ON, by `remote_of`. The same branch
+    name exists in every member repository this campaign touches -- that is the
+    whole reason the remote delete is aimed by `found[branch]` -- so a sweep
+    that deleted by name alone would take a clone of some other repository's
+    work. A root whose remote cannot be read is a note, never a target."""
+    out, unread = [], []
+    for root in roots:
+        where = remote_of(root)
+        if where is None:
+            unread.append(f"{root}: its origin could not be read, so whether "
+                          f"it is a clone of {repo} is unknown")
+            continue
+        if REPOS.key(where) != REPOS.key(repo):
+            continue
+        r = run("git", "-C", root, "rev-parse", "--verify", "--quiet",
+                f"refs/heads/{branch}")
+        if r.returncode == 0 and r.stdout.strip():
+            out.append((root, r.stdout.strip()))
+    return out, unread
+
+
+def contained(root, tip):
+    """(bool or None, why) -- is `tip` an ancestor of this root's `origin/main`?
+
+    None IS COULD-NOT-ASK and is not False: a root with no `origin/main` -- a
+    fetch that never ran, a clone of something else -- would otherwise read as
+    a branch holding unmerged work and be kept for the wrong reason, or, with
+    the test the other way round, deleted for one."""
+    r = run("git", "-C", root, "rev-parse", "--verify", "--quiet",
+            "refs/remotes/origin/main")
+    if r.returncode != 0 or not r.stdout.strip():
+        return None, f"{root} has no origin/main to compare against"
+    r = run("git", "-C", root, "merge-base", "--is-ancestor", tip,
+            "refs/remotes/origin/main")
+    if r.returncode == 0:
+        return True, None
+    if r.returncode == 1:
+        return False, None
+    return None, (f"{root}: merge-base --is-ancestor exited {r.returncode}: "
+                  f"{' '.join(r.stderr.split())[:120]}")
+
+
+def sweep_local(roots, repo, branch):
+    """Delete the local branches the released ref left behind. [line] to print.
+
+    ROW 6 OF #275'S LEDGER, mechanised where the ref it belongs to is retired:
+    AGENTS.md says to delete any local branch whose commits already sit on
+    `main`, and nothing did, so 19 of them had accumulated by 0096b56. This is
+    the narrow half -- the branch this release just deleted remotely, in the
+    repository it was on -- and it is narrow ON PURPOSE. A general sweep would
+    take a FRESH CLAIM: a ref cut and not yet worked points at `main`, so
+    `--merged origin/main` lists it beside the finished work, and deleting one
+    lets a second `take` succeed on the same sub-issue.
+
+    NOTHING IS DELETED THAT HOLDS COMMITS. Containment is asked per root, and a
+    branch that is not contained -- a squash merge leaves one -- is reported and
+    kept, which is AGENTS.md's "report a branch holding the only copy of its
+    work instead of deleting it". So is a root that could not answer."""
+    lines = []
+    copies, unread = local_copies(roots, repo, branch)
+    lines += [f"not swept for a local {branch}: {note}" for note in unread]
+    if not copies:
+        lines.append(f"no local {branch} in any clone of {repo} swept")
+        return lines
+    for root, tip in copies:
+        ok, why = contained(root, tip)
+        if ok is None:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): {why}")
+            continue
+        if not ok:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): it holds commits "
+                         f"that are not on origin/main -- read them before "
+                         f"deleting it by hand")
+            continue
+        r = run("git", "-C", root, "branch", "-D", branch)
+        if r.returncode != 0:
+            lines.append(f"kept {root}'s {branch} ({tip[:8]}): git branch -D "
+                         f"exited {r.returncode}: "
+                         f"{' '.join(r.stderr.split())[:120]}")
+        else:
+            lines.append(f"deleted {root}'s local {branch} ({tip[:8]}, on "
+                         f"origin/main)")
+    return lines
+
+
 def which_branch(branches, campaign_issue, issue, branch_arg, slug=None):
     """(branch, refusal) -- which ref this release is about. Pure.
 
@@ -2069,6 +2157,11 @@ def cmd_release(args):
               file=sys.stderr)
         return 1
     print(f"deleted {branch}")
+    # ...and the local copies the ref left behind, which nothing deleted before
+    # #274. Never a reason to fail the release: the ref is gone, which is what
+    # `release` is for, and every branch here prints.
+    for line in sweep_local(roots, repo, branch):
+        print(line)
     # LAST, and after the delete rather than before it: the release is what
     # this command is for, and compaction is a cost rule that must not be able
     # to stop one. Last also because the prompt fires when the turn ends, so

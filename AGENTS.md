@@ -701,7 +701,11 @@ can say which claim it holds.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead
-of deleting it.
+of deleting it. `campaign-claim release` does the half it can see: after the ref
+goes, it deletes that branch's local copies in clones of the repository it was
+on, and keeps and reports one whose tip is not on `origin/main`. **It is narrow
+on purpose** — a general sweep would take a fresh claim, which points at `main`
+until it is worked, and let a second `take` succeed on the same sub-issue.
 
 # Concurrency
 

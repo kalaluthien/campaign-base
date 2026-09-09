@@ -1280,6 +1280,101 @@ exit 1
               "directly",
               "--branch" in out, out[:300])
 
+def local_sweep_cases(m):
+    """Row 6: the local branch the released ref leaves behind.
+
+    REAL GIT, not a stub. What is being judged is containment and which
+    repository a clone is of, and both are git's answers; a fake returning them
+    would test the fixture."""
+    # THE MACHINE'S OWN GIT CONFIG IS EMPTIED, or a global `init.defaultBranch`,
+    # a global gitignore or a commit template decides what these fixtures are
+    # and the case measures this Mac rather than the reading.
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_CONFIG_SYSTEM=os.devnull)
+
+    def git(root, *a, check=True):
+        r = subprocess.run(["git", "-C", str(root), *a], capture_output=True,
+                           text=True, env=env)
+        if check and r.returncode != 0:
+            raise AssertionError(f"git {' '.join(a)}: {r.stderr}")
+        return r
+
+    def a_repo(root, remote):
+        root.mkdir(parents=True)
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "t@example.invalid")
+        git(root, "config", "user.name", "t")
+        git(root, "remote", "add", "origin", f"git@github.com:{remote}.git")
+        (root / "f").write_text("one")
+        git(root, "add", "f")
+        git(root, "commit", "-qm", "one")
+        # `origin/main` by hand: no network, and the reading is of the ref.
+        git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+        return root
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        mine = a_repo(d / "mine", "o/r")
+
+        # Contained: the branch points at origin/main, which is every claim cut
+        # and never worked, and every branch landed by a merge commit.
+        git(mine, "branch", "b/1-topic")
+        lines = m.sweep_local([str(mine)], "o/r", "b/1-topic")
+        check("a local branch whose tip is on origin/main is deleted",
+              any("deleted" in x for x in lines), str(lines))
+        check("...and it is really gone",
+              git(mine, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/1-topic", check=False).returncode != 0)
+
+        # Not contained: what a squash merge leaves. Kept, and said so.
+        git(mine, "checkout", "-q", "-b", "b/2-topic")
+        (mine / "g").write_text("two")
+        git(mine, "add", "g")
+        git(mine, "commit", "-qm", "two")
+        git(mine, "checkout", "-q", "main")
+        lines = m.sweep_local([str(mine)], "o/r", "b/2-topic")
+        check("a local branch holding commits off origin/main is kept",
+              any("kept" in x and "not on origin/main" in x for x in lines),
+              str(lines))
+        check("...and it is still there",
+              git(mine, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/2-topic", check=False).returncode == 0)
+
+        # THE SAME NAME IN ANOTHER REPOSITORY IS NOT THIS ONE'S. Deleting by
+        # name alone would take a delegate's clone of a different repository.
+        other = a_repo(d / "other", "o/other")
+        git(other, "branch", "b/3-topic")
+        lines = m.sweep_local([str(mine), str(other)], "o/r", "b/3-topic")
+        check("a branch of that name in another repository is not touched",
+              git(other, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/3-topic", check=False).returncode == 0,
+              str(lines))
+        check("...and the sweep says it found none here",
+              any("no local" in x for x in lines), str(lines))
+
+        # No origin/main to compare against is could-not-ask, and could-not-ask
+        # keeps. Reading it as "not contained" would be right by accident here
+        # and wrong the moment the test is inverted.
+        bare = a_repo(d / "bare", "o/r")
+        git(bare, "branch", "b/4-topic")
+        git(bare, "update-ref", "-d", "refs/remotes/origin/main")
+        lines = m.sweep_local([str(bare)], "o/r", "b/4-topic")
+        check("a root with no origin/main keeps the branch and says why",
+              any("kept" in x and "no origin/main" in x for x in lines),
+              str(lines))
+        check("...and it is still there",
+              git(bare, "rev-parse", "--verify", "--quiet",
+                  "refs/heads/b/4-topic", check=False).returncode == 0)
+
+        # A root whose origin cannot be read is a note, never a target.
+        noremote = d / "noremote"
+        noremote.mkdir()
+        git(noremote, "init", "-q", "-b", "main")
+        lines = m.sweep_local([str(noremote)], "o/r", "b/5-topic")
+        check("a root whose origin will not read is named, not swept",
+              any("origin could not be read" in x for x in lines), str(lines))
+
+
 def scope_cases(m):
     """#187 Q4: which campaign directory a reading is about."""
     # The walk, as a calculation. Driven by a path rather than by where this
@@ -2060,7 +2155,7 @@ def main():
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
                compact_cases,
-               scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
+               local_sweep_cases, scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):
         fn(m)

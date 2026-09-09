@@ -27,8 +27,9 @@ pred OrderedByFeeds_Bites {
 /* ---------------- the tie ---------------- */
 
 /* Under `tieDiscipline`, the tree is tied at every state and not only at
-   each commit, since nothing but a commit moves Written or names. Without
-   it: a code path nothing names, or a rename that left a name dangling. */
+   each commit, since nothing but a commit moves Written, `witnesses` or
+   `drives`. Without it: a code path no test drives, or a rename that left a
+   declaration dangling. */
 assert TreeStaysTied {
   tieDiscipline implies always treeTied
 }

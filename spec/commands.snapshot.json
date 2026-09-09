@@ -96,6 +96,8 @@
     ["campaign/orchestration/scenarios.als", "run", "A7_ReviewRuleBlocksUnreviewed"],
     ["campaign/orchestration/scenarios.als", "run", "A8_ReviewRuleAdmitsTheLanding"],
     ["campaign/orchestration/scenarios.als", "run", "BlockedAgentDoesNotProceed"],
+    ["campaign/orchestration/scenarios.als", "run", "L1_PollIntoTheBannerGetsNoAnswer"],
+    ["campaign/orchestration/scenarios.als", "run", "L1b_PromptAfterTheResetIsAnswered"],
     ["campaign/orchestration/scenarios.als", "run", "M2_MergeInTheStateAfterAPush"],
     ["campaign/orchestration/scenarios.als", "run", "M2b_TheRuleExcludesTheStalePush"],
     ["campaign/orchestration/scenarios.als", "run", "M2c_AFreshReviewAfterThePushLands"],

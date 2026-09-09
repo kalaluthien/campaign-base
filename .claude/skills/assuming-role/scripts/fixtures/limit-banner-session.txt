@@ -1,0 +1,8 @@
+Re-run at this sha: `check-tree-shape-test` 94/94; `check-tree-shape`, `check-rule-readers` and `check-cross-references` over the real tree all exit 0 with 0 findings.
+
+  ⎿  You've hit your session limit · resets 9pm (Asia/Seoul)
+     /upgrade to increase your usage limit.
+✻ Cogitated for 0s · done 6:47 PM
+                                                                                                                                                                                                              new task? /cle
+❯ 
+  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · PR #254                                                                                                                                                               

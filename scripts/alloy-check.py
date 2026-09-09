@@ -264,6 +264,7 @@ VARYING = [
     ("Confirmed", "confirmed"),
     ("StandDownTaken", "stoodDown"),
     ("Retired", "retired"),
+    ("Stopped", "stopped"),
 ]
 STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",

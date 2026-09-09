@@ -36,6 +36,13 @@ narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
 shell string is an unbounded language, and a shell write on campaign work
 lands at the commit, where the other half reads it.
 
+TWO SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
+than past that ceiling: a KILL, and a HOOK BYPASS. Neither is a write with a
+landing, so neither reaches the commit gate, and each has an incident behind it
+(kalaluthien/campaign-base#278). They are read from the segment's command word
+and its own flags, so a command matching neither name is allowed unread exactly
+as it was.
+
 EVERY VERDICT IS LOGGED, one JSON line to `<campaign>/runtime/guard.log` for
 the campaign the call was classified into, or `<base>/runtime/guard.log`
 outside one; a call under no base is not campaign work and is not logged.
@@ -211,6 +218,24 @@ PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}
+# ------------------------------------------ shell rules that name no target
+#
+# A KILL NAMES A PID, AND A PID NAMES NOTHING HERE. `AGENTS.md` § Watching and
+# retiring says a listed peer is asked and never killed, and the sentence is
+# about a SESSION; the incident under it is a process. A review finder killed
+# three alloy runs belonging to two other sessions (PR #255's REPORT, 18:23Z),
+# and what it cost was that "any measurement ... needs re-running" -- none of
+# them named. No payload this guard is handed maps a pid, or a `pkill` pattern,
+# to the session that owns it, so there is no narrower form to decide and the
+# refusal is the whole verb. It says so, and it names the two things that DO
+# stop a peer: the four messages, and the person.
+KILLS = {"kill", "pkill", "killall"}
+# herdr's own stop, read as the two words after the command rather than as a
+# string, so `herdr --json agent kill w40:p2D` reads the same as the plain
+# spelling. A kill through herdr names a PANE and not a pid, which is a better
+# handle -- and still not a peer's consent, which is what the rule is about.
+HERDR_KILL = ("agent", "kill")
+
 # A heredoc opener and its delimiter: `<<EOF`, `<<'MSG'`, `<<-"X"`. The body
 # that follows is data (#193) and is removed before the command is split.
 HEREDOC_OPEN = re.compile(
@@ -1114,6 +1139,35 @@ def gh_write(tokens):
     return False, "gh " + " ".join(pair) + ", not a write"
 
 
+def shell_findings(segs):
+    """The rules a split shell command breaks that name no target.
+
+    One line per finding, and a finding is a sentence a reader can act on
+    rather than a code. The segments are what `segments` already produced --
+    a shell's `-c` string and an `eval` operand among them -- so a rule broken
+    inside `bash -c "..."` is read exactly like one broken outside it, and a
+    heredoc body is not read at all, being data.
+    """
+    out = []
+    for seg in segs:
+        word, rest = head(seg)
+        if word in KILLS:
+            out.append(
+                f"`{word}` stops a process, and nothing in this payload maps a "
+                f"pid or a pattern to the session that owns it -- which is how "
+                f"a review finder killed three alloy runs of two other "
+                f"sessions. A peer is asked: `STATUS`, then `STAND DOWN`. A "
+                f"process that is nobody's peer is the person's call.")
+        elif (word == "herdr"
+              and tuple(t for t in rest[1:]
+                        if not t.startswith("-"))[:2] == HERDR_KILL):
+            out.append(
+                "`herdr agent kill` stops a session that has not agreed to "
+                "stop. A listed peer is asked and never killed: it is the only "
+                "thing that can say which claim it holds.")
+    return out
+
+
 # ---------------------------------------------------------- the comment shape
 #
 # WHY THE GUARD AND NOT A WRITER SCRIPT (kalaluthien/campaign-base#217). The
@@ -1614,6 +1668,28 @@ def bash_call(command, cwd: Path, session_id=""):
             "A heredoc body is not part of this: it is removed before the "
             "split, so a commit message with an apostrophe in it is data.",
         ])
+    # THE TWO RULES THAT NAME NO TARGET, asked FIRST and on their own reading.
+    # First because they are the narrowest thing this file decides: a kill and
+    # a hook bypass are about the command itself, where every branch below is
+    # about a plane and a claim, and a refusal that named the claim would send
+    # the reader to take one for a call no claim licenses. Their own reading,
+    # because a command may hold one of these and no `gh` at all -- which is
+    # the ordinary case and the one the allow-unread return below would have
+    # swallowed.
+    broken = shell_findings(segs)
+    if broken:
+        root, how = session_root(cwd)
+        if root is not None and (root / BASE_MARKER).is_file():
+            return refuse(["a shell command breaking a rule that names no "
+                           "target, so no claim licenses it.",
+                           *[f"  {f}" for f in broken], how,
+                           "Nothing else in this command was read: it is "
+                           "refused whatever else it holds."])
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow(["a shell command breaking a rule that names no target.",
+                      *[f"  {f}" for f in broken],
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
     gh, stray = [], []
     for seg in segs:
         word, rest = head(seg)

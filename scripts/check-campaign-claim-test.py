@@ -263,6 +263,19 @@ def row_posts_comment(mod, row):
     return False
 
 
+def row_breaks_a_shell_rule(mod, row):
+    """Whether this corpus row breaks a rule that names no target.
+
+    Asked through the guard's own `shell_findings` for the same reason
+    `row_posts_comment` is: a second reader of which commands kill something
+    would disagree with the one under test on exactly the rows this
+    measurement is about."""
+    if row["tool"] != "Bash":
+        return False
+    segs, _why = mod.segments(row["command"])
+    return bool(mod.shell_findings(segs or []))
+
+
 def corpus_issues(mod, rows):
     """Every sub-issue number a corpus command names. The replay fixture holds
     a claim on each, because the corpus is the calls sessions made WHILE
@@ -1847,6 +1860,74 @@ def main():
         check("...and says it was not written, rather than nothing",
               "verdict not logged" in r.stdout, out(r)[:300])
 
+    # A KILL (kalaluthien/campaign-base#278, #272's ledger row 2). The Bash
+    # reader allows every command that is not a `gh` write unread, so this was
+    # the one rule of AGENTS.md nothing could see even in the shell it lands
+    # in. Each verb asserts the sentence its own branch prints; a case on
+    # exit 2 alone would pass with any single one of them deleted.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for verb, command in (("kill", "kill 40123"),
+                              ("pkill", "pkill -f 'alloy-6.2.0.jar'"),
+                              ("killall", "killall java")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"`{verb}` is refused, naming the pid nothing maps",
+                  r.returncode == 2 and f"`{verb}` stops a process" in out(r)
+                  and "maps a pid" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="herdr agent kill w40:p2D", run_cwd=wt)
+        check("`herdr agent kill` is refused, naming the peer that was not "
+              "asked",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # READ AS THE TWO WORDS AFTER THE COMMAND, not as a string: a flag
+        # before them must not hide the verb.
+        r = ask(wt, tool="Bash", command="herdr --json agent kill w40:p2D",
+                run_cwd=wt)
+        check("...and a flag before `agent kill` does not hide it",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="herdr agent list", run_cwd=wt)
+        check("...while `herdr agent list` is a read and passes",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # A SHELL'S `-c` IS THE SAME COMMAND. `segments` already re-reads it,
+        # so the finding must not depend on the spelling that reached the
+        # payload.
+        r = ask(wt, tool="Bash", command="bash -c 'pkill -f alloy'", run_cwd=wt)
+        check("a kill inside a shell's -c string is refused too",
+              r.returncode == 2 and "stops a process" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE ORDINARY SHAPES THE SCAN MUST NOT CATCH, read before the
+        # refusals as this repository's own review rule asks. The word in a
+        # commit message and the word in a filename are what a scan over the
+        # command TEXT would have refused.
+        for name, command in (
+                ("a commit message holding the word",
+                 "git commit -m 'kill the flake'"),
+                ("a grep for the word", "grep -rn kill AGENTS.md"),
+                ("a word that merely ends in it", "echo skill")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"...and {name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # THE REFUSAL BEATS EVERY OTHER READING IN THE SAME COMMAND, and says
+        # so: a `gh` write beside a kill must not turn the diagnosis into a
+        # claim the reader would then go and take.
+        r = ask(wt, tool="Bash", command="gh issue close 7 && pkill -f alloy",
+                run_cwd=wt)
+        check("a kill beside a gh write is refused as the kill, not as a claim",
+              r.returncode == 2 and "stops a process" in out(r)
+              and "Take the claim first" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Bash", command="pkill -f alloy", run_cwd=d)
+        check("the same kill outside every base is allowed", r.returncode == 0,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "stops a process" in out(r) and "in no campaign" in out(r),
+              out(r)[:400])
+
     # THE AGENT LAUNCH (kalaluthien/campaign-base#278). Two rules of
     # AGENTS.md § Review that the guard could not see at all until `Agent`
     # joined install-hooks.sh's `MATCHER`: a tool absent from that string
@@ -2015,6 +2096,22 @@ def main():
             # and a blanket exemption would have hidden the second.
             posts = {i for i, row in enumerate(rows)
                      if row["tool"] == "Bash" and row_posts_comment(mod, row)}
+            # THE SECOND DELIBERATE BREAK (#278), and it is the same shape as
+            # the first: the corpus is the calls this campaign made, one of
+            # which is the `pkill -f alloy-6.2.0.jar` that PR #255's REPORT
+            # records killing three runs of two other sessions. A rule written
+            # because of a recorded call must refuse that call, so it is
+            # exempted BY NUMBER rather than by a blanket allow -- a second row
+            # entering this set is itself a failure, which is what says the
+            # scan did not widen.
+            breaks = {i for i, row in enumerate(rows)
+                      if row_breaks_a_shell_rule(mod, row)}
+            check("the corpus's one recorded rule-break is the incident "
+                  "itself, and nothing joined it",
+                  len(breaks) == 1
+                  and "pkill" in rows[sorted(breaks)[0]]["command"],
+                  f"{len(breaks)} row(s): "
+                  + "; ".join(rows[i]["command"][:70] for i in sorted(breaks)))
             # THE EXEMPT SET IS FROZEN TO A NUMBER, because it is computed by
             # the reader under test: any row the comment check MISCLASSIFIES as
             # a comment has its refusal excused by the very mistake that caused
@@ -2027,9 +2124,10 @@ def main():
             check("the corpus's comment rows are the 64 last blessed",
                   len(rows) == 611 and len(posts) == 64,
                   f"{len(posts)} of {len(rows)}")
-            other = sorted(set(refused_at) - posts)
+            other = sorted(set(refused_at) - posts - breaks)
             check(f"of the {replayed} recorded allows the guard refuses only "
-                  f"comment writes, whose shape #217 changed",
+                  f"comment writes, whose shape #217 changed, and the one "
+                  f"recorded kill #278 refuses",
                   not other, "\n      ".join(refused[i] for i in other[:8]))
             check("...and it does refuse some of them, so the rule bites on "
                   "the record rather than passing it",

@@ -709,7 +709,10 @@ all three readings (`campaign-claim live`). A campaign may not close while a
 claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
-can say which claim it holds.
+can say which claim it holds. `scripts/check-campaign-claim.py` refuses `kill`,
+`pkill`, `killall` and `herdr agent kill` outright, whatever they name: no
+payload it is handed maps a pid to a session, so a narrower form is not
+decidable, and a process that is nobody's peer is the person's call.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead

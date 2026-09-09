@@ -384,11 +384,15 @@ def main():
     ok, want = judge(r, "T2")
     check("--against a ref reads a suite deleted in a later commit", ok, want, r)
     r = run_case({SPEC: DECL}, {}, args=("--against", "no-such-ref"))
+    # The phrase is the GATE's, not the last-resort handler's: with the
+    # could-not-read branch deleted the 128 falls through to `ls-tree`, whose
+    # raise the handler reports as "the reading itself failed" too -- so a case
+    # asserting that much passes on the wrong reader.
     check("--against a ref that does not resolve says the READING failed, not "
           "that HEAD does not contain it",
-          r.returncode == 0 and "the reading itself failed" in r.stderr
-          and "does not contain" not in r.stderr,
-          "exit 0 and PERMITTING naming the reading, not a verdict", r)
+          r.returncode == 0 and "does not contain" not in r.stderr
+          and "git could not say whether HEAD contains" in r.stderr,
+          "exit 0 and the gate's own could-not-read line", r)
     check("...and git's own message is quoted inside the guard's line rather "
           "than printed beside it",
           r.stderr.count("check-sdlc-tie:") == 1
@@ -448,6 +452,12 @@ def main():
           r.returncode == 0 and "PERMITTING" in r.stderr
           and "FileNotFoundError" in r.stderr,
           "exit 0 and PERMITTING naming the exception", r)
+
+    r = run_case({SPEC: DECL}, {}, args=("--staged", "--against", "HEAD"))
+    check("--staged and --against are exclusive, and saying both is refused "
+          "rather than one being dropped",
+          r.returncode != 0 and "not allowed with" in r.stderr,
+          "a non-zero exit naming the conflict", r)
 
     # A SHALLOW clone answers every ancestry question no, because HEAD's parents
     # are grafted away. Collapsed with a real "does not contain" this made the

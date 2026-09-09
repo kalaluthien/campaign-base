@@ -205,7 +205,7 @@ pred S4a_RenameKeepsItsNamers {
 /* THE THIRD END: the landed chain's TEST is renamed, and the code path it
    drove is untied -- `drives` pairs two names, so moving either file breaks
    it. This is the guard's T2 read from the suite's side, the case a merged
-   `names` relation broken only at its target left SAT here and refused there;
+   `names` relation broken only at its target left TIED here and refused there;
    the split is what closes that gap.
 
    `S4d` is the half the same rename does NOT break, and it is UNSAT: a test's

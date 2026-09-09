@@ -493,8 +493,8 @@ def judge(after_kind, against, legacy_path):
             shallow = git_root_bytes("rev-parse", "--is-shallow-repository"
                                      ).strip() == b"true"
             why = ("this clone is SHALLOW, so HEAD's parents are grafted away "
-                   "and no ancestry can be read here -- deepen it "
-                   "(`fetch-depth: 0`) rather than reading this as a verdict"
+                   "and no ancestry can be read here -- deepen the clone rather "
+                   "than reading this as a verdict about the branch"
                    if shallow else
                    f"HEAD does not contain {against}, so the two trees are not "
                    f"a change and every commit {against} has and HEAD has not "
@@ -587,8 +587,12 @@ def judge(after_kind, against, legacy_path):
 
 def main():
     p = argparse.ArgumentParser(add_help=False)
-    p.add_argument("--staged", action="store_true")
-    p.add_argument("--against", metavar="REF")
+    # EXCLUSIVE, because each names a different pair of trees and passing both
+    # silently dropped `--against`: the reading line said "judged against HEAD"
+    # and the caller who asked for a ref was told nothing.
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--staged", action="store_true")
+    mode.add_argument("--against", metavar="REF")
     p.add_argument("--legacy", metavar="FILE")
     args = p.parse_args()
     kind = "index" if args.staged else ("commit" if args.against else "worktree")

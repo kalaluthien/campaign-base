@@ -263,17 +263,19 @@ def row_posts_comment(mod, row):
     return False
 
 
-def row_breaks_a_shell_rule(mod, row):
+def row_breaks_a_shell_rule(mod, row, cwd):
     """Whether this corpus row breaks a rule that names no target.
 
     Asked through the guard's own `shell_findings` for the same reason
     `row_posts_comment` is: a second reader of which commands kill something
     would disagree with the one under test on exactly the rows this
-    measurement is about."""
+    measurement is about. `cwd` is the replay's, because the hook-bypass half
+    asks which repository the command would run in."""
     if row["tool"] != "Bash":
         return False
     segs, _why = mod.segments(row["command"])
-    return bool(mod.shell_findings(segs or []))
+    found, _notes = mod.shell_findings(segs or [], cwd)
+    return bool(found)
 
 
 def corpus_issues(mod, rows):
@@ -643,7 +645,13 @@ def main():
                     # still open at 1918ce7: a backquoted call, eval's operand,
                     # and a -c spelled last in a short-option cluster.
                     "`gh issue close 5`", 'eval "gh issue close 5"',
-                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'"):
+                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'",
+                    # A NEWLINE ENDS A COMMAND (#278's review, F1). This was
+                    # in the stray list below until then: the two lines were
+                    # one segment whose command word was `echo`, so the write
+                    # fell to the unnarrowed gate and the diagnosis could not
+                    # name #5.
+                    "echo hi\ngh issue close 5"):
             r = ask(f.base, tool="Bash", command=cmd)
             check(f"`{cmd!r}` is read as the gh write it is",
                   r.returncode == 2 and "a write to #5" in r.stderr,
@@ -652,8 +660,7 @@ def main():
         # more: since #193 a heredoc body is data, and the cases for that are
         # the block at the end of this section.
         for cmd in ("xargs gh issue close", "echo gh issue close 5",
-                    "echo hi\ngh issue close 5",
-                    # The fourth: an assignment's VALUE names gh and the call
+                    # The third: an assignment's VALUE names gh and the call
                     # itself is an expansion this cannot resolve.
                     "G=gh; $G issue close 5"):
             r = ask(f.base, tool="Bash", command=cmd)
@@ -1547,22 +1554,14 @@ def main():
         r = ask(wt7, tool="Bash",
                 command='echo "opened here\nand a <<EOF inside it\nclosed here"'
                         '\ngh issue close 11')
-        # Refused as a `gh` it cannot read as a call, not as a write to #11: a
-        # NEWLINE is not a separator here (it never was -- `echo hi\ngh issue
-        # close 5` is in the stray list above), so the two lines are one
-        # segment whose command word is `echo`. What this pins is that the
-        # quote CLOSED on line three, leaving the `gh` visible at all; without
-        # the carry it was swallowed and the call exited 0.
-        # ASSERTED ON THE `gh` BEING SEEN, not on the verdict. A NEWLINE is not
-        # a separator here and never was (`echo hi` + `gh issue close 5` on two
-        # lines is in the stray list above), so these two lines are one segment
-        # whose command word is `echo` and whose `gh` is a stray token -- which
-        # this session's claim then covers, exit 0. What the case pins is that
-        # the quote CLOSED on line three and the `gh` survived to be read at
-        # all; before the carry, the `<<EOF` on line two ate lines three and
-        # four and the guard saw no `gh` anywhere.
+        # WHAT THIS PINS IS THE QUOTE CARRY, and the assertion is on the `gh`
+        # surviving to be read: before the carry, the `<<EOF` on line two ate
+        # lines three and four and the guard saw no `gh` anywhere. Since
+        # #278's review made a newline a separator the surviving `gh` is read
+        # as the CALL and narrowed to #11, where it used to be a stray token
+        # in an `echo` segment.
         check("...tracked across lines, not restarted at each one",
-              "cannot read as a call" in out(r) and "gh issue" in out(r),
+              r.returncode == 2 and "a write to #11" in r.stderr,
               out(r)[:400])
         # ALLOW beside all three: the real heredoc still has its body removed.
         r = ask(wt7, tool="Bash",
@@ -1860,22 +1859,77 @@ def main():
         check("...and says it was not written, rather than nothing",
               "verdict not logged" in r.stdout, out(r)[:300])
 
-    # A KILL (kalaluthien/campaign-base#278, #272's ledger row 2). The Bash
-    # reader allows every command that is not a `gh` write unread, so this was
-    # the one rule of AGENTS.md nothing could see even in the shell it lands
-    # in. Each verb asserts the sentence its own branch prints; a case on
-    # exit 2 alone would pass with any single one of them deleted.
+    # THE SPLITTER READS A NEWLINE AND A GLUED PUNCTUATION RUN (#278's
+    # review, F1 and F2). Both were found through the rules above -- `-name`
+    # on the line under a `git commit` read as its `-n`, and a `cd` after a
+    # `);` never read at all -- but what they change is the splitter every
+    # branch of this file stands on, so they are pinned here on the `gh`
+    # reader, which names a number a case can assert.
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("demo/7-x",))
         wt = f.trees["demo/7-x"]
-        for verb, command in (("kill", "kill 40123"),
-                              ("pkill", "pkill -f 'alloy-6.2.0.jar'"),
+        for name, command in (
+                ("a newline", "ls -la\ngh issue close 5"),
+                ("a `&&` at the end of a line", "ls -la &&\ngh issue close 5"),
+                ("a `);` closing a substitution",
+                 "R=$(mktemp -d); gh issue close 5"),
+                ("a `;` at the end of a line", "ls -la ;\ngh issue close 5")):
+            r = ask(f.base, tool="Bash", command=command, run_cwd=f.base)
+            check(f"{name} ends the command, so the write after it is read as "
+                  f"the call",
+                  r.returncode == 2 and "a write to #5" in r.stderr,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A LINE CONTINUATION IS NOT A SEPARATOR, so the flags after it stay
+        # with the command they belong to.
+        r = ask(f.base, tool="Bash", command="gh issue \\\n  close 5",
+                run_cwd=f.base)
+        check("...while a backslash-newline keeps one command together",
+              r.returncode == 2 and "a write to #5" in r.stderr,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND A NEWLINE INSIDE QUOTES IS DATA, not a separator: a comment
+        # body spans lines and must stay one token.
+        r = ask(wt, tool="Bash",
+                command='gh issue comment 7 --body "NOTE demo-worker-1: one\n'
+                        'and two"', run_cwd=wt)
+        check("...and a newline inside quotes stays inside the token",
+              r.returncode == 0 and "It covers #7" in r.stdout,
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    # A PATTERN KILL (kalaluthien/campaign-base#278, #272's ledger row 2, as
+    # the DECISION on #278 narrowed it). The Bash reader allows every command
+    # that is not a `gh` write unread, so this was the one rule of AGENTS.md
+    # nothing could see even in the shell it lands in. Each verb asserts the
+    # sentence its own branch prints; a case on exit 2 alone would pass with
+    # any single one of them deleted.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for verb, command in (("pkill", "pkill -f 'alloy-6.2.0.jar'"),
                               ("killall", "killall java")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
-            check(f"`{verb}` is refused, naming the pid nothing maps",
-                  r.returncode == 2 and f"`{verb}` stops a process" in out(r)
-                  and "maps a pid" in out(r),
+            check(f"`{verb}` is refused, naming the processes nobody "
+                  f"identified",
+                  r.returncode == 2
+                  and f"`{verb}` stops every process" in out(r)
+                  and "identified none of them" in out(r),
                   f"exit {r.returncode}: {out(r)[:300]}")
+        # `kill <pid>` IS ALLOWED IN EVERY FORM, which is the whole of the
+        # DECISION: a pid names one process the caller had to look up, and
+        # whether it is a peer's is not decidable from the payload. The
+        # measurement behind it: of 31 recorded in-base findings under the
+        # blanket rule, 30 were a session stopping something it had started.
+        for name, command in (("a plain `kill`", "kill 40123"),
+                              ("a signalled `kill`", "kill -9 40123"),
+                              ("a liveness `kill -0`", "kill -0 40123"),
+                              ("several pids at once", "kill 82511 82509")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed, since a pid names one process",
+                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND THE REFUSAL NAMES THAT PATH, so a session reading it knows
+        # what to do instead rather than only what it may not.
+        r = ask(wt, tool="Bash", command="pkill -f alloy", run_cwd=wt)
+        check("...and the refusal names `kill <pid>` as the way through",
+              "kill <pid>` is allowed" in out(r), out(r)[:400])
         r = ask(wt, tool="Bash", command="herdr agent kill w40:p2D", run_cwd=wt)
         check("`herdr agent kill` is refused, naming the peer that was not "
               "asked",
@@ -1891,12 +1945,21 @@ def main():
         r = ask(wt, tool="Bash", command="herdr agent list", run_cwd=wt)
         check("...while `herdr agent list` is a read and passes",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # A GLOBAL OPTION WITH A VALUE SHIFTS THE TWO WORDS, which the first
+        # cut read positionally: `herdr --json` is boolean and hid nothing,
+        # `herdr --session <name>` does (#278's review, F9).
+        r = ask(wt, tool="Bash", command="herdr --session main agent kill w40:p2D",
+                run_cwd=wt)
+        check("...and a valued global option does not shift `agent kill` out "
+              "of view",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
         # A SHELL'S `-c` IS THE SAME COMMAND. `segments` already re-reads it,
         # so the finding must not depend on the spelling that reached the
         # payload.
         r = ask(wt, tool="Bash", command="bash -c 'pkill -f alloy'", run_cwd=wt)
         check("a kill inside a shell's -c string is refused too",
-              r.returncode == 2 and "stops a process" in out(r),
+              r.returncode == 2 and "stops every process" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
         # THE ORDINARY SHAPES THE SCAN MUST NOT CATCH, read before the
         # refusals as this repository's own review rule asks. The word in a
@@ -1904,9 +1967,9 @@ def main():
         # command TEXT would have refused.
         for name, command in (
                 ("a commit message holding the word",
-                 "git commit -m 'kill the flake'"),
-                ("a grep for the word", "grep -rn kill AGENTS.md"),
-                ("a word that merely ends in it", "echo skill")):
+                 "git commit -m 'pkill the flake'"),
+                ("a grep for the word", "grep -rn pkill AGENTS.md"),
+                ("a word that merely ends in it", "echo nopkill")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"...and {name} is allowed", r.returncode == 0,
                   f"exit {r.returncode}: {out(r)[:300]}")
@@ -1916,7 +1979,7 @@ def main():
         r = ask(wt, tool="Bash", command="gh issue close 7 && pkill -f alloy",
                 run_cwd=wt)
         check("a kill beside a gh write is refused as the kill, not as a claim",
-              r.returncode == 2 and "stops a process" in out(r)
+              r.returncode == 2 and "stops every process" in out(r)
               and "Take the claim first" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
 
@@ -1925,7 +1988,7 @@ def main():
         check("the same kill outside every base is allowed", r.returncode == 0,
               f"exit {r.returncode}: {out(r)[:300]}")
         check("...and says the rule it did not enforce, and why",
-              "stops a process" in out(r) and "in no campaign" in out(r),
+              "stops every process" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
     # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
@@ -1937,6 +2000,17 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("demo/7-x",))
         wt = f.trees["demo/7-x"]
+        # A HOOK HAS TO BE THERE FOR ONE TO BE BYPASSED, which is the whole of
+        # the scoping #278's review asked for: a fresh `git init` holds only
+        # git's `.sample` files and the flag skips nothing. The fixture's
+        # worktrees share the base's `.git`, so one file arms every case below.
+        hooks = f.base / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+        # ...and a repository beside it with none, which two cases below read.
+        nohooks = f.d / "nohooks"
+        nohooks.mkdir()
+        git(nohooks, "init", "-q")
         for name, command in (
                 ("`git push -n`, which is --dry-run", "git push -n"),
                 ("`git merge -n`, which is --no-commit", "git merge -n main"),
@@ -1958,6 +2032,24 @@ def main():
         r = ask(wt, tool="Bash", command="git push --no-verify", run_cwd=wt)
         check("...on any git subcommand, not commit alone", r.returncode == 2,
               f"exit {r.returncode}: {out(r)[:300]}")
+        # GIT TAKES AN UNAMBIGUOUS ABBREVIATION of a long option, probed
+        # against a repository with a real `pre-commit`: `--no-verif` skips
+        # the hook exactly as the full spelling does (#278's review, F9).
+        r = ask(wt, tool="Bash", command="git commit --no-verif -m x", run_cwd=wt)
+        check("an abbreviated `--no-verif` is refused, since git accepts it",
+              r.returncode == 2 and "`--no-verif` skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND A SEARCH TERM IS NOT AN OPTION. `git log -S` is what
+        # AGENTS.md tells a session to run before adopting a word, and the
+        # first cut refused it for holding the word (#278's review, F2).
+        for name, command in (
+                ("a `git log -S` for the flag",
+                 "git log -S '--no-verify' --oneline"),
+                ("a `git log -S` for the key",
+                 "git log -S 'core.hooksPath=' --oneline")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
         r = ask(wt, tool="Bash", command="git commit -n -m x", run_cwd=wt)
         check("`git commit -n` is refused as the short spelling of it",
               r.returncode == 2
@@ -1988,11 +2080,56 @@ def main():
               "carries",
               r.returncode == 2 and "sets core.hooksPath" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
+        # THE KEY IS THE WHOLE OF ONE SIDE, not a substring of it: a value
+        # that merely holds the word -- a path to a saved copy of the hooks --
+        # sets nothing.
+        r = ask(wt, tool="Bash",
+                command="OLD=/tmp/core.hooksPath.bak git commit -m x",
+                run_cwd=wt)
+        check("...while a value that only mentions the key sets nothing and "
+              "is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        # THE ROW THAT PROMPTED THE SCOPING. 31 of the 33 recorded in-base
+        # calls this rule refused as first written were a throwaway repository
+        # built by one of this tree's own probes, where there is no hook. The
+        # guard reads the directory the shell would be in -- across the `cd`s
+        # of the command -- and asks git where its hooks are.
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks && git commit --no-verify -m x",
+                run_cwd=wt)
+        check("a bypass in a repository with no hook is allowed, since "
+              "nothing was bypassed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow says which directory it read and what it "
+              "found there",
+              "skips the hook" in out(r) and "holds no hook" in out(r),
+              out(r)[:400])
+        # ...AND A DIRECTORY IT COULD NOT READ IS THE THIRD OUTCOME, not a no
+        # and not a yes: `cd "$d"` is composed by the shell, so this guard
+        # never learns where the commit lands.
+        r = ask(wt, tool="Bash",
+                command='d=$(mktemp -d); cd "$d"; git commit --no-verify -m x',
+                run_cwd=wt)
+        check("a bypass after a `cd` this cannot read is allowed and says so",
+              r.returncode == 0 and "could not be read" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
+        r = ask(wt, tool="Bash",
+                command=f"git -C {f.d}/nohooks commit --no-verify -m x",
+                run_cwd=wt)
+        check("...and `-C` names the repository, so it decides over the cwd",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
 
     with tempfile.TemporaryDirectory() as d:
-        r = ask(d, tool="Bash", command="git commit --no-verify -m x",
+        f = Fixture(d, claims=())
+        hooks = f.base / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+        r = ask(d, tool="Bash", command=f"git -C {f.base} commit --no-verify -m x",
                 run_cwd=d)
-        check("the same bypass outside every base is allowed",
+        check("the same bypass from outside every base is allowed",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
         check("...and says the rule it did not enforce, and why",
               "skips the hook" in out(r) and "in no campaign" in out(r),
@@ -2059,6 +2196,20 @@ def main():
         check("...and a launch breaking both rules prints both",
               r.returncode == 2 and "fans out into an orchestrator" in out(r)
               and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A FORK RUNS ON THE LAUNCHER'S OWN MODEL and ignores a `model` given
+        # to it, so for a fork "no model" is the correct spelling and not a
+        # default inherited by accident (#278's review, F6).
+        r = ask(wt, tool="Agent",
+                tool_input={"description": "x", "prompt": "continue the sweep",
+                            "subagent_type": "fork"}, run_cwd=wt)
+        check("a `fork` naming no model is allowed, since a fork ignores one",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Agent",
+                tool_input={"description": "x", "prompt": "/code-review high 9",
+                            "subagent_type": "fork"}, run_cwd=wt)
+        check("...and the fan-out rule still reaches a fork",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
         # AN EMPTY PROMPT IS NOT A `/code-review`, and it is not a crash
         # either: `split(None, 1)` on an empty string is an empty list.
@@ -2171,11 +2322,22 @@ def main():
             # which is the `pkill -f alloy-6.2.0.jar` that PR #255's REPORT
             # records killing three runs of two other sessions. A rule written
             # because of a recorded call must refuse that call, so it is
-            # exempted BY NUMBER rather than by a blanket allow -- a second row
-            # entering this set is itself a failure, which is what says the
-            # scan did not widen.
+            # exempted BY NUMBER rather than by a blanket allow, and a second
+            # row entering this set is itself a failure.
+            #
+            # WHAT THIS CANNOT SAY, and the review at 1b81b84 was right to
+            # name it: `guard-corpus.py`'s filter 4 drops every command the
+            # guard finds no `gh` in, and its own header says the cost -- the
+            # corpus "cannot catch a change to the allow-unread branch
+            # itself", which is exactly the branch these rules were added to.
+            # The corpus holds no `--no-verify` and no `hooksPath` at all, and
+            # this `pkill` row survived the filter only because the same
+            # command also runs a `gh pr view`. So this pair is a floor and
+            # not the measurement: the breadth of these rules was read over
+            # every recorded call on the machine instead, and the numbers are
+            # in the guard's own comments beside each rule.
             breaks = {i for i, row in enumerate(rows)
-                      if row_breaks_a_shell_rule(mod, row)}
+                      if row_breaks_a_shell_rule(mod, row, f.base)}
             check("the corpus's one recorded rule-break is the incident "
                   "itself, and nothing joined it",
                   len(breaks) == 1
@@ -2187,12 +2349,18 @@ def main():
             # a comment has its refusal excused by the very mistake that caused
             # it, and the `already` control below cannot see a narrow false
             # positive. Frozen, a row newly entering the set is itself a
-            # failure. 611 rows, 64 of them comment writes, at the corpus as
+            # failure. 611 rows, 97 of them comment writes, at the corpus as
             # `guard-corpus.py` last wrote it; re-bless both numbers when the
             # corpus is regenerated, and read a change here as a question about
             # `comment_body` before reading it as a question about the corpus.
-            check("the corpus's comment rows are the 64 last blessed",
-                  len(rows) == 611 and len(posts) == 64,
+            # IT WAS 64 UNTIL #278's REVIEW made a newline a separator: 33 of
+            # these rows put the comment on a line after another command, so
+            # the segment's command word was that other command and the
+            # comment was never read at all. The jump is coverage the splitter
+            # gained, and each of the 33 is refused for its shape like the
+            # rest -- which is why `other` below did not move.
+            check("the corpus's comment rows are the 97 last blessed",
+                  len(rows) == 611 and len(posts) == 97,
                   f"{len(posts)} of {len(rows)}")
             other = sorted(set(refused_at) - posts - breaks)
             check(f"of the {replayed} recorded allows the guard refuses only "

@@ -36,9 +36,9 @@ cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
 for one narrowed round below. **The rolled-up figures are #273's**, re-derived
 over the same window at PR #276's merge sha (`97c6797`) and posted as a NOTE on
 kalaluthien/campaign-base#272: 47 rounds, 98 nested transcripts folded in,
-13,402,567 input_new in total, and every other pull request in the window
-nested-0 -- so the ~5.0M is PR #255's fan-out and not the window's ordinary
-cost (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
+13,402,567 input_new in total. PR #264 fanned out too, 9-19 nested transcripts
+per round at 656,852-1,566,076 input_new each; those two pull requests are
+~9.4M of the 13.4M and every other one in the window is nested-0 (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
 Write the brief as `"review PR <N> at <level>"`, level right after `at` --
 that position sets nothing mechanically the way `/code-review`'s own does
 below, it is only where `campaign-token-tally.py` and a reader both know to

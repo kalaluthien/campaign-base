@@ -447,9 +447,11 @@ number is minted there; the `post-commit` hook pushes; it lands by a pull reques
 **Write atomic commits with a search-optimized message and land them without
 waiting to be asked**, since work is not finished until it is merged and pushed.
 **A hook is never bypassed**, and `scripts/check-campaign-claim.py` refuses the
-three spellings that would: `--no-verify`, `git commit -n`, and setting
-`core.hooksPath` through a flag, a subcommand or the environment. Report what
-the hook refused and ask.
+three spellings that would: `--no-verify` and its abbreviations, `git commit -n`,
+and setting `core.hooksPath` through a flag, a subcommand or the environment.
+It asks git where the target repository's hooks are and refuses only where
+there is one, so a throwaway fixture repository still commits. Report what the
+hook refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
@@ -710,10 +712,12 @@ all three readings (`campaign-claim live`). A campaign may not close while a
 claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
-can say which claim it holds. `scripts/check-campaign-claim.py` refuses `kill`,
-`pkill`, `killall` and `herdr agent kill` outright, whatever they name: no
-payload it is handed maps a pid to a session, so a narrower form is not
-decidable, and a process that is nobody's peer is the person's call.
+can say which claim it holds. `scripts/check-campaign-claim.py` refuses
+`herdr agent kill`, `pkill` and `killall`: a name or a pattern reaches
+processes the caller never identified, which is the incident's shape.
+`kill <pid>` passes in every form -- a pid names one process the caller had to
+look up, and whether it is a peer's is not decidable from the payload, so that
+half stays here.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead

@@ -28,7 +28,7 @@ open sdlc/system
    narrowest, and the one a profile naming Docs alone refused outright,
    before any criterion was read. `research` refuses changing a repository
    beyond a scratch probe, so its changes are findings on an issue.
-   
+
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and those two narrow
    nothing -- so neither witnesses that half of `maySkip`, and `prototyping` is
    here to. It keeps the running thing, and

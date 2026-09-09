@@ -75,7 +75,9 @@ SUBCOMMANDS
   issues     one row per sub-issue: turns, output, new input, cache read
   sessions   the same, per session name (`<slug>-<role>-<n>`)
   turns      one JSON object per turn, for an analysis this script does not make
-  reviews    one row per in-process review subagent: its PR, level, and cost
+  reviews    one row per review round: its PR, level, and cost, with every
+             subagent its `/code-review` fanned out into rolled into the round
+             that spawned it (`nested` counts how many)
   tool-echo  turns whose tool results are the output of this repository's own
              scripts, and what those results cost to carry
 
@@ -99,7 +101,37 @@ import subprocess
 import sys
 
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
-REVIEW_CMD = re.compile(r"/code-review\s+(\w+)\s+(\d+)")
+REVIEW_CMD = re.compile(
+    r"/code-review\s+(?P<level>\w+)\s+(?P<pr>\d+)"
+    # Anchored to the start of the brief, unlike the slash form above: a slash
+    # command essentially never occurs by accident in prose, but "review PR
+    # <N> at <level>" is ordinary English a fix-round brief can easily quote
+    # back ("address the findings from review PR 276 at medium") without
+    # being the round's OWN brief -- anchoring keeps that mention from
+    # promoting an unrelated subagent into a round or misattributing its
+    # turns. Case-insensitive because nothing about a plain brief's spelling
+    # is a wire format the way `/code-review` is: `reviewing.md`'s own call
+    # block writes "Review PR <N>" capitalized one line above the lowercase
+    # prompt, and a launcher who capitalizes the sentence the way English
+    # sentences start would otherwise vanish from every round this exists to
+    # price. `#?` because "review PR #276" is as plausible a way to write the
+    # number as "review PR 276", and GitHub's own UI writes a pull request
+    # with the `#`.
+    r"|\A\s*review PR\s+#?(?P<pr2>\d+)\s+at\s+(?P<level2>\w+)",
+    re.IGNORECASE)
+
+
+def review_cmd_groups(m):
+    """(level, pr) from a REVIEW_CMD match, either of its two shapes.
+
+    `/code-review <level> <pr>` and the plain-brief `review PR <pr> at
+    <level>` write the same two facts in opposite order -- named groups so
+    every reader takes one pair, never the position that shape happens not
+    to use.
+    """
+    return m.group("level") or m.group("level2"), int(m.group("pr") or m.group("pr2"))
+
+
 SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$")
 # An interpreter runs the file that follows it, and check-campaign-claim's
 # PREFIXES deliberately holds no interpreter -- it is looking for `gh`, which
@@ -463,7 +495,7 @@ class Corpus:
         for text in text_blocks(message):
             m = REVIEW_CMD.search(text)
             if m:
-                pr = int(m.group(2))
+                _level, pr = review_cmd_groups(m)
                 if pr in self.pr_map:
                     return self.pr_map[pr]
             m = self.branch.search(text) if self.branch else None
@@ -647,36 +679,121 @@ def cmd_turns(corpus, args):
         print(json.dumps(t, ensure_ascii=False))
 
 
-def cmd_reviews(corpus, args):
-    """One row per review subagent: what a review round cost, and at what level."""
-    sample_line(corpus)
+def load_subagent_lineage(roots):
+    """(parent_of, path_of): every subagent's parent id and its own transcript path.
+
+    Both read from `agent-<id>.meta.json` and its sibling `.jsonl`, sitting
+    beside each other in every `subagents/` directory under root -- a
+    directory walk, not a turn, so a subagent whose own turns fell outside
+    the corpus's `--since`/`--until`/`--base` filters is still found: its
+    round is never silently absent just because the round's own head turn
+    didn't survive the window.
+
+    The harness writes `parentAgentId` into a subagent's own sidecar file --
+    never into the transcript, and never onto a depth-1 subagent, whose
+    launcher is the session itself rather than another agent. That absence is
+    the base case a chain should stop at: an id with no `parentAgentId` names
+    the round, whatever spawned it.
+
+    An agent whose meta.json is missing or unreadable resolves to no parent
+    below, the same answer `cmd_reviews` gave every subagent before this
+    existed: its own round, on its own. A file not named `agent-<id>.jsonl`
+    or `.meta.json` -- an unrelated sidecar dropped into `subagents/` -- is
+    skipped rather than sliced into a bogus id.
+    """
+    parent_of = {}
+    path_of = {}
+    for root in roots:
+        for dirpath, _dirs, names in os.walk(os.path.expanduser(root)):
+            if os.path.basename(dirpath) != "subagents":
+                continue
+            for name in names:
+                if not name.startswith("agent-"):
+                    continue
+                if name.endswith(".meta.json"):
+                    agent_id = name[len("agent-"):-len(".meta.json")]
+                    try:
+                        data = json.load(open(os.path.join(dirpath, name)))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    parent = data.get("parentAgentId")
+                    if parent:
+                        parent_of[agent_id] = parent
+                elif name.endswith(".jsonl"):
+                    agent_id = name[len("agent-"):-len(".jsonl")]
+                    path_of[agent_id] = os.path.join(dirpath, name)
+    return parent_of, path_of
+
+
+def review_rounds(roots, turns):
+    """Every subagent turn, grouped by the top reviewer that its lineage traces to.
+
+    A reviewer subagent running `/code-review` fans out into an orchestrator,
+    finders and verifiers -- further subagents whose own turns were priced at
+    the parent's alone unless the chain is walked back to the round it belongs
+    to. `root_of` follows `parentAgentId` to the top, iteratively (a chain is
+    three deep on this machine's corpus, but nothing bounds it) and memoized,
+    because two grandchildren of one fan-out both walk the same middle link.
+    """
+    parent_of, agent_file = load_subagent_lineage(roots)
+    root_cache = {}
+
+    def root_of(agent_id):
+        chain = []
+        cur = agent_id
+        while cur not in root_cache and cur not in chain:
+            chain.append(cur)
+            parent = parent_of.get(cur)
+            cur = parent if parent else cur
+            if parent is None:
+                break
+        root = root_cache.get(cur, cur)  # a cycle or a missing parent stops on itself
+        for seen in chain:
+            root_cache[seen] = root
+        return root
+
     rounds = {}
-    for t in corpus.turns:
+    for t in turns:
         if t["kind"] != "subagent" or not t.get("agent_id"):
             continue
-        rounds.setdefault(t["agent_id"], []).append(t)
+        agent_file.setdefault(t["agent_id"], t["file"])  # a turn's own file, if the walk missed it
+        rounds.setdefault(root_of(t["agent_id"]), []).append(t)
+    return rounds, agent_file
+
+
+def cmd_reviews(corpus, args):
+    """One row per review round: what it cost, at what level, nested subagents folded in."""
+    sample_line(corpus)
+    rounds, agent_file = review_rounds(args.root, corpus.turns)
     rows = []
     for agent_id, turns in rounds.items():
-        head = min(turns, key=lambda t: t["timestamp"])
-        brief = read_first_prompt(head["file"])
+        head_file = agent_file.get(agent_id)
+        if head_file is None:
+            continue
+        brief = read_first_prompt(head_file)
         m = REVIEW_CMD.search(brief or "")
         if not m:
             continue
+        level, pr = review_cmd_groups(m)
+        own_turns = [t for t in turns if t["agent_id"] == agent_id]
+        head = min(own_turns or turns, key=lambda t: t["timestamp"])
         got = totals(turns)
-        rows.append((int(m.group(2)), m.group(1), head["issue"], head["model"],
-                     got, head["timestamp"][:16]))
-    rows.sort(key=lambda r: (r[0], r[-1]))
+        nested = len({t["agent_id"] for t in turns} - {agent_id})
+        rows.append((pr, level, head["issue"], head["model"],
+                     got, head["timestamp"][:16], nested))
+    rows.sort(key=lambda r: (r[0], r[5]))
     table([[r[0], r[1], r[2], r[3], fmt(r[4]["turns"]),
             f"{r[4]['settled']}/{r[4]['turns']}", fmt(r[4]["output"]),
-            fmt(r[4]["input_new"]), fmt(r[4]["cache_read"]), r[5]]
+            fmt(r[4]["input_new"]), fmt(r[4]["cache_read"]), r[5], r[6]]
            for r in rows],
           ["pr", "level", "issue", "model", "turns", "settled", "output",
-           "input_new", "cache_read", "started"])
+           "input_new", "cache_read", "started", "nested"])
     if rows:
         print()
         settled = sum(r[4]["settled"] for r in rows)
         turns_read = sum(r[4]["turns"] for r in rows)
-        print(f"{len(rows)} review rounds; "
+        folded = sum(r[6] for r in rows)
+        print(f"{len(rows)} review rounds, {folded} nested transcript(s) folded in; "
               f"{fmt(sum(r[4]['output'] for r in rows))} output over "
               f"{settled} settled turns of {turns_read}, "
               f"{fmt(sum(r[4]['input_new'] for r in rows))} input_new")

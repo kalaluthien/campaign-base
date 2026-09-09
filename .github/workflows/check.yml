@@ -66,11 +66,14 @@ jobs:
       # rather than silently skipped by a glob that pins one interpreter.
       # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
       # reads a tie through a suite in either, and a tie through a suite this
-      # loop never ran would be a name and nothing else.
+      # loop never ran would be a name and nothing else. Two fixed roots and
+      # no glob: a skill with no scripts/ would leave a glob literal and
+      # `find` printing an error the `for` never reads. Nothing nested --
+      # a suite sits directly in its scripts/, as the guard reads it.
       - name: Every suite
         run: |
           n=0
-          for t in $(find scripts .claude/skills/*/scripts -maxdepth 1 -name '*-test.*' | sort); do
+          for t in $(find scripts .claude/skills -name '*-test.*' \( -path 'scripts/*' -o -path '.claude/skills/*/scripts/*' \) -not -path '*scripts/*/*' | sort); do
             echo "== $t"
             "$t" || exit 1
             n=$((n + 1))

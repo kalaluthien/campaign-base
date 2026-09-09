@@ -38,6 +38,12 @@ cycle of real traffic.
 - Silence about a difference you found and accepted. Write it down with the
   reason; it is the thing an incident will point at.
 
+## SDLC profile
+
+`optional = Docs` -- a migration always lands a code path, and `criterion` for
+`Spec` is that nothing below it exists, so its scenario is never skippable; the
+view is, because this kind changes no behaviour and so grows no shape.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

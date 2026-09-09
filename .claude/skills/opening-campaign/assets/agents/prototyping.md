@@ -38,6 +38,14 @@ an argument, not a product, and it is expected to be deleted.
 - Quietly reporting a prototype as production-ready. Say what is hardcoded, what
   is unhandled, and what would have to be rewritten.
 
+## SDLC profile
+
+`optional = Spec + Docs` -- the model and the view may go, and never the running
+thing: the test that shows it working and the code path it drives are the claim.
+The `Spec` half is narrow: `tieDiscipline` reads at every commit, so a code path
+this kind commits owes a scenario even on a branch that never lands, unless it
+ties through one already in the tree.
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

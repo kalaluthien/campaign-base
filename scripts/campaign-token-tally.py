@@ -103,7 +103,20 @@ import sys
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
 REVIEW_CMD = re.compile(
     r"/code-review\s+(?P<level>\w+)\s+(?P<pr>\d+)"
-    r"|review PR\s+(?P<pr2>\d+)\s+at\s+(?P<level2>\w+)")
+    # Anchored to the start of the brief, unlike the slash form above: a slash
+    # command essentially never occurs by accident in prose, but "review PR
+    # <N> at <level>" is ordinary English a fix-round brief can easily quote
+    # back ("address the findings from review PR 276 at medium") without
+    # being the round's OWN brief -- anchoring keeps that mention from
+    # promoting an unrelated subagent into a round or misattributing its
+    # turns. Case-insensitive because nothing about a plain brief's spelling
+    # is a wire format the way `/code-review` is: `reviewing.md`'s own call
+    # block writes "Review PR <N>" capitalized one line above the lowercase
+    # prompt, and a launcher who capitalizes the sentence the way English
+    # sentences start would otherwise vanish from every round this exists to
+    # price.
+    r"|\A\s*review PR\s+#?(?P<pr2>\d+)\s+at\s+(?P<level2>\w+)",
+    re.IGNORECASE)
 
 
 def review_cmd_groups(m):
@@ -115,6 +128,8 @@ def review_cmd_groups(m):
     to use.
     """
     return m.group("level") or m.group("level2"), int(m.group("pr") or m.group("pr2"))
+
+
 SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$")
 # An interpreter runs the file that follows it, and check-campaign-claim's
 # PREFIXES deliberately holds no interpreter -- it is looking for `gh`, which
@@ -662,7 +677,7 @@ def cmd_turns(corpus, args):
         print(json.dumps(t, ensure_ascii=False))
 
 
-def load_subagent_parents(roots):
+def load_subagent_lineage(roots):
     """(parent_of, path_of): every subagent's parent id and its own transcript path.
 
     Both read from `agent-<id>.meta.json` and its sibling `.jsonl`, sitting
@@ -718,7 +733,7 @@ def review_rounds(roots, turns):
     three deep on this machine's corpus, but nothing bounds it) and memoized,
     because two grandchildren of one fan-out both walk the same middle link.
     """
-    parent_of, agent_file = load_subagent_parents(roots)
+    parent_of, agent_file = load_subagent_lineage(roots)
     root_cache = {}
 
     def root_of(agent_id):

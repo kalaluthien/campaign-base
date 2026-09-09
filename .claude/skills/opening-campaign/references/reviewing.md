@@ -53,12 +53,16 @@ light does not license a lighter reviewer.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes
-above it. **The level sits at one fixed position and nowhere else** -- the
-first token after `/code-review`, or the token right after `at` in a plain
-brief: naming it anywhere else in the brief sets nothing, because only that
-position is parsed, and omitting it falls back to a persisted setting and then
-to the session's own effort -- a level chosen by neither the launcher nor the
-work.
+above it. **`/code-review`'s level is the first token after the command and
+nowhere else**: asking for it in the brief sets nothing, because only that
+token is parsed, and omitting it falls back to a persisted setting and then to
+the session's own effort -- a level chosen by neither the launcher nor the
+work. **A plain brief sets no level mechanically at all** -- there is no
+harness position that reads one, only the reviewer's own judgment of what you
+wrote and, separately, `campaign-token-tally.py`'s own reading of the token
+right after `at` for its own accounting. Put the level there anyway, since
+that is the one place a launcher and the tally agree to look, but say what you
+mean in the rest of the brief too.
 
 So a broad mechanical sweep is a lighter model at a higher level, and a subtle
 local change is a heavier model at a lower one. The knobs are independent, and a
@@ -113,13 +117,15 @@ narrowed on the merge diff. Hand-resolved, full, reading the combination
 **What a round costs, so that "one more round" is a priced decision.** Measured
 over 2026-09-04T00:45Z–2026-09-05T01:00Z (#200, `campaign-token-tally.py reviews`,
 method on #195): one round runs **57,374 to 134,222 input tokens** at `medium` or
-`high` on Opus. **Retired by #273**, which edited `reviews` itself: that range
-was read before the rollup existed, so it undercounts any round in the window
-that fanned out the way #273's own NOTE describes, and needs re-deriving over
-the same window with the current script before it is cited again. The shape
-this replaces is what the range hides — PR #184 ran seven rounds at 800,567
-input tokens, 38% of #177's *new input*, because each round re-read the entire
-pull request to check a handful of fixes.
+`high` on Opus. **This range predates #273's rollup**, which edited `reviews`
+itself: it was read before the rollup existed, so it undercounts any round in
+that window that fanned out the way #273's own NOTE describes. It remains the
+working threshold cited elsewhere in this file and in `AGENTS.md` § Review
+until a rollup-aware re-derivation over the same window replaces it — a
+follow-up, not done here. The shape this replaces is what the range hides —
+PR #184 ran seven rounds at 800,567 input tokens, 38% of #177's *new input*,
+because each round re-read the entire pull request to check a handful of
+fixes.
 
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect

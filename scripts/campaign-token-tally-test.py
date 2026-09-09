@@ -291,9 +291,32 @@ def build(tmp):
         assistant("m-a7", day + "03:26:00Z", a7_wt, out=40, session="s1",
                   agent="a7"),
     ])
+    # Capitalized the way an English sentence starts -- reviewing.md's own
+    # call block writes "Review PR <N>" capitalized one line above the
+    # lowercase prompt, so a launcher copying that capitalization must not
+    # vanish from the table.
+    a10_wt = str(base / "camp-260101" / "worktrees" / "312")
+    write(root / "proj" / "s1" / "subagents" / "agent-a10.jsonl", [
+        user(day + "03:27:00Z", a10_wt, "Review PR 403 at medium\n\ncheck the fixture",
+             session="s1", agent="a10"),
+        assistant("m-a10", day + "03:28:00Z", a10_wt, out=45, session="s1",
+                  agent="a10"),
+    ])
+    # A fix-round brief quoting the review it answers, not launching one --
+    # the plain-brief form must not fire on a mere MENTION mid-sentence.
+    a11_wt = str(base / "camp-260101" / "worktrees" / "313")
+    write(root / "proj" / "s1" / "subagents" / "agent-a11.jsonl", [
+        user(day + "03:29:00Z", a11_wt,
+             "address the findings from review PR 276 at medium",
+             session="s1", agent="a11"),
+        # Not 999 -- that value is reserved elsewhere to prove a window-dropped
+        # turn never appears anywhere in the `issues` table's text at all.
+        assistant("m-a11", day + "03:30:00Z", a11_wt, out=35, session="s1",
+                  agent="a11"),
+    ])
     # A round whose ROOT's own turn falls outside the window, so it never
     # becomes one of `corpus.turns` -- only its child's does. The round's
-    # file is still found by the directory walk `load_subagent_parents` does
+    # file is still found by the directory walk `load_subagent_lineage` does
     # (never window-filtered), so its brief still names the round; a lookup
     # built only from turns would find no file for the id and drop the round
     # entirely, silently, even though a child's cost is sitting right there.
@@ -310,8 +333,13 @@ def build(tmp):
     ])
     write(root / "proj" / "s1" / "subagents" / "agent-a9.jsonl", [
         user(day + "03:40:00Z", orphan_wt, "second angle", session="s1", agent="a9"),
+        # A model distinct from every default elsewhere in this fixture, so
+        # the row's `model` column pins that it came from a9 -- the only
+        # child WITH a turn in the window -- and not from a8, whose own turn
+        # never entered `corpus.turns` at all and so cannot be the row's
+        # source of `issue`/`model`/`started` however `head` is picked.
         assistant("m-a9", day + "03:41:00Z", orphan_wt, out=60, session="s1",
-                  agent="a9"),
+                  model="claude-sonnet-5", agent="a9"),
     ])
     write_meta(root / "proj" / "s1" / "subagents" / "agent-a9.meta.json",
                {"parentAgentId": "a8", "spawnDepth": 2})
@@ -445,12 +473,26 @@ def main():
               r401 and r401["level"] == "medium" and r401["output"] == "40",
               str(r401))
 
-        # A ROUND WHOSE ROOT'S OWN TURN IS OUTSIDE THE WINDOW IS STILL FOUND,
-        # by the directory walk rather than by a turn.
+        # CAPITALIZED THE WAY A SENTENCE STARTS IS STILL RECOGNIZED.
+        r403 = row(reviews, "403")
+        check("a capitalized plain brief is a round too, not just the lowercase form",
+              r403 and r403["level"] == "medium" and r403["output"] == "45",
+              str(r403))
+
+        # A MERE MENTION, NOT THE BRIEF'S OWN OPENING, IS NOT A ROUND. A
+        # fix-round worker's brief quoting "review PR 276 at medium" mid-
+        # sentence must not promote that subagent into a round of PR 276's own
+        # -- there is no genuine PR-276 round in this fixture at all.
+        check("a brief that only mentions a review is not read as launching one",
+              row(reviews, "276") is None, reviews)
         r402 = row(reviews, "402")
         check("a round survives its root's own turn falling outside the window",
               r402 and r402["level"] == "low" and r402["output"] == "60",
               str(r402))
+        check("...and its issue/model/started fall back to the one child "
+              "that IS in the window, provably (a9's model, not a default)",
+              r402 and r402["model"] == "claude-sonnet-5"
+              and r402["started"] == "2026-01-02T03:41", str(r402))
 
         # TOOL-ECHO COUNTS A CALL, NOT A MENTION, AND PARTITIONS THE BYTES.
         # The fixture runs campaign-tracker and campaign-repos in one command,

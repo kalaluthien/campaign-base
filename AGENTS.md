@@ -651,10 +651,11 @@ wants the merge, the author included: merge condition 2 is on who *writes* it.
 **Name the model and the level on every launch**, and they answer different
 questions: the model by the **depth** of the change, because a weaker reader
 returns "looks fine" on exactly the reasoning that needed a reader; the level by
-**how much there is to read**, `medium` being the baseline. **The level sits at
-one fixed position and nowhere else** — the first token after the command, or
-after `at` in a plain brief; asking for it anywhere else in the brief sets
-nothing.
+**how much there is to read**, `medium` being the baseline. **`/code-review`'s
+level is the first token after the command and nowhere else**; asking in the
+brief sets nothing. A plain brief sets no level mechanically at all — put it
+after `at` anyway, since that is what `campaign-token-tally.py` reads for its
+own accounting, and say what you mean in the rest of the brief.
 
 **`/code-review` inside a reviewer subagent fans out**, into an orchestrator,
 finders and their verifiers, each metered at the launching call's own turns

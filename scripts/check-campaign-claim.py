@@ -236,6 +236,21 @@ KILLS = {"kill", "pkill", "killall"}
 # handle -- and still not a peer's consent, which is what the rule is about.
 HERDR_KILL = ("agent", "kill")
 
+# A HOOK BYPASS IS A FLAG, AND MOVING THE HOOKS IS THE SAME BYPASS SHAPED LIKE
+# CONFIGURATION. `AGENTS.md` § Execution mode says a hook is never bypassed;
+# 89918aa was committed with `--no-verify` all the same (#268, 2026-09-09), and
+# the correction after it was a commit, not a check. Three spellings, and the
+# third is why this is not a scan for one word: `git -c core.hooksPath=X`,
+# `git config core.hooksPath X`, and `GIT_CONFIG_KEY_0=core.hooksPath` reach
+# the same end through a flag, a subcommand and the environment.
+NO_VERIFY = "--no-verify"
+HOOKS_PATH = "core.hooksPath"
+# git's own options BEFORE the subcommand that take a separate word, so the
+# subcommand is found past them. Only the separate-word spellings are here:
+# `--git-dir=X` carries its value and needs no skip.
+GIT_PRE_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
+                  "--exec-path"}
+
 # A heredoc opener and its delimiter: `<<EOF`, `<<'MSG'`, `<<-"X"`. The body
 # that follows is data (#193) and is removed before the command is split.
 HEREDOC_OPEN = re.compile(
@@ -1139,6 +1154,52 @@ def gh_write(tokens):
     return False, "gh " + " ".join(pair) + ", not a write"
 
 
+def git_bypass(rest):
+    """The hook-bypass findings in one segment whose command word is `git`.
+
+    `--no-verify` anywhere in it, `-n` where the subcommand is `commit` and
+    only there -- it is `--dry-run` for `git push` and `--no-commit` for
+    `git merge`, so a blanket `-n` would refuse two ordinary calls -- and
+    `git config core.hooksPath <value>`, which is the same move spelled as a
+    subcommand. A `--get` of the same key reads it and is left alone: the
+    value word is what separates setting it from asking.
+    """
+    out, sub, i = [], "", 1
+    while i < len(rest):
+        t = rest[i]
+        if t.startswith("-"):
+            i += 2 if t in GIT_PRE_VALUED else 1
+            continue
+        sub = t
+        i += 1
+        break
+    args = rest[i:]
+    if NO_VERIFY in rest:
+        out.append(f"`{NO_VERIFY}` skips the hook that would have judged this "
+                   f"call. A hook is never bypassed: report what it refused "
+                   f"and ask, because a guard that did not run has permitted "
+                   f"nothing.")
+    if sub == "commit":
+        # A CLUSTER, NOT THE TOKEN `-n`: `git commit -nm x` is `-n -m x`. No
+        # flag's VALUE is skipped on the way, and none needs to be: shlex
+        # keeps `-m 'note -n'` as one word that does not open with `-`, and a
+        # message that is exactly `-n` is a call nobody makes.
+        for t in args:
+            if (len(t) > 1 and t[0] == "-" and t[1] != "-"
+                    and t[1:].isalpha() and "n" in t[1:]):
+                out.append(f"`{t}` is `{NO_VERIFY}` for `git commit`, in a "
+                           f"cluster or alone. A hook is never bypassed: "
+                           f"report what it refused and ask.")
+                break
+    if sub == "config" and HOOKS_PATH in args:
+        k = args.index(HOOKS_PATH)
+        if any(not a.startswith("-") for a in args[k + 1:]):
+            out.append(f"`git config {HOOKS_PATH}` moves the hooks rather than "
+                       f"skipping one, which is the same bypass shaped like "
+                       f"configuration.")
+    return out
+
+
 def shell_findings(segs):
     """The rules a split shell command breaks that name no target.
 
@@ -1165,6 +1226,21 @@ def shell_findings(segs):
                 "`herdr agent kill` stops a session that has not agreed to "
                 "stop. A listed peer is asked and never killed: it is the only "
                 "thing that can say which claim it holds.")
+        # THE ASSIGNMENT FORM IS READ ON EVERY SEGMENT, not only a `git` one,
+        # and over `seg` rather than `rest` so an env assignment before the
+        # command word is in it. `git -c core.hooksPath=X`, the two
+        # `GIT_CONFIG_*` variables and an `export` of either are one shape:
+        # the key sits on one side of an `=`. A bare `core.hooksPath` with no
+        # `=` is a word in prose or a `--get`, and is not this.
+        for t in seg:
+            name, sep, value = t.partition("=")
+            if sep and HOOKS_PATH in (name, value):
+                out.append(f"`{t}` sets {HOOKS_PATH}, which moves the hooks "
+                           f"rather than skipping one -- the same bypass "
+                           f"shaped like configuration.")
+                break
+        if word == "git":
+            out += git_bypass(rest)
     return out
 
 

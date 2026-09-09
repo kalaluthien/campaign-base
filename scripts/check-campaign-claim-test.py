@@ -1928,6 +1928,76 @@ def main():
               "stops a process" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
+    # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
+    # Three spellings reaching one end, so three branches, each asserted on
+    # its own sentence. The ALLOWS are read first, as this repository's own
+    # rule for a brief over a guard asks: `-n` is `--dry-run` for push and
+    # `--no-commit` for merge, and the key is a word in prose and in a
+    # `--get`.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, command in (
+                ("`git push -n`, which is --dry-run", "git push -n"),
+                ("`git merge -n`, which is --no-commit", "git merge -n main"),
+                ("`git commit -am`, whose cluster holds no n",
+                 "git commit -am x"),
+                ("an `-n` inside a commit message", "git commit -m 'note -n'"),
+                ("a `--get` of the key", "git config --get core.hooksPath"),
+                ("the key as a word in a file being read",
+                 "grep -n core.hooksPath AGENTS.md")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`--no-verify` is refused, saying a guard that did not run "
+              "permitted nothing",
+              r.returncode == 2 and "`--no-verify` skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git push --no-verify", run_cwd=wt)
+        check("...on any git subcommand, not commit alone", r.returncode == 2,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit -n -m x", run_cwd=wt)
+        check("`git commit -n` is refused as the short spelling of it",
+              r.returncode == 2
+              and "is `--no-verify` for `git commit`" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit -nm x", run_cwd=wt)
+        check("...and so is the cluster `-nm`", r.returncode == 2
+              and "is `--no-verify` for `git commit`" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command="git -c core.hooksPath=/dev/null commit -m x",
+                run_cwd=wt)
+        check("`-c core.hooksPath=` is refused as the same bypass shaped like "
+              "configuration",
+              r.returncode == 2 and "shaped like" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git config core.hooksPath /dev/null",
+                run_cwd=wt)
+        check("...and so is the subcommand spelling, which sets it with a "
+              "value",
+              r.returncode == 2 and "moves the hooks" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command="GIT_CONFIG_KEY_0=core.hooksPath "
+                        "GIT_CONFIG_VALUE_0=/dev/null git commit -m x",
+                run_cwd=wt)
+        check("...and so is the environment spelling, which no `git` flag "
+              "carries",
+              r.returncode == 2 and "sets core.hooksPath" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Bash", command="git commit --no-verify -m x",
+                run_cwd=d)
+        check("the same bypass outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "skips the hook" in out(r) and "in no campaign" in out(r),
+              out(r)[:400])
+
     # THE AGENT LAUNCH (kalaluthien/campaign-base#278). Two rules of
     # AGENTS.md § Review that the guard could not see at all until `Agent`
     # joined install-hooks.sh's `MATCHER`: a tool absent from that string

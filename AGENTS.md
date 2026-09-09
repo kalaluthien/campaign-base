@@ -446,9 +446,10 @@ the branch is claimed by `campaign-claim take` after the issue exists, because t
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
 **Write atomic commits with a search-optimized message and land them without
 waiting to be asked**, since work is not finished until it is merged and pushed.
-**A hook is never bypassed** — not with `--no-verify`, and not by moving
-`core.hooksPath`, which is the same bypass shaped like configuration; report what
-it refused and ask.
+**A hook is never bypassed**, and `scripts/check-campaign-claim.py` refuses the
+three spellings that would: `--no-verify`, `git commit -n`, and setting
+`core.hooksPath` through a flag, a subcommand or the environment. Report what
+the hook refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published

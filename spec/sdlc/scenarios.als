@@ -1,7 +1,7 @@
 /*
  * The disciplines over sdlc/system, and the witnesses: a full chain, a chain
- * that skips by the rule, a docs waiver and its remedy, and the tie broken by
- * a rename.
+ * that skips by the rule, a prose-only change with nothing below its plan, a
+ * docs waiver and its remedy, and the tie broken by a rename.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/scenarios
@@ -10,21 +10,33 @@ open sdlc/system
 
 /* ---------------- profiles ---------------- */
 
-/* THE TWO KINDS THE WITNESSES RUN UNDER. `development` is this campaign's own
-   kind: the model before the code, a test that failed first, and a view only
-   when the model grew a shape -- so Docs is the one stage it lets a change
-   skip. `research` refuses changing a repository beyond a scratch probe, so
-   its changes are findings on an issue and every stage past Plan is
-   skippable. The other kinds' profiles are the procedure's to state, one
-   line each in assets/agents/*.md, in this vocabulary. */
-pred developmentProfile[p: Profile] { p.optional = Docs }
+/* THE TWO KINDS THE WITNESSES RUN UNDER, and both leave every skippable stage
+   optional. `development` is this campaign's own kind: the model before the
+   code, a test that failed first, and a view only when the model grew a shape.
+   None of those is a stage the KIND forbids skipping, because each is already
+   refused by its own criterion wherever there is anything to refuse -- a
+   change that wrote a code path may skip neither Spec nor Test, and one whose
+   scenario grew a shape may not skip Docs. What is left once every criterion
+   holds is a change with nothing below its plan: a procedure reference, a
+   README, a comment. `S2a_ProseOnlyChange` is that change, and a profile
+   naming Docs alone refused it outright, before any criterion was read.
+   `research` refuses changing a repository beyond a scratch probe, so its
+   changes are findings on an issue.
+
+   THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and these two narrow
+   nothing. The other kinds' profile lines are the procedure's to state, one
+   line each in assets/agents/*.md, in this vocabulary, and `prototyping` and
+   `migration` are where a narrower one is written. */
+pred developmentProfile[p: Profile] { p.optional = skippable }
 pred researchProfile[p: Profile]    { p.optional = skippable }
 
 /* ---------------- disciplines ---------------- */
 
 /* A STAGE IS WRITTEN OR SKIPPED ONLY AFTER WHAT FEEDS IT IS DONE. The
-   procedure's own order; `S5_CodeBeforeSpecRefused` is its sharpest case,
-   with `skipDiscipline` closing the skip. */
+   procedure's own order, and `OrderedByFeeds_Bites` in checks.als is what its
+   absence admits. It bounds when a stage may be reached and never whether the
+   absence it leaves is licensed: that reading is `landDiscipline`'s, and
+   `S5b_LandsWithoutTheLanding` is the chain the order lets through. */
 pred orderDiscipline {
   always ((Now.event in Write + Skip) implies all p: feeds.(Now.at) | done[Now.subject, p])
 }
@@ -77,6 +89,24 @@ pred S2_SkippedChain {
     researchProfile[c.profile]
     change.c.stage = Intent + Plan
     eventually (c in Landed and c.skipped = skippable)
+  }
+}
+
+/* A PROSE-ONLY CHANGE OF A DEVELOPMENT CAMPAIGN: a procedure reference, a
+   README, a comment. Intent and plan written, nothing below them, and every
+   stage below Plan waived by its own criterion -- the change wrote no view, no
+   test and no code path, so there is nothing to formalise, nothing to show and
+   nothing that runs. It lands, and the tree it leaves is tied vacuously: it
+   wrote no code path for a scenario to reach. The same shape as
+   `S2_SkippedChain` under the other kind, which is the claim -- what separates
+   a development change from a research one is what it writes, not what it may
+   skip. `S5` is this waiver once a code path exists. */
+pred S2a_ProseOnlyChange {
+  allDisciplines
+  one c: Change {
+    developmentProfile[c.profile]
+    change.c.stage = Intent + Plan
+    eventually (c in Landed and c.skipped = skippable and treeTied)
   }
 }
 
@@ -142,30 +172,37 @@ pred S4a_RenameKeepsItsNamers {
   }
 }
 
-/* Code before its scenario: no trace writes a development change's code
-   path while the change has no scenario. The order and the worker's reading
-   of the skip rule refuse it between them -- Code waits on Spec being done,
-   and the development kind does not let Spec be skipped -- and the commit
-   check is not what refuses it: the tie reads the tree, so a scenario and a
-   test of ANOTHER change can tie the path, which is why the scope holds two
-   changes and the subject's kind is pinned. `S5a` is the same chain under
-   the order and the worker's reading alone, and it is refused all the same. */
-pred codeBeforeSpec {
-  eventually (Now.event = Write and Now.at = Code
-              and developmentProfile[Now.subject.profile]
-              and no writtenOf[Now.subject] & stage.Spec)
+/* A CODE PATH WITH NO SCENARIO: no trace lands a development change that
+   wrote one. Neither the kind nor the worker's reading refuses the chain any
+   more -- Spec is optional under `developmentProfile`, and its criterion is
+   true for as long as nothing below Spec is written -- so a change may waive
+   its scenario and go on to write the code path, which is `S5b`. What refuses
+   it is the merge: the code path turns Spec's criterion false, so the waiver
+   is stale by the landing and `landDiscipline` reads the criterion again
+   there. `S5a` drops the commit check and the chain is refused all the same,
+   which says the tie is not what refuses it; the scope holds two changes
+   because the tie reads the TREE, so a scenario and a test of another change
+   could reach the path. */
+pred codeWithoutSpec[c: Change] {
+  developmentProfile[c.profile]
+  eventually (c in Landed
+              and some writtenOf[c] & stage.Code
+              and no writtenOf[c] & stage.Spec)
 }
-pred S5_CodeBeforeSpecRefused  { allDisciplines and codeBeforeSpec }
-pred S5a_RefusedWithoutTheTie  { orderDiscipline and skipDiscipline and codeBeforeSpec }
+pred S5_CodeWithoutSpecRefused   { allDisciplines and some c: Change | codeWithoutSpec[c] }
+pred S5a_RefusedWithoutTheTie    { orderDiscipline and skipDiscipline and landDiscipline and some c: Change | codeWithoutSpec[c] }
+pred S5b_LandsWithoutTheLanding  { orderDiscipline and skipDiscipline and some c: Change | codeWithoutSpec[c] }
 
 /* ---------------- commands ---------------- */
 
 run S1_FullChain              for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S2_SkippedChain           for exactly 1 Change, exactly 1 Profile, exactly 2 Artifact, 10 steps expect 1
+run S2a_ProseOnlyChange       for exactly 1 Change, exactly 1 Profile, exactly 2 Artifact, 10 steps expect 1
 run S3_DocsWaived             for exactly 1 Change, exactly 1 Profile, exactly 5 Artifact, 10 steps expect 1
 run S3a_DocsDemanded          for exactly 1 Change, exactly 1 Profile, 6 Artifact, 10 steps expect 0
 run S3b_DocsWrittenAfterAll   for exactly 1 Change, exactly 1 Profile, 7 Artifact, 12 steps expect 1
 run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
-run S5_CodeBeforeSpecRefused  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
+run S5_CodeWithoutSpecRefused for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
+run S5b_LandsWithoutTheLanding for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1

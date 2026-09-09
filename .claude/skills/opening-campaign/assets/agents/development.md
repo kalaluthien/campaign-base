@@ -36,8 +36,12 @@ skipped by judgement is the tie broken silently.
 
 ## SDLC profile
 
-`optional = Docs` -- a change of this kind skips its view when the model grew no
-shape, and never its scenario, its test or its code path.
+`optional = skippable` -- the kind narrows nothing below the criterion, which
+already refuses each skip wherever there is anything to refuse: a change that
+wrote a code path skips neither its scenario nor its test, and one whose
+scenario grew a shape does not skip its view. What is left is a change with
+nothing below its plan -- a procedure reference, a README, a comment -- and it
+lands with every stage below Plan waived.
 
 ## Every session
 

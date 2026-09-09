@@ -22,13 +22,13 @@ open sdlc/system
    Spec to one that also wrote no view. Docs was optional before the widening
    and is untouched by it -- `maySkip` is a conjunction, so the profile has no
    say in a criterion, and the Docs criterion refuses that skip wherever the
-   scenario grew a shape (`S3a_DocsDemanded`). What it leaves is wider than a
-   change with nothing below its plan: a scenario and a view alone land
-   too, which is `S6a_TheSameWaiverTheKindAllows`. `S2a_ProseOnlyChange` is the
-   narrowest of them, and the one a profile naming Docs alone refused outright,
+   scenario grew a shape (`S3a_DocsDemanded`). What the widening leaves is
+   wider than a change with nothing below its plan: a scenario and a view alone
+   land too (`S6a_TheSameWaiverTheKindAllows`). `S2a_ProseOnlyChange` is the
+   narrowest, and the one a profile naming Docs alone refused outright,
    before any criterion was read. `research` refuses changing a repository
    beyond a scratch probe, so its changes are findings on an issue.
-
+   
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and those two narrow
    nothing -- so neither witnesses that half of `maySkip`, and `prototyping` is
    here to. It keeps the running thing, and

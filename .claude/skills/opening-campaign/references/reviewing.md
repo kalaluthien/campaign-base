@@ -25,14 +25,20 @@ expressing a choice, and there is no value meaning "whatever the launcher is".
 that slot is the one way to write this block illegally.
 
 **A plain brief, not `/code-review`, until a fanned round prices under a
-narrowed round.** `/code-review` inside a reviewer subagent fans out into an
+narrowed round**, and `scripts/check-campaign-claim.py` refuses the launch that
+does otherwise -- along with one naming no model, the rule above.
+`/code-review` inside a reviewer subagent fans out into an
 orchestrator, finders and their verifiers, each its own further subagent --
 metered at the launching call's own turns alone until
 `campaign-token-tally.py reviews` rolls a fan-out's nested transcripts into the
 round that spawned it (`nested` counts how many). PR #255's five fanned rounds
 cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
-for one narrowed round below (NOTE on #1, 2026-09-09;
-`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
+for one narrowed round below. **The rolled-up figures are #273's**, re-derived
+over the same window at PR #276's merge sha (`97c6797`) and posted as a NOTE on
+kalaluthien/campaign-base#272: 47 rounds, 98 nested transcripts folded in,
+13,402,567 input_new in total, and every other pull request in the window
+nested-0 -- so the ~5.0M is PR #255's fan-out and not the window's ordinary
+cost (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
 Write the brief as `"review PR <N> at <level>"`, level right after `at` --
 that position sets nothing mechanically the way `/code-review`'s own does
 below, it is only where `campaign-token-tally.py` and a reader both know to

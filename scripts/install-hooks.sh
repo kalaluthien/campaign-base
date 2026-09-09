@@ -333,10 +333,14 @@ path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 # The matcher is the tool list the CLAIM GUARD has an opinion about. Bash is on
 # it because a changing shell command is most of what a worker does; the guard
 # itself decides which Bash calls count, so widening the matcher costs a process
-# and never a false refusal. It is keyed on the event: PreToolUse is the only
-# one that takes a matcher, and a matcher on SessionStart would silently match
-# nothing.
-MATCHER = {"PreToolUse": "Edit|Write|NotebookEdit|Bash"}
+# and never a false refusal. Agent joined it with
+# kalaluthien/campaign-base#278: a launch is where a review's mode and its
+# model are chosen, and a tool absent from this string reaches the guard not at
+# all -- which is why the two rules on the call were prose nothing could
+# enforce however the guard was written. It is keyed on the event: PreToolUse
+# is the only one that takes a matcher, and a matcher on SessionStart would
+# silently match nothing.
+MATCHER = {"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent"}
 # Through the interpreter, never as a bare path. A bare path that has gone
 # missing exits 127 from the shell, which the harness reads as a hook that did
 # not block -- so a moved checkout turns the guard into a silent pass. python3

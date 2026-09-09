@@ -1847,6 +1847,99 @@ def main():
         check("...and says it was not written, rather than nothing",
               "verdict not logged" in r.stdout, out(r)[:300])
 
+    # THE AGENT LAUNCH (kalaluthien/campaign-base#278). Two rules of
+    # AGENTS.md § Review that the guard could not see at all until `Agent`
+    # joined install-hooks.sh's `MATCHER`: a tool absent from that string
+    # reaches this file never. Each refusal is asserted on the sentence its
+    # own branch prints, because both share exit 2 and one payload can break
+    # both at once.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        good = {"subagent_type": "general-purpose", "model": "opus",
+                "description": "Review PR 9",
+                "prompt": "review PR 9 at medium\n\nRead the guard's allows "
+                          "before its refusals."}
+        r = ask(wt, tool="Agent", tool_input=good, run_cwd=wt)
+        check("an Agent launch with a plain brief and a model is allowed",
+              r.returncode == 0 and "Neither rule on the call is broken" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # NO CLAIM IN THE FIXTURE, and that is the point: a launch is not a
+        # plane, so the allow above must not be coming from the claim the
+        # worktree happens to sit on.
+        with tempfile.TemporaryDirectory() as d2:
+            f2 = Fixture(d2, claims=())
+            r = ask(f2.base, tool="Agent", tool_input=good, run_cwd=f2.base)
+            check("...and it is allowed with no claim anywhere, since a launch "
+                  "is no plane",
+                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        fanned = dict(good, prompt="/code-review high 9\n\nReview PR 9.")
+        r = ask(wt, tool="Agent", tool_input=fanned, run_cwd=wt)
+        check("an Agent prompt opening /code-review is refused, naming the "
+              "fan-out",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE OPENING WORD AND NOWHERE ELSE, which is the branch's stated
+        # ceiling: a brief that MENTIONS the command -- this repository's own
+        # rule telling a launcher not to use it -- is not a launch of it.
+        mentions = dict(good, prompt="review PR 9 at medium\n\nDo not run "
+                                     "/code-review inside this reviewer.")
+        r = ask(wt, tool="Agent", tool_input=mentions, run_cwd=wt)
+        check("...while a brief that only MENTIONS /code-review is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        nomodel = {k: v for k, v in good.items() if k != "model"}
+        r = ask(wt, tool="Agent", tool_input=nomodel, run_cwd=wt)
+        check("an Agent launch naming no model is refused, naming the default "
+              "it would inherit",
+              r.returncode == 2 and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Agent", tool_input=dict(good, model="  "), run_cwd=wt)
+        check("...and a blank model is the same finding, not a model named",
+              r.returncode == 2 and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ONE PAYLOAD, BOTH FINDINGS. Without this a refusal that returned on
+        # the first would pass every case above while going silent about the
+        # second, which is #191 item 1 at an early return.
+        r = ask(wt, tool="Agent",
+                tool_input={k: v for k, v in fanned.items() if k != "model"},
+                run_cwd=wt)
+        check("...and a launch breaking both rules prints both",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r)
+              and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # AN EMPTY PROMPT IS NOT A `/code-review`, and it is not a crash
+        # either: `split(None, 1)` on an empty string is an empty list.
+        r = ask(wt, tool="Agent", tool_input={"model": "opus", "prompt": "",
+                                              "description": "x"}, run_cwd=wt)
+        check("an Agent launch with an empty prompt is allowed and says so",
+              r.returncode == 0 and "its prompt is empty" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    # OUTSIDE EVERY BASE THE SAME LAUNCH IS ALLOWED. This guard is registered
+    # for every session on this machine, so a rule of this repository must not
+    # reach one working somewhere else -- and the allow says which rule it
+    # read and did not enforce, rather than passing silently.
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Agent",
+                tool_input={"description": "x", "prompt": "/code-review high 9"},
+                run_cwd=d)
+        check("the same launch outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "fans out into an orchestrator" in out(r)
+              and "in no campaign" in out(r), out(r)[:400])
+
+    # THE MATCHER IS THE OTHER HALF OF THIS RULE. The branches above cannot
+    # fire for a tool the harness never routes here, and nothing else in this
+    # tree reads that string, so it is asserted where it is written.
+    matcher = (HERE / "install-hooks.sh").read_text()
+    check("install-hooks.sh registers the guard on Agent",
+          '"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent"' in matcher,
+          "MATCHER no longer lists Agent; the two rules on the call would be "
+          "unreachable however this file is written")
+
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
     # somebody thought of; these are the shapes the campaign actually typed,
     # replayed against a fixture in which the session holds the claims it held

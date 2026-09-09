@@ -667,13 +667,14 @@ brief sets nothing. A plain brief sets no level mechanically at all — put it
 after `at` anyway, since that is what `campaign-token-tally.py` reads for its
 own accounting, and say what you mean in the rest of the brief.
 
-**`/code-review` inside a reviewer subagent fans out**, into an orchestrator,
-finders and their verifiers, each metered at the launching call's own turns
-alone until `campaign-token-tally.py reviews` rolls a fan-out's nested
-transcripts into the round that spawned it. PR #255's five fanned rounds cost
-close to 5.0M input_new combined, against 57,374-134,222 for one narrowed round
-(NOTE on #1, 2026-09-09). **Launch a reviewer with a plain brief, not
-`/code-review`, until a fanned round prices under that narrowed-round figure.**
+**A plain brief, not `/code-review`, and a model named on every launch.**
+`scripts/check-campaign-claim.py` refuses an `Agent` whose prompt opens
+`/code-review`, which fans out into an orchestrator, finders and their
+verifiers, and one naming no `model`; `install-hooks.sh`'s matcher is what
+routes a launch to it, so a guard installed before #278 enforces neither. The
+level is not among them, because no position in a plain brief sets one. What a
+fanned round and a narrowed one cost, and when the switch back is due, are
+`.claude/skills/opening-campaign/references/reviewing.md` § The call's.
 
 **A session that cannot start a subagent is blocked**: it says so and the pull
 request waits, which is never a licence to review some other way. The call itself,

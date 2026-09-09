@@ -8,7 +8,10 @@ commit half (spec/campaign/orchestration/scenarios.als, `claimBeforeWork` and
 `claimBeforeCommit`). A claim is a `<slug>/<issue>-<topic>` branch whose
 ref exists on the remote, and nothing on disk (#176).
 
-WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
+WHAT IS READ. Three bounded languages. A FILE TOOL names its target. An
+`Agent` LAUNCH names its own two fields, `prompt` and `model`, and neither
+needs a claim or a role: AGENTS.md § Review's rules on the call gate cost and
+the choice of a reader, not a plane. A `gh`
 call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
 split it, and so do the strings another command runs -- the `-c` of a shell
 NAMED IN `SHELLS`, alone or last in a cluster like `-lc`, and `eval`'s
@@ -88,7 +91,10 @@ diagnosis names one edit where the claim's names a claim. `gh api ... -f body=`
 posts a comment and is NOT read; that ceiling is stated in the refusal itself.
 
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
-it. A `gh` write from a cwd under no base is allowed as not in a campaign.
+it. A `gh` write, an `Agent` launch or a shell rule broken from a cwd under no
+base is allowed as not in a campaign: this guard is registered for every
+session on this machine, and one of this repository's rules walling a session
+that has nothing to do with it is an outage and not a gate.
 """
 import datetime
 import importlib.machinery
@@ -146,6 +152,24 @@ NAMELESS = ("A session with no campaign name has no role, and a session with "
             "<pane> <slug>-<role>-<n>")
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
+
+# THE AGENT PAYLOAD, PROBED AND NOT ASSUMED (kalaluthien/campaign-base#278). An
+# assistant `tool_use` block in a transcript carries the tool input verbatim,
+# which is what guard-corpus.py already relies on for Bash and the file tools;
+# read across this machine's transcripts on 2026-09-10 the 412 `Agent` blocks
+# carried `description`, `prompt` and `subagent_type` in every one, and
+# `model`, `run_in_background` and `isolation` only where the launcher named
+# them. So both fields below are read as possibly absent, and an absent
+# `model` is the finding rather than a payload this could not read.
+AGENT_TOOL = "Agent"
+AGENT_PROMPT, AGENT_MODEL = "prompt", "model"
+# The slash command that fans out, AGENTS.md § Review. READ AS THE OPENING WORD
+# AND NOWHERE ELSE, because that is the only position the harness runs a slash
+# command in: one named further down a brief is prose about it, and a scan of
+# the whole prompt would refuse a brief that says not to use it. Of the 194
+# `Agent` launches recorded under this base, 113 open with it and 1 names no
+# model.
+FANS_OUT = "/code-review"
 
 WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
           "delete pin unpin lock unlock".split()} \
@@ -1854,6 +1878,55 @@ def bash_call(command, cwd: Path, session_id=""):
                   f"({source}). It covers {named}.", *fell_back])
 
 
+def agent_call(tool_input, cwd: Path):
+    """An `Agent` launch, read against AGENTS.md § Review's two rules on the
+    call: a plain brief rather than `/code-review`, and a model named.
+
+    Neither is a plane, so neither asks for a claim or a role. What they gate
+    is what a round COSTS and who reads the diff, and both are properties of
+    the payload alone -- which is why this half is the only one here that
+    reaches a verdict without touching git.
+
+    THE CAMPAIGN READING IS STILL MADE, and last: the two rules are this
+    repository's, and refusing them for a session working somewhere else on
+    this machine would be an outage. So a finding outside every base is
+    printed and allowed, in the wording `bash_call` uses for the same shape.
+    """
+    prompt = str(tool_input.get(AGENT_PROMPT) or "")
+    model = str(tool_input.get(AGENT_MODEL) or "").strip()
+    words = prompt.split(None, 1)
+    opener = words[0] if words else ""
+    what = (f"an Agent launch, model {model!r}" if model
+            else "an Agent launch naming no model")
+    read = [f"its prompt opens {opener!r}." if opener
+            else "its prompt is empty."]
+    findings = []
+    if opener == FANS_OUT:
+        findings.append(
+            f"`{FANS_OUT}` inside a subagent fans out into an orchestrator, "
+            f"finders and their verifiers, each its own further subagent. "
+            f"Write a plain brief instead -- `review PR <N> at <level>`, then "
+            f"what to check -- until a fanned round prices under a narrowed "
+            f"one: .claude/skills/opening-campaign/references/reviewing.md "
+            f"§ The call keeps the figures.")
+    if not model:
+        findings.append(
+            "a launch naming no model inherits a default rather than "
+            "expressing a choice, and there is no value meaning `whatever the "
+            "launcher is`. Name it: the model by the depth of the change, the "
+            "level by how much there is to read.")
+    if not findings:
+        return allow([f"{what}: {read[0]} Neither rule on the call is broken, "
+                      f"and a launch is no plane, so no claim was read for it."])
+    root, how = session_root(cwd)
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {read[0]}", *[f"  {f}" for f in findings],
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
+    return refuse([f"{what}: {read[0]}", *[f"  {f}" for f in findings], how])
+
+
 def pre(payload):
     session_id = payload.get("session_id") or ""
     tool = payload.get("tool_name", "")
@@ -1872,6 +1945,11 @@ def pre(payload):
         return refuse([f"a path would not resolve ({e.__class__.__name__})."])
     if tool == "Bash":
         return bash_call(tool_input.get("command") or "", cwd, session_id)
+    if tool == AGENT_TOOL:
+        # AFTER the `try` above and not inside it: this half resolves no path
+        # of its own, so it has no OSError to turn into a refusal, and folding
+        # it in would put a launch behind a handler that names a path.
+        return agent_call(tool_input, cwd)
     return 0
 
 

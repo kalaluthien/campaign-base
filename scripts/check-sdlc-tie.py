@@ -187,9 +187,13 @@ WITNESSES = re.compile(r"^[ \t]*#[ \t]*witnesses:[ \t]*(.*)$")
 # THE LEGACY ALLOW-LIST. Every code path this tree held untied when #268 wrote
 # it, derived from the tree by running the guard over it -- the shape #237 gave
 # R3, and for the same reason: a list the tree is CHECKED AGAINST shrinks by one
-# line per repair and cannot grow behind the guard's back, where a list that
-# only printed did neither. T4 refuses a path untied and unlisted; T5 refuses a
-# line whose path is tied, renamed or gone.
+# line per repair, where a list that only printed never shrank. What each
+# refusal actually reads is in the docstring's T4 and T5, and the two are
+# narrower than a tree-wide reading on purpose: T4 refuses only a path THIS
+# CHANGE TOUCHED that is untied and unlisted, and T5 refuses only a line whose
+# path is TIED now -- a line naming no code path here is a count in the reading,
+# because from inside a fixture tree that is indistinguishable from the list
+# being about another repository.
 LEGACY = (
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
     ".claude/skills/assuming-role/scripts/campaign-role-brief.py",
@@ -253,10 +257,14 @@ def stem(path):
 def read_blobs(oids):
     """{oid: text} for every oid, in ONE `git cat-file --batch`.
 
-    The batch protocol is `<oid> <type> <size>\\n<content>\\n` per request, and
-    `<oid> missing\\n` for one it cannot resolve -- a two-field header, which is
-    skipped rather than raising, since a missing blob is a path this reading
-    simply has no text for. Every blob is decoded with `errors="replace"`: a
+    The batch protocol is `<oid> <type> <size>\\n<content>\\n` per request. A
+    header of fewer than three fields is skipped and the reader advances one
+    line, which serves two ends: `<oid> missing` for an oid it cannot resolve --
+    not reachable from here, since every oid came from this repository's own
+    listing, but a path with no text rather than a raise if it ever were -- and
+    RE-SYNCHRONISATION, since a size that does not land on the next header
+    leaves the reader mid-stream and this is what walks it back to one. Every
+    blob is decoded with `errors="replace"`: a
     non-UTF-8 byte in an .als or a suite becomes a replacement character in the
     text, where a strict decode raised and the last resort turned the raise
     into a permit."""
@@ -454,6 +462,23 @@ def judge(after_kind, against, legacy_path):
     source = "LEGACY" if legacy_path is None else legacy_path
     allowed = set(LEGACY) if legacy_path is None else read_legacy(legacy_path)
 
+    if after_kind == "commit":
+        # HEAD MUST CONTAIN THE REF, or the two trees are not a change: every
+        # commit the ref has and HEAD has not reads backwards -- a path the ref
+        # tied reads as one HEAD untied, and a branch that committed nothing at
+        # all is refused with a T3 naming a file it never opened. The reading
+        # cannot be made, so it is not made: this permits and says so, the way
+        # every other unreadable input here does. On a pull request GitHub's
+        # merge commit contains the base by construction, and merge condition 3
+        # keeps it so; what this catches is the window where `origin/main` moved
+        # between that merge commit and the fetch.
+        if subprocess.run(["git", "-C", ROOT, "merge-base", "--is-ancestor",
+                           against, "HEAD"]).returncode != 0:
+            print(f"check-sdlc-tie: PERMITTING -- HEAD does not contain "
+                  f"{against}, so the two trees are not a change and every "
+                  f"commit {against} has and HEAD has not would read backwards. "
+                  f"Nothing was judged", file=sys.stderr)
+            return 0
     t0 = time.perf_counter()
     before = committed(against, against, rules) if after_kind == "commit" \
         else head_tree(rules)
@@ -498,7 +523,7 @@ def judge(after_kind, against, legacy_path):
             continue
         if was in allowed or k in allowed:   # a rename carries the licence
             licensed.append(k)
-        elif k not in touched and was not in touched:
+        elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
             # that the change never opened is not this change's debt, and every
             # fixture repository under scripts/*-test.py is a tree of copied

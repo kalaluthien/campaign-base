@@ -24,12 +24,29 @@ DOES let it stand is named for exactly that reading.
 A mutation that deletes one branch of the guard fails the case named for it;
 the PR that added this suite ran that sweep and its REPORT quotes the result.
 """
+import importlib.machinery
+import importlib.util
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-sdlc-tie.py"
+
+
+def guard_module():
+    """The guard as a module, for `LEGACY` alone. A case about the built-in
+    list must not pin its LENGTH: the list shrinks by one line per repair, and a
+    literal count here would make every such commit edit a case named for
+    something else."""
+    spec = importlib.util.spec_from_loader(
+        "tie", importlib.machinery.SourceFileLoader("tie", str(GUARD)))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+LEGACY = guard_module().LEGACY
 
 SPEC = "spec/x/scenarios.als"
 DECL = "run S1_FullChain for 3 expect 1\n"
@@ -136,10 +153,13 @@ CASES = [
      {SPEC: DECL},
      {"scripts/a.py": CODE,
       "scripts/a-test.py": "#   witnesses:   S1_FullChain  \n"}, None),
-    ("allow a declaration split over two `# witnesses:` lines",
+    # The live name goes FIRST on purpose: with it last, a reader that let the
+    # last line win would pass this case, and the union it is named for would be
+    # pinned by nothing.
+    ("allow a declaration split over two `# witnesses:` lines, the live one first",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
-      "scripts/a-test.py": "# witnesses: S9_Nowhere\n# witnesses: S1_FullChain\n"}, None),
+      "scripts/a-test.py": "# witnesses: S1_FullChain\n# witnesses: S9_Nowhere\n"}, None),
     ("allow a suite holding a byte that is not UTF-8 beside its declaration",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
@@ -180,14 +200,17 @@ def stage(root, files):
 
 
 def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
-             legacy=(), config=(), commits=()):
+             legacy=(), config=(), commits=(), branch_at_head=None,
+             back_to=None):
     """One fixture repository, and the guard run over it.
 
     `legacy` is the allow-list, written to a file OUTSIDE the repository -- a
     file inside it would be a tracked path the guard then has to have an
     opinion about. `None` withholds the flag entirely, which is the only way
     the built-in `LEGACY` is reached. `commits` are further commits made after
-    `before`, for the cases that need two commits to judge between."""
+    `before`, for the cases that need two commits to judge between;
+    `branch_at_head` names the last of them and `back_to` then checks an earlier
+    one out, which is how a HEAD that does not CONTAIN the ref is built."""
     with tempfile.TemporaryDirectory() as d:
         root = (Path(d) / "repo").resolve()
         root.mkdir()
@@ -198,6 +221,11 @@ def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
             commit(root, before)
         for files in commits:
             commit(root, files)
+        if branch_at_head:
+            subprocess.run(["git", "branch", branch_at_head], cwd=root, check=True)
+        if back_to:
+            subprocess.run(["git", "checkout", "-q", "--detach", back_to],
+                           cwd=root, check=True)
         stage(root, after)
         for rel, body in (on_disk or {}).items():
             put(root, rel, body)
@@ -266,6 +294,12 @@ def main():
     check("without --staged, a suite deleted on disk and not staged is T2, not a permit",
           r.returncode == 1 and "T2\t" in r.stderr and "PERMITTING" not in r.stderr,
           "T2 on stderr, exit 1", r)
+    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": SUITE},
+                 args=(), on_disk={"scripts/a-test.py":
+                                   b"# witnesses: S1_FullChain\n# \xff\n"})
+    ok, want = judge(r, None)
+    check("without --staged, a byte that is not UTF-8 on disk is replaced, not "
+          "raised", ok, want, r)
     r = run_case(TIED, {}, args=(), on_disk={SPEC: None})
     check("without --staged, a spec module deleted on disk and not staged is T3",
           r.returncode == 1 and "T3\t" in r.stderr and "PERMITTING" not in r.stderr,
@@ -287,12 +321,16 @@ def main():
     ok, want = judge(r, None)
     check("an allow-list line's trailing `#` comment is not part of the path",
           ok, want, r)
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE},
-                 {"scripts/a.py": None, "scripts/b.py": CODE},
-                 legacy=["scripts/b.py"])
+    rename = ({SPEC: DECL, "scripts/a.py": CODE},
+              {"scripts/a.py": None, "scripts/b.py": CODE})
+    r = run_case(*rename, legacy=["scripts/b.py"])
     ok, want = judge(r, None)
-    check("a rename carries the licence, so file and line move in one commit",
-          ok, want, r)
+    check("a rename is licensed by the line's NEW name, so file and line move "
+          "in one commit", ok, want, r)
+    r = run_case(*rename, legacy=["scripts/a.py"])
+    ok, want = judge(r, None)
+    check("a rename is licensed by the line's OLD name too, so the line may "
+          "move in the commit after", ok, want, r)
     r = run_case(TIED, {"README.md": "r\n"}, legacy=["scripts/a.py"])
     ok, want = judge(r, "T5")
     check("T5 an allow-list line whose code path is tied now", ok, want, r)
@@ -321,7 +359,8 @@ def main():
     ok, want = judge(r, None)
     check("with no --legacy the built-in list is read, and a tree that never "
           "held its paths is not judged to have spent every line",
-          ok and "(LEGACY, 22 entr(ies), 22 naming no code path here)" in r.stdout,
+          ok and f"(LEGACY, {len(LEGACY)} entr(ies), {len(LEGACY)} naming no "
+          f"code path here)" in r.stdout,
           "0 finding(s) and a reading naming LEGACY, its size and its absences", r)
 
     # ---- --against <ref>: the whole change between two commits, which is what
@@ -347,6 +386,18 @@ def main():
     r = run_case({SPEC: DECL}, {}, args=("--against", "no-such-ref"))
     check("--against a ref that does not resolve permits loudly",
           r.returncode == 0 and "PERMITTING" in r.stderr, "exit 0 and PERMITTING", r)
+    # A HEAD that does not CONTAIN the ref is not a change: every commit the ref
+    # has and HEAD has not reads backwards, so a branch that committed nothing
+    # of its own was refused with a T3 naming a file it never opened.
+    r = run_case({SPEC: DECL, "scripts/a.py": CODE,
+                  "scripts/a-test.py": "#!/usr/bin/env python3\n"},
+                 {}, args=("--against", "ahead"), legacy=["scripts/a.py"],
+                 commits=[{"scripts/a-test.py": SUITE}], branch_at_head="ahead",
+                 back_to="HEAD~1")
+    check("--against a ref HEAD does not contain permits loudly, rather than "
+          "refusing a branch for a commit it never made",
+          r.returncode == 0 and "does not contain" in r.stderr
+          and "T3\t" not in r.stderr, "exit 0 and PERMITTING, no T3", r)
 
     # ---- a non-ASCII path. `core.quotePath` is git's default and CI's, and a
     # quoted path matches no stem and no suffix, so it leaves every set without

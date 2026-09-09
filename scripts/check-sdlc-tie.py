@@ -91,12 +91,19 @@ The model wants the whole tree tied; this tree is not, and a check that refused
 every edit to alloy-check.py until it had a suite would be a wall across the
 repair. So the debt is licensed by name in `LEGACY` -- derived from the tree
 when #268 wrote it, the shape #237 gave R3 -- and the licence bites both ways:
-T4 refuses a path that is untied and unlisted, T5 refuses a listing whose path
-is no longer untied. A list that only prints, which is what this printed before
-#268, never shrinks and never refuses anything; one the tree is checked against
-shrinks by one line per repair and cannot grow behind the guard's back. T4 and
-T5 are the one reading here that is about the WHOLE tree rather than the
-commit's change, which is what an allow-list is for.
+T4 refuses a path the change touches that is untied and unlisted, T5 refuses a
+line whose path is tied now. A list that only prints, which is what this printed
+before #268, never shrinks and never refuses anything; one the tree is checked
+against shrinks by one line per repair, and a path the change opens cannot slip
+past it.
+
+WHAT THE LIST CANNOT SAY is whether this is the tree it is about. A fixture
+repository under scripts/*-test.py copies these guards by their real names with
+no suites beside them, so every entry matches a path there and none is tied --
+which is indistinguishable, from inside, from this repository having let its
+whole debt rot. That is why neither refusal reads the tree at large: T4 reads
+what the change touched, and an entry naming no code path here is a count in the
+reading rather than a finding.
 
 `--legacy <file>` substitutes a list, one path per line, `#` starting a
 comment. It is how check-sdlc-tie-test.py exercises T4 and T5 over a fixture

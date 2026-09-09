@@ -51,14 +51,21 @@ scenario however that path ties (`S5_CodeWithoutSpecRefused`).
 
 ## The tie
 
-`tie` reads a test naming the scenario it witnesses and the code path it
-drives -- both names off the test's own text and name, which is how
-`scripts/check-sdlc-tie.py` reads them. `treeTied` asks it of every code path in the tree, read
-from the code path up and never from the scenario down — a scenario with no
-test is a claim the solver checks on its own. `tieDiscipline` is the reading at
-the commit.
+`tie` reads two relations off one test: `witnesses`, the scenarios its
+`# witnesses: <Name>[, ...]` line declares, and `drives`, the code path its own
+name pairs with. Write that line in every suite -- a mention in prose ties
+nothing since #268, and `scripts/check-sdlc-tie.py` matches the declared names
+exactly. `treeTied` asks it of every code path in the tree, read from the code
+path up and never from the scenario down — a scenario with no test is a claim
+the solver checks on its own. `tieDiscipline` is the reading at the commit.
 
-A rename is the one commit that breaks a tie (`rename`,
-`S4_RenameBreaksTheTie` at the code path's end, `S4b_RenameOfTheScenarioBreaksTheTie`
-at the scenario's). The commit that renames a path rewrites the texts
-naming it in the same commit (`S4a_RenameKeepsItsNamers`).
+A rename is the one commit that breaks a tie (`rename`), and the two relations
+break at different ends: `witnesses` at the scenario's
+(`S4b_RenameOfTheScenarioBreaksTheTie`), `drives` at either of its own
+(`S4_RenameBreaksTheTie` for the code path, `S4c_RenameOfTheTestBreaksTheTie`
+for the suite). Move both ends in the same commit
+(`S4a_RenameKeepsItsNamers`).
+
+A code path this tree already held untied is licensed by name in the guard's
+`LEGACY`. Tying one means deleting its line in the same commit, and a path your
+change touches that is untied and unlisted is refused.

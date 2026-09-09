@@ -1,7 +1,7 @@
 /*
- * The stages a change passes through, what each owes the next, the tie by
- * name between a scenario, the test that witnesses it and the code path the
- * test drives, and the rule under which a stage may be skipped.
+ * The stages a change passes through, what each owes the next, the tie
+ * between a scenario, the test that witnesses it and the code path the test
+ * drives, and the rule under which a stage may be skipped.
  *
  * It opens nothing. The moment its checks run is the commit, which
  * github/system does not model, and a tie is between files in one tree, which
@@ -13,7 +13,8 @@
  *   Stage       the six stages, and `feeds`, the order they owe each other in
  *   Profile     a campaign kind's profile: which stages it lets a change skip
  *   Change      one unit of work -- a sub-issue -- carrying its kind's profile
- *   Artifact    what a stage produced for a change, and what it NAMES
+ *   Artifact    what a stage produced for a change, what it WITNESSES and
+ *               what it DRIVES
  *   GrowsShape  the spec artifacts that add a shape a person has to understand
  *   Written     the artifacts that exist; Landed, the changes that merged
  *   Now         the observer: which event, on which change, artifact and stage
@@ -90,22 +91,33 @@ sig Change {
   var skipped: set Stage
 }
 
-/* WHAT A STAGE PRODUCED FOR A CHANGE, and what it names. An artifact a change
-   REUSES -- a test witnessing a scenario that already existed -- is an
-   artifact of that change here as much as one it wrote: the check reads a
-   name against the tree, not against the diff, and the model does not say
-   which commit first wrote a file.
+/* WHAT A STAGE PRODUCED FOR A CHANGE, what it witnesses and what it drives.
+   An artifact a change REUSES -- a test witnessing a scenario that already
+   existed -- is an artifact of that change here as much as one it wrote: the
+   check reads the tree, not the diff, and the model does not say which commit
+   first wrote a file.
 
-   `names` IS THE TIE'S RAW MATERIAL: `a -> b` says a's text carries b's
-   current name, and it is var for one reason, that a rename of b makes every
-   text still carrying the old name stop naming b. Authored at `write`, broken
-   at `rename`, and never a fact about b being written -- a test names the
-   code path it will drive before that path exists, which is the order
-   `feeds` asks for. */
+   THE TIE'S RAW MATERIAL IS TWO RELATIONS, NOT ONE, because the two halves
+   break at different ends. `witnesses` is a DECLARATION carried in the test's
+   own text -- `t -> s` says t's text declares s by its current name -- so
+   renaming s makes every text still spelling the old name stop witnessing it,
+   and renaming t touches nothing: a file keeps what it says when it is moved.
+   `drives` is a PAIRING OF TWO NAMES -- `t -> k` holds while the test's name
+   and the code path's name still answer to each other -- so renaming EITHER
+   end drops it. That asymmetry is the whole reason for the split: under one
+   merged relation broken only at its target, a test renamed away from its code
+   path stayed tied here while scripts/check-sdlc-tie.py's T2 refused it
+   (`S4c_RenameOfTheTestBreaksTheTie`, and `S4d` for the half that survives).
+
+   Both are var, both are authored at `write` and broken at `rename`, and
+   neither is a fact about the target being written -- a test declares the code
+   path it will drive before that path exists, which is the order `feeds` asks
+   for. */
 sig Artifact {
-  change:    one Change,
-  stage:     one Stage,
-  var names: set Artifact
+  change:        one Change,
+  stage:         one Stage,
+  var witnesses: set Artifact,
+  var drives:    set Artifact
 }
 /* THE SPEC ARTIFACTS THAT GROW A SHAPE: a signature, a relation or an event
    a person has to understand. Static, because a scenario either declares one
@@ -120,6 +132,10 @@ var sig Landed  in Change {}
 fact SdlcWellFormed {
   all p: Profile | p.optional in skippable
   GrowsShape in stage.Spec
+  /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
+     declares a scenario, and the one that pairs with a code path; nothing else
+     carries either arrow, which is what makes `tie` a fact about tests. */
+  always (witnesses in stage.Test -> stage.Spec and drives in stage.Test -> stage.Code)
 }
 
 fun writtenOf[c: Change]:     set Artifact { change.c & Written }
@@ -127,18 +143,19 @@ fun writtenStages[c: Change]: set Stage    { writtenOf[c].stage }
 fun absentStages[c: Change]:  set Stage    { Stage - writtenStages[c] }
 pred done[c: Change, s: Stage]             { s in writtenStages[c] or s in c.skipped }
 
-/* THE TIE. A test names the scenario it witnesses and the code path it
-   drives -- `t -> s` and `t -> k` in `names`, both read off the test's own
-   text and name, which is how scripts/check-sdlc-tie.py reads them -- so
-   `s -> t -> k` holds where the two names hold and the scenario and the
-   test exist. Read from the CODE PATH UP -- `tied[k]` asks
+/* THE TIE. A test declares the scenario it witnesses and pairs with the code
+   path it drives -- `t -> s` in `witnesses` and `t -> k` in `drives`, the
+   first read off the test's own text and the second off the two names, which
+   is how scripts/check-sdlc-tie.py reads them -- so `s -> t -> k` holds where
+   both arrows hold and the scenario and the test exist. Read from the CODE
+   PATH UP -- `tied[k]` asks
    whether some scenario reaches k -- and not from the scenario down, because
    a scenario with no test is a claim the solver checks on its own, and
    reading it the other way would refuse every scenario spec/campaign holds
    today. Whether the check reads the tree or only the diff is the check's;
    the model says what a tie is and when one is read. */
 fun tie: Artifact -> Artifact -> Artifact {
-  { s: Written & stage.Spec, t: Written & stage.Test, k: stage.Code | t->s in names and t->k in names }
+  { s: Written & stage.Spec, t: Written & stage.Test, k: stage.Code | t->s in witnesses and t->k in drives }
 }
 pred tied[k: Artifact] { some tie.k }
 /* EVERY CODE PATH IN THE TREE WALKS BACK TO A SCENARIO. The invariant
@@ -184,13 +201,16 @@ one sig Now {
   var at:       lone Stage
 }
 
-pred sdlcFrame { Written' = Written and Landed' = Landed and skipped' = skipped and names' = names }
+pred sdlcFrame {
+  Written' = Written and Landed' = Landed and skipped' = skipped
+  witnesses' = witnesses and drives' = drives
+}
 
 /* ONE COMMIT WRITING ONE ARTIFACT. Loose on the order (`orderDiscipline`) and
    on the tie (`tieDiscipline`). A second write of the same artifact is a
    rewrite, which is how a test takes a renamed code path's new name. What
-   the artifact names is authored here and nowhere else; everything else's
-   names hold.
+   the artifact witnesses and what it drives are authored here and nowhere
+   else; every other artifact's arrows hold.
 
    WRITING A SKIPPED STAGE RETRACTS THE SKIP: a stage is written or skipped,
    never both, and the write is the later word. This is the remedy the
@@ -201,7 +221,8 @@ pred write[a: Artifact] {
   a.change not in Landed
   Written' = Written + a
   skipped' = skipped - a.change->a.stage
-  names' - a->Artifact = names - a->Artifact
+  witnesses' - a->Artifact = witnesses - a->Artifact
+  drives'    - a->Artifact = drives    - a->Artifact
   Landed' = Landed
   Now.event = Write and Now.subject = a.change and Now.artifact = a and Now.at = a.stage
 }
@@ -213,19 +234,28 @@ pred skip[c: Change, s: Stage] {
   c not in Landed
   s not in c.skipped and s not in writtenStages[c]
   skipped' = skipped + c->s
-  Written' = Written and Landed' = Landed and names' = names
+  Written' = Written and Landed' = Landed
+  witnesses' = witnesses and drives' = drives
   Now.event = Skip and Now.subject = c and no Now.artifact and Now.at = s
 }
 
-/* A COMMIT THAT RENAMES AN ARTIFACT. Every text carrying its old name stops
-   naming it, except those the same commit rewrote, which the model leaves to
-   the solver: `names'` may keep any of a's inbound pairs and drops the rest.
-   It is the one event that removes a tie, and the one a check must refuse
-   when what it drops was load-bearing (`S4_RenameBreaksTheTie`). */
+/* A COMMIT THAT RENAMES AN ARTIFACT, AND THE TWO ARROWS BREAK DIFFERENTLY.
+   Every text declaring a's old name stops witnessing it, except those the
+   same commit rewrote, which the model leaves to the solver: `witnesses'` may
+   keep any of a's INBOUND pairs and drops the rest. `drives` is a pairing of
+   two names, so renaming a drops pairs at EITHER end of it -- a code path
+   renamed away from its suite and a suite renamed away from its code path are
+   one event with one effect. Everything not touching a holds.
+
+   It is the one event that removes a tie, and the one a check must refuse when
+   what it drops was load-bearing: `S4_RenameBreaksTheTie` at the code path's
+   end, `S4b` at the scenario's, `S4c` at the test's. */
 pred rename[a: Artifact] {
   a in Written
-  names' in names
-  names' - Artifact->a = names - Artifact->a
+  witnesses' in witnesses
+  witnesses' - Artifact->a = witnesses - Artifact->a
+  drives' in drives
+  drives' - (Artifact->a + a->Artifact) = drives - (Artifact->a + a->Artifact)
   Written' = Written and Landed' = Landed and skipped' = skipped
   Now.event = Rename and Now.subject = a.change and Now.artifact = a and Now.at = a.stage
 }
@@ -242,7 +272,8 @@ pred land[c: Change] {
   c not in Landed
   all s: Stage | done[c, s]
   Landed' = Landed + c
-  Written' = Written and skipped' = skipped and names' = names
+  Written' = Written and skipped' = skipped
+  witnesses' = witnesses and drives' = drives
   Now.event = Land and Now.subject = c and no Now.artifact and no Now.at
 }
 
@@ -252,7 +283,7 @@ pred stutter {
 }
 
 pred sdlcInit {
-  no Written and no Landed and no skipped and no names
+  no Written and no Landed and no skipped and no witnesses and no drives
 }
 
 pred sdlcStep {

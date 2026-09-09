@@ -44,18 +44,38 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0`, not the default 1. The tie guard below asks whether
+      # HEAD contains `origin/main`, and in a shallow clone HEAD's parents are
+      # grafted away so the answer is always no -- which made the guard permit
+      # on every run while its log read like a verdict. Ancestry needs history.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0
 
       # check-commit-claim.py is deliberately absent: it refuses a branch that
       # is not a claim, and a pull request runner's branch never is.
-      # check-sdlc-tie.py is absent too: it judges a change against HEAD, and
-      # the runner's HEAD is the merge commit with nothing left to judge. Its
-      # suite runs below, with every other.
       - name: The three guards that read the tree, as the pre-commit runs them
         run: |
           scripts/check-rule-readers.py
           scripts/check-tree-shape.py
           scripts/check-cross-references.py
+
+      # The fourth guard, and the one reading the pre-commit cannot give it. It
+      # judges a change against a tree, and the runner's HEAD is the merge
+      # commit -- against HEAD there is nothing left to judge, which is why this
+      # step did not exist until #268 and why a `--no-verify` commit landed a
+      # T1, T2 or T3 unread. `--against origin/main` makes the before-tree the
+      # base branch, so what is judged is the pull request's whole change rather
+      # than its last commit.
+      #
+      # The fetch is its own step because `actions/checkout` leaves no
+      # `origin/main` ref on a pull request even at full depth. NOT `--depth=1`:
+      # the guard reads two trees AND asks whether HEAD contains the ref, and a
+      # shallow fetch answers that question no every time.
+      - name: The tie guard, over the whole change rather than one commit
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          scripts/check-sdlc-tie.py --against origin/main
 
       # Every suite, found rather than listed: a hand-kept list is one more copy
       # to forget, and the five suites #111 added were run by nobody here until

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: R14d_ScopeAdmitsTheBaseWhateverTheListHolds
 """Prove campaign-claim reads a claim off the remote and a checkout, and refuses
 to conclude from a reading that did not happen.
 

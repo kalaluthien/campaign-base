@@ -249,6 +249,8 @@
     ["sdlc/scenarios.als", "run", "S4_RenameBreaksTheTie"],
     ["sdlc/scenarios.als", "run", "S4a_RenameKeepsItsNamers"],
     ["sdlc/scenarios.als", "run", "S4b_RenameOfTheScenarioBreaksTheTie"],
+    ["sdlc/scenarios.als", "run", "S4c_RenameOfTheTestBreaksTheTie"],
+    ["sdlc/scenarios.als", "run", "S4d_RenameOfTheTestKeepsItsWitness"],
     ["sdlc/scenarios.als", "run", "S5_CodeWithoutSpecRefused"],
     ["sdlc/scenarios.als", "run", "S5a_RefusedWithoutTheTie"],
     ["sdlc/scenarios.als", "run", "S5b_LandsWithoutTheLanding"],

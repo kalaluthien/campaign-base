@@ -1,7 +1,8 @@
 /*
  * The disciplines over sdlc/system, and the witnesses: a full chain, a chain
  * that skips by the rule, a prose-only change with nothing below its plan, a
- * docs waiver and its remedy, and the tie broken by a rename.
+ * docs waiver and its remedy, and the tie broken by a rename at each of its
+ * three ends.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/scenarios
@@ -190,15 +191,41 @@ pred S4b_RenameOfTheScenarioBreaksTheTie {
 }
 
 /* The rename the check admits: the commit that renames the code path also
-   rewrites the test that names it, and the tree stays tied through it. */
+   renames the test paired with it, and the tree stays tied through it. */
 pred S4a_RenameKeepsItsNamers {
   allDisciplines
   one c: Change {
     developmentProfile[c.profile]
     all s: Stage | one change.c & stage.s
-    eventually (Now.event = Rename and Now.at = Code and some names.(Now.artifact))
+    eventually (Now.event = Rename and Now.at = Code and some drives.(Now.artifact))
     always treeTied
   }
+}
+
+/* THE THIRD END: the landed chain's TEST is renamed, and the code path it
+   drove is untied -- `drives` pairs two names, so moving either file breaks
+   it. This is the guard's T2 read from the suite's side, the case a merged
+   `names` relation broken only at its target left TIED here and refused there;
+   the split is what closes that gap.
+
+   `S4d` is the half the same rename does NOT break, and it is UNSAT: a test's
+   `witnesses` arrow is a declaration in its own text, which survives the file
+   being moved. The pair pins the asymmetry -- collapse `drives` back into a
+   target-broken relation and `S4c` goes UNSAT; break `witnesses` at its source
+   as well and `S4d` goes SAT. */
+pred S4c_RenameOfTheTestBreaksTheTie {
+  orderDiscipline and skipDiscipline and landDiscipline
+  one c: Change {
+    developmentProfile[c.profile]
+    all s: Stage | one change.c & stage.s
+    eventually (c in Landed and no c.skipped and treeTied
+                and eventually (Now.event = Rename and Now.at = Test and treeTied and after not treeTied))
+  }
+}
+pred S4d_RenameOfTheTestKeepsItsWitness {
+  orderDiscipline and skipDiscipline and landDiscipline
+  one t: Artifact | eventually (Now.event = Rename and Now.artifact = t and t.stage = Test
+                                and some t.witnesses and after no t.witnesses)
 }
 
 /* A CODE PATH WITH NO SCENARIO: no trace lands a change that wrote one, and
@@ -288,6 +315,8 @@ run S3b_DocsWrittenAfterAll   for exactly 1 Change, exactly 1 Profile, 7 Artifac
 run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4b_RenameOfTheScenarioBreaksTheTie for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
+run S4c_RenameOfTheTestBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
+run S4d_RenameOfTheTestKeepsItsWitness  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 0
 run S5_CodeWithoutSpecRefused for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5b_LandsWithoutTheLanding for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1

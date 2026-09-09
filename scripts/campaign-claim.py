@@ -1759,22 +1759,53 @@ def ref_probe(returncode, err):
 
 
 def merged_head_verdict(returncode, out, repo, branch):
-    """Read `gh pr list --head <branch> --state merged`. Returns (ok, text):
-    the merged pull request's number when ok, the refusal otherwise."""
+    """Read `gh pr list --head <branch> --state merged`. Returns
+    (ok, text, number): the merged pull request's number when ok, the refusal
+    otherwise. THE NUMBER IS RETURNED AND NOT ONLY SPELT INTO `text`, because
+    the review gate below is handed a pull request and parsing one back out of
+    a sentence is a second reader of this answer."""
     if returncode != 0:
         return False, (f"could not ask {repo} for a merged pull request whose "
                        f"head was {branch}. A question that did not get "
-                       f"answered is not an absence.")
+                       f"answered is not an absence."), None
     try:
         prs = json.loads(out or "[]")
     except json.JSONDecodeError:
         return False, (f"{repo} answered the pull request question with "
-                       f"something that is not JSON: {(out or '')[:120]!r}")
+                       f"something that is not JSON: {(out or '')[:120]!r}"), None
     if not prs:
         return False, (f"{repo} has no ref {branch} and no merged pull request "
                        f"whose head was it. A branch that vanished without "
-                       f"merging is reported, never released.")
-    return True, f"merged as #{prs[0].get('number', '?')}"
+                       f"merging is reported, never released."), None
+    number = prs[0].get("number")
+    return True, f"merged as #{number if number is not None else '?'}", number
+
+
+CHECK_MERGE_REVIEW = HERE / "check-merge-review.py"
+# The three words that script answers with. Anything else is its own failure,
+# and this tells the two apart because it is about to DELETE.
+REVIEW_WORDS = ("reviewed", "unreviewed", "unknown")
+
+
+def review_verdict(repo, pr):
+    """(word, what it printed) -- check-merge-review.py on this merge, or
+    (None, why) when it answered with nothing this recognises.
+
+    THE WORD, NEVER THE STATUS. That script exits 1 for a refusal and 2 for a
+    reading it could not make, and Python exits 1 on an uncaught exception too,
+    so a bug in the reader would read here as `a merge with no review` -- a
+    refusal, which is safe, but one whose reason would be a lie. The word says
+    which of the three actually happened."""
+    if pr is None:
+        return None, (f"{repo} named no pull request number, so there is "
+                      f"nothing to read a review against")
+    r = run(sys.executable, str(CHECK_MERGE_REVIEW), str(pr), "--repo", repo)
+    text = ((r.stdout or "") + (r.stderr or "")).strip()
+    word = text.split(" ", 1)[0] if text else ""
+    if word not in REVIEW_WORDS:
+        return None, (f"{CHECK_MERGE_REVIEW.name} answered {text[:160]!r}, "
+                      f"which is none of {', '.join(REVIEW_WORDS)}")
+    return word, text.splitlines()[0]
 
 
 def cmd_release(args):
@@ -1885,10 +1916,16 @@ def cmd_release(args):
             return 1
         p = run("gh", "pr", "list", "-R", repo, "--head", branch,
                 "--state", "merged", "--json", "number")
-        ok, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
+        ok, text, _number = merged_head_verdict(p.returncode, p.stdout, repo,
+                                                branch)
         if not ok:
             print(f"refusing: {text}", file=sys.stderr)
             return 1
+        # NO REVIEW GATE ON THIS PATH, and the asymmetry is deliberate. The ref
+        # is already gone, so there is nothing here to delete and nothing to
+        # hold back; refusing would leave a claim that can never be retired and
+        # a campaign that can never close, over a merge that already happened.
+        # The gate belongs where the delete is.
         print(f"{repo} has no ref {branch}, and it was {text}: nothing "
               f"beyond main, and no ref to delete")
         release_line(compact_own_pane(sessions,
@@ -1932,10 +1969,32 @@ def cmd_release(args):
     # work rather than merely losing an address.
     p = run("gh", "pr", "list", "-R", repo, "--head", branch,
             "--state", "merged", "--json", "number")
-    merged, text = merged_head_verdict(p.returncode, p.stdout, repo, branch)
+    merged, text, number = merged_head_verdict(p.returncode, p.stdout, repo,
+                                               branch)
     if merged:
         print(f"{branch} was {text}, so it is finished work and not a fresh "
               f"claim")
+        # MERGE CONDITION 1, READ WHERE THE CLAIM IS RETIRED
+        # (kalaluthien/campaign-base#274). The condition was readable and read
+        # by nothing, so a merge with no REVIEW at its head landed and its ref
+        # was released behind it with nothing noticing. This is the last moment
+        # anything on this machine looks at that merge.
+        word, said = review_verdict(repo, number)
+        if word is None:
+            print(f"refusing: {said}\n  A reader that did not answer is not a "
+                  f"review, and this deletes.", file=sys.stderr)
+            return 1
+        if word != "reviewed":
+            print(f"refusing: {said}", file=sys.stderr)
+            print(f"  {branch} merged, and merge condition 1 wants a review "
+                  f"read AT the sha that merged.\n"
+                  f"  Post the REVIEW at that sha on the pull request, or -- "
+                  f"having read what landed --\n"
+                  f"  delete the ref by hand and re-take:\n"
+                  f"    gh api -X DELETE {delete_path(repo, branch)}",
+                  file=sys.stderr)
+            return 1
+        print(said)
     elif p.returncode != 0:
         print(f"refusing: could not ask {repo} whether {branch} was ever "
               f"merged, so whether this is finished work or an unstarted claim "

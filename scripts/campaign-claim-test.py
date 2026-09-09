@@ -412,14 +412,50 @@ def pure_cases(m):
     check("the ref's own endpoint separates gone from unanswered",
           m.ref_probe(0, "") == "present" and m.ref_probe(1, "HTTP 404") == "gone"
           and m.ref_probe(1, "HTTP 500") == "unanswered")
-    ok, text = m.merged_head_verdict(0, "[]", "o/r", "b")
+    ok, text, number = m.merged_head_verdict(0, "[]", "o/r", "b")
     check("a vanished branch with no merged pull request is reported",
-          not ok and "never released" in text)
-    ok, text = m.merged_head_verdict(0, '[{"number": 9}]', "o/r", "b")
+          not ok and "never released" in text and number is None)
+    ok, text, number = m.merged_head_verdict(0, '[{"number": 9}]', "o/r", "b")
     check("...and one with a merged pull request is nothing beyond main",
           ok and "#9" in text)
-    ok, text = m.merged_head_verdict(1, "", "o/r", "b")
-    check("a pull request question that failed is not an absence", not ok)
+    # THE NUMBER, NOT THE SENTENCE. `release` hands it to the review gate, and
+    # a case asserting only on `text` would pass with the number dropped.
+    check("...and the number comes back as a number", number == 9, repr(number))
+    ok, text, number = m.merged_head_verdict(1, "", "o/r", "b")
+    check("a pull request question that failed is not an absence",
+          not ok and number is None)
+
+    # The review gate's three answers, told apart by the WORD. A reader that
+    # crashed exits 1 exactly as a refusal does, so a caller reading the status
+    # would call a bug in the reader an unreviewed merge.
+    check("a pull request number nobody knows is not a review",
+          m.review_verdict("o/r", None)[0] is None)
+    was = m.CHECK_MERGE_REVIEW
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            fake = Path(d) / "reader.py"
+            for said, status, want in (
+                    ("reviewed check-merge-review: a REVIEW names the head", 0,
+                     "reviewed"),
+                    ("unreviewed check-merge-review: no REVIEW names it", 1,
+                     "unreviewed"),
+                    ("unknown check-merge-review: gh exited 1", 2, "unknown")):
+                fake.write_text(f"import sys\nprint({said!r})\n"
+                                f"sys.exit({status})\n")
+                m.CHECK_MERGE_REVIEW = fake
+                word, line = m.review_verdict("o/r", 9)
+                check(f"the review gate reads the word {want!r}, not the "
+                      f"status {status}", word == want, f"{word} {line}")
+            # A reader that crashed prints a traceback and exits 1 -- the same
+            # status as a refusal. The word is what tells them apart, and
+            # neither of the other two branches can see this.
+            fake.write_text("raise SystemExit('boom')\n")
+            m.CHECK_MERGE_REVIEW = fake
+            word, why = m.review_verdict("o/r", 9)
+            check("a reader that answered none of the three words is not a "
+                  "verdict", word is None and "none of" in why, str(why))
+    finally:
+        m.CHECK_MERGE_REVIEW = was
 
 
 def git_cases(m):

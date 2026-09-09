@@ -51,12 +51,14 @@ scenario however that path ties (`S5_CodeWithoutSpecRefused`).
 
 ## The tie
 
-`tie` reads a scenario naming the test that witnesses it and that test naming
-the code path it drives. `treeTied` asks it of every code path in the tree, read
+`tie` reads a test naming the scenario it witnesses and the code path it
+drives -- both names off the test's own text and name, which is how
+`scripts/check-sdlc-tie.py` reads them. `treeTied` asks it of every code path in the tree, read
 from the code path up and never from the scenario down — a scenario with no
 test is a claim the solver checks on its own. `tieDiscipline` is the reading at
 the commit.
 
 A rename is the one commit that breaks a tie (`rename`,
-`S4_RenameBreaksTheTie`). The commit that renames a path rewrites the texts
+`S4_RenameBreaksTheTie` at the code path's end, `S4b_RenameOfTheScenarioBreaksTheTie`
+at the scenario's). The commit that renames a path rewrites the texts
 naming it in the same commit (`S4a_RenameKeepsItsNamers`).

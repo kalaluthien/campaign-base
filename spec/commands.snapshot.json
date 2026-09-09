@@ -1,5 +1,5 @@
 {
-  "generated_by": "scripts/alloy-check.py --commands <dir> --write",
+  "generated_by": "scripts/alloy-check.py --commands spec --write",
   "why": "A deleted command misses no `expect` clause, and an inventory regenerated from the models cannot see the deletion either. This copy is committed so the diff is the reader.",
   "commands": [
     ["campaign/directory/checks.als", "check", "MergeReachesInstall"],
@@ -248,6 +248,7 @@
     ["sdlc/scenarios.als", "run", "S3b_DocsWrittenAfterAll"],
     ["sdlc/scenarios.als", "run", "S4_RenameBreaksTheTie"],
     ["sdlc/scenarios.als", "run", "S4a_RenameKeepsItsNamers"],
+    ["sdlc/scenarios.als", "run", "S4b_RenameOfTheScenarioBreaksTheTie"],
     ["sdlc/scenarios.als", "run", "S5_CodeWithoutSpecRefused"],
     ["sdlc/scenarios.als", "run", "S5a_RefusedWithoutTheTie"],
     ["sdlc/scenarios.als", "run", "S5b_LandsWithoutTheLanding"],

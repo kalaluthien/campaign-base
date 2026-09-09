@@ -164,6 +164,21 @@ pred S4_RenameBreaksTheTie {
   }
 }
 
+/* The same break read at the scenario's end: the landed chain's SCENARIO is
+   renamed and the test still carries the old name, so the code path is
+   untied. This is the one command that pins which text carries which name
+   -- with the scenario naming the test (`s -> t`) a rename of the scenario
+   drops no pair and this is UNSAT -- and it is the T3 the check refuses. */
+pred S4b_RenameOfTheScenarioBreaksTheTie {
+  orderDiscipline and skipDiscipline and landDiscipline
+  one c: Change {
+    developmentProfile[c.profile]
+    all s: Stage | one change.c & stage.s
+    eventually (c in Landed and no c.skipped and treeTied
+                and eventually (Now.event = Rename and Now.at = Spec and treeTied and after not treeTied))
+  }
+}
+
 /* The rename the check admits: the commit that renames the code path also
    rewrites the test that names it, and the tree stays tied through it. */
 pred S4a_RenameKeepsItsNamers {
@@ -231,6 +246,7 @@ run S3_DocsWaived             for exactly 1 Change, exactly 1 Profile, exactly 5
 run S3a_DocsDemanded          for exactly 1 Change, exactly 1 Profile, 6 Artifact, 10 steps expect 0
 run S3b_DocsWrittenAfterAll   for exactly 1 Change, exactly 1 Profile, 7 Artifact, 12 steps expect 1
 run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
+run S4b_RenameOfTheScenarioBreaksTheTie for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6 Artifact, 10 steps expect 1
 run S5_CodeWithoutSpecRefused for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0

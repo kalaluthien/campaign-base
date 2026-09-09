@@ -48,6 +48,9 @@ jobs:
 
       # check-commit-claim.py is deliberately absent: it refuses a branch that
       # is not a claim, and a pull request runner's branch never is.
+      # check-sdlc-tie.py is absent too: it judges a change against HEAD, and
+      # the runner's HEAD is the merge commit with nothing left to judge. Its
+      # suite runs below, with every other.
       - name: The three guards that read the tree, as the pre-commit runs them
         run: |
           scripts/check-rule-readers.py
@@ -61,15 +64,22 @@ jobs:
       # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
       # and the extension names its language, so a shell suite is found too
       # rather than silently skipped by a glob that pins one interpreter.
+      # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
+      # reads a tie through a suite in either, and a tie through a suite this
+      # loop never ran would be a name and nothing else. Two shell globs under
+      # nullglob, not `find`: a glob never spans a slash, so nothing nested is
+      # taken, a root with no suite contributes nothing rather than a literal,
+      # and there is no command substitution whose status the loop drops.
       - name: Every suite
         run: |
+          shopt -s nullglob
           n=0
-          for t in scripts/*-test.*; do
+          for t in scripts/*-test.* .claude/skills/*/scripts/*-test.*; do
             echo "== $t"
             "$t" || exit 1
             n=$((n + 1))
           done
-          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/"; exit 1; }
+          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/ or .claude/skills/*/scripts/"; exit 1; }
           echo "$n suite(s) ran"
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1

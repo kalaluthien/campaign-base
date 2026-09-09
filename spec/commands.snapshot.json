@@ -96,6 +96,8 @@
     ["campaign/orchestration/scenarios.als", "run", "A7_ReviewRuleBlocksUnreviewed"],
     ["campaign/orchestration/scenarios.als", "run", "A8_ReviewRuleAdmitsTheLanding"],
     ["campaign/orchestration/scenarios.als", "run", "BlockedAgentDoesNotProceed"],
+    ["campaign/orchestration/scenarios.als", "run", "L1_PollIntoTheBannerGetsNoAnswer"],
+    ["campaign/orchestration/scenarios.als", "run", "L1b_PromptAfterTheResetIsAnswered"],
     ["campaign/orchestration/scenarios.als", "run", "N1_ForeignNamedSessionDoesNotBlock"],
     ["campaign/orchestration/scenarios.als", "run", "N2_UnnamedSessionStillBlocks"],
     ["campaign/orchestration/scenarios.als", "run", "N3_ForeignNameDoesNotExemptOwnSubIssue"],

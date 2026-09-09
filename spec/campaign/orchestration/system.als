@@ -145,6 +145,18 @@ var sig Waiting  in Agent {}
 var sig Confirmed in Agent {}
 var sig StandDownTaken in Agent {}
 var sig Retired  in Agent {}
+/* STOPPED ON THE USAGE LIMIT. The pane sits at the limit banner: the agent is
+   still listed, so it is Live, and it takes no turn of its own until the
+   window resets -- `work`, `push`, `report`, `blocked`, `answer` and its
+   commit all guard on it. A STATUS sent to it queues (`status` does not
+   guard), which is the poll into the banner #279 measured: ~11 planner turns
+   per window, each reading the banner. The window is the account's, not the
+   agent's, so `limitReset` clears every stopped agent at once -- the limit
+   "kills in batches" (AGENTS.md § Watching and retiring) and wakes them the
+   same way. What ends the silence is the reset, a clock the banner names,
+   which the assuming-role skill's reset reader takes off the pane to schedule
+   the one prompt that lands after it. */
+var sig Stopped in Agent {}
 
 /* THE SESSION'S CONTEXT IS SMALL. A bit on the SESSION and not on the agent,
    because a session outlives the sub-issue it is working and the whole point
@@ -329,12 +341,12 @@ pred sameBranch[a1, a2: Agent] {
 
 one sig Work, Push, Status, Answer, Report, Blocked, Decide,
         Confirm, ConfirmElsewhere, Review, StandDown, Retire,
-        AgentDie extends Event {}
+        AgentDie, LimitStop, LimitReset extends Event {}
 
 fun orchestrationOwn: set Event {
   Work + Push + Status + Answer + Report + Blocked + Decide
   + Confirm + ConfirmElsewhere + Review + StandDown + Retire
-  + AgentDie
+  + AgentDie + LimitStop + LimitReset
 }
 /* `DeleteDir` is NOT here any more: no bit of this entity has the directory's
    lifetime once attribution is derived, so a delete falls through and frames
@@ -350,7 +362,8 @@ fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + Commit
    None has a directory's any more. */
 pred keepMessages     { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting }
 pred keepReview   { Reviewed' = Reviewed }
-pred keepLife     { Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed }
+pred keepStopped  { Stopped' = Stopped }
+pred keepLife     { Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepStopped }
 /* Split out because two events move it and every other keeps it, and the six
    preds that spell the life bits one by one need it named. */
 pred keepContext  { Compacted' = Compacted }
@@ -417,7 +430,7 @@ pred launch[a: Agent] {
   (some a.peer) implies (Who.session in Compacted
                          and Compacted' = Compacted - Who.session)
                    else Compacted' = Compacted
-  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
+  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepStopped
   keepReview and keepMessages and keepShutdown
   Target.agent = a
 }
@@ -427,10 +440,10 @@ pred launch[a: Agent] {
    Planner SESSION reaches this edge either -- AgentInheritsSessionRole leaves it
    no Worker atom to take it with. */
 pred work[a: Agent] {
-  a in Live and a not in Waiting and a.role = Worker
+  a in Live and a not in Waiting and a not in Stopped and a.role = Worker
   LocalOnly' = LocalOnly + a
   Confirmed' = Confirmed - a
-  Live' = Live and PushedToRemote' = PushedToRemote and keepContext
+  Live' = Live and PushedToRemote' = PushedToRemote and keepStopped and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Work and Now.issue = a.task and Target.agent = a and no Who.session
 }
@@ -444,7 +457,7 @@ pred work[a: Agent] {
    entity's own. The unattended form below is a person's commit, which names
    no agent and no issue. */
 pred agentCommitLocal[a: Agent] {
-  a in Live
+  a in Live and a not in Stopped
   agentFrame
   Now.event = CommitLocal and Now.issue = a.task and Target.agent = a
   and Where.machine = a.host and no Who.session
@@ -457,11 +470,11 @@ pred unattendedCommitLocal {
    machine. It does not set Confirmed -- the session has not looked yet -- and
    it clears `Reviewed`, because A REVIEW IS OF A PULL REQUEST AT A REVISION. */
 pred push[a: Agent] {
-  a in Live and a in LocalOnly
+  a in Live and a in LocalOnly and a not in Stopped
   LocalOnly'    = LocalOnly - a
   PushedToRemote'  = PushedToRemote + a
   Reviewed' = Reviewed - a.task.pullRequest
-  Live' = Live and Confirmed' = Confirmed and keepContext
+  Live' = Live and Confirmed' = Confirmed and keepStopped and keepContext
   keepMessages and keepShutdown and keepLaunched
   Now.event = Push and Now.issue = a.task and Target.agent = a and no Who.session
 }
@@ -480,7 +493,7 @@ pred status[a: Agent] {
 
 /* A gone agent leaves the question outstanding forever: rule 3. */
 pred answer[a: Agent] {
-  a in Live and a in Asked
+  a in Live and a in Asked and a not in Stopped
   Answered' = Answered + a
   Asked' = Asked and Reported' = Reported and Waiting' = Waiting
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext
@@ -491,7 +504,7 @@ pred answer[a: Agent] {
    but the claim itself. A REPORT names a pull request, so it is the
    worker's. */
 pred report[a: Agent] {
-  a in Live and a.role = Worker
+  a in Live and a not in Stopped and a.role = Worker
   Reported' = Reported + a
   Asked' = Asked and Answered' = Answered and Waiting' = Waiting
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext
@@ -501,7 +514,7 @@ pred report[a: Agent] {
 /* Silence is not this message: an agent that stops without sending it
    looks identical to one thinking. */
 pred blocked[a: Agent] {
-  a in Live and a not in Waiting
+  a in Live and a not in Waiting and a not in Stopped
   Waiting' = Waiting + a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext
@@ -527,7 +540,7 @@ pred confirm[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   a not in LocalOnly
   Confirmed' = Confirmed + a
-  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepContext
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepStopped and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Confirm and Now.issue = a.task and Target.agent = a
 }
@@ -538,7 +551,7 @@ pred confirmElsewhere[a: Agent] {
   not coLocated[Who.session, a]
   a.task in Who.session.worksOn.memberIssues
   Confirmed' = Confirmed + a
-  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepContext
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepStopped and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
@@ -578,7 +591,7 @@ pred retire[a: Agent] {
   a.task in Who.session.worksOn.memberIssues
   Retired' = Retired + a
   Live'    = Live - a
-  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepContext
+  LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepStopped and keepContext
   StandDownTaken' = StandDownTaken
   keepReview and keepMessages and keepLaunched
   Now.event = Retire and Now.issue = a.task and Target.agent = a
@@ -589,9 +602,30 @@ pred retire[a: Agent] {
 pred agentDie[a: Agent] {
   a in Live
   Live' = Live - a
+  Stopped' = Stopped - a
   LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = AgentDie and Now.issue = a.task and Target.agent = a and no Who.session
+}
+
+/* The limit stops a live agent where it stands: nothing of its work moves,
+   and it stays listed. */
+pred limitStop[a: Agent] {
+  a in Live and a not in Stopped
+  Stopped' = Stopped + a
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
+  keepReview and keepMessages and keepShutdown and keepLaunched and keepContext
+  Now.event = LimitStop and Now.issue = a.task and Target.agent = a and no Who.session
+}
+
+/* The window resets for the account, so every stopped agent wakes at once
+   and none by itself -- there is no per-agent reset to schedule. */
+pred limitReset {
+  some Stopped
+  no Stopped'
+  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and Confirmed' = Confirmed
+  keepReview and keepMessages and keepShutdown and keepLaunched and keepContext
+  Now.event = LimitReset and no Now.issue and no Target.agent and no Who.session
 }
 
 /* Both guards are what a session can actually read. Liveness elsewhere is
@@ -619,6 +653,7 @@ pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
   no Reported and no Asked and no Answered
   no Waiting and no Confirmed and no Reviewed and no StandDownTaken and no Retired
+  no Stopped
   /* NOT `no Compacted`: a fresh process carries nothing, so every session
      starts with a small context. The bit is spent by a launch and returned by
      a release, and initialising it empty would make the first assignment on
@@ -632,7 +667,8 @@ pred orchestrationStep {
         launch[a] or work[a] or push[a]
         or status[a] or answer[a] or report[a]
         or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
-        or standDown[a] or retire[a] or agentDie[a])
+        or standDown[a] or retire[a] or agentDie[a] or limitStop[a])
+  or limitReset
   or (some i: Issue | review[i])
   or (some a: Agent | agentCommitLocal[a])
   or unattendedCommitLocal

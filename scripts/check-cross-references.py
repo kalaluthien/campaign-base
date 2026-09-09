@@ -169,6 +169,13 @@ LEADING = ">"
 # always opens with and a path never contains -- an opening `<placeholder>`
 # has no `</` in it and is untouched, and is caught as a template by the "<"
 # check below regardless.
+#
+# RESIDUE: an OPENING tag nested in FRONT of the path -- `<b><i>x.als</i></b>`
+# -- still reads as `template`, because `<b><i>` starts with `<` and LEADING
+# strips only a lone `>`. No `.src` citation in this tree nests a tag around
+# its path (checked at #267); the general fix is a real HTML parse, which
+# this is not and does not try to be -- it stays a path scanner over prose,
+# `.als` and now `.html`, not an HTML reader.
 CLOSING_TAG = "</"
 
 SECTION = re.compile("§")

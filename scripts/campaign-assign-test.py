@@ -74,6 +74,17 @@ exit 1
 """
 
 
+def _read_arm(screen, read_exit):
+    """The shell body of a read-like `case` arm: prints `screen` and exits 0,
+    or answers herdr's own `agent_not_idle` shape and exits `read_exit`. One
+    function so `pane read`'s arm and `agent read`'s arm in the stub cannot
+    drift from each other's quoting or exit convention."""
+    if read_exit == 0:
+        return "cat <<'SCREEN'\n%s\nSCREEN\n    exit 0" % screen
+    return ('echo \'{"error":{"code":"agent_not_idle"}}\' >&2; exit %d'
+            % read_exit)
+
+
 def shims(d, rows, screen="", read_exit=0, prompt_exit=0, agent_screen=None):
     """A PATH holding only the stub. PATH is this directory ALONE, so a call
     that escaped the stub would run nothing rather than silently reaching the
@@ -87,13 +98,13 @@ def shims(d, rows, screen="", read_exit=0, prompt_exit=0, agent_screen=None):
     which subcommand was asked."""
     b = Path(d) / "bin"
     b.mkdir(parents=True, exist_ok=True)
-    if read_exit == 0:
-        read_arm = "cat <<'SCREEN'\n%s\nSCREEN\n    exit 0" % screen
-    else:
-        read_arm = ('echo \'{"error":{"code":"agent_not_idle"}}\' >&2; exit %d'
-                    % read_exit)
-    agent_arm = ("cat <<'SCREEN'\n%s\nSCREEN\n    exit 0"
-                % (screen if agent_screen is None else agent_screen))
+    read_arm = _read_arm(screen, read_exit)
+    # ONE FORMAT, ASKED TWICE. `agent_arm` used to hand-roll its own copy of
+    # this heredoc; a later change to its quoting or exit convention applied
+    # to one copy and missed in the other would silently reintroduce the
+    # pane-read/agent-read divergence this file exists to catch.
+    agent_arm = _read_arm(screen if agent_screen is None else agent_screen,
+                          read_exit)
     listing = json.dumps({"result": {"agents": rows}})
     (b / "herdr").write_text(
         HERDR % (str(Path(d) / "prompts.log"), listing, read_arm, agent_arm,

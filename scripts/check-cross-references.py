@@ -160,6 +160,17 @@ TRAILING = ".,;:!?)]}\"'`"
 # genuine leading `<` still marks a template, which this must not widen.
 LEADING = ">"
 
+# The CLOSING TAG glues onto the far end the same way, and only when the
+# citation carries no `:line-range` for `:` to break the match on first --
+# `spec/x.als</span>` has no `:` in it, so RUN swallows `</span>` whole.
+# `LEADING`/`TRAILING` cannot reach it: it is neither a lone leading char nor
+# sentence punctuation, and stripping it wholesale would also eat a genuine
+# `</kind>`-shaped placeholder. Cut at `</` specifically, which a closing tag
+# always opens with and a path never contains -- an opening `<placeholder>`
+# has no `</` in it and is untouched, and is caught as a template by the "<"
+# check below regardless.
+CLOSING_TAG = "</"
+
 SECTION = re.compile("§")
 
 # The qualifier of a `§`: a markdown path written just before it, backticked or
@@ -463,6 +474,9 @@ def check_paths(rel, text, tree, report):
     for m in RUN.finditer(text):
         raw = m.group(0)
         tok = raw.rstrip(TRAILING).lstrip(LEADING)
+        close = tok.find(CLOSING_TAG)
+        if close > 0:
+            tok = tok[:close]
         if not tok or "/" not in tok:
             continue
         n = line_of(text, m.start())

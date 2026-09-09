@@ -239,6 +239,14 @@ CASES = [
      {"spec/campaign/diagram.html":
       '<span class="src">spec/campaign/gone.als:1-2</span>\n'},
      ("DANGLING", "S3: nothing at this path")),
+    # A `.src` PIN WITH NO LINE RANGE has no `:` to break RUN's match before
+    # `</span>`, so the closing tag glues onto the token's far end the same
+    # way `>` glues onto its near end. Caught first, this read as `template`
+    # ("names a form, not a file") and the citation went unverified.
+    ("S3 a .src pin with no line range still fires, not swallowed by </span>",
+     {"spec/campaign/diagram.html":
+      '<span class="src">spec/campaign/gone.als</span>\n'},
+     ("DANGLING", "S3: nothing at this path")),
 
     # ---- Precedence: undecided outranks dangling, and both are printed.
     ("undecided and dangling together report both and exit 3",

@@ -153,12 +153,15 @@ def rendered(line):
 # whatever the length, and raising this only ever adds earlier lines.
 LINES = 400
 
-# What `herdr pane read` will return however large `--lines` is, measured
-# (matches `agent read`'s own cap, same tool underneath):
-# 2026-09-05: 900->900, 1000->1000, 1001->1000, 1200->1000, 1500->1000,
-# 3000->1000, with the three large reads sharing a tail and differing at the
-# head. Asking past it reads no further, so a `--lines` above it is refused
-# rather than silently answered with less.
+# What herdr will return however large `--lines` is, measured against
+# `agent read` 2026-09-05: 900->900, 1000->1000, 1001->1000, 1200->1000,
+# 1500->1000, 3000->1000, with the three large reads sharing a tail and
+# differing at the head. Re-measured against `pane read` 2026-09-09 on a
+# pane with over 1000 lines of scrollback: 1500->1000, 3000->1000, the same
+# cap -- though the two commands answer very different CONTENT for the same
+# pane and the same `--lines` (`read_pane`'s docstring), so "the same cap"
+# is the one thing that carried over. Asking past it reads no further, so a
+# `--lines` above it is refused rather than silently answered with less.
 READ_CAP = 1000
 
 

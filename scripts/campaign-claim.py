@@ -1098,7 +1098,7 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 # written at the end of the turn.
 #
 # IT NAMES THE PANE, and that is not decoration. A pane's text holds whatever
-# it has DISPLAYED as well as whatever it printed -- `herdr agent read` puts
+# it has DISPLAYED as well as whatever it printed -- `herdr pane read` puts
 # another session's output into the reader's own scrollback, which AGENTS.md
 # makes the ordinary planner move. Without the pane, a planner that released
 # and then read a delegate's pane found its own anchor and the delegate's

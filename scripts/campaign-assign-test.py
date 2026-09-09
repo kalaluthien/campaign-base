@@ -58,7 +58,7 @@ case "$1 $2" in
 %s
 JSON
     exit 0 ;;
-  "agent read")
+  "pane read")
     printf 'read %%s %%s\\n' "$3" "$5" >> "$log"
     %s ;;
   "agent prompt")
@@ -310,6 +310,40 @@ def end_to_end_cases():
               "assigning anyway" not in out and "--force" not in out
               and "--assume-fresh" not in out, out[:400])
 
+        # THE NOTE ON #1, REPRODUCED: `agent read` scopes to the agent's own
+        # turn, which a release-then-compact resets, and answers SHORTER than
+        # `pane read` for the identical pane and `--lines` -- on this machine
+        # 2026-09-09, 62 lines with no release line in them against 530+ that
+        # held both the release and the marker. This shim tells the two
+        # subcommands apart the same way: `agent read` answers a screen with
+        # no anchor, `pane read` answers the full one. `read_pane` must ask
+        # for `pane read`, or this pane is refused as `unknown` rather than
+        # assigned.
+        agentread_shim = Path(d) / "agentread" / "bin"
+        agentread_shim.mkdir(parents=True)
+        (agentread_shim / "herdr").write_text(
+            '#!/bin/sh\n'
+            'case "$1 $2" in\n'
+            '  "agent list") cat <<\'JSON\'\n' + json.dumps(
+                {"result": {"agents": rows}}) + '\nJSON\n    exit 0 ;;\n'
+            '  "agent read") echo "a fresh session, no anchor here"; exit 0 ;;\n'
+            f'  "pane read") printf \'{RELEASED}\\n{MARKER}\\n\'; exit 0 ;;\n'
+            '  "agent prompt") exit 0 ;;\n'
+            'esac\n'
+            'echo "herdr shim: refusing $*" >&2; exit 1\n')
+        (agentread_shim / "herdr").chmod(0o755)
+        for tool in ("sh", "cat", "printf", "python3"):
+            found = shutil.which(tool)
+            if found and not (agentread_shim / tool).exists():
+                (agentread_shim / tool).symlink_to(found)
+        r = assign(["w1:p2", "198"], agentread_shim)
+        out = r.stdout + r.stderr
+        check("read_pane asks herdr for `pane read`, not `agent read`, so "
+              "the release scrolled past `agent read`'s narrower window "
+              "is still seen",
+              r.returncode == 0 and "assigned kalaluthien/campaign-base#198"
+              in out, f"exit {r.returncode}: {out[:400]}")
+
         # THE REVERSAL. A pane with no release line USED to be assigned, on
         # the reasoning that a fresh session's context is small. Nothing here
         # can tell a fresh session from one whose release scrolled out of a
@@ -456,7 +490,7 @@ def end_to_end_cases():
         out = r.stdout + r.stderr
         check("a scrollback that would not read refuses, saying it could not look",
               r.returncode == 1 and "an unknown is not" in out
-              and "agent read" in out and prompts(unread) == [],
+              and "pane read" in out and prompts(unread) == [],
               f"exit {r.returncode}: {out[:300]}")
         forced_unread = shims(Path(d) / "forcedunread", rows, read_exit=1)
         r = assign(["w1:p2", "198", "--assume-fresh"], forced_unread)

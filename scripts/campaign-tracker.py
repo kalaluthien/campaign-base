@@ -929,14 +929,19 @@ def claim_column(repo, campaign_issue):
     # worker. Same reader as `campaign-claim live`, so the two cannot drift.
     root, _ = module.base_root()
     repos, repo_note = module.claim_repos(repo, root)
-    found_map, unread = module.all_refs(repos, campaign_issue)
+    # THE SLUG MUST BE RESOLVED HERE, not left to `all_refs`'s own default: a
+    # caller that skips this reads the slug as `None` every time, which reads
+    # no prefix at all (`campaign-claim.py`'s `prefixes`) and reports "no slug
+    # that could be read" for a campaign whose slug is in fact readable.
+    slug, slug_note = module.campaign_slug(campaign_issue)
+    found_map, unread = module.all_refs(repos, campaign_issue, slug)
     if unread:
         return (lambda n: ""), (f"the claim refs did not read -- "
                                 f"{'; '.join(unread)}; the rows below say "
                                 f"nothing about who holds what")
     branches = sorted(found_map)
-    note = (f"read refs under campaign-{campaign_issue}/ in "
-            f"{', '.join(repos)} -- {len(branches)} claim(s)")
+    note = (f"{slug_note}; read refs under {slug + '/' if slug else 'no prefix'} "
+            f"in {', '.join(repos)} -- {len(branches)} claim(s)")
 
     def word(number):
         found = module.refs_for_issue(branches, campaign_issue, number)

@@ -1752,6 +1752,22 @@ def peer_cases(m):
     check("with no slug read, no session elsewhere is named as ours",
           got == [], str(got))
 
+    # THE REMOTE-CONTROL LISTENER IS NOT A PEER. It sits under the base root
+    # and names itself nothing a campaign could match, so the base-root
+    # fallback used to claim it for whichever campaign asked -- and a close
+    # then refused on a pane holding no work and unable to answer `STATUS`
+    # (measured live, #245's close). It is herdr's own reserved name, not this
+    # campaign's, so it is excluded like a name that says "elsewhere" is.
+    with_daemon = {"rc": {"name": "remote-control", "cwd": "/base",
+                          "pane": "p", "status": "idle"},
+                   "worker": {"name": "machinery-worker-9", "cwd": "/base",
+                             "pane": "p", "status": "idle"}}
+    got = sorted(sid for sid, _ in
+                 m.classify([], {}, with_daemon, "1", "machinery", root="/base",
+                            caller=None)[2])
+    check("the remote-control listener is not counted as a live peer",
+          got == ["worker"], str(got))
+
     # `under` answers about absolute paths only: `Path.resolve()` resolves a
     # relative one against the PROCESS cwd, so herdr's `"?"` placeholder counted
     # three unrelated sessions. THE ROOT HERE IS AN ANCESTOR OF THE PROCESS'S

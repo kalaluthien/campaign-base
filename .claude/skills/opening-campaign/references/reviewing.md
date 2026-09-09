@@ -10,7 +10,7 @@ level nobody chose.
 ```
 Agent(subagent_type: "general-purpose", model: "<named below>",
       description: "Review PR <N>",
-      prompt: "/code-review <low|medium|high|xhigh|max> <PR#>\n\n…")
+      prompt: "review PR <N> at <level> …")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
@@ -23,6 +23,17 @@ expressing a choice, and there is no value meaning "whatever the launcher is".
 
 **`ultra` is not a level.** It is a person-only review mode, and putting it in
 that slot is the one way to write this block illegally.
+
+**A plain brief, not `/code-review`, until a fanned round prices under a
+narrowed round.** `/code-review` inside a reviewer subagent fans out into an
+orchestrator, finders and their verifiers, each its own further subagent --
+metered at the launching call's own turns alone until
+`campaign-token-tally.py reviews` rolls a fan-out's nested transcripts into the
+round that spawned it (`nested` counts how many). One such round on PR #255
+cost close to 5.0M input_new, against 57,374-134,222 for the narrowed round
+below (NOTE on #1, 2026-09-09). Write the brief in plain prose instead --
+naming the pull request, the level, and what to check -- and reserve
+`/code-review` for a reviewer once a fanned round prices under that figure.
 
 ## The two knobs
 

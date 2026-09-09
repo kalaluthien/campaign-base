@@ -654,6 +654,14 @@ returns "looks fine" on exactly the reasoning that needed a reader; the level by
 **how much there is to read**, `medium` being the baseline. **The level is the
 first token after the command and nowhere else**; asking in the brief sets nothing.
 
+**`/code-review` inside a reviewer subagent fans out**, into an orchestrator,
+finders and their verifiers, each metered at the launching call's own turns
+alone until `campaign-token-tally.py reviews` rolls a fan-out's nested
+transcripts into the round that spawned it. One such round on PR #255 cost
+close to 5.0M input_new, against 57,374-134,222 for a narrowed round (NOTE on
+#1, 2026-09-09). **Launch a reviewer with a plain brief, not `/code-review`,
+until a fanned round prices under that narrowed-round figure.**
+
 **A session that cannot start a subagent is blocked**: it says so and the pull
 request waits, which is never a licence to review some other way. The call itself,
 the two knobs in full, the three wrong modes and the shape of a round are

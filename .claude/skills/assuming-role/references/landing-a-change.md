@@ -66,5 +66,5 @@ for the suite). Move both ends in the same commit
 (`S4a_RenameKeepsItsNamers`).
 
 A code path this tree already held untied is licensed by name in the guard's
-`LEGACY`. Tying one means deleting its line in the same commit, and a path that
-is untied and unlisted is refused.
+`LEGACY`. Tying one means deleting its line in the same commit, and a path your
+change touches that is untied and unlisted is refused.

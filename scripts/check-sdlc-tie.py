@@ -68,13 +68,22 @@ one per cause:
       scenario any more: the scenario was renamed or deleted, or the
       `# witnesses:` line was dropped. The same rename read at the scenario's
       end (`S4b_RenameOfTheScenarioBreaksTheTie`).
-  T4  a code path untied both before and after the commit that the allow-list
-      below does not name: the debt grew where nothing here could see it, by a
-      bypassed hook or a merge this never ran over.
-  T5  an allow-list entry that is no longer an untied code path -- tied since,
-      renamed, or gone. The line is spent and comes out in the same commit; a
-      rename is licensed by EITHER name, so moving the line and moving the file
-      are one commit rather than a commit and the wall after it.
+  T4  a code path THIS CHANGE TOUCHED that is untied both before and after it
+      and that the allow-list below does not name: the debt grew where nothing
+      here could see it, by a bypassed hook or a merge this never ran over. The
+      touched scope is what separates this tree's debt from a tree the list is
+      not about -- every fixture repository under scripts/*-test.py is a tree of
+      copied guards with no suites, and unscoped this refused every commit any
+      of them made.
+  T5  an allow-list entry whose code path is TIED now. The licence is spent and
+      the line comes out in the same commit. An entry naming no code path here
+      is counted in the reading instead of refused: the path may have been
+      deleted, or this may be a tree the list is not about -- which is what
+      every fixture repository under scripts/*-test.py is, since each copies the
+      guards by their real names, so refusing on it walled off every commit any
+      of them made. A rename is licensed by EITHER name, so moving the line and
+      moving the file are one commit rather than a commit and the wall after
+      it.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
@@ -376,12 +385,16 @@ def worktree(rules):
     return Tree("the working tree", paths, texts, *rules)
 
 
-def renames(before_ref, after_kind):
-    """{after-path: before-path} for every rename in the change, so a code
-    path keeps its identity across the two readings. Whether a path is NEW
-    is not read from here but from the tree before: an intent-to-add entry
-    is in the index and absent from `diff --cached`, and a guard that asked
-    the diff would have read it as an old path.
+def changed(before_ref, after_kind):
+    """({after-path: before-path} for every rename, {every path the change
+    touched}).
+
+    The renames are what lets a code path keep its identity across the two
+    readings. Whether a path is NEW is not read from here but from the tree
+    before: an intent-to-add entry is in the index and absent from
+    `diff --cached`, and a guard that asked the diff would have read it as an
+    old path. The touched set is read from here on purpose, and only T4 uses
+    it -- see the T4 note in judge().
 
     `-z` for the same reason the listings use it, and its records come in
     threes for a rename or a copy -- status, source, destination -- against
@@ -394,19 +407,22 @@ def renames(before_ref, after_kind):
     try:
         fields = [f for f in git_root_bytes(*args).split(b"\0")]
     except subprocess.CalledProcessError:
-        return {}                                # no HEAD: nothing to rename from
-    moved, i = {}, 0
+        return {}, set()                         # no HEAD: nothing to diff from
+    moved, touched, i = {}, set(), 0
     while i < len(fields) and fields[i]:
         status = fields[i].decode()
         if status[:1] in ("R", "C"):
             if i + 2 >= len(fields):
                 break
+            src, dst = os.fsdecode(fields[i + 1]), os.fsdecode(fields[i + 2])
             if status[:1] == "R":
-                moved[os.fsdecode(fields[i + 2])] = os.fsdecode(fields[i + 1])
+                moved[dst] = src
+            touched |= {src, dst}
             i += 3
         else:
+            touched.add(os.fsdecode(fields[i + 1]))
             i += 2
-    return moved
+    return moved, touched
 
 
 def read_legacy(path):
@@ -438,7 +454,8 @@ def judge(after_kind, against, legacy_path):
     after = {"index": index_tree, "worktree": worktree}.get(
         after_kind, lambda r: committed("HEAD", "HEAD", r))(rules)
     t2 = time.perf_counter()
-    moved = renames(against if after_kind == "commit" else "HEAD", after_kind)
+    moved, touched = changed(against if after_kind == "commit" else "HEAD",
+                             after_kind)
 
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
           f"{len(after.suites)} suite(s), {len(after.code)} code path(s) from "
@@ -474,18 +491,33 @@ def judge(after_kind, against, legacy_path):
             continue
         if was in allowed or k in allowed:   # a rename carries the licence
             licensed.append(k)
+        elif k not in touched and was not in touched:
+            # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
+            # that the change never opened is not this change's debt, and every
+            # fixture repository under scripts/*-test.py is a tree of copied
+            # guards with no suites -- so an unscoped T4 refused every commit
+            # any of them makes. Scoped, the bite that is left is real: a path a
+            # bypassed hook landed untied is refused the next time anything
+            # opens it, and CI's `--against origin/main` reads the whole pull
+            # request, where the same path is new and T1 has it already.
+            licensed.append(k)
         else:
             findings.append(("T4", k, f"untied before this commit and untied "
                                       f"after it, and the allow-list ({source}) "
                                       f"does not name it: the debt grew where "
                                       f"nothing read it. Tie it, or list it on "
                                       f"purpose"))
+    absent = 0
     for e in sorted(allowed):
         if e not in after.code:
-            findings.append(("T5", e, f"the allow-list ({source}) names it and "
-                                      f"the tree holds no such code path: it was "
-                                      f"renamed or deleted, so the line is spent. "
-                                      f"Drop it"))
+            # NOT A FINDING, A COUNT. An entry naming no code path here says
+            # nothing on its own: the path may have been deleted, or this may be
+            # a tree the list is not about -- which is what every fixture
+            # repository under scripts/*-test.py is, since each copies the
+            # guards by their real names. Refusing on it walled off every commit
+            # any of them made, including the one that deletes a guard on
+            # purpose. The count goes in the reading and the reader decides.
+            absent += 1
         elif after.tied(e):
             findings.append(("T5", e, f"the allow-list ({source}) names it and it "
                                       f"is tied now: the licence is spent. Drop "
@@ -494,7 +526,7 @@ def judge(after_kind, against, legacy_path):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "
           f"path(s) untied and licensed by the allow-list ({source}, "
-          f"{len(allowed)} entr(ies))")
+          f"{len(allowed)} entr(ies), {absent} naming no code path here)")
     return 1 if findings else 0
 
 

@@ -298,13 +298,31 @@ def main():
     check("T5 an allow-list line whose code path is tied now", ok, want, r)
     r = run_case({SPEC: DECL, "scripts/a.py": CODE}, {"scripts/a.py": None},
                  legacy=["scripts/a.py"])
+    ok, want = judge(r, None)
+    check("an allow-list line naming no code path here is counted, not refused: "
+          "a deleted path and a tree the list is not about read the same",
+          ok and "1 naming no code path here" in r.stdout,
+          "0 finding(s) and the absent count", r)
+    r = run_case({SPEC: DECL, "scripts/a.py": CODE, "scripts/a-test.py": SUITE},
+                 {"README.md": "r\n"},
+                 legacy=["scripts/a.py", "scripts/gone.py"])
     ok, want = judge(r, "T5")
-    check("T5 an allow-list line whose code path the tree no longer holds", ok, want, r)
+    check("T5 fires on the tied line while a line naming nothing here does not",
+          ok and r.stderr.count("T5\t") == 1
+          and "1 naming no code path here" in r.stdout,
+          "exactly one T5, for the tied path", r)
+    r = run_case({SPEC: DECL, "scripts/a.py": CODE}, {"README.md": "r\n"})
+    ok, want = judge(r, None)
+    check("a code path untied on both sides that the change never touched is "
+          "not this change's debt: an unlisted path is refused only when the "
+          "change opens it",
+          ok, want, r)
     r = run_case(TIED, {"README.md": "r\n"}, legacy=None)
-    check("with no --legacy the built-in list is read, and a tree holding none "
-          "of its paths reports every line spent",
-          r.returncode == 1 and "T5\t" in r.stderr and "(LEGACY," in r.stdout,
-          "T5 findings and a reading naming LEGACY", r)
+    ok, want = judge(r, None)
+    check("with no --legacy the built-in list is read, and a tree that never "
+          "held its paths is not judged to have spent every line",
+          ok and "(LEGACY, 22 entr(ies), 22 naming no code path here)" in r.stdout,
+          "0 finding(s) and a reading naming LEGACY, its size and its absences", r)
 
     # ---- --against <ref>: the whole change between two commits, which is what
     # CI has to judge and what judging against HEAD on a merge commit cannot see.

@@ -40,11 +40,12 @@ skipped by judgement is the tie broken silently.
 already refuses each skip wherever there is anything to refuse: a change that
 wrote a code path skips neither its scenario nor its test, and one whose
 scenario grew a shape does not skip its view. What the widening adds is the
-test and the code path as waivers, and every change that writes neither has
-them, whatever its scenario grew. What that leaves is a scenario and a view
-alone, and, at its narrowest, nothing below the plan at all: a procedure
-reference, a README, a comment, which lands with every stage below Plan
-waived.
+scenario, the test and the code path as waivers, each still gated by its own
+criterion: test and code go to every change that writes neither, whatever its
+scenario grew, and the scenario to one that also wrote no view. What that
+leaves is a scenario and a view alone, and, at its narrowest, nothing below the
+plan at all: a procedure reference, a README, a comment, which lands with every
+stage below Plan waived.
 
 ## Every session
 

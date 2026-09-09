@@ -232,6 +232,13 @@ CASES = [
     ("S5 fires inside an .als file too, where the comments are the spec",
      {"spec/campaign/session/system.als": "/* `scripts/gone.py` owns it. */\n"},
      ("DANGLING", "scripts/gone.py")),
+    # A `.html` view carries `.src` pins on the model lines it draws (NOTE on
+    # #250); a sweep of only .md/.markdown/.als reads neither diagram and this
+    # class of pin goes stale unnoticed.
+    ("S3 fires inside a .html diagram too, where a .src span pins a model line",
+     {"spec/campaign/diagram.html":
+      '<span class="src">spec/campaign/gone.als:1-2</span>\n'},
+     ("DANGLING", "S3: nothing at this path")),
 
     # ---- Precedence: undecided outranks dangling, and both are printed.
     ("undecided and dangling together report both and exit 3",

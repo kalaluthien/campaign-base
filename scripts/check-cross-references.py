@@ -152,6 +152,14 @@ RUN = re.compile(r"[A-Za-z0-9._<>*-]*/[A-Za-z0-9._/<>*-]*")
 # reference says "directory".
 TRAILING = ".,;:!?)]}\"'`"
 
+# The `>` closing an HTML tag immediately before a `.src` citation, e.g.
+# `<span class="src">spec/campaign/x.als</span>` -- RUN's own `<>` (kept for
+# a `<placeholder>` FORM) glues onto that `>` with no space between, so the
+# token starts `>spec/...` and neither matches ABSOLUTE_PREFIXES nor prints
+# as the path a reader would grep for. Stripped from the front only: a
+# genuine leading `<` still marks a template, which this must not widen.
+LEADING = ">"
+
 SECTION = re.compile("§")
 
 # The qualifier of a `§`: a markdown path written just before it, backticked or
@@ -454,7 +462,7 @@ def check_paths(rel, text, tree, report):
     root = skill_root(rel)
     for m in RUN.finditer(text):
         raw = m.group(0)
-        tok = raw.rstrip(TRAILING)
+        tok = raw.rstrip(TRAILING).lstrip(LEADING)
         if not tok or "/" not in tok:
             continue
         n = line_of(text, m.start())
@@ -591,8 +599,14 @@ def main(argv):
         # retired script path standing in `github/system.als` that a
         # markdown-only sweep could not see. Three `§` citations, across two of
         # these files, are read as well, and those resolve too.
+        #
+        # `.html` IS ONE TOO (NOTE on #250): a `spec/*/diagram.html` view
+        # carries `.src` citations of the model lines it draws, e.g.
+        # `<span class="src">spec/campaign/github/system.als:60-77 @ sha</span>`,
+        # and a sweep that skips `.html` reads neither diagram -- which is how
+        # a `.src` pin went stale in two files unnoticed instead of one.
         paths = [p for p in tracked(root)
-                 if p.endswith((".md", ".markdown", ".als"))]
+                 if p.endswith((".md", ".markdown", ".als", ".html"))]
 
     report = Report()
     unreadable = []

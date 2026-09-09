@@ -230,13 +230,13 @@
 pred tied[k: Artifact] { some tie.k }
 pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
 
-<p>둘 다 테스트에서 읽지만, 읽는 방식이 다르다. <code>witnesses</code> 는 테스트의 텍스트에 적힌 <strong>선언</strong>이다 &mdash; <code># witnesses: &lt;이름&gt;</code> 줄이고, <code>scripts/check-sdlc-tie.py</code> 가 선언된 명령 이름과 정확히 맞춰 본다. <code>drives</code> 는 <strong>두 이름의 짝</strong>이다 &mdash; 테스트의 파일 이름과 코드 경로의 파일 이름이 서로를 가리키는 동안만 성립한다. 시나리오 쪽 이름을 바꾸어 묶음이 끊기는 것이 <code>S4b_RenameOfTheScenarioBreaksTheTie</code> 이고, 방향을 되돌리면 그 하나가 UNSAT 이 된다. <span class="src">spec/sdlc/system.als:144-161 @ 0ca0ea0</span></p>
+<p>둘 다 테스트에서 읽지만, 읽는 방식이 다르다. <code>witnesses</code> 는 테스트의 텍스트에 적힌 <strong>선언</strong>이다 &mdash; <code># witnesses: &lt;이름&gt;</code> 줄이고, <code>scripts/check-sdlc-tie.py</code> 가 선언된 명령 이름과 정확히 맞춰 본다. <code>drives</code> 는 <strong>두 이름의 짝</strong>이다 &mdash; 테스트의 파일 이름과 코드 경로의 파일 이름이 서로를 가리키는 동안만 성립한다. 시나리오 쪽 이름을 바꾸어 묶음이 끊기는 것이 <code>S4b_RenameOfTheScenarioBreaksTheTie</code> 이고, 방향을 되돌리면 그 하나가 UNSAT 이 된다. <span class="src">spec/sdlc/system.als:146-163 @ 89918aa</span></p>
 
-<p>#268 이전에는 하나의 <code>names</code> 였고, 그것이 대상 쪽에서만 끊겼다. 그래서 <strong>테스트</strong>의 이름을 바꾸면 모형에서는 아무 짝도 떨어지지 않는데 검사기의 T2 는 거절했다 &mdash; <code>t-&gt;k</code> 는 스위트의 <em>이름</em>에서 읽는데 합쳐진 관계는 그것을 텍스트라고 불렀기 때문이다. 쪼개고 나면 <code>drives</code> 는 <strong>어느 쪽 끝을 바꾸어도</strong> 떨어지고 (<code>S4c_RenameOfTheTestBreaksTheTie</code>, SAT), <code>witnesses</code> 는 자기 출발점의 이름이 바뀌어도 살아남는다 (<code>S4d_RenameOfTheTestKeepsItsWitness</code>, UNSAT). 두 명령이 그 비대칭을 고정한다. <span class="src">spec/sdlc/system.als:92-119, spec/sdlc/scenarios.als:160-184 @ 0ca0ea0</span></p>
+<p>#268 이전에는 하나의 <code>names</code> 였고, 그것이 대상 쪽에서만 끊겼다. 그래서 <strong>테스트</strong>의 이름을 바꾸면 모형에서는 아무 짝도 떨어지지 않는데 검사기의 T2 는 거절했다 &mdash; <code>t-&gt;k</code> 는 스위트의 <em>이름</em>에서 읽는데 합쳐진 관계는 그것을 텍스트라고 불렀기 때문이다. 쪼개고 나면 <code>drives</code> 는 <strong>어느 쪽 끝을 바꾸어도</strong> 떨어지고 (<code>S4c_RenameOfTheTestBreaksTheTie</code>, SAT), <code>witnesses</code> 는 자기 출발점의 이름이 바뀌어도 살아남는다 (<code>S4d_RenameOfTheTestKeepsItsWitness</code>, UNSAT). 두 명령이 그 비대칭을 고정한다. <span class="src">spec/sdlc/system.als:94-121, spec/sdlc/scenarios.als:205-229 @ 89918aa</span></p>
 
 <div class="callout">
   <div class="g">&#9755;</div>
-  <p><strong>코드 경로에서 거꾸로 읽는다.</strong> <code>tied[k]</code> 는 어떤 시나리오가 k에 닿는지를 묻지, 시나리오에서 내려가며 묻지 않는다. 테스트가 없는 시나리오는 솔버가 혼자 검사하는 주장이고, 반대 방향으로 읽으면 <code>spec/campaign</code> 이 오늘 들고 있는 모든 시나리오를 거절하게 된다. <span class="src">spec/sdlc/system.als:144-161 @ 0ca0ea0</span></p>
+  <p><strong>코드 경로에서 거꾸로 읽는다.</strong> <code>tied[k]</code> 는 어떤 시나리오가 k에 닿는지를 묻지, 시나리오에서 내려가며 묻지 않는다. 테스트가 없는 시나리오는 솔버가 혼자 검사하는 주장이고, 반대 방향으로 읽으면 <code>spec/campaign</code> 이 오늘 들고 있는 모든 시나리오를 거절하게 된다. <span class="src">spec/sdlc/system.als:146-163 @ 89918aa</span></p>
 </div>
 
 <table>
@@ -249,7 +249,7 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
   <tr><td>같은 커밋이 짝지은 쪽도 함께 옮겨서 묶음이 버틴다</td><td><code>S4a_RenameKeepsItsNamers</code></td><td>검사가 통과시켜야 하는 것</td></tr>
 </table>
 
-<p class="src">spec/sdlc/system.als:218-226, spec/sdlc/system.als:251-259, spec/sdlc/scenarios.als:39-45, spec/sdlc/scenarios.als:120-184, spec/sdlc/checks.als:29-39 @ 0ca0ea0</p>
+<p class="src">spec/sdlc/system.als:220-228, spec/sdlc/system.als:253-261, spec/sdlc/scenarios.als:66-72, spec/sdlc/scenarios.als:165-229, spec/sdlc/checks.als:29-39 @ 89918aa</p>
 
 <h2>단계별 건너뛰기 규칙</h2>
 
@@ -394,7 +394,7 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
   <li><strong>아무것도 <code>open</code> 하지 않는다</strong> — 검사가 도는 순간은 커밋이고, <code>campaign/github</code> 는 커밋을 모형화하지 않는다. 묶음은 트리 하나 안 파일들 사이의 것이고, <code>spec/campaign</code> 의 어떤 개체도 그것을 들고 있지 않다. <code>Change</code> 를 <code>Issue</code> 와, <code>Land</code> 를 <code>MergePullRequest</code> 와 합치는 것은 이 층 위의 층이다. <span class="src">spec/sdlc/system.als:6-11 @ 3d8fd5b</span></li>
   <li><strong>누가 파일을 처음 썼는지 말하지 않는다</strong> — 변경이 <em>다시 쓰는</em> 산출물, 이미 있던 시나리오를 목격하는 테스트 같은 것도 여기서는 그 변경이 쓴 것만큼이나 그 변경의 산출물이다. 검사는 이름을 차이가 아니라 트리에 대고 읽는다. <span class="src">spec/sdlc/system.als:91-95 @ 3d8fd5b</span></li>
   <li><strong>검사가 트리를 읽는지 차이만 읽는지는 검사의 것이다</strong> — 모형은 묶음이 무엇인지와 언제 하나가 읽히는지를 말한다. <span class="src">spec/sdlc/system.als:138-139 @ 6eafc16</span></li>
-  <li><strong>이름 바꾸기 뒤 무엇이 살아남는지는 솔버에게 맡긴다</strong> — <code>witnesses'</code> 는 a의 들어오는 짝 가운데 아무것이나 남기고 나머지를 떨어뜨리고, <code>drives'</code> 는 양쪽 끝의 짝에 대해 같은 자유를 갖는다. 같은 커밋이 다시 쓴 텍스트를 모형이 따로 세지 않기 때문이다. <span class="src">spec/sdlc/system.als:251-259 @ 0ca0ea0</span></li>
+  <li><strong>이름 바꾸기 뒤 무엇이 살아남는지는 솔버에게 맡긴다</strong> — <code>witnesses'</code> 는 a의 들어오는 짝 가운데 아무것이나 남기고 나머지를 떨어뜨리고, <code>drives'</code> 는 양쪽 끝의 짝에 대해 같은 자유를 갖는다. 같은 커밋이 다시 쓴 텍스트를 모형이 따로 세지 않기 때문이다. <span class="src">spec/sdlc/system.als:253-261 @ 89918aa</span></li>
   <li><strong>도달 가능성 바닥이 따로 있다</strong> — 어떤 흔적도 닿지 못하는 이벤트는 명령들에서 질문 하나를 조용히 없애고, 너무 조인 프레임이 어떤 명령도 빨갛게 하지 않으면서 그것을 일으키는 가장 싼 길이다. 그래서 <code>Cov_Write</code>, <code>Cov_Skip</code>, <code>Cov_Rename</code>, <code>Cov_Land</code> 가 있다. <span class="src">spec/sdlc/checks.als:66-74 @ 3d8fd5b</span></li>
 </ul>
 

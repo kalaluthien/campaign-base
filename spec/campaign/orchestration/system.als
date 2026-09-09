@@ -152,8 +152,9 @@ var sig Retired  in Agent {}
    guard), which is the poll into the banner #279 measured: ~11 planner turns
    per window, each reading the banner. The window is the account's, not the
    agent's, so `limitReset` clears every stopped agent at once: each agent
-   stops at its own next call (`limitStop`, one per event) and all wake at the
-   reset, which is the batch AGENTS.md § Watching and retiring describes. What ends the silence is the reset, a clock the banner names;
+   stops at its own next call (`limitStop`, one per event) and all wake at
+   the reset, which is the batch AGENTS.md § Watching and retiring describes.
+   What ends the silence is the reset, a clock the banner names;
    `.claude/skills/assuming-role/scripts/campaign-limit-reset.py` reads it off
    the pane and schedules the one prompt that lands after it. */
 var sig Stopped in Agent {}

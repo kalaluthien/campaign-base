@@ -12,7 +12,8 @@ word and never the status:
     passed <iso>    a banner whose reset is already behind now, with no prompt
                     entered since: the wake is due now
     no limit        the pane was read and no banner stands on it -- none at all,
-                    or one a later prompt has been entered after
+                    or one on a pane herdr lists as working, which a stopped
+                    pane cannot be
     could not read: <why>   herdr is not installed, the pane is not one herdr
                     can read, --now is not a clock, or a banner is on screen
                     whose clause this parser does not know
@@ -29,17 +30,26 @@ on 2026-09-08 (fixtures/limit-banner-*.txt are those screens):
 
 Only a line that OPENS with the `⎿` glyph is a banner: the same words quoted
 in prose, in a NOTE, or in a diff a pane is showing are not, and read
-`no limit`. A screen displaying a capture of the banner itself -- a `cat` of
-a fixture, or of this file -- is indistinguishable from the banner, and reads
-as one. The clause is `resets <time>` for a reset on the day it was painted
-and `resets <Mon> <d> at <time>` for a later day, which the weekly limit
-paints; the minutes drop on the hour, so `9pm` and `1:30am` are both seen.
-The zone is the account's, in parentheses; one stop was recorded without it,
-so it is optional and the local zone stands in. The LAST banner on the screen
-is the reading, since a pane that stopped twice shows both -- and a banner
-followed by a prompt line with text on it (`❯ continue …`) is a pane that was
-woken since, which reads `no limit`: the prompt is what a wake is, so the
-wake has happened.
+`no limit`. That glyph is the tool-result column, and every stop captured so
+far was painted in it; a banner painted in some other column has no evidence
+behind it and reads `no limit` too, unremarked. A screen displaying a capture
+of the banner itself -- a `cat` of a fixture, or of this file -- is
+indistinguishable from the banner, and reads as one. The clause is
+`resets <time>` for a reset on the day it was painted and
+`resets <Mon> <d> at <time>` for a later day, which the weekly limit paints;
+the minutes drop on the hour, so `9pm` and `1:30am` are both seen. The zone
+is the account's, in parentheses; one stop was recorded without it, so it is
+optional and the local zone stands in. The LAST banner on the screen is the
+reading, since a pane that stopped twice shows both.
+
+A BANNER STAYS ON SCREEN AFTER THE PANE IS WOKEN, so the screen alone cannot
+say whether it still stands. What can is herdr's liveness: a pane it lists as
+`working` has taken a turn, which a stopped pane cannot, so its banner is
+stale and reads `no limit`. Any other status, and a listing that cannot be
+read, leaves the banner standing -- the reading errs toward the wake, since a
+prompt into a free pane costs one turn and a wake never sent costs the whole
+window. The screen's own `❯` lines say nothing here: a queued command, a
+paste, and text typed but not sent all paint one.
 
 RESOLVING A CLOCK TIME, because the banner carries no date and the reader
 does not know when it was painted. A session window is five hours
@@ -48,16 +58,17 @@ five hours after the stop -- `WINDOW`. Of the clock time's three nearest
 days, the one within five hours ahead of now is the reset; when none is, the
 most recent one behind now is, and the reading is `passed`. So `1:30am` read
 at 23:00 is tomorrow's, `9pm` read at 21:30 has passed, and `9pm` read at
-03:00 is yesterday's and passed. The rule errs LATE and never early: a
-banner painted a day ago whose clock time is ahead of now reads as today's,
-which wakes a pane that is already free an hour or so late, and a `passed`
-reading always names a reset that has really passed. An undated WEEKLY clause
+03:00 is yesterday's and passed. The rule errs LATE and never early, with
+one exception below: a banner painted a day ago whose clock time is ahead of
+now reads as today's, which wakes a pane that is already free an hour or so
+late, and a `passed` reading always names a reset that has really passed. An undated WEEKLY clause
 is today's, ahead or passed by the clock, and a weekly banner stands for
 days: painted on an earlier day it reads a reset later than the real one --
 again late, never into a pane still stopped, since a weekly reset on an
 earlier day has passed. A dated clause takes the nearest of three years, so
 a December banner read in January has passed rather than being eleven months
-ahead. At a fall-back hour the earlier of the two wall clocks is taken.
+ahead. The exception: in the one fall-back hour of a zone that observes it
+the earlier of the two wall clocks is taken, up to an hour early.
 
 --fire <wake-pane> SCHEDULES THE ONE-SHOT: a detached
 `sleep <seconds>; herdr agent prompt <wake-pane> <text>` under its own
@@ -67,8 +78,9 @@ limit a turn later, which is why a cron in that session cannot do this. The
 prompt goes in at the reset plus `LEAD`, one minute, since the reset is a
 clock the server rounds; for a `passed` reading it goes in now. It prints
 `scheduled pid <n> at <iso> into <wake-pane>: <text>` and the log path. The
-log opens with this run's own marker line, `== <now> pid <n> at <iso> into
-<wake-pane>: <text>`, and herdr's answer follows under it: a prompt into a
+log takes this run's own marker line first, `== <now> at <iso> into
+<wake-pane>: <text>`, written and flushed before the sleeper is spawned so
+nothing of the sleeper's can land above it, and herdr's answer follows: a prompt into a
 working pane is queued by the harness, one into a pane at a dialog is
 refused as agent_blocked, and this process is gone by then, so the caller
 reads the log under the marker. It drives a pane, so it is refused
@@ -83,6 +95,7 @@ local. The sleeper's delay is measured from that clock too, so `--fire` with
 """
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import subprocess
@@ -102,8 +115,6 @@ CLAUSE = re.compile(
     r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)"
     r"(?:\s*\((?P<zone>[^)]+)\))?",
     re.IGNORECASE)
-# A prompt line with text on it: a wake that has happened.
-RESUMED = re.compile(r"^❯[ \t]+\S", re.MULTILINE)
 MONTHS = {m: i for i, m in enumerate(
     "jan feb mar apr may jun jul aug sep oct nov dec".split(), 1)}
 # A session window is five hours, so its reset is at most five hours after the stop.
@@ -130,6 +141,25 @@ def read_pane(pane):
         why = (out.stderr.strip() or out.stdout.strip() or "no message").splitlines()[0]
         return None, f"herdr pane read {pane} exited {out.returncode}: {why}"
     return out.stdout, None
+
+
+def pane_status(pane):
+    """(agent_status, None) from `herdr agent list`, or (None, why) when the
+    listing could not be read or does not hold the pane."""
+    try:
+        out = subprocess.run(["herdr", "agent", "list"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return None, "herdr is not installed"
+    if out.returncode != 0:
+        return None, f"herdr agent list exited {out.returncode}"
+    try:
+        agents = ((json.loads(out.stdout) or {}).get("result") or {}).get("agents") or []
+    except json.JSONDecodeError:
+        return None, "herdr agent list is not json"
+    for agent in agents:
+        if agent.get("pane_id") == pane:
+            return agent.get("agent_status") or "unknown", None
+    return None, f"{pane} is not in herdr agent list"
 
 
 def resolve(m, now):
@@ -173,8 +203,6 @@ def reading(text, now):
     if not banners:
         return None
     last = banners[-1]
-    if RESUMED.search(text, last.end()):
-        return None
     clause = CLAUSE.match(last.group("rest"))
     if not clause:
         raise Unparsed("a banner is on screen and its clause is not one this parser knows")
@@ -212,12 +240,13 @@ def fire(kind, when, wake_pane, text, log, now):
         os.close(fd)
     try:
         with open(log, "ab") as fh:
+            fh.write(f"== {iso(now)} at {iso(at)} into {wake_pane}: {text}\n".encode())
+            fh.flush()
             proc = subprocess.Popen(
                 ["sh", "-c", 'sleep "$0" && exec herdr agent prompt "$1" "$2"',
                  str(delay), wake_pane, text],
                 stdin=subprocess.DEVNULL, stdout=fh, stderr=fh,
                 start_new_session=True)
-            fh.write(f"== {iso(now)} pid {proc.pid} at {iso(at)} into {wake_pane}: {text}\n".encode())
     except OSError as e:
         return None, f"the sleeper could not be spawned: {e}"
     return (f"scheduled pid {proc.pid} at {iso(at)} into {wake_pane}: {text}\n"
@@ -246,6 +275,10 @@ def main(argv=None):
     except Unparsed as e:
         print(f"could not read: {e}")
         return 1
+    if got is not None:
+        status, _ = pane_status(a.pane)
+        if status == "working":
+            got = None
     if got is None:
         print("no limit")
         if a.fire:

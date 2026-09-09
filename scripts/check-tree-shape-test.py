@@ -151,6 +151,9 @@ CASES = [
     ("R3 still runs over a skill's scripts/ itself",
      {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
       ".claude/skills/s/scripts/screen.txt": "cat $CAMPAIGN/runtime/holder\n"}, "R3b"),
+    ("R3 still runs over a scripts/fixtures/ under a skill's assets/",
+     {".claude/skills/s/SKILL.md": "---\nname: s\n---\n",
+      ".claude/skills/s/assets/scripts/fixtures/screen.txt": "cat $CAMPAIGN/runtime/holder\n"}, "R3b"),
 
     # A language with no comment syntax at all: every line is code, and the
     # empty marker lists must not make the whole file read as prose.

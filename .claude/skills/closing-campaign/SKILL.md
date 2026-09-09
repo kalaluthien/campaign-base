@@ -70,10 +70,14 @@ not killed. One reader makes all three readings — the remote's claim refs, whe
 each is checked out, and herdr's liveness:
 
 ```sh
+git -C "$BASE" worktree prune
 "$BASE/scripts/campaign-claim.py" live "$N"
 ```
 
-Read the words, never the exit status, and refuse on any of:
+**The prune comes first**: a worktree removed from disk without `git worktree
+remove` stays listed on its claim branch until pruned, and `live` reads that
+entry as a claim checked out here. Read the words, never the exit status, and
+refuse on any of:
 
 - a non-zero exit — one of the readings did not happen, an unreadable repository
   included;
@@ -375,8 +379,8 @@ because `rm -rf -- ""` exits 0 and deletes nothing, and the finished-check
 below then reads the surviving directory as gone.
 
 ```sh
-[ -n "${CAMPAIGN_DIR-}" ] ||
-  { echo "REFUSE: CAMPAIGN_DIR is unbound in this turn; rebind it from step 0"; exit 1; }
+[ -n "${CAMPAIGN_DIR-}" ] && [ -n "${BASE-}" ] ||
+  { echo "REFUSE: CAMPAIGN_DIR or BASE is unbound in this turn; rebind both from step 0"; exit 1; }
 gh issue close "$N" -R kalaluthien/campaign-base --comment "NOTE your-session-name: campaign closed."   # your own name, typed
 lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
 ls -A "$CAMPAIGN_DIR"
@@ -386,10 +390,10 @@ git -C "$BASE" worktree prune
 
 Any `lsof` rows: name the processes and stop. It sees an open file, not an idle
 session, so an empty result is weak evidence, paired with the announcement above
-rather than trusted alone. `runtime/` goes with the delete; say so. **The
-prune is part of the delete**: the campaign's worktrees under it are gone from
-disk, and git keeps listing each one, on its claim branch, until pruned — which
-`campaign-claim live` then reads as a claim checked out here.
+rather than trusted alone. `runtime/` goes with the delete; say so. The prune
+drops the entries the delete just orphaned, the campaign's own worktrees, so
+no later `live` of another campaign reads them; `BASE` is guarded because
+`git -C ""` runs in the cwd.
 
 Holds when: the closing comment carries the listing taken immediately before the
 delete — every entry under the directory outside `runtime/` and `repos/`, files

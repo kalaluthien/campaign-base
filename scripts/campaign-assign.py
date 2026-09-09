@@ -153,11 +153,15 @@ def rendered(line):
 # whatever the length, and raising this only ever adds earlier lines.
 LINES = 400
 
-# What `herdr agent read` will return however large `--lines` is, measured
-# 2026-09-05: 900->900, 1000->1000, 1001->1000, 1200->1000, 1500->1000,
-# 3000->1000, with the three large reads sharing a tail and differing at the
-# head. Asking past it reads no further, so a `--lines` above it is refused
-# rather than silently answered with less.
+# What herdr will return however large `--lines` is, measured against
+# `agent read` 2026-09-05: 900->900, 1000->1000, 1001->1000, 1200->1000,
+# 1500->1000, 3000->1000, with the three large reads sharing a tail and
+# differing at the head. Re-measured against `pane read` 2026-09-09 on a
+# pane with over 1000 lines of scrollback: 1500->1000, 3000->1000, the same
+# cap -- though the two commands answer very different CONTENT for the same
+# pane and the same `--lines` (`read_pane`'s docstring), so "the same cap"
+# is the one thing that carried over. Asking past it reads no further, so a
+# `--lines` above it is refused rather than silently answered with less.
 READ_CAP = 1000
 
 
@@ -223,7 +227,7 @@ def compaction_verdict(text, anchor, pane):
       `stale`       a release line with no marker after it.
       `unknown`     no release line NAMING THIS PANE in what was read. NOT
                     "it never released":
-                    `herdr agent read` caps at 1000 lines and returns fewer
+                    `herdr pane read` caps at 1000 lines and returns fewer
                     than asked even when more history exists, so an absent
                     anchor and a pane that never released are the same bytes.
                     Refuses like `stale`.
@@ -237,7 +241,7 @@ def compaction_verdict(text, anchor, pane):
     # STARTSWITH for both, against the rendered line, so this file's own
     # source answers neither. The anchor must also END with this pane's id: a
     # pane's text holds what it DISPLAYED as well as what it printed, and
-    # `herdr agent read` puts another session's release into the reader's own
+    # `herdr pane read` puts another session's release into the reader's own
     # scrollback, which AGENTS.md makes the ordinary planner move.
     #
     # THE MARKER CANNOT BE QUALIFIED THAT WAY -- it is harness UI text with
@@ -275,10 +279,20 @@ def read_pane(pane, limit):
 
     Not guarded by HERDR_ENV: that guard is against ACTING on somebody else's
     session, never against reading -- the same reading `campaign-claim.py`
-    makes of `agent list`."""
-    r = run("herdr", "agent", "read", pane, "--lines", str(limit))
+    makes of `agent list`.
+
+    `pane read`, NOT `agent read`, for the same pane id and the same `--lines`.
+    Measured 2026-09-09 (NOTE on #1): `agent read w40:p21 --lines 1000`
+    answered 62 lines with no release line in them, right after that pane's
+    own `campaign-claim release` had printed one and compacted; `pane read
+    w40:p21 --lines 1000` answered 530+ lines holding both the release and the
+    compaction marker. `agent read` scopes to the agent's own turn, which a
+    release-then-compact resets; `pane read` reads the terminal's scrollback,
+    which the compaction does not clear. This function's whole job is reading
+    scrollback across exactly that boundary, so it needs the second."""
+    r = run("herdr", "pane", "read", pane, "--lines", str(limit))
     if r.returncode != 0:
-        return None, (f"`herdr agent read {pane} --lines {limit}` exited "
+        return None, (f"`herdr pane read {pane} --lines {limit}` exited "
                       f"{r.returncode}: {r.stderr.strip()[:200] or r.stdout.strip()[:200]}")
     return r.stdout, None
 

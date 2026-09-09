@@ -208,6 +208,19 @@ FORMS = [
         re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
     ),
+    (
+        "campaign-claim",
+        "scripts/campaign-claim.py",
+        # The claim-ref listing: `git/matching-refs/heads/<prefix>` with the
+        # prefix spelled by hand. `prefixes` is the one place the prefix is
+        # written, and the copy that outlived #237's retirement of the number
+        # form sat in a skill's code block, listing `heads/campaign-$N/` refs
+        # that no claim had been cut under for weeks -- so every release it ran
+        # found nothing and said nothing (#237). The endpoint is the marker; a
+        # prefix regex would miss exactly the stale spelling this exists for.
+        re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*matching-refs/heads/"),
+        "the claim-ref listing",
+    ),
 ]
 
 

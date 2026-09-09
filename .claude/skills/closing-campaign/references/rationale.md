@@ -128,15 +128,18 @@ workspace — and step 3 runs on the no-directory path too, where step 1 was
 skipped, and it sees hands and subagent workers that no `herdr agent list` row
 would. `AGENTS.md` forbids deleting a claim ref while an agent on your machine
 works it; this is the one place where that has been established for every ref at
-once. Reaching into a member repository's refs from a close would be the
-cross-repository sweep this base forbids.
+once. The release reaches a member repository's refs too, through
+`campaign-claim release`, which reads them one repository at a time by name:
+a merged member ref outlives its pull request exactly as a base ref does
+(measured closing #245), and the sweep `AGENTS.md` forbids is one git command
+run across repositories, not a per-repository read.
 
 **Ancestry, not equality**, in numbers: a zero-commit claim compared against
 today's `main` sha reads unequal and would be refused as holding work — exactly
 the ref the step exists to release. Probed: a claim four commits behind reads
 `ahead_by=0 behind_by=4 status=behind`. `matching-refs` returns an empty array
-rather than a 404 when a campaign claimed nothing (probed), so the loop runs zero
-times and says nothing.
+rather than a 404 when a campaign claimed nothing (probed), so `live` lists no
+vacant row and the loop runs zero times.
 
 **A machine the campaign was bound to before a migration may still hold a
 directory of its own**: a stale cache, untouched by this delete, with nothing

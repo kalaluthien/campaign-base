@@ -101,7 +101,20 @@ import subprocess
 import sys
 
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
-REVIEW_CMD = re.compile(r"/code-review\s+(\w+)\s+(\d+)")
+REVIEW_CMD = re.compile(
+    r"/code-review\s+(?P<level>\w+)\s+(?P<pr>\d+)"
+    r"|review PR\s+(?P<pr2>\d+)\s+at\s+(?P<level2>\w+)")
+
+
+def review_cmd_groups(m):
+    """(level, pr) from a REVIEW_CMD match, either of its two shapes.
+
+    `/code-review <level> <pr>` and the plain-brief `review PR <pr> at
+    <level>` write the same two facts in opposite order -- named groups so
+    every reader takes one pair, never the position that shape happens not
+    to use.
+    """
+    return m.group("level") or m.group("level2"), int(m.group("pr") or m.group("pr2"))
 SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$")
 # An interpreter runs the file that follows it, and check-campaign-claim's
 # PREFIXES deliberately holds no interpreter -- it is looking for `gh`, which
@@ -465,7 +478,7 @@ class Corpus:
         for text in text_blocks(message):
             m = REVIEW_CMD.search(text)
             if m:
-                pr = int(m.group(2))
+                _level, pr = review_cmd_groups(m)
                 if pr in self.pr_map:
                     return self.pr_map[pr]
             m = self.branch.search(text) if self.branch else None
@@ -650,7 +663,14 @@ def cmd_turns(corpus, args):
 
 
 def load_subagent_parents(roots):
-    """agent id -> its parent's agent id, from every `agent-<id>.meta.json` under root.
+    """(parent_of, path_of): every subagent's parent id and its own transcript path.
+
+    Both read from `agent-<id>.meta.json` and its sibling `.jsonl`, sitting
+    beside each other in every `subagents/` directory under root -- a
+    directory walk, not a turn, so a subagent whose own turns fell outside
+    the corpus's `--since`/`--until`/`--base` filters is still found: its
+    round is never silently absent just because the round's own head turn
+    didn't survive the window.
 
     The harness writes `parentAgentId` into a subagent's own sidecar file --
     never into the transcript, and never onto a depth-1 subagent, whose
@@ -660,25 +680,32 @@ def load_subagent_parents(roots):
 
     An agent whose meta.json is missing or unreadable resolves to no parent
     below, the same answer `cmd_reviews` gave every subagent before this
-    existed: its own round, on its own.
+    existed: its own round, on its own. A file not named `agent-<id>.jsonl`
+    or `.meta.json` -- an unrelated sidecar dropped into `subagents/` -- is
+    skipped rather than sliced into a bogus id.
     """
-    parents = {}
+    parent_of = {}
+    path_of = {}
     for root in roots:
         for dirpath, _dirs, names in os.walk(os.path.expanduser(root)):
             if os.path.basename(dirpath) != "subagents":
                 continue
             for name in names:
-                if not name.endswith(".meta.json"):
+                if not name.startswith("agent-"):
                     continue
-                agent_id = name[len("agent-"):-len(".meta.json")]
-                try:
-                    data = json.load(open(os.path.join(dirpath, name)))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                parent = data.get("parentAgentId")
-                if parent:
-                    parents[agent_id] = parent
-    return parents
+                if name.endswith(".meta.json"):
+                    agent_id = name[len("agent-"):-len(".meta.json")]
+                    try:
+                        data = json.load(open(os.path.join(dirpath, name)))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    parent = data.get("parentAgentId")
+                    if parent:
+                        parent_of[agent_id] = parent
+                elif name.endswith(".jsonl"):
+                    agent_id = name[len("agent-"):-len(".jsonl")]
+                    path_of[agent_id] = os.path.join(dirpath, name)
+    return parent_of, path_of
 
 
 def review_rounds(roots, turns):
@@ -687,27 +714,32 @@ def review_rounds(roots, turns):
     A reviewer subagent running `/code-review` fans out into an orchestrator,
     finders and verifiers -- further subagents whose own turns were priced at
     the parent's alone unless the chain is walked back to the round it belongs
-    to. `root_of` follows `parentAgentId` to the top, memoized because two
-    grandchildren of one fan-out both walk the same middle link.
+    to. `root_of` follows `parentAgentId` to the top, iteratively (a chain is
+    three deep on this machine's corpus, but nothing bounds it) and memoized,
+    because two grandchildren of one fan-out both walk the same middle link.
     """
-    parent_of = load_subagent_parents(roots)
+    parent_of, agent_file = load_subagent_parents(roots)
     root_cache = {}
 
     def root_of(agent_id):
-        if agent_id in root_cache:
-            return root_cache[agent_id]
-        root_cache[agent_id] = agent_id  # cycle guard: a malformed chain stops here
-        parent = parent_of.get(agent_id)
-        root = root_of(parent) if parent else agent_id
-        root_cache[agent_id] = root
+        chain = []
+        cur = agent_id
+        while cur not in root_cache and cur not in chain:
+            chain.append(cur)
+            parent = parent_of.get(cur)
+            cur = parent if parent else cur
+            if parent is None:
+                break
+        root = root_cache.get(cur, cur)  # a cycle or a missing parent stops on itself
+        for seen in chain:
+            root_cache[seen] = root
         return root
 
     rounds = {}
-    agent_file = {}
     for t in turns:
         if t["kind"] != "subagent" or not t.get("agent_id"):
             continue
-        agent_file.setdefault(t["agent_id"], t["file"])
+        agent_file.setdefault(t["agent_id"], t["file"])  # a turn's own file, if the walk missed it
         rounds.setdefault(root_of(t["agent_id"]), []).append(t)
     return rounds, agent_file
 
@@ -725,11 +757,12 @@ def cmd_reviews(corpus, args):
         m = REVIEW_CMD.search(brief or "")
         if not m:
             continue
+        level, pr = review_cmd_groups(m)
         own_turns = [t for t in turns if t["agent_id"] == agent_id]
         head = min(own_turns or turns, key=lambda t: t["timestamp"])
         got = totals(turns)
         nested = len({t["agent_id"] for t in turns} - {agent_id})
-        rows.append((int(m.group(2)), m.group(1), head["issue"], head["model"],
+        rows.append((pr, level, head["issue"], head["model"],
                      got, head["timestamp"][:16], nested))
     rows.sort(key=lambda r: (r[0], r[5]))
     table([[r[0], r[1], r[2], r[3], fmt(r[4]["turns"]),

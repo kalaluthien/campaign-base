@@ -219,7 +219,12 @@ def build(tmp):
         # one records on every record it writes.
         user(day + "03:00:00Z", wt, "/code-review high 400\n\nreview it",
              session="s1", agent="a1"),
-        assistant("m-review", day + "03:01:00Z", wt, out=30, session="s1",
+        # Later than every child's own turn below (03:03-03:07), on purpose:
+        # the round's `issue`/`model`/`started` columns must come from the
+        # ROOT's own turn, never from whichever turn in the round is merely
+        # earliest -- a1's model here (fable) differs from every child's
+        # default (opus), so reading the wrong turn is a visible wrong answer.
+        assistant("m-review", day + "03:20:00Z", wt, out=30, session="s1",
                   model="claude-fable-5-1", agent="a1"),
     ])
     # A reviewer's own fan-out: a4 is its child, a5 and a6 are a4's -- none of
@@ -271,6 +276,45 @@ def build(tmp):
         assistant("m-verify", day + "03:31:00Z", str(base), out=25, session="s1",
                   agent="a3"),
     ])
+    # The plain-brief form REVIEW_CMD's own second alternative reads: no
+    # `/code-review`, so a reviewer launched this way still shows up as a
+    # round -- the whole reason for writing this alternative in the first
+    # place, since #273's own prose tells a launcher to use it.
+    # Its own worktree, not str(base): PR 401 is not in `pr_map`, so nothing
+    # names its issue and it would otherwise fall through to session s1's
+    # timeline (the "parent" rule), corrupting whichever issue that session
+    # was on at this timestamp.
+    a7_wt = str(base / "camp-260101" / "worktrees" / "311")
+    write(root / "proj" / "s1" / "subagents" / "agent-a7.jsonl", [
+        user(day + "03:25:00Z", a7_wt, "review PR 401 at medium\n\ncheck the guard",
+             session="s1", agent="a7"),
+        assistant("m-a7", day + "03:26:00Z", a7_wt, out=40, session="s1",
+                  agent="a7"),
+    ])
+    # A round whose ROOT's own turn falls outside the window, so it never
+    # becomes one of `corpus.turns` -- only its child's does. The round's
+    # file is still found by the directory walk `load_subagent_parents` does
+    # (never window-filtered), so its brief still names the round; a lookup
+    # built only from turns would find no file for the id and drop the round
+    # entirely, silently, even though a child's cost is sitting right there.
+    # Its own worktree, issue 310 -- not str(base), which would fall through
+    # to session s1's timeline (the "parent" rule) and silently move turns
+    # into whichever issue that session's OWN turns were on at this timestamp,
+    # corrupting checks this fixture makes elsewhere.
+    orphan_wt = str(base / "camp-260101" / "worktrees" / "310")
+    write(root / "proj" / "s1" / "subagents" / "agent-a8.jsonl", [
+        user("2026-01-01T00:00:00Z", orphan_wt, "/code-review low 402\n\nreview it",
+             session="s1", agent="a8"),
+        assistant("m-a8", "2026-01-01T00:01:00Z", orphan_wt, out=999, session="s1",
+                  agent="a8"),
+    ])
+    write(root / "proj" / "s1" / "subagents" / "agent-a9.jsonl", [
+        user(day + "03:40:00Z", orphan_wt, "second angle", session="s1", agent="a9"),
+        assistant("m-a9", day + "03:41:00Z", orphan_wt, out=60, session="s1",
+                  agent="a9"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a9.meta.json",
+               {"parentAgentId": "a8", "spawnDepth": 2})
     pr_map = tmp / "prs.json"
     pr_map.write_text(json.dumps([{"number": 400, "headRefName": "machinery/303-x"}]))
     return root, base, pr_map
@@ -332,8 +376,10 @@ def main():
 
         # THE WINDOW IS THE MESSAGE'S OWN TIMESTAMP. The file was written now;
         # the turn inside it is from yesterday.
+        # Two now: m-old, and a8's own turn (its round is still found by the
+        # directory walk, below, though this turn of it is dropped here).
         check("a turn older than the window is dropped though its file is new",
-              "999" not in issues and "1 outside the window" in issues, issues[:400])
+              "999" not in issues and "2 outside the window" in issues, issues[:400])
         check("a cwd outside every base root is dropped and counted",
               "888" not in issues and "1 with a cwd outside" in issues, issues[:400])
         check("a turn in the boundary second itself is kept",
@@ -385,6 +431,26 @@ def main():
               and r400["turns"] == "4", str(r400))
         check("...and the row says how many nested transcripts it folded",
               r400 and r400.get("nested") == "3", str(r400))
+        check("...and issue/model/started come from the ROOT's own turn, "
+              "not merely the round's earliest",
+              r400 and r400["model"] == "claude-fable-5-1"
+              and r400["started"] == "2026-01-02T03:20", str(r400))
+
+        # A REVIEWER LAUNCHED WITH A PLAIN BRIEF STILL SHOWS UP AS A ROUND --
+        # #273's own prose tells a launcher to write one instead of
+        # `/code-review`, so the second form REVIEW_CMD reads is what keeps a
+        # plain-brief round from vanishing off this table entirely.
+        r401 = row(reviews, "401")
+        check("the plain-brief form `review PR <N> at <level>` is a round too",
+              r401 and r401["level"] == "medium" and r401["output"] == "40",
+              str(r401))
+
+        # A ROUND WHOSE ROOT'S OWN TURN IS OUTSIDE THE WINDOW IS STILL FOUND,
+        # by the directory walk rather than by a turn.
+        r402 = row(reviews, "402")
+        check("a round survives its root's own turn falling outside the window",
+              r402 and r402["level"] == "low" and r402["output"] == "60",
+              str(r402))
 
         # TOOL-ECHO COUNTS A CALL, NOT A MENTION, AND PARTITIONS THE BYTES.
         # The fixture runs campaign-tracker and campaign-repos in one command,

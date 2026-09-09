@@ -10,7 +10,7 @@ level nobody chose.
 ```
 Agent(subagent_type: "general-purpose", model: "<named below>",
       description: "Review PR <N>",
-      prompt: "review PR <N> at <level> …")
+      prompt: "review PR <N> at <level>\n\n…")
 ```
 
 `general-purpose` because `fork` inherits the author's context and would review
@@ -29,11 +29,15 @@ narrowed round.** `/code-review` inside a reviewer subagent fans out into an
 orchestrator, finders and their verifiers, each its own further subagent --
 metered at the launching call's own turns alone until
 `campaign-token-tally.py reviews` rolls a fan-out's nested transcripts into the
-round that spawned it (`nested` counts how many). One such round on PR #255
-cost close to 5.0M input_new, against 57,374-134,222 for the narrowed round
-below (NOTE on #1, 2026-09-09). Write the brief in plain prose instead --
-naming the pull request, the level, and what to check -- and reserve
-`/code-review` for a reviewer once a fanned round prices under that figure.
+round that spawned it (`nested` counts how many). PR #255's five fanned rounds
+cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
+for one narrowed round below (NOTE on #1, 2026-09-09;
+`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
+Write the brief as `"review PR <N> at <level>"` -- **the level right after
+`at`, exactly where `/code-review`'s own level sits after the command, and
+nowhere else in the brief** -- naming what to check after a blank line, and
+reserve `/code-review` for a reviewer once a fanned round prices under that
+figure.
 
 ## The two knobs
 
@@ -49,10 +53,12 @@ light does not license a lighter reviewer.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes
-above it. **The level is the first token after the command and nowhere else**:
-asking for it in the brief sets nothing, because only that token is parsed, and
-omitting it falls back to a persisted setting and then to the session's own
-effort -- a level chosen by neither the launcher nor the work.
+above it. **The level sits at one fixed position and nowhere else** -- the
+first token after `/code-review`, or the token right after `at` in a plain
+brief: naming it anywhere else in the brief sets nothing, because only that
+position is parsed, and omitting it falls back to a persisted setting and then
+to the session's own effort -- a level chosen by neither the launcher nor the
+work.
 
 So a broad mechanical sweep is a lighter model at a higher level, and a subtle
 local change is a heavier model at a lower one. The knobs are independent, and a
@@ -93,9 +99,9 @@ other way.
 **One full review, at the final sha, and narrowed reviews after it.** The full
 review is commissioned once, on the pull request as a whole, when the work is
 what the author means to land. Every fix round after it is reviewed on that
-round's diff only — `/code-review <level> <PR#>` with the brief naming the diff
-range, launched by the worker that made the fixes. A narrowed review does not
-re-run a measurement the full review already made and reported, **unless the fix
+round's diff only — a plain brief naming the diff range, launched by the
+worker that made the fixes. A narrowed review does not re-run a
+measurement the full review already made and reported, **unless the fix
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.
 
@@ -107,9 +113,13 @@ narrowed on the merge diff. Hand-resolved, full, reading the combination
 **What a round costs, so that "one more round" is a priced decision.** Measured
 over 2026-09-04T00:45Z–2026-09-05T01:00Z (#200, `campaign-token-tally.py reviews`,
 method on #195): one round runs **57,374 to 134,222 input tokens** at `medium` or
-`high` on Opus. The shape this replaces is what the range hides — PR #184 ran
-seven rounds at 800,567 input tokens, 38% of #177's *new input*, because each
-round re-read the entire pull request to check a handful of fixes.
+`high` on Opus. **Retired by #273**, which edited `reviews` itself: that range
+was read before the rollup existed, so it undercounts any round in the window
+that fanned out the way #273's own NOTE describes, and needs re-deriving over
+the same window with the current script before it is cited again. The shape
+this replaces is what the range hides — PR #184 ran seven rounds at 800,567
+input tokens, 38% of #177's *new input*, because each round re-read the entire
+pull request to check a handful of fixes.
 
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect

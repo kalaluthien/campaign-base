@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -212,6 +213,27 @@ def main():
     check("campaign-claim still exposes what the column imports",
           why is None and hasattr(reader, "matching_refs")
           and hasattr(reader, "refs_for_issue"))
+
+    # THE COLUMN MUST RESOLVE THE SLUG AND PASS IT ON. Without it `all_refs`
+    # falls back to its own `slug=None` default, which reads no prefix at all
+    # (`campaign-claim.py`'s `prefixes`) -- a campaign with a real slug then
+    # settles with "no slug that could be read" on every row, which is what
+    # #237's reopening measured on #245.
+    seen = {}
+    fake = types.SimpleNamespace(
+        base_root=lambda: ("/tmp", None),
+        claim_repos=lambda repo, root: ([repo], "1 repositor(y/ies)"),
+        campaign_slug=lambda n: ("machinery", f"#{n} is `machinery`"),
+        all_refs=lambda repos, n, slug=None: (seen.setdefault("slug", slug), {}, [])[1:],
+        refs_for_issue=lambda branches, n, number: [])
+    real_reader = m.claim_reader
+    m.claim_reader = lambda: (fake, None)
+    try:
+        m.claim_column("o/r", "245")
+    finally:
+        m.claim_reader = real_reader
+    check("claim_column resolves the campaign's slug and hands it to all_refs",
+          seen.get("slug") == "machinery")
 
     # ------------------------------------------- bound and bind: the binding
     # The binding is a `bound:` LABEL since #176. A label set is read by exact

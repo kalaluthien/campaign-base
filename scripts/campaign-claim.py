@@ -1502,9 +1502,19 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
             ours.append((sid, row))
         elif named is not None:
             continue                      # it says whose it is, and it is not ours
+        elif name == REMOTE_CONTROL_NAME:
+            continue                      # herdr's own listener, not a peer
         elif root and under(row.get("cwd", ""), root):
             ours.append((sid, row))
     return occupied, vacant, ours
+
+
+# herdr's reserved pane for the owner's remote-control daemon: named nothing a
+# campaign could match and sits at the base root, so the base-root fallback
+# above claimed it for whichever campaign asked -- a close then refused on a
+# pane holding no work and unable to answer `STATUS` (measured live, #245's
+# close).
+REMOTE_CONTROL_NAME = "remote-control"
 
 
 def under(path, root):

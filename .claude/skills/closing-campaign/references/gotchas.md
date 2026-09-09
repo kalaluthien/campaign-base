@@ -57,11 +57,12 @@ input file, not a shadowed name. Write `command diff`; `cmp`, `sed`, `grep` and
 
 ## `git/matching-refs` does not paginate, and is documented that way
 
-Step 5 reads every `<slug>/` ref with a bare `gh api`. That looks like the
+`campaign-claim` lists every `<slug>/` ref with a bare `gh api`. That looks like the
 truncation hazard this base guards everywhere else — a paged endpoint read
 without `--paginate`, where a truncated list reads exactly like a complete one.
 It is not. Measured against a repository with 241 matching refs:
 
+<!-- unguarded: campaign-claim -- a probe of the endpoint's paging on a foreign repository, listing no claim -->
 ```
 gh api "repos/cli/cli/git/matching-refs/heads/" --jq 'length'                 -> 241
 gh api --paginate "repos/cli/cli/git/matching-refs/heads/" --jq 'length'      -> 241

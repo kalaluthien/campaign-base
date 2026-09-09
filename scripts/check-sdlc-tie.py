@@ -472,12 +472,35 @@ def judge(after_kind, against, legacy_path):
         # merge commit contains the base by construction, and merge condition 3
         # keeps it so; what this catches is the window where `origin/main` moved
         # between that merge commit and the fetch.
-        if subprocess.run(["git", "-C", ROOT, "merge-base", "--is-ancestor",
-                           against, "HEAD"]).returncode != 0:
-            print(f"check-sdlc-tie: PERMITTING -- HEAD does not contain "
-                  f"{against}, so the two trees are not a change and every "
-                  f"commit {against} has and HEAD has not would read backwards. "
-                  f"Nothing was judged", file=sys.stderr)
+        #
+        # THREE OUTCOMES, NOT TWO, and collapsing them is what made this guard
+        # inert in CI for four commits. `--is-ancestor` exits 0 for yes, 1 for
+        # no, and 128 for a question it could not read -- a ref that does not
+        # resolve, or a SHALLOW clone, where HEAD's parents are grafted away and
+        # every ancestry answer is no. `check.yml` cloned shallow, so the gate
+        # fired on every run and the log read like a verdict. A shallow tree is
+        # named as such here, because the remedy is the clone's and not the
+        # branch's.
+        probe = subprocess.run(["git", "-C", ROOT, "merge-base", "--is-ancestor",
+                                against, "HEAD"], capture_output=True, text=True)
+        if probe.returncode not in (0, 1):
+            print(f"check-sdlc-tie: PERMITTING -- the reading itself failed: git "
+                  f"could not say whether HEAD contains {against} "
+                  f"({probe.stderr.strip() or f'exit {probe.returncode}'}); "
+                  f"nothing was judged", file=sys.stderr)
+            return 0
+        if probe.returncode == 1:
+            shallow = git_root_bytes("rev-parse", "--is-shallow-repository"
+                                     ).strip() == b"true"
+            why = ("this clone is SHALLOW, so HEAD's parents are grafted away "
+                   "and no ancestry can be read here -- deepen it "
+                   "(`fetch-depth: 0`) rather than reading this as a verdict"
+                   if shallow else
+                   f"HEAD does not contain {against}, so the two trees are not "
+                   f"a change and every commit {against} has and HEAD has not "
+                   f"would read backwards")
+            print(f"check-sdlc-tie: PERMITTING -- {why}. Nothing was judged",
+                  file=sys.stderr)
             return 0
     t0 = time.perf_counter()
     before = committed(against, against, rules) if after_kind == "commit" \

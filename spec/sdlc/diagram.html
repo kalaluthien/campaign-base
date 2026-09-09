@@ -390,12 +390,12 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
 <h2>모형 밖에 남긴 것</h2>
 
 <ul>
-  <li><strong>세 기계는 규율이지 사실이 아니다</strong> — <code>orderDiscipline</code>, <code>tieDiscipline</code>, <code>landDiscipline</code> 은 각각 검사 하나가 가정하고 그 <code>_Bites</code> 가 떨어뜨린다. 이벤트에 써 넣은 규칙은 모형이 인정하는 모든 세계에서 참이고, 어떤 명령도 그것의 부재를 보일 수 없기 때문이다. 그래서 이벤트는 <em>느슨하다</em>: <code>write</code> 는 순서를 읽지 않고, <code>skip</code> 은 기준을 읽지 않고, <code>land</code> 는 묶음을 읽지 않는다. <span class="src">spec/sdlc/system.als:38-44 @ 3d8fd5b</span></li>
-  <li><strong>아무것도 <code>open</code> 하지 않는다</strong> — 검사가 도는 순간은 커밋이고, <code>campaign/github</code> 는 커밋을 모형화하지 않는다. 묶음은 트리 하나 안 파일들 사이의 것이고, <code>spec/campaign</code> 의 어떤 개체도 그것을 들고 있지 않다. <code>Change</code> 를 <code>Issue</code> 와, <code>Land</code> 를 <code>MergePullRequest</code> 와 합치는 것은 이 층 위의 층이다. <span class="src">spec/sdlc/system.als:6-11 @ 3d8fd5b</span></li>
-  <li><strong>누가 파일을 처음 썼는지 말하지 않는다</strong> — 변경이 <em>다시 쓰는</em> 산출물, 이미 있던 시나리오를 목격하는 테스트 같은 것도 여기서는 그 변경이 쓴 것만큼이나 그 변경의 산출물이다. 검사는 이름을 차이가 아니라 트리에 대고 읽는다. <span class="src">spec/sdlc/system.als:91-95 @ 3d8fd5b</span></li>
+  <li><strong>세 기계는 규율이지 사실이 아니다</strong> — <code>orderDiscipline</code>, <code>tieDiscipline</code>, <code>landDiscipline</code> 은 각각 검사 하나가 가정하고 그 <code>_Bites</code> 가 떨어뜨린다. 이벤트에 써 넣은 규칙은 모형이 인정하는 모든 세계에서 참이고, 어떤 명령도 그것의 부재를 보일 수 없기 때문이다. 그래서 이벤트는 <em>느슨하다</em>: <code>write</code> 는 순서를 읽지 않고, <code>skip</code> 은 기준을 읽지 않고, <code>land</code> 는 묶음을 읽지 않는다. <span class="src">spec/sdlc/system.als:38-44 @ 6eafc16</span></li>
+  <li><strong>아무것도 <code>open</code> 하지 않는다</strong> — 검사가 도는 순간은 커밋이고, <code>campaign/github</code> 는 커밋을 모형화하지 않는다. 묶음은 트리 하나 안 파일들 사이의 것이고, <code>spec/campaign</code> 의 어떤 개체도 그것을 들고 있지 않다. <code>Change</code> 를 <code>Issue</code> 와, <code>Land</code> 를 <code>MergePullRequest</code> 와 합치는 것은 이 층 위의 층이다. <span class="src">spec/sdlc/system.als:6-11 @ 6eafc16</span></li>
+  <li><strong>누가 파일을 처음 썼는지 말하지 않는다</strong> — 변경이 <em>다시 쓰는</em> 산출물, 이미 있던 시나리오를 목격하는 테스트 같은 것도 여기서는 그 변경이 쓴 것만큼이나 그 변경의 산출물이다. 검사는 이름을 차이가 아니라 트리에 대고 읽는다. <span class="src">spec/sdlc/system.als:93-97 @ 6eafc16</span></li>
   <li><strong>검사가 트리를 읽는지 차이만 읽는지는 검사의 것이다</strong> — 모형은 묶음이 무엇인지와 언제 하나가 읽히는지를 말한다. <span class="src">spec/sdlc/system.als:138-139 @ 6eafc16</span></li>
   <li><strong>이름 바꾸기 뒤 무엇이 살아남는지는 솔버에게 맡긴다</strong> — <code>witnesses'</code> 는 a의 들어오는 짝 가운데 아무것이나 남기고 나머지를 떨어뜨리고, <code>drives'</code> 는 양쪽 끝의 짝에 대해 같은 자유를 갖는다. 같은 커밋이 다시 쓴 텍스트를 모형이 따로 세지 않기 때문이다. <span class="src">spec/sdlc/system.als:253-261 @ 89918aa</span></li>
-  <li><strong>도달 가능성 바닥이 따로 있다</strong> — 어떤 흔적도 닿지 못하는 이벤트는 명령들에서 질문 하나를 조용히 없애고, 너무 조인 프레임이 어떤 명령도 빨갛게 하지 않으면서 그것을 일으키는 가장 싼 길이다. 그래서 <code>Cov_Write</code>, <code>Cov_Skip</code>, <code>Cov_Rename</code>, <code>Cov_Land</code> 가 있다. <span class="src">spec/sdlc/checks.als:66-74 @ 3d8fd5b</span></li>
+  <li><strong>도달 가능성 바닥이 따로 있다</strong> — 어떤 흔적도 닿지 못하는 이벤트는 명령들에서 질문 하나를 조용히 없애고, 너무 조인 프레임이 어떤 명령도 빨갛게 하지 않으면서 그것을 일으키는 가장 싼 길이다. 그래서 <code>Cov_Write</code>, <code>Cov_Skip</code>, <code>Cov_Rename</code>, <code>Cov_Land</code> 가 있다. <span class="src">spec/sdlc/checks.als:66-74 @ 6eafc16</span></li>
 </ul>
 
 <pre>scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc

@@ -44,7 +44,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0`, not the default 1. The tie guard below asks whether
+      # HEAD contains `origin/main`, and in a shallow clone HEAD's parents are
+      # grafted away so the answer is always no -- which made the guard permit
+      # on every run while its log read like a verdict. Ancestry needs history.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 0
 
       # check-commit-claim.py is deliberately absent: it refuses a branch that
       # is not a claim, and a pull request runner's branch never is.
@@ -63,11 +69,12 @@ jobs:
       # than its last commit.
       #
       # The fetch is its own step because `actions/checkout` leaves no
-      # `origin/main` on a pull request. `--depth=1` is enough: the guard diffs
-      # two trees and asks for no merge base.
+      # `origin/main` ref on a pull request even at full depth. NOT `--depth=1`:
+      # the guard reads two trees AND asks whether HEAD contains the ref, and a
+      # shallow fetch answers that question no every time.
       - name: The tie guard, over the whole change rather than one commit
         run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           scripts/check-sdlc-tie.py --against origin/main
 
       # Every suite, found rather than listed: a hand-kept list is one more copy

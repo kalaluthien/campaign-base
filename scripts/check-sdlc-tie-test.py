@@ -384,8 +384,16 @@ def main():
     ok, want = judge(r, "T2")
     check("--against a ref reads a suite deleted in a later commit", ok, want, r)
     r = run_case({SPEC: DECL}, {}, args=("--against", "no-such-ref"))
-    check("--against a ref that does not resolve permits loudly",
-          r.returncode == 0 and "PERMITTING" in r.stderr, "exit 0 and PERMITTING", r)
+    check("--against a ref that does not resolve says the READING failed, not "
+          "that HEAD does not contain it",
+          r.returncode == 0 and "the reading itself failed" in r.stderr
+          and "does not contain" not in r.stderr,
+          "exit 0 and PERMITTING naming the reading, not a verdict", r)
+    check("...and git's own message is quoted inside the guard's line rather "
+          "than printed beside it",
+          r.stderr.count("check-sdlc-tie:") == 1
+          and "Not a valid object name" in r.stderr.split("check-sdlc-tie:")[1],
+          "one guard line, carrying git's message", r)
     # A HEAD that does not CONTAIN the ref is not a change: every commit the ref
     # has and HEAD has not reads backwards, so a branch that committed nothing
     # of its own was refused with a T3 naming a file it never opened.
@@ -440,6 +448,44 @@ def main():
           r.returncode == 0 and "PERMITTING" in r.stderr
           and "FileNotFoundError" in r.stderr,
           "exit 0 and PERMITTING naming the exception", r)
+
+    # A SHALLOW clone answers every ancestry question no, because HEAD's parents
+    # are grafted away. Collapsed with a real "does not contain" this made the
+    # guard permit on every CI run while its log read like a verdict, so the two
+    # are told apart by name. `file://` is what forces a true shallow clone: a
+    # plain path copies the whole object store and the depth marker means
+    # nothing.
+    with tempfile.TemporaryDirectory() as d:
+        up = Path(d) / "up"
+        up.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(up)], check=True)
+        commit(up, {SPEC: DECL})
+        subprocess.run(["git", "-C", str(up), "checkout", "-qb", "pr"], check=True)
+        commit(up, {"scripts/a.py": CODE})
+        for depth, name, want in ((["--depth=1"], "shallow", "SHALLOW"),
+                                  ([], "full", "T1")):
+            wd = Path(d) / name
+            subprocess.run(["git", "clone", "-q", *depth, "--branch", "pr",
+                            f"file://{up}", str(wd)], check=True)
+            subprocess.run(["git", "-C", str(wd), "fetch", "-q", "--no-tags", *depth,
+                            "origin", "+refs/heads/main:refs/remotes/origin/main"],
+                           check=True)
+            allow = Path(d) / f"legacy-{name}.txt"
+            allow.write_text("")
+            r = subprocess.run([sys.executable, str(GUARD), "--against",
+                                "origin/main", "--legacy", str(allow)],
+                               cwd=wd, capture_output=True, text=True)
+            if want == "SHALLOW":
+                check("--against in a shallow clone names the clone, not a "
+                      "verdict about the branch",
+                      r.returncode == 0 and "SHALLOW" in r.stderr
+                      and "does not contain" not in r.stderr,
+                      "exit 0 and PERMITTING naming the shallow clone", r)
+            else:
+                check("--against in the same clone at full depth judges the "
+                      "change, which is what makes the shallow case a defect",
+                      r.returncode == 1 and "T1\t" in r.stderr,
+                      "T1 on stderr, exit 1", r)
 
     # A reading that fails permits, and says so.
     with tempfile.TemporaryDirectory() as d:

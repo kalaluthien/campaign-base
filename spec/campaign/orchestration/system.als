@@ -179,6 +179,29 @@ var sig Compacted in Session {}
    the review inherits it. */
 var sig Reviewed in PullRequest {}
 
+/* WHAT A MECHANISM READ, as against what a session asserted.
+   `mergedOnCurrentReview` says a merge needs a current review and says nothing
+   about anybody READING one, so a session that merged its own unreviewed pull
+   request satisfied the model exactly. That is not hypothetical: PR
+   kalaluthien/campaign-base#262 merged at 8ca2609 carrying no comment opening
+   `REVIEW` and no pull-request review at all, and nothing refused it.
+
+   A pull request is in `ReviewRead` once a check has read its head against the
+   REVIEW comments naming that head -- scripts/check-merge-review.py, run on the
+   head by .github/workflows/check.yml and by campaign-claim.py's `release`
+   before a merged claim's ref goes.
+
+   A READING IS OF A REVIEW, and that fact is the whole content. The check reads
+   comments, so it cannot report a reading where no review was written, and it
+   cannot carry one across the push that retires the review it read. Which is
+   why this needs no frame condition and no clearing line in `push`: `Reviewed`
+   shrinks there and this shrinks with it. Otherwise unframed, exactly as
+   `Judged` is -- what is stated is what a reading DEPENDS on, never when one
+   may be taken. */
+var sig ReviewRead in PullRequest {}
+
+fact AReadingIsOfAReview { always ReviewRead in Reviewed }
+
 /* WHAT THE GUARD WROTE DOWN, and the reason there is a signature for it at all
    (kalaluthien/campaign-base#196). `claimBeforeWork` says the gate refuses
    unclaimed work; it says nothing about the gate leaving a trace, so a guard

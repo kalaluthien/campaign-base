@@ -661,8 +661,19 @@ wants the merge, the author included: merge condition 2 is on who *writes* it.
 **Name the model and the level on every launch**, and they answer different
 questions: the model by the **depth** of the change, because a weaker reader
 returns "looks fine" on exactly the reasoning that needed a reader; the level by
-**how much there is to read**, `medium` being the baseline. **The level is the
-first token after the command and nowhere else**; asking in the brief sets nothing.
+**how much there is to read**, `medium` being the baseline. **`/code-review`'s
+level is the first token after the command and nowhere else**; asking in the
+brief sets nothing. A plain brief sets no level mechanically at all — put it
+after `at` anyway, since that is what `campaign-token-tally.py` reads for its
+own accounting, and say what you mean in the rest of the brief.
+
+**`/code-review` inside a reviewer subagent fans out**, into an orchestrator,
+finders and their verifiers, each metered at the launching call's own turns
+alone until `campaign-token-tally.py reviews` rolls a fan-out's nested
+transcripts into the round that spawned it. PR #255's five fanned rounds cost
+close to 5.0M input_new combined, against 57,374-134,222 for one narrowed round
+(NOTE on #1, 2026-09-09). **Launch a reviewer with a plain brief, not
+`/code-review`, until a fanned round prices under that narrowed-round figure.**
 
 **A session that cannot start a subagent is blocked**: it says so and the pull
 request waits, which is never a licence to review some other way. The call itself,

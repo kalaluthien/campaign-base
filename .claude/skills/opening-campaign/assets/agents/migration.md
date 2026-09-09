@@ -40,9 +40,12 @@ cycle of real traffic.
 
 ## SDLC profile
 
-`optional = Docs` -- a migration always lands a code path, and `criterion` for
-`Spec` is that nothing below it exists, so its scenario is never skippable; the
-view is, because this kind changes no behaviour and so grows no shape.
+`optional = skippable` -- the kind narrows nothing below the criterion, which
+already refuses each skip wherever there is anything to refuse: a migration that
+lands a code path skips neither its scenario nor its test, and one whose
+scenario grew a shape does not skip its view. What is left is every change that
+writes no test and no code path -- a runbook, a rollback note, the record of a
+difference found and accepted, which lands with every stage below Plan waived.
 
 ## Every session
 

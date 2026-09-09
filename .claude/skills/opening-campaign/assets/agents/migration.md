@@ -43,11 +43,11 @@ cycle of real traffic.
 `optional = skippable` -- the kind narrows nothing below the criterion, which
 already refuses each skip wherever there is anything to refuse: a migration that
 lands a code path skips neither its scenario nor its test, and one whose
-scenario grew a shape does not skip its view. What is left is a change that
-writes no test and no code path and grew no shape -- a runbook, a rollback
-note, the record of a difference found and accepted, which lands with every
-stage below Plan waived. Not every change writing no test and no code path: one
-whose scenario grew a shape still owes its view.
+scenario grew a shape does not skip its view. What the widening adds is the
+test and the code path as waivers, and every change that writes neither has
+them, whatever its scenario grew -- a runbook, a rollback note, the record of a
+difference found and accepted, each landing with every stage below Plan
+waived.
 
 ## Every session
 

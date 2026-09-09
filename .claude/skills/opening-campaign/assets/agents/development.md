@@ -39,12 +39,12 @@ skipped by judgement is the tie broken silently.
 `optional = skippable` -- the kind narrows nothing below the criterion, which
 already refuses each skip wherever there is anything to refuse: a change that
 wrote a code path skips neither its scenario nor its test, and one whose
-scenario grew a shape does not skip its view. What is left is a change that
-writes no test and no code path and grew no shape -- a scenario and a view
+scenario grew a shape does not skip its view. What the widening adds is the
+test and the code path as waivers, and every change that writes neither has
+them, whatever its scenario grew. What that leaves is a scenario and a view
 alone, and, at its narrowest, nothing below the plan at all: a procedure
-reference, a README, a comment, which lands with every stage below Plan waived.
-Not every change writing no test and no code path: one whose scenario grew a
-shape still owes its view.
+reference, a README, a comment, which lands with every stage below Plan
+waived.
 
 ## Every session
 

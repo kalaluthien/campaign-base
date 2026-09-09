@@ -254,6 +254,7 @@
     ["sdlc/scenarios.als", "run", "S5b_LandsWithoutTheLanding"],
     ["sdlc/scenarios.als", "run", "S6_ProfileRefusesWhatTheCriterionAllows"],
     ["sdlc/scenarios.als", "run", "S6a_TheSameWaiverTheKindAllows"],
+    ["sdlc/scenarios.als", "run", "S6b_TheWaiverSurvivesAShape"],
     ["sdlc/scenarios.als", "run", "S7_PrototypingNeverWaivesItsScenario"],
     ["sdlc/scenarios.als", "run", "S7a_TheKindThatDoes"]
   ]

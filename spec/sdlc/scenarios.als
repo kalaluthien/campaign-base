@@ -16,15 +16,17 @@ open sdlc/system
    skipping, because each is already refused by its own criterion wherever
    there is anything to refuse -- a change that wrote a code path may skip
    neither Spec nor Test, and one whose scenario grew a shape may not skip
-   Docs. WHAT THE WIDENING ADMITS IS A CHANGE THAT WRITES NO TEST AND NO CODE
-   PATH AND GREW NO SHAPE, which is wider than a change with nothing below its
-   plan: a scenario and a view alone land too, which is
-   `S6a_TheSameWaiverTheKindAllows`. It is not every change writing no test and
-   no code path: one whose scenario grew a shape still owes its view, and the
-   Docs criterion refuses that skip whatever the profile says
-   (`S3a_DocsDemanded`). `S2a_ProseOnlyChange` is the narrowest of them, and
-   the one a profile naming Docs alone refused outright, before any criterion
-   was read. `research` refuses changing a repository beyond a scratch probe,
+   Docs. WHAT THE WIDENING ADDS IS THE SPEC, TEST AND CODE WAIVERS, each still
+   gated by its own criterion: Test and Code go to every change that writes
+   neither, whatever its scenario grew (`S6b_TheWaiverSurvivesAShape`), and
+   Spec to one that also wrote no view. Docs was optional before the widening
+   and is untouched by it -- `maySkip` is a conjunction, so the profile has no
+   say in a criterion, and Docs' refuses the skip wherever the scenario grew a
+   shape (`S3a_DocsDemanded`). What the widening leaves is wider than a change
+   with nothing below its plan: a scenario and a view alone land too, which is
+   `S6a_TheSameWaiverTheKindAllows`. `S2a_ProseOnlyChange` is the narrowest of
+   them, and the one a profile naming Docs alone refused outright, before any
+   criterion was read. `research` refuses changing a repository beyond a scratch probe,
    so its changes are findings on an issue.
 
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and those two narrow
@@ -245,6 +247,20 @@ pred S6a_TheSameWaiverTheKindAllows {
   }
 }
 
+/* THE SAME WAIVER WHEN THE SCENARIO DID GROW A SHAPE: it survives, because the
+   Test and Code criteria read what the change wrote below them and nothing
+   else. The change owes its view and writes it, and the profile's Docs is not
+   what licenses that -- `S6a` skips no Docs. Under the retired
+   `optional = Docs` no trace lands this, which is what the widening bought. */
+pred S6b_TheWaiverSurvivesAShape {
+  allDisciplines
+  one c: Change {
+    developmentProfile[c.profile]
+    change.c.stage = Intent + Plan + Spec + Docs
+    eventually (c in Landed and c.skipped = Test + Code and some writtenOf[c] & GrowsShape)
+  }
+}
+
 /* THE `Spec` HALF OF `prototypingProfile` LICENSES NOTHING A LANDING CHANGE
    CAN USE, which is not the same as being narrow. `criterion` lets a change
    skip Spec only when it wrote nothing in Docs, Test or Code; this kind lets
@@ -277,5 +293,6 @@ run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expe
 run S5b_LandsWithoutTheLanding for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
 run S6_ProfileRefusesWhatTheCriterionAllows for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 0
 run S6a_TheSameWaiverTheKindAllows          for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 1
+run S6b_TheWaiverSurvivesAShape             for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 1
 run S7_PrototypingNeverWaivesItsScenario    for exactly 1 Change, exactly 1 Profile, 6 Artifact, 12 steps expect 0
 run S7a_TheKindThatDoes                    for exactly 1 Change, exactly 1 Profile, 6 Artifact, 12 steps expect 1

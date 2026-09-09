@@ -51,6 +51,9 @@ CASES = [
     ("T1 a declaration whose name is the scenario's with a suffix",
      {SPEC: DECL},
      {"scripts/a.py": CODE, "scripts/a-test.py": "# witnesses: S1_FullChainX\n"}, "T1"),
+    ("T1 a declaration naming a prefix of the scenario's name",
+     {SPEC: DECL},
+     {"scripts/a.py": CODE, "scripts/a-test.py": "# witnesses: S1_Full\n"}, "T1"),
     ("T1 a declaration whose name is the scenario's with a prefix",
      {SPEC: DECL},
      {"scripts/a.py": CODE, "scripts/a-test.py": "# witnesses: XS1_FullChain\n"}, "T1"),
@@ -340,6 +343,34 @@ def main():
                  config=quote)
     ok, want = judge(r, None)
     check("a suite at a non-ASCII path ties the code path beside it", ok, want, r)
+    # The committed tree is listed by a different command from the index, so it
+    # needs a case of its own: quoted, this reads as T1 -- a path that was never
+    # there before -- rather than as the T2 it is.
+    r = run_case({SPEC: DECL, "scripts/캠페인.py": CODE,
+                  "scripts/캠페인-test.py": SUITE},
+                 {"scripts/캠페인-test.py": None}, config=quote)
+    ok, want = judge(r, "T2")
+    check("a code path tied at a non-ASCII path is read from the tree before",
+          ok, want, r)
+    # And the working tree is a third listing.
+    r = run_case({SPEC: DECL, "scripts/캠페인.py": CODE,
+                  "scripts/캠페인-test.py": SUITE},
+                 {}, args=(), on_disk={"scripts/캠페인-test.py": None}, config=quote)
+    ok, want = judge(r, "T2")
+    check("without --staged, a non-ASCII path on disk is read the same way",
+          ok, want, r)
+
+    # ---- an allow-list file that is not there is a reading that could not be
+    # made, and permitting on it would license a debt nobody listed.
+    r = run_case({SPEC: DECL, "scripts/a.py": CODE},
+                 {"scripts/a.py": CODE + "y\n"},
+                 args=("--staged", "--legacy", "/nonexistent/legacy.txt"),
+                 legacy=None)
+    check("an allow-list file that is not there permits loudly, and does not "
+          "read as a list of nothing",
+          r.returncode == 0 and "PERMITTING" in r.stderr
+          and "FileNotFoundError" in r.stderr,
+          "exit 0 and PERMITTING naming the exception", r)
 
     # A reading that fails permits, and says so.
     with tempfile.TemporaryDirectory() as d:

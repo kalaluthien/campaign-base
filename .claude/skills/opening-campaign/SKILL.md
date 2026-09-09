@@ -85,6 +85,7 @@ kind, which is not; say which kind you picked.
 | measure or audit something that already runs | `analysis` |
 | find out whether an approach can work at all | `prototyping` |
 | move a working system from one form to another | `migration` |
+| build something new under a specification | `development` |
 
 With a person in the conversation, propose all three in one message and wait;
 from a sub-issue with nobody waiting, read all three from its body. Either

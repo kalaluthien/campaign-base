@@ -16,19 +16,23 @@ open sdlc/system
    None of those is a stage the KIND forbids skipping, because each is already
    refused by its own criterion wherever there is anything to refuse -- a
    change that wrote a code path may skip neither Spec nor Test, and one whose
-   scenario grew a shape may not skip Docs. What is left once every criterion
-   holds is a change with nothing below its plan: a procedure reference, a
-   README, a comment. `S2a_ProseOnlyChange` is that change, and a profile
-   naming Docs alone refused it outright, before any criterion was read.
-   `research` refuses changing a repository beyond a scratch probe, so its
-   changes are findings on an issue.
+   scenario grew a shape may not skip Docs. WHAT THE WIDENING ADMITS IS EVERY
+   CHANGE THAT WRITES NO TEST AND NO CODE PATH, and that is wider than a change
+   with nothing below its plan: a scenario and a view alone land too, which is
+   `S6a_TheSameWaiverTheKindAllows`. `S2a_ProseOnlyChange` is the narrowest of
+   them, and the one a profile naming Docs alone refused outright, before any
+   criterion was read. `research` refuses changing a repository beyond a
+   scratch probe, so its changes are findings on an issue.
 
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and these two narrow
-   nothing. The other kinds' profile lines are the procedure's to state, one
-   line each in assets/agents/*.md, in this vocabulary, and `prototyping` and
-   `migration` are where a narrower one is written. */
+   nothing -- so neither witnesses that half of `maySkip`, and `prototyping` is
+   here to. It lets the model and the view go and never the running thing, and
+   `S6_ProfileRefusesWhatTheCriterionAllows` is the profile half on its own.
+   The other kinds' profile lines are the procedure's to state, one line each
+   in assets/agents/*.md, in this vocabulary. */
 pred developmentProfile[p: Profile] { p.optional = skippable }
 pred researchProfile[p: Profile]    { p.optional = skippable }
+pred prototypingProfile[p: Profile] { p.optional = Spec + Docs }
 
 /* ---------------- disciplines ---------------- */
 
@@ -172,19 +176,20 @@ pred S4a_RenameKeepsItsNamers {
   }
 }
 
-/* A CODE PATH WITH NO SCENARIO: no trace lands a development change that
-   wrote one. Neither the kind nor the worker's reading refuses the chain any
-   more -- Spec is optional under `developmentProfile`, and its criterion is
-   true for as long as nothing below Spec is written -- so a change may waive
-   its scenario and go on to write the code path, which is `S5b`. What refuses
-   it is the merge: the code path turns Spec's criterion false, so the waiver
-   is stale by the landing and `landDiscipline` reads the criterion again
-   there. `S5a` drops the commit check and the chain is refused all the same,
-   which says the tie is not what refuses it; the scope holds two changes
-   because the tie reads the TREE, so a scenario and a test of another change
-   could reach the path. */
+/* A CODE PATH WITH NO SCENARIO: no trace lands a change that wrote one, and
+   the kind is not pinned because the criterion decides it alone. Neither the
+   profile nor the worker's reading refuses the chain any more -- Spec is
+   optional under every profile here, and its criterion is true for as long as
+   nothing below Spec is written -- so a change may waive its scenario and go
+   on to write the code path, which is `S5b`. What refuses it is the merge: the
+   code path turns Spec's criterion false, so the waiver is stale by the
+   landing and `landDiscipline` reads the criterion again there. `S5a` drops
+   the commit check and the chain is refused all the same, which says the tie
+   is not what refuses it; the scope holds two changes because the tie reads
+   the TREE, so a scenario and a test of another change could reach the path.
+   The tie does not widen the waiver either: `criterion` reads what the CHANGE
+   wrote, never what the tree ties. */
 pred codeWithoutSpec[c: Change] {
-  developmentProfile[c.profile]
   eventually (c in Landed
               and some writtenOf[c] & stage.Code
               and no writtenOf[c] & stage.Spec)
@@ -192,6 +197,30 @@ pred codeWithoutSpec[c: Change] {
 pred S5_CodeWithoutSpecRefused   { allDisciplines and some c: Change | codeWithoutSpec[c] }
 pred S5a_RefusedWithoutTheTie    { orderDiscipline and skipDiscipline and landDiscipline and some c: Change | codeWithoutSpec[c] }
 pred S5b_LandsWithoutTheLanding  { orderDiscipline and skipDiscipline and some c: Change | codeWithoutSpec[c] }
+
+/* THE PROFILE HALF OF `maySkip`, ON ITS OWN. A `prototyping` change that wrote
+   its scenario and its view and neither a test nor a code path: `criterion`
+   holds for Test and for Code -- nothing runs -- and the kind refuses the
+   waiver all the same, because the running thing is what this kind never goes
+   without. No trace lands it. `S6a` is the same chain under a kind that allows
+   it, so neither the shape nor the scope is what refuses it here, and the pair
+   is what catches `s in c.profile.optional` going missing from `maySkip`. */
+pred S6_ProfileRefusesWhatTheCriterionAllows {
+  allDisciplines
+  one c: Change {
+    prototypingProfile[c.profile]
+    change.c.stage = Intent + Plan + Spec + Docs
+    eventually (c in Landed and c.skipped = Test + Code)
+  }
+}
+pred S6a_TheSameWaiverTheKindAllows {
+  allDisciplines
+  one c: Change {
+    developmentProfile[c.profile]
+    change.c.stage = Intent + Plan + Spec + Docs
+    eventually (c in Landed and c.skipped = Test + Code)
+  }
+}
 
 /* ---------------- commands ---------------- */
 
@@ -206,3 +235,5 @@ run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 1 Profile, exactly 6
 run S5_CodeWithoutSpecRefused for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5a_RefusedWithoutTheTie  for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run S5b_LandsWithoutTheLanding for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
+run S6_ProfileRefusesWhatTheCriterionAllows for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 0
+run S6a_TheSameWaiverTheKindAllows          for exactly 1 Change, exactly 1 Profile, exactly 4 Artifact, 10 steps expect 1

@@ -42,9 +42,13 @@ an argument, not a product, and it is expected to be deleted.
 
 `optional = Spec + Docs` -- the model and the view may go, and never the running
 thing: the test that shows it working and the code path it drives are the claim.
-The `Spec` half is narrow: `tieDiscipline` reads at every commit, so a code path
-this kind commits owes a scenario even on a branch that never lands, unless it
-ties through one already in the tree.
+The `Spec` half is narrow, and not by the tie. `tieDiscipline` reads at every
+commit, so a code path this kind commits owes a scenario in the tree even on a
+branch that never lands, and one already there will do -- but that does not
+license the waiver: `criterion` reads what the CHANGE wrote, so a change of this
+kind that lands a code path cannot skip its scenario however that path ties
+(`S5_CodeWithoutSpecRefused`). What is left is a change writing nothing below
+its plan.
 
 ## Every session
 

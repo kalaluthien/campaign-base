@@ -371,8 +371,17 @@ def case_fire_passed_prompts_now(script):
 
 
 def case_fire_ahead_sleeps_until_lead(script):
+    # TMPDIR owned by this case, so the default log outlives run() and is read here
+    tmp = Path(tempfile.mkdtemp(prefix="clr-log-"))
+    try:
+        return fire_ahead(script, tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fire_ahead(script, tmp):
     out, code, asked = run(script, ["w40:p1", "--fire", "w40:p7", "--now", "2026-09-08T18:47+09:00"],
-                           SESSION, env={"HERDR_ENV": "1"})
+                           SESSION, env={"HERDR_ENV": "1", "TMPDIR": str(tmp)})
     pid, log_line = None, None
     for line in out.splitlines():
         if line.startswith("scheduled pid "):
@@ -395,10 +404,13 @@ def case_fire_ahead_sleeps_until_lead(script):
         except OSError:
             pass
     prompted = [a for a in asked if a.startswith("agent prompt")]
+    log = Path(log_line[len("  log "):]) if log_line else None
+    logged = log.read_text() if log and log.exists() else ""
     ok = (" at 2026-09-08T21:01+09:00 into w40:p7: The usage window reset at 2026-09-08T21:00+09:00" in out
           and code == 0 and own_session and not prompted
-          and log_line is not None and log_line.endswith(".log"))
-    return ok, f"{out!r} exit {code} own_session {own_session} prompted {prompted}"
+          and log is not None and log.parent == tmp
+          and logged.startswith("== 2026-09-08T18:47+09:00 at 2026-09-08T21:01+09:00 into w40:p7: "))
+    return ok, f"{out!r} exit {code} own_session {own_session} prompted {prompted} log {logged!r}"
 
 
 CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
@@ -451,15 +463,24 @@ MUTATIONS = [
 ]
 
 
-def mutated(old, new):
-    """A copy of the script with one anchor replaced; None when the anchor is
-    not exactly once in it."""
+# What the script loads by path from its own directory: a copy under test
+# needs them beside it, or every liveness reading is `could not read the
+# listing` and a mutation there is red for that reason and not its own.
+SIBLINGS = ("campaign-name-session.py", "campaign-roles.py")
+
+
+def copied(old=None, new=None):
+    """A copy of the script in a fresh directory with its siblings beside it,
+    with one anchor replaced when given; None when the anchor is not exactly
+    once in it."""
     src = SCRIPT.read_text()
-    if src.count(old) != 1:
+    if old is not None and src.count(old) != 1:
         return None
     d = Path(tempfile.mkdtemp(prefix="clr-mut-"))
+    for name in SIBLINGS:
+        shutil.copy(HERE / name, d / name)
     copy = d / SCRIPT.name
-    copy.write_text(src.replace(old, new))
+    copy.write_text(src if old is None else src.replace(old, new))
     copy.chmod(0o755)
     return copy
 
@@ -471,8 +492,16 @@ def main():
         except Exception as e:  # noqa: BLE001 -- a crashed case is a failed case, named
             ok, detail = False, f"the case crashed: {e!r}"
         check(case.__name__, ok, detail)
+    # the control: every case is green on an unmutated copy in the same
+    # layout, or a mutation's red would be the layout's and not its own
+    control = copied()
+    try:
+        red = [c.__name__ for c in CASES if not c(control)[0]]
+    finally:
+        shutil.rmtree(control.parent, ignore_errors=True)
+    check("control: every case green on an unmutated copy beside its siblings", not red, f"red: {red}")
     for what, old, new, case in MUTATIONS:
-        copy = mutated(old, new)
+        copy = copied(old, new)
         name = f"mutation: {what} broken -> {case.__name__} goes red"
         if copy is None:
             check(name, False, f"anchor not found exactly once: {old!r}")
@@ -485,11 +514,11 @@ def main():
         finally:
             shutil.rmtree(copy.parent, ignore_errors=True)
     n_cases, n_mut = len(CASES), len(MUTATIONS)
-    print(f"campaign-limit-reset-test: {len(RAN)} ran ({n_cases} cases, {n_mut} mutations), "
+    print(f"campaign-limit-reset-test: {len(RAN)} ran ({n_cases} cases, 1 control, {n_mut} mutations), "
           f"{len(FAILED)} failed, script {SCRIPT}")
     for f in FAILED:
         print(f"  FAIL {f}")
-    return 1 if FAILED or len(RAN) != n_cases + n_mut else 0
+    return 1 if FAILED or len(RAN) != n_cases + n_mut + 1 else 0
 
 
 if __name__ == "__main__":

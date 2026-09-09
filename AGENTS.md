@@ -603,7 +603,15 @@ merge, the author included; a session that cannot satisfy one may not.
 Condition 3 serializes landings: 1 and 2 are each true of a branch *in isolation*,
 so containing a `main` that moved means merging it in, that merge is a push, **a
 push retires the review**, and the next merge needs a review at the combined sha.
-**Condition 3 is enforced by GitHub; condition 1 is readable and read by nothing.**
+**Conditions 1 and 3 are both enforced by GitHub**, through the same `check` job.
+Condition 1's reader is `scripts/check-merge-review.py`: it answers `reviewed`,
+`unreviewed` or `unknown` over the pull request's head sha and the comments
+opening `REVIEW` that name it, and a pull request it could not read fails the job
+exactly as one with no review does. `--report` asks the same head from the other
+end, so a `REPORT` pinning anything but the head is refused rather than left to
+ask for a review nobody will merge at. `campaign-claim release` reads it once
+more before deleting a merged claim's ref, which is the last moment anything on
+this machine looks at that merge.
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
 pull request head has no `check` at all**, so fast-forwarding `main` onto a

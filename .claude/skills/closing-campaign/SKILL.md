@@ -42,6 +42,8 @@ pass. Bind `$CAMPAIGN_DIR` absolute and never rebuild it: steps 1 and 5 fail
 silently on a relative value.
 
 ```sh
+SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") && [ -n "$SLUG" ] ||
+  { echo "REFUSE: the slug of #$N did not read, so its directory cannot be named"; exit 1; }
 CAMPAIGN_DIR=$(cd "$BASE/$SLUG" && pwd -P)
 [ "$(dirname "$CAMPAIGN_DIR")" = "$BASE" ] || echo "REFUSE: not a direct child of $BASE"
 [ -f "$CAMPAIGN_DIR/.campaign" ] || echo "REFUSE: no .campaign marker, so this is not a campaign directory"
@@ -293,9 +295,12 @@ is refused for a first line reading `$BODY`. **Run the `gh issue comment` line
 as a call of its own**, after the block that writes the file: the guard reads
 one call, and a body written and posted in the same call is one it cannot
 read and lets through unjudged. The path carries no campaign number for the
-reason above, so the write refuses to reuse an old file.
+reason above, so an earlier campaign's file can sit there: the leading `rm -f`
+and the `.tmp`-then-`mv` make a write that did not finish leave no file, and
+the post then fails on a missing one instead of posting the old campaign's.
 
 ```sh
+rm -f /tmp/closing-comment.md /tmp/closing-comment.md.tmp
 HOST=$(hostname -s)
 ME=your-session-name   # this session's own, as `herdr agent list` shows it
 [ -n "${CAMPAIGN_DIR-}" ] ||
@@ -307,7 +312,8 @@ LEFTOVERS=$(find "$CAMPAIGN_DIR" -mindepth 1 \
   | sed "s|^$CAMPAIGN_DIR/||" | sort \
   | grep . || echo "no entries outside runtime/ and repos/")
 printf 'NOTE %s: closing campaign #%s from %s. Say so here if you are still in it.\n\nThe delete destroys these entries under the campaign directory, `runtime/` and `repos/` excluded:\n\n```\n%s\n```\n' \
-  "$ME" "$N" "$HOST" "$LEFTOVERS" > /tmp/closing-comment.md
+  "$ME" "$N" "$HOST" "$LEFTOVERS" > /tmp/closing-comment.md.tmp &&
+  mv /tmp/closing-comment.md.tmp /tmp/closing-comment.md
 ```
 
 ```sh
@@ -323,29 +329,8 @@ scaffold, so skip those rows. It is a record, not a to-do — anything wanted ou
 of the tree is saved before close. A peer's note that it is working or closing:
 stop and name it.
 
-Then close, in this order — the issue first, then a check that nobody else on
-this machine is in the directory, then the delete of the bound path itself, not a
-path retyped here, not its parent, not a wildcard. **Type the session name into
-the close comment**: `--comment` takes text and no file, and the guard reads a
-`$ME` there as the literal word. The guard on `CAMPAIGN_DIR` is repeated
-because `rm -rf -- ""` exits 0 and deletes nothing, and the finished-check
-below then reads the surviving directory as gone.
-
-```sh
-[ -n "${CAMPAIGN_DIR-}" ] ||
-  { echo "REFUSE: CAMPAIGN_DIR is unbound in this turn; rebind it from step 0"; exit 1; }
-gh issue close "$N" -R kalaluthien/campaign-base --comment "NOTE <this-session-name>: campaign closed."
-lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
-ls -A "$CAMPAIGN_DIR"
-rm -rf -- "$CAMPAIGN_DIR"
-```
-
-Any `lsof` rows: name the processes and stop. It sees an open file, not an idle
-session, so an empty result is weak evidence, paired with the announcement above
-rather than trusted alone. `runtime/` goes with the delete; say so.
-
-**Last, release every claim ref the campaign left behind, on the base and on
-each member repository** — a landed sub-issue leaves its ref where
+**Release every claim ref the campaign left behind, on the base and on each
+member repository, before the delete** — a landed sub-issue leaves its ref where
 `delete_branch_on_merge` is off, an unlanded one leaves its branch outliving the
 campaign, and step 3 makes both sighted. The rows are `live`'s **claims checked
 out nowhere on this machine**, re-read here, and `campaign-claim release` is the
@@ -360,8 +345,7 @@ before the loop**: a pipeline that read nothing prints nothing and exits 0,
 which is the silence the retired loop hid behind.
 
 ```sh
-SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") && [ -n "$SLUG" ] ||
-  { echo "REFUSE: the slug of #$N did not read; nothing released"; exit 1; }
+[ -n "${SLUG-}" ] || { echo "REFUSE: SLUG is unbound in this turn; rebind it from step 0"; exit 1; }
 "$BASE/scripts/campaign-claim.py" live "$N" > /tmp/closing-live.txt ||
   { echo "REFUSE: live did not make every reading; nothing released"; exit 1; }
 sed -n '/^claims checked out nowhere/,/^$/p' /tmp/closing-live.txt |
@@ -375,9 +359,37 @@ done
 
 Read every `REFUSE-ROW`: a branch holding commits is never deleted here, and the
 refusal says whether to land them or to delete the ref by hand having read them.
-**Each release enqueues a compaction of this session's own pane**, firing when
-the turn ends, which is why this block is the step's last: nothing after it
-needs a binding the compaction would lose.
+**This runs before the delete, not after**: `campaign-claim` finds a member
+repository from its clone under `repos/` as well as from `## Repos`, and with
+the clones gone a `## Repos` that did not read leaves that repository's ref
+unlisted with no refusal. **Each release enqueues a compaction of this
+session's own pane**, firing when the turn ends, so run the close block below
+in the same turn; it re-checks its binding in case it is not.
+
+Then close, in this order — the issue first, then a check that nobody else on
+this machine is in the directory, then the delete of the bound path itself, not a
+path retyped here, not its parent, not a wildcard. **Type the session name into
+the close comment**: `--comment` takes text and no file, and the guard reads a
+`$ME` there as the literal word. The guard on `CAMPAIGN_DIR` is repeated
+because `rm -rf -- ""` exits 0 and deletes nothing, and the finished-check
+below then reads the surviving directory as gone.
+
+```sh
+[ -n "${CAMPAIGN_DIR-}" ] ||
+  { echo "REFUSE: CAMPAIGN_DIR is unbound in this turn; rebind it from step 0"; exit 1; }
+gh issue close "$N" -R kalaluthien/campaign-base --comment "NOTE your-session-name: campaign closed."   # your own name, typed
+lsof +D "$CAMPAIGN_DIR" 2>/dev/null | tail -n +2
+ls -A "$CAMPAIGN_DIR"
+rm -rf -- "$CAMPAIGN_DIR"
+git -C "$BASE" worktree prune
+```
+
+Any `lsof` rows: name the processes and stop. It sees an open file, not an idle
+session, so an empty result is weak evidence, paired with the announcement above
+rather than trusted alone. `runtime/` goes with the delete; say so. **The
+prune is part of the delete**: the campaign's worktrees under it are gone from
+disk, and git keeps listing each one, on its claim branch, until pruned — which
+`campaign-claim live` then reads as a claim checked out here.
 
 Holds when: the closing comment carries the listing taken immediately before the
 delete — every entry under the directory outside `runtime/` and `repos/`, files

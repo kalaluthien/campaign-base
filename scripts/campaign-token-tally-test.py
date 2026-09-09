@@ -61,6 +61,12 @@ def write(path, records):
             fh.write(json.dumps(record) + "\n")
 
 
+def write_meta(path, data):
+    """A subagent's own `.meta.json`, one JSON object -- never JSON-lines."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
+
+
 def run(root, base, command, pr_map, extra=()):
     out = subprocess.run(
         [sys.executable, str(SCRIPT), command, "--root", str(root),
@@ -216,6 +222,38 @@ def build(tmp):
         assistant("m-review", day + "03:01:00Z", wt, out=30, session="s1",
                   model="claude-fable-5-1", agent="a1"),
     ])
+    # A reviewer's own fan-out: a4 is its child, a5 and a6 are a4's -- none of
+    # the three carries a `/code-review` brief of its own, which is exactly
+    # why the old grouping (by an agent's own immediate id) dropped them. A
+    # depth-1 subagent's meta.json carries no `parentAgentId` at all (a1's,
+    # above, is never written for the fixture since nothing needs it); a
+    # deeper one's is the only place its parent's id is written -- never in
+    # either transcript.
+    review_wt = str(base / "camp-260101" / "worktrees" / "309")
+    write(root / "proj" / "s1" / "subagents" / "agent-a4.jsonl", [
+        user(day + "03:02:00Z", review_wt, "verify the finder's claim",
+             session="s1", agent="a4"),
+        assistant("m-a4", day + "03:03:00Z", review_wt, out=210, session="s1",
+                  agent="a4"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a4.meta.json",
+               {"parentAgentId": "a1", "spawnDepth": 2})
+    write(root / "proj" / "s1" / "subagents" / "agent-a5.jsonl", [
+        user(day + "03:04:00Z", review_wt, "confirm finding one",
+             session="s1", agent="a5"),
+        assistant("m-a5", day + "03:05:00Z", review_wt, out=300, session="s1",
+                  agent="a5"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a5.meta.json",
+               {"parentAgentId": "a4", "spawnDepth": 3})
+    write(root / "proj" / "s1" / "subagents" / "agent-a6.jsonl", [
+        user(day + "03:06:00Z", review_wt, "confirm finding two",
+             session="s1", agent="a6"),
+        assistant("m-a6", day + "03:07:00Z", review_wt, out=150, session="s1",
+                  agent="a6"),
+    ])
+    write_meta(root / "proj" / "s1" / "subagents" / "agent-a6.meta.json",
+               {"parentAgentId": "a4", "spawnDepth": 3})
     write(root / "proj" / "s1" / "subagents" / "agent-a2.jsonl", [
         user(day + "02:05:00Z", str(base), "find every reader of the guard",
              session="s1", agent="a2"),
@@ -333,9 +371,20 @@ def main():
               "(subagent of machinery-worker-9)" in sessions, sessions)
 
         # REVIEWS READ THE LEVEL AND THE PULL REQUEST FROM THE BRIEF.
+        r400 = row(reviews, "400")
         check("a review round is one row, with its pull request and level",
-              row(reviews, "400") and row(reviews, "400")["level"] == "high",
-              reviews)
+              r400 and r400["level"] == "high", reviews)
+
+        # A NESTED FAN-OUT ROLLS INTO THE ROUND THAT SPAWNED IT. a4 is a1's
+        # child and a5, a6 are a4's -- none carries a `/code-review` brief of
+        # its own, so grouping by an agent's own immediate id (the old
+        # behaviour) drops all three from the table; this is the case that
+        # goes red if the rollup is removed.
+        check("a reviewer's own fan-out is priced into its round, not dropped",
+              r400 and r400["output"] == str(30 + 210 + 300 + 150)
+              and r400["turns"] == "4", str(r400))
+        check("...and the row says how many nested transcripts it folded",
+              r400 and r400.get("nested") == "3", str(r400))
 
         # TOOL-ECHO COUNTS A CALL, NOT A MENTION, AND PARTITIONS THE BYTES.
         # The fixture runs campaign-tracker and campaign-repos in one command,

@@ -75,7 +75,9 @@ SUBCOMMANDS
   issues     one row per sub-issue: turns, output, new input, cache read
   sessions   the same, per session name (`<slug>-<role>-<n>`)
   turns      one JSON object per turn, for an analysis this script does not make
-  reviews    one row per in-process review subagent: its PR, level, and cost
+  reviews    one row per review round: its PR, level, and cost, with every
+             subagent its `/code-review` fanned out into rolled into the round
+             that spawned it (`nested` counts how many)
   tool-echo  turns whose tool results are the output of this repository's own
              scripts, and what those results cost to carry
 
@@ -647,36 +649,101 @@ def cmd_turns(corpus, args):
         print(json.dumps(t, ensure_ascii=False))
 
 
-def cmd_reviews(corpus, args):
-    """One row per review subagent: what a review round cost, and at what level."""
-    sample_line(corpus)
+def load_subagent_parents(roots):
+    """agent id -> its parent's agent id, from every `agent-<id>.meta.json` under root.
+
+    The harness writes `parentAgentId` into a subagent's own sidecar file --
+    never into the transcript, and never onto a depth-1 subagent, whose
+    launcher is the session itself rather than another agent. That absence is
+    the base case a chain should stop at: an id with no `parentAgentId` names
+    the round, whatever spawned it.
+
+    An agent whose meta.json is missing or unreadable resolves to no parent
+    below, the same answer `cmd_reviews` gave every subagent before this
+    existed: its own round, on its own.
+    """
+    parents = {}
+    for root in roots:
+        for dirpath, _dirs, names in os.walk(os.path.expanduser(root)):
+            if os.path.basename(dirpath) != "subagents":
+                continue
+            for name in names:
+                if not name.endswith(".meta.json"):
+                    continue
+                agent_id = name[len("agent-"):-len(".meta.json")]
+                try:
+                    data = json.load(open(os.path.join(dirpath, name)))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                parent = data.get("parentAgentId")
+                if parent:
+                    parents[agent_id] = parent
+    return parents
+
+
+def review_rounds(roots, turns):
+    """Every subagent turn, grouped by the top reviewer that its lineage traces to.
+
+    A reviewer subagent running `/code-review` fans out into an orchestrator,
+    finders and verifiers -- further subagents whose own turns were priced at
+    the parent's alone unless the chain is walked back to the round it belongs
+    to. `root_of` follows `parentAgentId` to the top, memoized because two
+    grandchildren of one fan-out both walk the same middle link.
+    """
+    parent_of = load_subagent_parents(roots)
+    root_cache = {}
+
+    def root_of(agent_id):
+        if agent_id in root_cache:
+            return root_cache[agent_id]
+        root_cache[agent_id] = agent_id  # cycle guard: a malformed chain stops here
+        parent = parent_of.get(agent_id)
+        root = root_of(parent) if parent else agent_id
+        root_cache[agent_id] = root
+        return root
+
     rounds = {}
-    for t in corpus.turns:
+    agent_file = {}
+    for t in turns:
         if t["kind"] != "subagent" or not t.get("agent_id"):
             continue
-        rounds.setdefault(t["agent_id"], []).append(t)
+        agent_file.setdefault(t["agent_id"], t["file"])
+        rounds.setdefault(root_of(t["agent_id"]), []).append(t)
+    return rounds, agent_file
+
+
+def cmd_reviews(corpus, args):
+    """One row per review round: what it cost, at what level, nested subagents folded in."""
+    sample_line(corpus)
+    rounds, agent_file = review_rounds(args.root, corpus.turns)
     rows = []
     for agent_id, turns in rounds.items():
-        head = min(turns, key=lambda t: t["timestamp"])
-        brief = read_first_prompt(head["file"])
+        head_file = agent_file.get(agent_id)
+        if head_file is None:
+            continue
+        brief = read_first_prompt(head_file)
         m = REVIEW_CMD.search(brief or "")
         if not m:
             continue
+        own_turns = [t for t in turns if t["agent_id"] == agent_id]
+        head = min(own_turns or turns, key=lambda t: t["timestamp"])
         got = totals(turns)
+        nested = len({t["agent_id"] for t in turns} - {agent_id})
         rows.append((int(m.group(2)), m.group(1), head["issue"], head["model"],
-                     got, head["timestamp"][:16]))
-    rows.sort(key=lambda r: (r[0], r[-1]))
+                     got, head["timestamp"][:16], nested))
+    rows.sort(key=lambda r: (r[0], r[5]))
     table([[r[0], r[1], r[2], r[3], fmt(r[4]["turns"]),
             f"{r[4]['settled']}/{r[4]['turns']}", fmt(r[4]["output"]),
-            fmt(r[4]["input_new"]), fmt(r[4]["cache_read"]), r[5]]
+            fmt(r[4]["input_new"]), fmt(r[4]["cache_read"]), r[5], r[6]]
            for r in rows],
           ["pr", "level", "issue", "model", "turns", "settled", "output",
-           "input_new", "cache_read", "started"])
+           "input_new", "cache_read", "started", "nested"])
     if rows:
         print()
         settled = sum(r[4]["settled"] for r in rows)
         turns_read = sum(r[4]["turns"] for r in rows)
-        print(f"{len(rows)} review rounds; "
+        folded = sum(r[6] for r in rows)
+        print(f"{len(rows)} review rounds, {folded} nested transcript(s) folded in; "
               f"{fmt(sum(r[4]['output'] for r in rows))} output over "
               f"{settled} settled turns of {turns_read}, "
               f"{fmt(sum(r[4]['input_new'] for r in rows))} input_new")

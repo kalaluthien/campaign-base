@@ -449,6 +449,20 @@ pred SilentAgentStillRetired {
   and (some a: Agent | eventually a in Retired and always a not in Answered)
 }
 
+/* THE POLL INTO THE BANNER (#279). A stopped agent is listed and idle, so a
+   STATUS sent to it queues like any other -- and no answer can follow until
+   the window resets, because `answer` guards on Stopped and only `limitReset`
+   clears it. The first is the planner's cron firing into the banner, ~11
+   turns per window over #244's six stops; the second is the one prompt that
+   lands, sent after the reset the banner names. */
+pred L1_PollIntoTheBannerGetsNoAnswer {
+  some a: Agent | eventually (limitStop[a] and after (status[a] and after answer[a]))
+}
+pred L1b_PromptAfterTheResetIsAnswered {
+  some a: Agent | eventually (limitStop[a]
+                   and eventually (limitReset and after (status[a] and after answer[a])))
+}
+
 /* Completion is a GitHub fact, so it survives the death and never undoes. */
 pred S3_DelegateDiesAfterPushing {
   one c: Campaign | one a: Agent {
@@ -1867,6 +1881,10 @@ run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 
 run SilentAgentIsRetirableUnderWait for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- rule 3's repair still retires it
 run SilentAgentStillRetired         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- the poll into the banner gets no answer: `answer` guards on Stopped and only the reset clears it
+run L1_PollIntoTheBannerGetsNoAnswer         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
+-- the same prompt sent after the reset is answered
+run L1b_PromptAfterTheResetIsAnswered         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 
 run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S4_ReportWithoutPush        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1

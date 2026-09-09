@@ -253,8 +253,19 @@ def claim_subcommands(root):
 # under `scripts/fixtures/` is as wrong as anywhere else, and only the
 # retired-name reading has a reason to stand down. Every run says how many
 # paths it skipped and why, because an exemption that prints nothing is a rule
-# silently gone.
-RECORDED = ("scripts/fixtures/",)
+# silently gone. A skill's own `scripts/fixtures/` is the same corpus one
+# level down -- #279's captured pane screens, which spell whatever the pane
+# showed -- so the second pattern admits exactly `.claude/skills/<skill>/
+# scripts/fixtures/`, the skill's own scripts directory and no other
+# `scripts/fixtures/` a skill may hold under assets/ or references/.
+RECORDED = ("scripts/fixtures/", r"^\.claude/skills/[^/]+/scripts/fixtures/")
+
+
+def is_recorded(path):
+    """Whether `path` is a recorded corpus R3 stands down over: under the
+    root's scripts/fixtures/, or under a skill's own."""
+    root, skill = RECORDED
+    return path.startswith(root) or re.match(skill, path) is not None
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 
@@ -312,6 +323,7 @@ PROSE = {
     ".html": {"block": [("<!--", "-->")], "line": []},
     ".json": {"block": [], "line": []},        # no comment syntax; all code
     ".jsonl": {"block": [], "line": []},       # ditto, one object per line
+    ".txt":  {"block": [], "line": []},        # a captured screen, a suite's fixture: all code
     "":      {"block": [('"""', '"""'), ("'''", "'''")], "line": ["#"]},
 }
 
@@ -480,7 +492,7 @@ def main():
              + ("(it could not be read)" if subs is False
                 else "(its argparse defines none this could find)"))
         subs = None
-    recorded = [p for p in paths if p.startswith(RECORDED)]
+    recorded = [p for p in paths if is_recorded(p)]
     for p in paths:
         if p in recorded:
             continue
@@ -569,7 +581,7 @@ def main():
               f"fixture names a path on purpose that is not there")
     if recorded:
         print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
-              f"{', '.join(RECORDED)}: a corpus of calls that were really made "
+              f"{RECORDED[0]} or a skill's own (RECORDED): a corpus of calls that were really made "
               f"is evidence, and a retired name in one records when it was "
               f"typed")
     unread = sum(1 for f in findings if f.startswith("R0\t"))

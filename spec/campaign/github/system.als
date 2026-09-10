@@ -149,6 +149,20 @@ var sig Filed  in Campaign {}
    vocabulary. */
 var sig Claimed in Issue {}
 
+/* THE PERSON'S HOLD ON THE CLOSE, and the only precondition here that is not a
+   fact about the work. `standing` is a label on the campaign issue, put on and
+   taken off by a person alone: nothing can observe that they have changed their
+   mind about keeping a campaign open, which is the same reason `backlog` is
+   theirs. It sits in `closable` beside settlement because it is read at the
+   same moment and refuses the same event -- `closing-campaign` step 1 asks
+   `campaign-tracker.py standing <N>` and stops on the word.
+
+   `var` and otherwise unconstrained: a trace may drop a campaign out of
+   `Standing` and close it in the next step, which is exactly what a person
+   removing the label does. A frame condition would model a hold nobody can
+   release, which is not the label. */
+var sig Standing in Campaign {}
+
 fact WellFormed {
   all c: Campaign | c.campaignIssue.repo = Base
   all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue
@@ -184,7 +198,8 @@ pred settled[i: Issue] { complete[i] or dropped[i] }
 
 /* The GitHub half. The other -- no role live under the tree -- is
    orchestration/system.als's. */
-pred closable[c: Campaign]       { all i: c.memberIssues | settled[i] }
+pred closable[c: Campaign]       { (all i: c.memberIssues | settled[i])
+                                   and c not in Standing }
 pred campaignClosed[c: Campaign] { c.campaignIssue not in Open }
 
 /* S8 is what happens without it. */

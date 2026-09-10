@@ -6,7 +6,17 @@
      `scripts/campaign-tracker.py` and are not repeated here;
      `campaign-tracker.py check <N>` prints each one beside what it measured,
      and `campaign-tracker bind` prints that reading and never gates on it.
-     Design over the body ceiling is a file in `spec/`, linked from here. -->
+     Design over the body ceiling is a file in `spec/`, linked from here.
+
+     REFERENCES CARRY THEIR SLUG. An issue is `<slug>#N` -- `machinery#1`,
+     `sdlc-alloy#246` -- and a pull request is `pr#N`; five campaigns file onto
+     one tracker, so a bare `#N` names no campaign. `campaign-tracker.py check`
+     prints a bare one as a warning, not a finding, because every body written
+     before the rule carries them.
+
+     THE `standing` LABEL, not a section: a campaign wearing it is one a person
+     keeps open, and `closing-campaign` refuses the close until they take it
+     off. `campaign-tracker.py campaign-issues` prints it beside the row. -->
 
 ## Intent
 

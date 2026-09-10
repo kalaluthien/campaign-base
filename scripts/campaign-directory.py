@@ -14,8 +14,10 @@ THE ANSWER IS THE WORD, alone on stdout so `$( )` can take it, with the
 sentence beside it on stderr; the status says whether the reading was made.
 
     <absolute path>  exit 0   exactly one directory here names that campaign
-    none             exit 1   this machine holds no directory for it
-    unknown          exit 2   the reading failed, or two directories name it
+    none             exit 1   a base was read, and no directory in it names the
+                              campaign
+    unknown          exit 2   there was nowhere to look, the reading failed, or
+                              two directories name it
 
 Two directories naming one campaign is refused rather than tie-broken, for
 `campaign_number`'s reason: sorted order is not a tiebreak, and a close that
@@ -59,6 +61,15 @@ def resolve(token, start):
     if guard is None:
         return "unknown", f"the marker reader would not load ({why})"
     try:
+        # NO BASE ROOT AT ALL IS NOT AN EMPTY SET, which is `known_slugs`'s
+        # distinction in the guard beside this one. With no base above `start`
+        # -- a path outside every base, or a checkout git will not name -- there
+        # was nowhere to look, and answering `none` there sends `opening-campaign`
+        # on to scaffold a second directory for a campaign that already has one.
+        roots = guard.base_roots_for(Path(start))
+        if not roots:
+            return "unknown", (f"no base root above {start}, so there was "
+                               f"nowhere to look for a campaign directory")
         found = sorted({d.resolve() for d, fields
                         in guard.campaign_dirs_at(start)
                         if token in (fields[0], fields[1])})

@@ -39,9 +39,11 @@ class Fixture:
     """A base root -- a git repository carrying `scripts/campaign-claim.py`,
     which is what `base_above` reads a base by -- with the campaign directories
     asked for. `dirs` maps a directory name to its marker text, or to None for
-    a directory carrying no marker at all."""
+    a directory carrying no marker at all. `git=False` leaves the tree out of
+    version control, which is what makes the base-root reading come back
+    empty."""
 
-    def __init__(self, d, dirs):
+    def __init__(self, d, dirs, git=True):
         self.base = Path(d).resolve() / "base"
         (self.base / "scripts").mkdir(parents=True)
         # THE READER AND THE RULE'S OWNER, copied together: the script imports
@@ -50,8 +52,9 @@ class Fixture:
         for src in (READER, GUARD, CLAIM):
             (self.base / "scripts" / src.name).write_text(src.read_text())
             (self.base / "scripts" / src.name).chmod(0o755)
-        subprocess.run(["git", "init", "-q", "-b", "main", str(self.base)],
-                       check=True)
+        if git:
+            subprocess.run(["git", "init", "-q", "-b", "main", str(self.base)],
+                           check=True)
         for name, marker in dirs.items():
             (self.base / name).mkdir()
             if marker is not None:
@@ -78,11 +81,22 @@ def main() -> int:
         check("...and by its slug, which is the marker's other field",
               rc == 0 and word == str(f.base / "campaign-demo-260910"),
               f"exit {rc}: {word} / {r.stderr[:200]}")
-        # THE NAMED FAILING CASE. `$BASE/$SLUG` is a path that does not exist
-        # here, so the retired resolution cannot reach the directory this
-        # answers with, and no assertion about it passes by coincidence.
-        check("...where the retired `$BASE/$SLUG` resolves to nothing",
-              not (f.base / "demo").exists())
+        # THE NAMED FAILING CASE, and it RUNS the retired resolution rather
+        # than asserting a property of the fixture: the line closing-campaign
+        # carried until #181 round 2 was `CAMPAIGN_DIR=$(cd "$BASE/$SLUG" &&
+        # pwd -P)`, so the two are put side by side over one directory. Nothing
+        # in this tree executes a skill's shell, so this is the nearest a case
+        # gets to the line itself -- it reddens if the reader stops reaching a
+        # dated directory, and it reddens if the fixture stops being the shape
+        # the finding is about.
+        retired = subprocess.run(
+            ["sh", "-c", 'cd "$1/$2" && pwd -P', "sh", str(f.base), "demo"],
+            capture_output=True, text=True)
+        check("...where the retired `$BASE/$SLUG` reaches nothing and the "
+              "reader reaches the directory",
+              retired.returncode != 0 and not retired.stdout.strip()
+              and word == str(f.base / "campaign-demo-260910"),
+              f"retired exit {retired.returncode}: {retired.stdout.strip()!r}")
 
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, {"demo": "1 demo\n"})
@@ -105,8 +119,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, {"campaign-demo-260910": "1 demo\n", "demo": "1 demo\n"})
         rc, word, r = f.ask("demo")
+        # THE SENTENCE, not the status: the last-resort handler prints the same
+        # word with the same status for any exception, so `unknown` and exit 2
+        # alone are satisfied by a crash in a branch this case never reached.
         check("two directories naming one campaign is unknown, not a pick",
-              rc == 2 and word == "unknown",
+              rc == 2 and word == "unknown"
+              and "two directories name that campaign" in r.stderr,
               f"exit {rc}: {word} / {r.stderr[:200]}")
 
     # COULD NOT LOOK IS NOT AN EMPTY ANSWER. A guard that will not import is the
@@ -118,7 +136,21 @@ def main() -> int:
             "raise RuntimeError('broken')\n")
         rc, word, r = f.ask("1")
         check("a marker reader that will not load answers unknown, not none",
-              rc == 2 and word == "unknown",
+              rc == 2 and word == "unknown"
+              and "the marker reader would not load" in r.stderr,
+              f"exit {rc}: {word} / {r.stderr[:200]}")
+
+    # NOWHERE TO LOOK IS NOT AN EMPTY ANSWER EITHER. With no base root above
+    # the start there are no directories to enumerate, and `none` there routes
+    # `opening-campaign` into scaffolding a second directory for a campaign that
+    # already has one. The fixture is a base tree that is NOT a git repository,
+    # which is how `base_roots_for` comes back empty.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, {"campaign-demo-260910": "1 demo\n"}, git=False)
+        rc, word, r = f.ask("1")
+        check("no base root above the start is unknown, not none",
+              rc == 2 and word == "unknown"
+              and "nowhere to look" in r.stderr,
               f"exit {rc}: {word} / {r.stderr[:200]}")
 
     print(f"{len(FAILURES)} failing" if FAILURES else "all cases pass")

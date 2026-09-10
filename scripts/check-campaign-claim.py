@@ -569,10 +569,13 @@ def campaign_dirs_at(base):
     """(directory, marker fields) for every campaign directory at the base roots
     above `base`, nearest root first.
 
-    ONE WALK OVER THE MARKERS, and everything that asks which directory is which
-    campaign's takes its answer from here -- `campaign_number` below, and
-    `campaign-directory.py`, which is what a skill's shell line calls instead of
-    composing a path out of the slug. The name form has moved twice (dated,
+    ONE WALK OVER THE MARKERS FOR THE TOKEN QUESTION -- which directory is the
+    campaign a number or a slug names -- and both of its askers take their answer
+    from here: `campaign_number` below, and `campaign-directory.py`, which is
+    what a skill's shell line calls instead of composing a path out of the slug.
+    Three other walks over the same markers survive and are not this question:
+    `known_slugs` collects every slug, `guard-precision.py` globs for the logs,
+    and `launching.md` prints them for a person. The name form has moved twice (dated,
     bare, dated again) and the marker has not; a second walk written beside this
     one is what would have to be found and changed each time.
 

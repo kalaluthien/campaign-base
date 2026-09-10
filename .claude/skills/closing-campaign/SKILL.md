@@ -44,17 +44,24 @@ silently on a relative value.
 ```sh
 SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") && [ -n "$SLUG" ] ||
   { echo "REFUSE: the slug of #$N did not read; step 5 needs it for the claim refs"; exit 1; }
-CAMPAIGN_DIR=$("$BASE/scripts/campaign-directory.py" "$N" "$BASE")  # a path | none | unknown
-[ -d "$CAMPAIGN_DIR" ] || { echo "REFUSE: the directory of #$N read as $CAMPAIGN_DIR"; exit 1; }
-[ "$(dirname "$CAMPAIGN_DIR")" = "$BASE" ] || echo "REFUSE: not a direct child of $BASE"
+CAMPAIGN_DIR=$("$BASE/scripts/campaign-directory.py" "$N" "$BASE") || :  # a path | none | unknown
+case "$CAMPAIGN_DIR" in /*) ;;
+  *) echo "REFUSE: the directory of #$N read as $CAMPAIGN_DIR"; exit 1 ;; esac
+[ -d "$CAMPAIGN_DIR" ] || { echo "REFUSE: $CAMPAIGN_DIR is not a directory"; exit 1; }
+[ "$(dirname "$CAMPAIGN_DIR")" = "$BASE" ] ||
+  { echo "REFUSE: not a direct child of $BASE"; exit 1; }
 ```
 
-Stop on any of the three. **The marker and not the name**, and the path is never composed
-out of the slug: a campaign directory is `campaign-<slug>-<date>` or the older
-bare `<slug>`, and only the `.campaign` file inside it says which campaign it
-is. Read the word — `none` is this machine holding no directory for the
-campaign, `unknown` is two directories naming it or a reading that failed, and
-neither is a path to `rm -rf`. A directory whose marker was swept reads as
+Stop on any of them, and note the `case` comes FIRST: `none` and `unknown` are
+words, not paths, and every test after it would read them as a relative path in
+whatever the working directory happens to be.
+
+**The marker and not the name**, and the path is never composed out of the
+slug: a campaign directory is `campaign-<slug>-<date>` or the older bare
+`<slug>`, and only the `.campaign` file inside it says which campaign it is.
+Read the word — `none` is a base that was read and holds no directory for the
+campaign, `unknown` is nowhere to look, two directories naming it, or a reading
+that failed, and neither is a path to `rm -rf`. A directory whose marker was swept reads as
 `none`, which is why the close stops rather than guessing at a name one
 `rm -rf` away from the base's own `scripts/`.
 

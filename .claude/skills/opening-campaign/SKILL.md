@@ -50,10 +50,11 @@ Then find out whether this machine has a directory. "Already scaffolded" is a
 fact about a directory, not about the campaign.
 
 ```sh
-CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE")  # a path | none | unknown
+CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :  # a path | none | unknown
 ```
 
-**Read the word, never the status**: a path is the directory to work in, `none`
+**Read the word, never the status** — which is what the `|| :` is for, so a
+`none` under `set -e` does not end the turn: a path is the directory to work in, `none`
 is this machine having no directory for the campaign, and `unknown` stops you —
 the reading failed, or two directories name the campaign, and neither is a
 directory to scaffold beside. The reader answers by the `.campaign` marker, so
@@ -183,8 +184,13 @@ so one containing `../` writes outside the base.
 ```sh
 SLUG=$("$BASE/scripts/campaign-tracker.py" slug <N>) && [ -n "$SLUG" ] ||
   { echo "the slug of #<N> did not read; nothing to name a directory after"; exit 1; }
-CAMPAIGN="$BASE/campaign-$SLUG-$(date +%y%m%d)"
-if mkdir "$CAMPAIGN" 2>/dev/null; then
+HELD=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :  # a path | none | unknown
+case "$HELD" in
+  none) CAMPAIGN="$BASE/campaign-$SLUG-$(date +%y%m%d)" ;;
+  /*)   CAMPAIGN="$HELD" ;;
+  *)    echo "the directory of #<N> read as $HELD; scaffold nothing"; exit 1 ;;
+esac
+if [ "$CAMPAIGN" != "$HELD" ] && mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
   printf '%s %s\n' <N> "$SLUG" >| "$CAMPAIGN/.campaign"
 else
@@ -206,11 +212,17 @@ Without it `campaign-claim`, the claim guard and `guard-precision` all read the
 base as holding no campaign at all. It sits beside `runtime/` and not inside it,
 because `runtime/` is scratch sessions sweep.
 
-**The `mkdir` without `-p` is the gate**, and the only atomic one here: two
-sessions arriving with the same slug cannot both create the tree.
-A `[ -e ]` test before the copy is a read and a write with a gap between, and
-`cp -R` over a live campaign exits 0 while replacing a filled-in `README.md`
-with placeholders.
+**Two gates, because one name is no longer one path.** The `mkdir` without
+`-p` is the atomic one and stays: two sessions arriving on the same day compose
+the same name, and only one of them creates the tree. It does not cover the
+second day — `$(date +%y%m%d)` mints a fresh name, so a re-run across midnight
+would have made a SECOND marker-bearing directory for one campaign, which every
+reader here then answers `unknown` about, permanently. The `campaign-directory.py`
+read above is what covers that: it asks the markers rather than a name, so it
+finds the directory whatever day and whatever form it wears. A `[ -e ]` test
+before the copy is not the same thing and is still wrong — it is a read and a
+write with a gap between, and `cp -R` over a live campaign exits 0 while
+replacing a filled-in `README.md` with placeholders.
 
 Being told is not an error. Read `$CAMPAIGN/README.md`: the same campaign — work
 in that directory and skip to step 5, which is safe to re-run; a different

@@ -474,6 +474,8 @@ GH = r'''#!%(py)s
 import json, os, sys
 a = sys.argv[1:]
 T = "repos/kalaluthien/campaign-base"
+with open(os.path.join(%(dir)r, "gh.log"), "a") as fh:
+    fh.write(" ".join(a) + "\n")
 if a[:2] == ["api", T + "/issues/7"]:
     print('["campaign", "campaign:tk"]'); sys.exit(0)
 broken = lambda f: os.path.exists(os.path.join(%(dir)r, f))
@@ -700,8 +702,8 @@ def sess(status="idle", pane="w1:p2", context=None, banner=None):
 def readings(sessions=None, claims=None, issues=None, prs=None, installs=None,
              fail=()):
     r = {"sessions": (sessions or {}, None), "claims": (claims or {}, None),
-         "issues": (issues or {}, None), "prs": (prs or {}, None),
-         "installs": (installs or [], None)}
+         "issues": (issues or {}, None), "prs": (prs or {}, None)}
+    r.update({f"install {repo}": (word, None) for repo, word in installs or []})
     for source in fail:
         r[source] = (None, "unreachable")
     return r
@@ -885,13 +887,35 @@ def _(m):
             and "error watchdog" in out.getvalue()), out.getvalue()
 
 
-def watch_read(m, broken=None):
-    """One reading of `watch_reader` over the fake, or the exception it
-    raised. `broken` names the marker that makes the fake gh fail."""
+STUB_DIRECTORY = """import sys
+print(%r)
+"""
+STUB_INSTALLED = """import importlib.util
+_s = importlib.util.spec_from_file_location("ci_real", %r)
+_m = importlib.util.module_from_spec(_s)
+_s.loader.exec_module(_m)
+readable = _m.readable
+def rows(readme):
+    return [("o/base", "/x", "sh a"), ("o/m", "/y", None)], None
+def read_install(repo, path):
+    return {"o/base": ("behind 1", "HEAD a"),
+            "o/m": ("absent", "/y is not a directory")}[repo]
+"""
+
+
+def watch_read(m, broken=None, reads=1, log=None):
+    """The last of `reads` readings of `watch_reader` over the fake, or the
+    exception it raised. `broken` names the marker that makes the fake gh
+    fail; `log`, a list, receives the fake gh's calls. The campaign's
+    directory and installs are stubs, since the real ones read this disk."""
     with tempfile.TemporaryDirectory() as d:
         d = fleet(d)
         if broken:
             (d / broken).write_text("")
+        (d / "dir.py").write_text(STUB_DIRECTORY % str(d))
+        (d / "inst.py").write_text(STUB_INSTALLED % str(
+            m.BASE / "scripts" / "campaign-installed.py"))
+        m.DIRECTORY_SCRIPT, m.INSTALLED_SCRIPT = d / "dir.py", d / "inst.py"
         env = {"PATH": str(d / "bin"), "HOME": str(d / "home"), "TMPDIR": str(d)}
         saved, cwd = dict(os.environ), os.getcwd()
         os.environ.update(env)
@@ -899,7 +923,12 @@ def watch_read(m, broken=None):
         try:
             claim = m.load(m.RELEASE_SCRIPT, "campaign_claim")
             names = m.load(m.HERE / "campaign-name-session.py", "cns")
-            return m.watch_reader("7", "tk", "w1:p1", claim, names, {})()
+            read = m.watch_reader("7", "tk", "w1:p1", claim, names, {})
+            for _ in range(reads):
+                got = read()
+            if log is not None and (d / "gh.log").exists():
+                log += (d / "gh.log").read_text().splitlines()
+            return got
         except Exception as e:  # noqa: BLE001 -- a reader that raised is the defect
             return e
         finally:
@@ -940,7 +969,7 @@ def _(m):
     got = watch_read(m, broken="gh-broken")
     if isinstance(got, Exception):
         return False, f"the reader raised {got!r}"
-    whys = {k: got[k][1] for k in ("claims", "issues", "prs", "installs")}
+    whys = {k: got[k][1] for k in ("claims", "issues", "prs")}
     return (all(isinstance(w, str) and w for w in whys.values())
             and "JSONDecodeError" in whys["prs"]), got
 
@@ -954,13 +983,32 @@ def _(m):
             and got["prs"][0] is None and got["issues"][1] is None), got
 
 
-@case("watch: an install that could not be read is a failed source, not a drift")
+@case("watch reader: each install is a source, and one unreadable fails alone")
 def _(m):
-    ok = m.install_words([("o/b", "behind 2", "HEAD a"), ("o/m", "current", ""),
-                          ("o/x", "apply failed", "")])
-    bad = m.install_words([("o/b", "current", ""), ("o/m", "could not fetch", "x")])
-    return (ok == ([("o/b", "behind 2"), ("o/m", "current"), ("o/x", "apply failed")], None)
-            and bad[0] is None and "could not fetch" in bad[1]), (ok, bad)
+    got = watch_read(m)
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
+    return (got.get("install o/base") == ("behind 1", None)
+            and got.get("install o/m", (1, ""))[0] is None
+            and "absent" in got["install o/m"][1]
+            and "installs" not in got), got
+
+
+@case("watch reader: ## Repos is read on every poll")
+def _(m):
+    log = []
+    got = watch_read(m, reads=2, log=log)
+    views = [ln for ln in log if ln.startswith("issue view 7")]
+    return (not isinstance(got, Exception) and len(views) == 2), (views, got)
+
+
+@case("watch: an unreadable install hides no other install's drift")
+def _(m):
+    r = dict(readings(installs=[("o/base", "behind 1")]))
+    r["install o/m"] = (None, "absent: /y")
+    outs = polls(m, (0, r), (1, r), (2, r))
+    return ("+ drift install o/base behind 1" in outs[0]
+            and [ln for ln in outs[2] if ln.startswith("error install o/m")]), outs
 
 
 @case("watch: no drift is read from a source never read")
@@ -968,6 +1016,20 @@ def _(m):
     [out] = polls(m, (0, readings(issues={5: ("open", False)},
                                   sessions={"tk-worker-2": sess()}, fail=("claims",))))
     return not [ln for ln in out if " drift " in ln], out
+
+
+@case("watch: each rule waits only for its own sources")
+def _(m):
+    [no_sessions] = polls(m, (0, readings(
+        claims={"tk/5-a": 5}, issues={5: ("closed", False), 6: ("open", False)},
+        fail=("sessions",))))
+    idle = {"tk-worker-2": sess()}
+    no_prs = polls(m, (0, readings(sessions=idle, claims={"tk/5-a": 5}, fail=("prs",))),
+                   (30, readings(sessions=idle, claims={"tk/5-a": 5}, fail=("prs",))))
+    return ("+ drift unclaimed tk#6" in no_sessions
+            and "+ drift settled tk/5-a" in no_sessions
+            and not drifts(no_sessions, "unworked")
+            and not drifts(no_prs[1], "stuck")), (no_sessions, no_prs)
 
 
 @case("watch: a drift clears when its repair lands: a claim, a release")
@@ -1147,7 +1209,7 @@ MUTATIONS = [
      'if (s.get("context") is not None', "watch: context is a non-working session at or over the ceiling"),
     ("context is inclusive", 'and s["context"] >= COMPACT_AT):', 'and s["context"] > COMPACT_AT):',
      "watch: context is a non-working session at or over the ceiling"),
-    ("install", 'if word != "current"}', "if False}",
+    ("install", 'and word != "current"}', "and False}",
      "watch: install is an install that is not current"),
     ("two equal polls", 'if self.raw.get(name, s["status"]) == s["status"]:', "if True:",
      "watch: a session status counts after two equal polls"),
@@ -1192,10 +1254,21 @@ MUTATIONS = [
      "watch reader: an unread ## Repos fails the claims and pull requests"),
     ("no pull requests without the repositories", "        if not repos:\n            return None,", "        if False:\n            return None,",
      "watch reader: an unread ## Repos fails the claims and pull requests"),
-    ("an unread install is no drift", "            return None, f\"{repo}: {word}: {detail}\"", "            pass",
-     "watch: an install that could not be read is a failed source, not a drift"),
-    ("no drift before its sources", "        if {\"sessions\", \"claims\", \"issues\", \"prs\"} <= set(self.last):\n", "        if True:\n",
+    ("an unread install is no reading", "((word, None) if readable(word)", "((word, None) if True",
+     "watch reader: each install is a source, and one unreadable fails alone"),
+    ("each install its own source", 'out.update(each if why is None else {"installs": (None, why)})',
+     'out["installs"] = (each, why)', "watch reader: each install is a source, and one unreadable fails alone"),
+    ("## Repos every poll", "        listed, why = claim.campaign_repos(issue)\n",
+     "        listed, why = (repos[1:], None) if repos else claim.campaign_repos(issue)\n",
+     "watch reader: ## Repos is read on every poll"),
+    ("an install drift per source", 'if source.startswith("install ") and word != "current"}',
+     'if False}', "watch: an unreadable install hides no other install's drift"),
+    ("unclaimed waits for claims and issues", 'if {"claims", "issues"} <= read:', "if True:",
      "watch: no drift is read from a source never read"),
+    ("the counting rules wait for sessions", '        if not {"sessions", "claims"} <= read:\n            return out\n', "",
+     "watch: each rule waits only for its own sources"),
+    ("stuck waits for the pull requests", 'for b in claims if "prs" in read else ():', "for b in claims:",
+     "watch: each rule waits only for its own sources"),
 ]
 
 

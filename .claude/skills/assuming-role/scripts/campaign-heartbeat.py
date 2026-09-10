@@ -94,8 +94,9 @@ Each poll builds a snapshot and prints `+ line` for a line that appeared and
 The rules count claims and workers and never pair them: which session works
 which claim is not derivable (AGENTS.md § Completion). A source that fails
 three polls running prints `error <source>` and its last reading stands; a poll
-running past 300s prints `error watchdog` and exits 1. No drift is read until
-every source it counts has been read once, since an unread one is not empty.
+running past 300s prints `error watchdog` and exits 1. A drift rule runs once
+every source it reads has been read, since an unread one is not empty; each
+install is a source of its own, so one unreadable install hides no other.
 """
 import argparse
 import importlib.util
@@ -116,6 +117,9 @@ COMPACT_AT = 200_000
 # The line `campaign-claim.py release` prints, and the pane it names. Taken
 # from that script, never copied.
 RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
+# What the watch asks for a campaign's directory and its installs.
+DIRECTORY_SCRIPT = BASE / "scripts" / "campaign-directory.py"
+INSTALLED_SCRIPT = BASE / "scripts" / "campaign-installed.py"
 
 # What a compaction writes into the transcript around itself, which is not a
 # prompt: the `/compact` that `release` queues (a bare user record), the
@@ -469,35 +473,39 @@ class Watch:
                   for n, (st, bl) in issues.items()}
         lines |= {f"pr {p[0]} {b} {p[1]} {p[2]} comments={p[3]}"
                   for b, p in prs.items() if b in claims}
-        if {"sessions", "claims", "issues", "prs"} <= set(self.last):
-            lines |= self.drift(claims, issues, prs, workers, now)
-        lines |= {f"drift install {repo} {word}"
-                  for repo, word in self.last.get("installs", [])
-                  if word != "current"}
+        lines |= self.drift(claims, issues, prs, workers, now)
+        lines |= {f"drift {source} {word}"
+                  for source, word in self.last.items()
+                  if source.startswith("install ") and word != "current"}
         return lines
 
     def drift(self, claims, issues, prs, workers, now):
         """The rules count claims and workers and never pair one with the
         other: which session works which claim is not derivable (AGENTS.md
-        § Completion)."""
+        § Completion). A rule runs once every source it reads has been read:
+        an unread source is not an empty one."""
         out = set()
+        read = set(self.last)
         claimed = set(claims.values())
-        for n, (state, backlog) in issues.items():
-            if state == "open" and not backlog and n not in claimed:
-                out.add(f"drift unclaimed {self.slug}#{n}")
+        if {"claims", "issues"} <= read:
+            for n, (state, backlog) in issues.items():
+                if state == "open" and not backlog and n not in claimed:
+                    out.add(f"drift unclaimed {self.slug}#{n}")
+            for b, n in claims.items():
+                if issues.get(n, ("open",))[0] == "closed":
+                    out.add(f"drift settled {b}")
+        if not {"sessions", "claims"} <= read:
+            return out
         if len(claims) > len(workers):
             out.add(f"drift unworked {len(claims)} claim(s), "
                     f"{len(workers)} worker(s)")
         working = any(st == "working" for st in workers.values())
-        for b in claims:
+        for b in claims if "prs" in read else ():
             if working or b not in self.moved or self.moved[b][0] != prs.get(b):
                 self.moved[b] = (prs.get(b), now)
             if now - self.moved[b][1] >= STUCK_AFTER:
                 out.add(f"drift stuck {b}")
         self.moved = {b: v for b, v in self.moved.items() if b in claims}
-        for b, n in claims.items():
-            if issues.get(n, ("open",))[0] == "closed":
-                out.add(f"drift settled {b}")
         if len(workers) > len(claims):
             for w in workers:
                 if w in self.idle_since and now - self.idle_since[w] >= IDLE_AFTER:
@@ -590,16 +598,16 @@ def context_of(session_id, pane, anchor, cache):
     return cache[path][1]
 
 
-def install_words(found):
-    """(value, why) over [(repo, word, detail)] from campaign-installed's
-    reader. `current`, `behind N` and `apply failed` are readings; any other
-    word says the install could not be read, which is a failed source and
-    not a drift."""
-    for repo, word, detail in found:
-        if word not in ("current", "apply failed") and not word.startswith(
-                "behind "):
-            return None, f"{repo}: {word}: {detail}"
-    return [(repo, word) for repo, word, _ in found], None
+def install_readings(rows, read_install, readable):
+    """{`install <repo>`: (word, why)}, one source per install, so one that
+    cannot be read fails alone and the others' drift still shows. Which words
+    are a reading is campaign-installed's `readable`."""
+    out = {}
+    for repo, path, _ in rows:
+        word, detail = read_install(repo, path)
+        out[f"install {repo}"] = ((word, None) if readable(word)
+                                  else (None, f"{word}: {detail}"))
+    return out
 
 
 def read_all(readers):
@@ -621,10 +629,8 @@ def watch_reader(issue, slug, own, claim, names, cache):
     campaign-claim already own. `## Repos` is read each poll with the
     claims, so a failed read is that source's why and a scope change shows."""
     tracker = load(BASE / "scripts" / "campaign-tracker.py", "campaign_tracker")
-    installed = load(BASE / "scripts" / "campaign-installed.py",
-                     "campaign_installed")
-    d = run(sys.executable, str(BASE / "scripts" / "campaign-directory.py"),
-            issue)
+    installed = load(INSTALLED_SCRIPT, "campaign_installed")
+    d = run(sys.executable, str(DIRECTORY_SCRIPT), issue)
     readme = Path(d.stdout.strip()) / "README.md" if d.returncode == 0 else None
     repos = []
 
@@ -695,12 +701,18 @@ def watch_reader(issue, slug, own, claim, names, cache):
         rows, why = installed.rows(readme)
         if rows is None:
             return None, why
-        return install_words([(repo, *installed.read_install(repo, path))
-                              for repo, path, _ in rows])
+        return install_readings(rows, installed.read_install,
+                                installed.readable), None
 
     readers = {"sessions": sessions, "claims": claims, "issues": issues,
                "prs": prs, "installs": installs}
-    return lambda: read_all(readers)
+
+    def read():
+        out = read_all(readers)
+        each, why = out.pop("installs")
+        out.update(each if why is None else {"installs": (None, why)})
+        return out
+    return read
 
 
 def main(argv=None):

@@ -24,20 +24,49 @@ expressing a choice, and there is no value meaning "whatever the launcher is".
 **`ultra` is not a level.** It is a person-only review mode, and putting it in
 that slot is the one way to write this block illegally.
 
-**A plain brief, not `/code-review`, until a fanned round prices under a
-narrowed round.** `/code-review` inside a reviewer subagent fans out into an
+**A plain brief, not `/code-review` above `low`, until a fanned round prices
+under a narrowed round**, and `scripts/check-campaign-claim.py` refuses the call
+that does otherwise -- along with a launch naming no model, the rule above.
+**It reads the `Skill` call and not the prompt**, probed live on 2026-09-10
+(#278): a subagent whose prompt opened `/code-review low ...` made 19 Bash calls
+and loaded no skill, while one told to call `Skill(skill="code-review",
+args="low ...")` loaded it and forked its own review agent. A slash command in
+an `Agent` prompt is plain text.
+`/code-review` above `low` inside a reviewer subagent fans out into an
 orchestrator, finders and their verifiers, each its own further subagent --
 metered at the launching call's own turns alone until
 `campaign-token-tally.py reviews` rolls a fan-out's nested transcripts into the
 round that spawned it (`nested` counts how many). PR #255's five fanned rounds
 cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
-for one narrowed round below (NOTE on #1, 2026-09-09;
-`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
+for one narrowed round below. **The rolled-up figures are #273's**, re-derived
+over the same window at PR #276's merge sha (`97c6797`) and posted as a NOTE on
+kalaluthien/campaign-base#272: 47 rounds, 98 nested transcripts folded in,
+13,402,567 input_new in total. **PR #264 fanned out too**, 9-19 nested
+transcripts per round at 656,852-1,566,076 input_new each, so #255 is not the
+only one; the NOTE lists 15, 16, 254, 261, 263, 265 and 269 as nested-0 at the
+time it was written (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
 Write the brief as `"review PR <N> at <level>"`, level right after `at` --
 that position sets nothing mechanically the way `/code-review`'s own does
 below, it is only where `campaign-token-tally.py` and a reader both know to
 look -- naming what to check after a blank line, and reserve `/code-review`
-for a reviewer once a fanned round prices under that figure.
+above `low` for a reviewer once a fanned round prices under that figure.
+
+**The brief says what a reviewer may do**: it reads, runs checks, and edits,
+kills or launches nothing. That is one sentence of the brief and not a
+mechanism -- no reviewer agent definition, and no branch in the guard reading
+what kind of agent is being launched (owner's DECISION on #278, 2026-09-10).
+
+**`low` is under the bar and outside it.** #282 ran both rows on one diff with
+one model (2026-09-10): `/code-review low` cost 60,774 input_new, 101,697 with
+the subagent that launched it, against 127,442 for the narrowed plain brief on
+the same diff -- inside the 57,374-134,222 band below. It cannot fan out, since
+the skill body at that level is one diff pass, no verification stage, at most
+four findings and no subagents. So the bar reaches every level above `low` and
+not `low` itself. **What `low` does not do is satisfy merge condition 1**: it
+skips test hunks and reads no full files, and on that diff it returned 2
+findings against the plain brief's 5, missing two of the three behavioural ones.
+It is a cheap first pass, and the review a merge waits on is still the plain
+brief.
 
 ## The two knobs
 

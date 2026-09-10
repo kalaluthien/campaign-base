@@ -257,7 +257,7 @@ def row_posts_comment(mod, row):
     disagree with the one under test on exactly the forms this file exists to
     measure."""
     pairs, _why = mod.paired_segments(row["command"])
-    for tokens, heredocs in pairs or []:
+    for tokens, heredocs, _outer in pairs or []:
         word, rest = mod.head(tokens)
         if word != "gh":
             continue
@@ -265,6 +265,21 @@ def row_posts_comment(mod, row):
         if text is not None or why or unjudged:
             return True
     return False
+
+
+def row_breaks_a_shell_rule(mod, row, cwd):
+    """Whether this corpus row breaks a rule that names no target.
+
+    Asked through the guard's own `shell_findings` for the same reason
+    `row_posts_comment` is: a second reader of which commands kill something
+    would disagree with the one under test on exactly the rows this
+    measurement is about. `cwd` is the replay's, because the hook-bypass half
+    asks which repository the command would run in."""
+    if row["tool"] != "Bash":
+        return False
+    pairs, _why = mod.paired_segments(row["command"])
+    found, _notes = mod.shell_findings(pairs or [], cwd)
+    return bool(found)
 
 
 def corpus_issues(mod, rows):
@@ -634,7 +649,13 @@ def main():
                     # still open at 1918ce7: a backquoted call, eval's operand,
                     # and a -c spelled last in a short-option cluster.
                     "`gh issue close 5`", 'eval "gh issue close 5"',
-                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'"):
+                    "bash -lc 'gh issue close 5'", "sh -ec 'gh issue close 5'",
+                    # A NEWLINE ENDS A COMMAND (#278's review, F1). This was
+                    # in the stray list below until then: the two lines were
+                    # one segment whose command word was `echo`, so the write
+                    # fell to the unnarrowed gate and the diagnosis could not
+                    # name #5.
+                    "echo hi\ngh issue close 5"):
             r = ask(f.base, tool="Bash", command=cmd)
             check(f"`{cmd!r}` is read as the gh write it is",
                   r.returncode == 2 and "a write to #5" in r.stderr,
@@ -643,8 +664,7 @@ def main():
         # more: since #193 a heredoc body is data, and the cases for that are
         # the block at the end of this section.
         for cmd in ("xargs gh issue close", "echo gh issue close 5",
-                    "echo hi\ngh issue close 5",
-                    # The fourth: an assignment's VALUE names gh and the call
+                    # The third: an assignment's VALUE names gh and the call
                     # itself is an expansion this cannot resolve.
                     "G=gh; $G issue close 5"):
             r = ask(f.base, tool="Bash", command=cmd)
@@ -1567,22 +1587,14 @@ def main():
         r = ask(wt7, tool="Bash",
                 command='echo "opened here\nand a <<EOF inside it\nclosed here"'
                         '\ngh issue close 11')
-        # Refused as a `gh` it cannot read as a call, not as a write to #11: a
-        # NEWLINE is not a separator here (it never was -- `echo hi\ngh issue
-        # close 5` is in the stray list above), so the two lines are one
-        # segment whose command word is `echo`. What this pins is that the
-        # quote CLOSED on line three, leaving the `gh` visible at all; without
-        # the carry it was swallowed and the call exited 0.
-        # ASSERTED ON THE `gh` BEING SEEN, not on the verdict. A NEWLINE is not
-        # a separator here and never was (`echo hi` + `gh issue close 5` on two
-        # lines is in the stray list above), so these two lines are one segment
-        # whose command word is `echo` and whose `gh` is a stray token -- which
-        # this session's claim then covers, exit 0. What the case pins is that
-        # the quote CLOSED on line three and the `gh` survived to be read at
-        # all; before the carry, the `<<EOF` on line two ate lines three and
-        # four and the guard saw no `gh` anywhere.
+        # WHAT THIS PINS IS THE QUOTE CARRY, and the assertion is on the `gh`
+        # surviving to be read: before the carry, the `<<EOF` on line two ate
+        # lines three and four and the guard saw no `gh` anywhere. Since
+        # #278's review made a newline a separator the surviving `gh` is read
+        # as the CALL and narrowed to #11, where it used to be a stray token
+        # in an `echo` segment.
         check("...tracked across lines, not restarted at each one",
-              "cannot read as a call" in out(r) and "gh issue" in out(r),
+              r.returncode == 2 and "a write to #11" in r.stderr,
               out(r)[:400])
         # ALLOW beside all three: the real heredoc still has its body removed.
         r = ask(wt7, tool="Bash",
@@ -1953,6 +1965,776 @@ def main():
         check("...and says it was not written, rather than nothing",
               "verdict not logged" in r.stdout, out(r)[:300])
 
+    # THE SPLITTER READS A NEWLINE AND A GLUED PUNCTUATION RUN (#278's
+    # review, F1 and F2). Both were found through the rules above -- `-name`
+    # on the line under a `git commit` read as its `-n`, and a `cd` after a
+    # `);` never read at all -- but what they change is the splitter every
+    # branch of this file stands on, so they are pinned here on the `gh`
+    # reader, which names a number a case can assert.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, command in (
+                ("a newline", "ls -la\ngh issue close 5"),
+                ("a `&&` at the end of a line", "ls -la &&\ngh issue close 5"),
+                ("a `);` closing a substitution",
+                 "R=$(mktemp -d); gh issue close 5"),
+                ("a `;` at the end of a line", "ls -la ;\ngh issue close 5")):
+            r = ask(f.base, tool="Bash", command=command, run_cwd=f.base)
+            check(f"{name} ends the command, so the write after it is read as "
+                  f"the call",
+                  r.returncode == 2 and "a write to #5" in r.stderr,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A LINE CONTINUATION IS NOT A SEPARATOR, so the flags after it stay
+        # with the command they belong to.
+        r = ask(f.base, tool="Bash", command="gh issue \\\n  close 5",
+                run_cwd=f.base)
+        check("...while a backslash-newline keeps one command together",
+              r.returncode == 2 and "a write to #5" in r.stderr,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A REDIRECTION IS ONE OPERATOR, not a `>` and a separator `&`
+        # (#281's narrowed review, F3). Split apart, the `&` broke the segment
+        # in two and the heredoc went with the second half -- so a comment
+        # whose body is a heredoc read as no body at all, silently.
+        for name, redirect in (("`2>&1`", "2>&1"), ("`>|`", ">| out"),
+                               ("`>>&`", ">>& out")):
+            r = ask(wt, tool="Bash",
+                    command=f"gh issue comment 7 -F - {redirect} <<'EOF'\n"
+                            f"no kind here\nEOF", run_cwd=wt)
+            check(f"a {name} before a heredoc keeps the body with its command",
+                  r.returncode == 2 and "not `KIND" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND A NEWLINE INSIDE QUOTES IS DATA, not a separator: a comment
+        # body spans lines and must stay one token.
+        r = ask(wt, tool="Bash",
+                command='gh issue comment 7 --body "NOTE demo-worker-1: one\n'
+                        'and two"', run_cwd=wt)
+        check("...and a newline inside quotes stays inside the token",
+              r.returncode == 0 and "It covers #7" in r.stdout,
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    # A PATTERN KILL (kalaluthien/campaign-base#278, #272's ledger row 2, as
+    # the DECISION on #278 narrowed it). The Bash reader allows every command
+    # that is not a `gh` write unread, so this was the one rule of AGENTS.md
+    # nothing could see even in the shell it lands in. Each verb asserts the
+    # sentence its own branch prints; a case on exit 2 alone would pass with
+    # any single one of them deleted.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for verb, command in (("pkill", "pkill -f 'alloy-6.2.0.jar'"),
+                              ("killall", "killall java")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"`{verb}` is refused, naming the processes nobody "
+                  f"identified",
+                  r.returncode == 2
+                  and f"`{verb}` takes a name or a pattern" in out(r)
+                  and "stops every process matching it" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # `kill <pid>` IS ALLOWED IN EVERY FORM, which is the whole of the
+        # DECISION: a pid names one process the caller had to look up, and
+        # whether it is a peer's is not decidable from the payload. The
+        # measurement behind it: of 31 recorded in-base findings under the
+        # blanket rule, 30 were a session stopping something it had started.
+        for name, command in (("a plain `kill`", "kill 40123"),
+                              ("a signalled `kill`", "kill -9 40123"),
+                              ("a liveness `kill -0`", "kill -0 40123"),
+                              ("several pids at once", "kill 82511 82509")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed, since a pid names one process",
+                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND THE REFUSAL NAMES THAT PATH, so a session reading it knows
+        # what to do instead rather than only what it may not.
+        r = ask(wt, tool="Bash", command="pkill -f alloy", run_cwd=wt)
+        check("...and the refusal names `kill <pid>` as the way through",
+              "kill <pid>` is allowed" in out(r), out(r)[:400])
+        r = ask(wt, tool="Bash", command="herdr agent kill w40:p2D", run_cwd=wt)
+        check("`herdr agent kill` is refused, naming the peer that was not "
+              "asked",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # READ AS THE TWO WORDS AFTER THE COMMAND, not as a string: a flag
+        # before them must not hide the verb.
+        r = ask(wt, tool="Bash", command="herdr --json agent kill w40:p2D",
+                run_cwd=wt)
+        check("...and a flag before `agent kill` does not hide it",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="herdr agent list", run_cwd=wt)
+        check("...while `herdr agent list` is a read and passes",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # A GLOBAL OPTION WITH A VALUE SHIFTS THE TWO WORDS, which the first
+        # cut read positionally: `herdr --json` is boolean and hid nothing,
+        # `herdr --session <name>` does (#278's review, F9).
+        r = ask(wt, tool="Bash", command="herdr --session main agent kill w40:p2D",
+                run_cwd=wt)
+        check("...and a valued global option does not shift `agent kill` out "
+              "of view",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A SHELL'S `-c` IS THE SAME COMMAND. `segments` already re-reads it,
+        # so the finding must not depend on the spelling that reached the
+        # payload.
+        r = ask(wt, tool="Bash", command="bash -c 'pkill -f alloy'", run_cwd=wt)
+        check("a kill inside a shell's -c string is refused too",
+              r.returncode == 2 and "stops every process matching it" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE ORDINARY SHAPES THE SCAN MUST NOT CATCH, read before the
+        # refusals as this repository's own review rule asks. The word in a
+        # commit message and the word in a filename are what a scan over the
+        # command TEXT would have refused.
+        for name, command in (
+                ("a commit message holding the word",
+                 "git commit -m 'pkill the flake'"),
+                ("a grep for the word", "grep -rn pkill AGENTS.md"),
+                ("a word that merely ends in it", "echo nopkill")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"...and {name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # THE REFUSAL BEATS EVERY OTHER READING IN THE SAME COMMAND, and says
+        # so: a `gh` write beside a kill must not turn the diagnosis into a
+        # claim the reader would then go and take.
+        r = ask(wt, tool="Bash", command="gh issue close 7 && pkill -f alloy",
+                run_cwd=wt)
+        check("a kill beside a gh write is refused as the kill, not as a claim",
+              r.returncode == 2 and "stops every process matching it" in out(r)
+              and "Take the claim first" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Bash", command="pkill -f alloy", run_cwd=d)
+        check("the same kill outside every base is allowed", r.returncode == 0,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "stops every process matching it" in out(r) and "in no campaign" in out(r),
+              out(r)[:400])
+
+    # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
+    # Three spellings reaching one end, so three branches, each asserted on
+    # its own sentence. The ALLOWS are read first, as this repository's own
+    # rule for a brief over a guard asks: `-n` is `--dry-run` for push and
+    # `--no-commit` for merge, and the key is a word in prose and in a
+    # `--get`.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        # A HOOK HAS TO BE THERE FOR ONE TO BE BYPASSED, which is the whole of
+        # the scoping #278's review asked for: a fresh `git init` holds only
+        # git's `.sample` files and the flag skips nothing. The fixture's
+        # worktrees share the base's `.git`, so one file arms every case below.
+        hooks = f.base / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+        # ...and a repository beside it with none, which two cases below read.
+        nohooks = f.d / "nohooks"
+        nohooks.mkdir()
+        git(nohooks, "init", "-q")
+        for name, command in (
+                ("`git push -n`, which is --dry-run", "git push -n"),
+                ("`git merge -n`, which is --no-commit", "git merge -n main"),
+                ("`git commit -am`, whose cluster holds no n",
+                 "git commit -am x"),
+                ("an `-n` inside a commit message", "git commit -m 'note -n'"),
+                ("a `--get` of the key", "git config --get core.hooksPath"),
+                ("the key as a word in a file being read",
+                 "grep -n core.hooksPath AGENTS.md")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`--no-verify` is refused, saying a guard that did not run "
+              "permitted nothing",
+              r.returncode == 2 and "`--no-verify` skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git push --no-verify", run_cwd=wt)
+        check("...on any git subcommand, not commit alone", r.returncode == 2,
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # GIT TAKES AN UNAMBIGUOUS ABBREVIATION of a long option, probed
+        # against a repository with a real `pre-commit`: `--no-verif` skips
+        # the hook exactly as the full spelling does (#278's review, F9).
+        r = ask(wt, tool="Bash", command="git commit --no-verif -m x", run_cwd=wt)
+        check("an abbreviated `--no-verif` is refused, since git accepts it",
+              r.returncode == 2 and "`--no-verif` skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND A SEARCH TERM IS NOT AN OPTION. `git log -S` is what
+        # AGENTS.md tells a session to run before adopting a word, and the
+        # first cut refused it for holding the word (#278's review, F2).
+        for name, command in (
+                ("a `git log -S` for the flag",
+                 "git log -S '--no-verify' --oneline"),
+                ("a `git log -S` for the key",
+                 "git log -S 'core.hooksPath=' --oneline")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit -n -m x", run_cwd=wt)
+        check("`git commit -n` is refused as the short spelling of it",
+              r.returncode == 2
+              and "is `--no-verify` for `git commit`" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git commit -nm x", run_cwd=wt)
+        check("...and so is the cluster `-nm`", r.returncode == 2
+              and "is `--no-verify` for `git commit`" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command="git -c core.hooksPath=/dev/null commit -m x",
+                run_cwd=wt)
+        check("`-c core.hooksPath=` is refused as the same bypass shaped like "
+              "configuration",
+              r.returncode == 2 and "shaped like" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", command="git config core.hooksPath /dev/null",
+                run_cwd=wt)
+        check("...and so is the subcommand spelling, which sets it with a "
+              "value",
+              r.returncode == 2 and "moves the hooks" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command="GIT_CONFIG_KEY_0=core.hooksPath "
+                        "GIT_CONFIG_VALUE_0=/dev/null git commit -m x",
+                run_cwd=wt)
+        check("...and so is the environment spelling, which no `git` flag "
+              "carries",
+              r.returncode == 2 and "sets core.hooksPath" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE KEY IS THE WHOLE OF ONE SIDE, not a substring of it: a value
+        # that merely holds the word -- a path to a saved copy of the hooks --
+        # sets nothing.
+        # `export` PUTS THE ASSIGNMENT AFTER THE COMMAND WORD, so the
+        # position test needs its own name for it.
+        r = ask(wt, tool="Bash",
+                command="export GIT_CONFIG_KEY_0=core.hooksPath", run_cwd=wt)
+        check("...and an `export` of the key is refused, its operand being an "
+              "assignment too",
+              r.returncode == 2 and "sets core.hooksPath" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command="OLD=/tmp/core.hooksPath.bak git commit -m x",
+                run_cwd=wt)
+        check("...while a value that only mentions the key sets nothing and "
+              "is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        # THE ROW THAT PROMPTED THE SCOPING. 31 of the 33 recorded in-base
+        # calls this rule refused as first written were a throwaway repository
+        # built by one of this tree's own probes, where there is no hook. The
+        # guard reads the directory the shell would be in -- across the `cd`s
+        # of the command -- and asks git where its hooks are.
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks && git commit --no-verify -m x",
+                run_cwd=wt)
+        check("a bypass in a repository with no hook is allowed, since "
+              "nothing was bypassed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow says which directory it read and what it "
+              "found there",
+              "skips the hook" in out(r) and "holds no hook" in out(r),
+              out(r)[:400])
+        # THE NOTE REACHES THE EXIT, whatever else the command holds: a rule
+        # seen and not enforced must not go silent because a different rule
+        # refused, or because a `gh` write took a later exit.
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks && git commit --no-verify -m x "
+                        f"&& pkill -f alloy", run_cwd=wt)
+        check("a note rides out on a refusal for another rule",
+              r.returncode == 2 and "stops every process matching it" in out(r)
+              and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks && git commit --no-verify -m x "
+                        f"&& gh issue close 7", run_cwd=wt)
+        check("...and rides out on the exit a gh write takes",
+              "holds no hook" in out(r), out(r)[:400])
+        # THE REFUSAL'S FIRST LINE NAMES THE RULE, which is what `log_verdict`
+        # stores and `guard-precision.py` groups on: one sentence for every
+        # branch would put five different false positives in one bucket.
+        r = ask(wt, tool="Bash", command="pkill -f alloy && git commit -n -m x",
+                run_cwd=wt)
+        check("the refusal's first line names each rule broken",
+              "breaking a hook bypass, a kill" in out(r), out(r)[:300])
+        # ...AND A DIRECTORY IT COULD NOT READ IS THE THIRD OUTCOME, not a no
+        # and not a yes: `cd "$d"` is composed by the shell, so this guard
+        # never learns where the commit lands.
+        r = ask(wt, tool="Bash",
+                command='d=$(mktemp -d); cd "$d"; git commit --no-verify -m x',
+                run_cwd=wt)
+        check("a bypass after a `cd` this cannot read is allowed and says so",
+              r.returncode == 0 and "could not be read" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in
+        # (#281's narrowed review, F1). A subshell, a pipeline stage, a
+        # `bash -c` string and a heredoc script each move a shell that exits;
+        # crediting one turned the rule off for the rest of the command.
+        # THE SEPARATOR THAT CLOSES A SEGMENT IS THE ONE READ, and it is the
+        # only one that answers this. Probed against both shells here:
+        # `cd /tmp | true; echo $PWD` prints the original directory in zsh and
+        # in bash. The LAST stage is the other question and lives below --
+        # zsh keeps it in the current shell, and reading the separator BEFORE
+        # a segment as well gave `true | cd X` and `true | { cd X; }` opposite
+        # verdicts, with this suite pinning both (#281's full review, F2).
+        for name, command in (
+                ("a subshell", "(cd /tmp && ls); git commit --no-verify -m x"),
+                ("the first stage of a pipe",
+                 "cd /tmp | true; git commit --no-verify -m x"),
+                ("a backgrounded command",
+                 "cd /tmp & git commit --no-verify -m x"),
+                ("a `bash -c` string",
+                 "bash -c 'cd /tmp'; git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"a `cd` in {name} does not move the shell, so the bypass "
+                  f"after it is still refused",
+                  r.returncode == 2 and "skips the hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A BRACE GROUP IS NOT A SUBSHELL -- `bash -c '{ cd /tmp; }; echo
+        # $PWD'` prints /tmp -- so counting it refused a commit the shell
+        # really had moved away from, on a false premise.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }}; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("...while a brace group DOES move it, being no subshell",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND AN UNBALANCED BRACE IN A QUOTED TOKEN NO LONGER CORRUPTS the
+        # reading of every segment after it, which counting braces did.
+        r = ask(wt, tool="Bash",
+                command=f"echo '{{'; cd {f.d}/nohooks; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...and a quoted `{` does not leave later segments inside it",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE UNITS ARE ORDERED LONGEST-FIRST, and since outer-ness began
+        # reading the separator that CLOSES a segment that ordering decides a
+        # verdict: read shortest-first, the `&&` ending a line becomes `&`,
+        # `&` and a newline, and the first `&` closes the `cd`'s segment, so
+        # the `cd` stops being credited and the bypass after it is refused.
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks &&\ngit commit --no-verify -m x",
+                run_cwd=wt)
+        check("an `&&` at the end of a line is one operator, so the `cd` "
+              "before it still counts",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...BUT A PIPED OR BACKGROUNDED BRACE GROUP IS A SUBSHELL after all,
+        # and the separator that says so arrives after the group's segments
+        # were already emitted. Probed: `{ cd /tmp; } | true; echo $PWD`
+        # prints the original directory in both shells here.
+        for name, sep in (("piped", "| true;"), ("backgrounded", "&")):
+            r = ask(wt, tool="Bash",
+                    command=f"{{ cd {f.d}/nohooks; }} {sep} "
+                            f"git commit --no-verify -m x", run_cwd=wt)
+            check(f"a {name} brace group is a subshell, so its `cd` is not "
+                  f"credited",
+                  r.returncode == 2 and "skips the hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # THE SPAN STARTS WHERE THE GROUP DID, so a piped group does not
+        # un-credit an earlier one that was never piped.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }} ; {{ cd /var; }} | true; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("a piped brace group does not un-credit an earlier one",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND THE SPAN IS SPENT AT THE FIRST SEPARATOR AFTER `}`, so a pipe
+        # arbitrarily later in the command does not reach back for it.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }}; echo x | cat; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...and a pipe later in the command does not reach back for it",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A `}` WITH NO `{` IS REACHABLE -- shlex strips the quotes off
+        # `git commit -m '}'` and hands back the bare separator -- and popping
+        # an empty stack there is an IndexError, which the last-resort handler
+        # turns into an unjudged ALLOW.
+        r = ask(wt, tool="Bash", command="echo '}'; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("an unmatched `}` does not crash the guard",
+              r.returncode == 2 and "skips the hook" in out(r)
+              and "FAILED" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE LAST STAGE OF A PIPELINE IS THE OTHER SIDE, and the shells
+        # disagree: bash makes it a subshell, zsh runs it in the current shell
+        # and really moves. The Bash tool here runs zsh, so the `cd` counts --
+        # and a version that read it the other way turned a real `--no-verify`
+        # over a hooked repository into an allow. BOTH SPELLINGS, because they
+        # are one question and the guard gave them opposite answers until
+        # #281's full review: a brace group is a separator, so reading the
+        # separator before a segment credited the braced one and refused the
+        # bare one.
+        for name, command in (
+                ("bare", f"true | cd {f.d}/nohooks; "
+                         f"git commit --no-verify -m x"),
+                ("in a brace group", f"true | {{ cd {f.d}/nohooks; }}; "
+                                     f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"a `cd` in a pipeline's last stage counts, {name}, which is "
+                  f"what the shell that runs here does",
+                  r.returncode == 0 and "holds no hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # `eval` RUNS IN THIS SHELL, where a shell's `-c` runs in one that
+        # exits (#281's full review, F1). Probed in both shells here:
+        # `zsh -c 'cd /; eval "cd /usr"; print $PWD'` prints /usr, and so does
+        # bash. Read as a `bash -c` string, the first of these was refused over
+        # a directory holding no hook and the second allowed a bypass over the
+        # directory that has one.
+        r = ask(wt, tool="Bash",
+                command=f"eval 'cd {f.d}/nohooks'; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("an `eval` moves the shell the next command runs in",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks; eval 'cd {wt}'; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...so an `eval` back into a hooked repository is refused there",
+              r.returncode == 2 and "skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # AND WHAT IS OUTER INSIDE THE STRING STILL DECIDES: the string runs
+        # here, its own subshells and pipeline stages do not.
+        for name, command in (
+                ("a subshell inside it",
+                 f"eval '(cd {f.d}/nohooks)'; git commit --no-verify -m x"),
+                ("the eval being a stage that exits",
+                 f"eval 'cd {f.d}/nohooks' | true; "
+                 f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"an `eval` moves nothing with {name}",
+                  r.returncode == 2 and "skips the hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A RELATIVE `cd` AFTER AN UNREADABLE ONE HAS NO BASE, and answering
+        # it would be answering about a directory this guard never saw. The
+        # branch that says so was unpinned until #281's full review, F3:
+        # removing it makes the join crash into a last-resort allow, which is
+        # an allow that names no rule.
+        r = ask(wt, tool="Bash",
+                command='d=$(mktemp -d); cd "$d"; cd scripts; '
+                        'git commit --no-verify -m x', run_cwd=wt)
+        check("a relative `cd` after one this could not read stays unreadable, "
+              "and does not crash",
+              r.returncode == 0 and "could not be read" in out(r)
+              and "FAILED" not in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
+        # unreadable -- and unreadable turns the rule off for the rest.
+        r = ask(wt, tool="Bash", command="cd; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("a bare `cd` is read as home, not as a directory this could not "
+              "read",
+              "could not be read" not in out(r), out(r)[:400])
+        # ...WHILE `cd -` AND `popd` ARE PLACES THIS DID NOT LOOK, each being
+        # a directory the shell remembers and this guard never saw.
+        for name, command in (("`cd -`", "cd -; git commit --no-verify -m x"),
+                              ("`popd`", "popd; git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} leaves the directory unread, and the allow says so",
+                  r.returncode == 0 and "could not be read" in out(r),
+                  f"exit {r.returncode}: {out(r)[:400]}")
+        # A LEADING `~` NAMES THIS ACCOUNT'S HOME and nothing else, so it is
+        # read rather than left composed -- `cd ~` and a bare `cd` name the
+        # same directory and used to get two different answers, and
+        # `cd ~/<the base> && git commit --no-verify` was allowed over the
+        # hooked base itself.
+        r = ask(wt, tool="Bash", command="cd ~; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`cd ~` is read as home, like a bare `cd`",
+              "could not be read" not in out(r), out(r)[:400])
+        # THE TAIL SURVIVES THE EXPANSION, and this half is asked in process:
+        # every fixture here lives under a temporary directory, so no `~/`
+        # path can reach one and an end-to-end case for it would be a body
+        # that never runs. Dropping the tail would put `cd ~/anywhere` at
+        # home, which is a different repository from the one named.
+        mod = guard_module()
+        check("a `~/` path keeps its tail through the expansion",
+              mod.literal_path("~/a/b", None) == Path.home() / "a/b",
+              str(mod.literal_path("~/a/b", None)))
+        # A DOUBLED SLASH DOES NOT REPLACE THE HOME IT IS JOINED TO. Joining
+        # an absolute tail drops the base, so `~//campaign-base` came back as
+        # `/campaign-base` -- walking past the one case this branch exists for.
+        check("...and a doubled slash does not throw the home away",
+              mod.literal_path("~//a", None) == Path.home() / "a",
+              str(mod.literal_path("~//a", None)))
+        # ...AND THE TAIL IS READ LIKE ANY OTHER TOKEN, so one the shell
+        # composes leaves the directory unread rather than fabricating a path
+        # that does not exist and answering about it.
+        check("...and a composed tail leaves the path unread",
+              mod.literal_path("~/$d", None) is None
+              and mod.literal_path("~other", None) is None,
+              f"{mod.literal_path('~/$d', None)} "
+              f"{mod.literal_path('~other', None)}")
+        # `pushd` MOVES THE SHELL EXACTLY AS `cd` DOES. Reading it as neither
+        # left the previous reading standing, so the guard answered
+        # confidently about a directory the shell had left.
+        r = ask(wt, tool="Bash",
+                command=f"pushd {f.d}/nohooks; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`pushd` moves the shell, so the bypass after it is judged there",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # ...ONLY IN THE FORM THAT NAMES A DIRECTORY. Reading every `pushd` as
+        # a `cd` named the wrong directory confidently and let a real bypass
+        # through: `-n` pushes without moving, and the rest work the stack.
+        r = ask(wt, tool="Bash",
+                command=f"pushd -n {f.d}/nohooks; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`pushd -n` pushes without moving, so the bypass is still "
+              "refused where the shell really is",
+              r.returncode == 2 and "skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        # ...WHILE `--` AND `-P` DO NOT STOP THE MOVE, so reading every
+        # option-shaped word as a stack flag gave two spellings of the same
+        # move opposite verdicts.
+        for name, command in (
+                ("`pushd --`", f"pushd -- {f.d}/nohooks; "
+                               f"git commit --no-verify -m x"),
+                ("`pushd -P`", f"pushd -P {f.d}/nohooks; "
+                               f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} still moves the shell, so the bypass is judged "
+                  f"where it lands",
+                  r.returncode == 0 and "holds no hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:400]}")
+        for name, command in (
+                ("a bare `pushd`", "pushd; git commit --no-verify -m x"),
+                ("`pushd +1`", "pushd +1; git commit --no-verify -m x"),
+                ("`pushd` with two operands",
+                 "pushd /a /b; git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} names no directory this can read, so the "
+                  f"directory is unread",
+                  r.returncode == 0 and "could not be read" in out(r),
+                  f"exit {r.returncode}: {out(r)[:400]}")
+        # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
+        r = ask(wt, tool="Bash",
+                command=f"git -C {f.d}/nohooks commit --no-verify -m x",
+                run_cwd=wt)
+        check("...and `-C` names the repository, so it decides over the cwd",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        hooks = f.base / ".git" / "hooks"
+        hooks.mkdir(parents=True, exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+        r = ask(d, tool="Bash", command=f"git -C {f.base} commit --no-verify -m x",
+                run_cwd=d)
+        check("the same bypass from outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "skips the hook" in out(r) and "in no campaign" in out(r),
+              out(r)[:400])
+
+    # THE AGENT LAUNCH (kalaluthien/campaign-base#278). One rule of
+    # AGENTS.md § Review that the guard could not see at all until `Agent`
+    # joined install-hooks.sh's `MATCHER`: a tool absent from that string
+    # reaches this file never. § Review's other rule on the call, the fan-out,
+    # is the `Skill` group below -- it was written here first, against a
+    # prompt's opening word, and #282's two live probes showed that channel
+    # runs no skill at all.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        good = {"subagent_type": "general-purpose", "model": "opus",
+                "description": "Review PR 9",
+                "prompt": "review PR 9 at medium\n\nRead the guard's allows "
+                          "before its refusals."}
+        r = ask(wt, tool="Agent", tool_input=good, run_cwd=wt)
+        check("an Agent launch with a plain brief and a model is allowed",
+              r.returncode == 0 and "The rule on the call is not broken" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # NO CLAIM IN THE FIXTURE, and that is the point: a launch is not a
+        # plane, so the allow above must not be coming from the claim the
+        # worktree happens to sit on.
+        with tempfile.TemporaryDirectory() as d2:
+            f2 = Fixture(d2, claims=())
+            r = ask(f2.base, tool="Agent", tool_input=good, run_cwd=f2.base)
+            check("...and it is allowed with no claim anywhere, since a launch "
+                  "is no plane",
+                  r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        # A SLASH COMMAND IN A PROMPT IS PLAIN TEXT, probed live: a subagent
+        # launched with this exact prompt made 19 Bash calls and loaded no
+        # skill (#278, 2026-09-10). The refusal that used to live here read
+        # the channel that fans out into nothing.
+        fanned = dict(good, prompt="/code-review high 9\n\nReview PR 9.")
+        r = ask(wt, tool="Agent", tool_input=fanned, run_cwd=wt)
+        check("an Agent prompt opening /code-review is allowed: a prompt runs "
+              "no skill",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+
+        nomodel = {k: v for k, v in good.items() if k != "model"}
+        r = ask(wt, tool="Agent", tool_input=nomodel, run_cwd=wt)
+        check("an Agent launch naming no model is refused, naming the default "
+              "it would inherit",
+              r.returncode == 2 and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Agent", tool_input=dict(good, model="  "), run_cwd=wt)
+        check("...and a blank model is the same finding, not a model named",
+              r.returncode == 2 and "inherits a default" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE PROMPT IS READ FOR NOTHING NOW, so a payload that would once
+        # have broken both rules breaks one, and the refusal says so and
+        # nothing more.
+        r = ask(wt, tool="Agent",
+                tool_input={k: v for k, v in fanned.items() if k != "model"},
+                run_cwd=wt)
+        check("...and a /code-review prompt naming no model is refused for "
+              "the model alone",
+              r.returncode == 2 and "inherits a default" in out(r)
+              and "fans out" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A FORK RUNS ON THE LAUNCHER'S OWN MODEL and ignores a `model` given
+        # to it, so for a fork "no model" is the correct spelling and not a
+        # default inherited by accident (#278's review, F6).
+        r = ask(wt, tool="Agent",
+                tool_input={"description": "x", "prompt": "continue the sweep",
+                            "subagent_type": "fork"}, run_cwd=wt)
+        check("a `fork` naming no model is allowed, since a fork ignores one",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Agent",
+                tool_input={"description": "x", "prompt": "/code-review high 9",
+                            "subagent_type": "fork"}, run_cwd=wt)
+        check("...and a fork whose prompt opens /code-review is allowed too",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # THE LOGGED ROW CARRIES THE PROMPT. An Agent payload has no
+        # `command`, and `guard-precision.py` pairs a refusal with the same
+        # session's next allowed call on the same target -- so without this
+        # every Agent refusal landed in its "nothing to match on" bucket and
+        # the instrument could not measure either rule on a launch.
+        # THE BASE'S OWN LOG, not the campaign's: an Agent call names no
+        # target, so `log_path` classifies it by the payload cwd, and this
+        # fixture's worktree sits outside the campaign directory.
+        log = f.base / "runtime" / "guard.log"
+        before = log.read_text() if log.is_file() else ""
+        ask(wt, tool="Agent", tool_input=nomodel, run_cwd=wt)
+        added = log.read_text()[len(before):] if log.is_file() else ""
+        check("an Agent refusal logs the prompt as the call it judged",
+              "review PR 9 at medium" in added, added[:300])
+        # AN EMPTY PROMPT IS NOT A `/code-review`, and it is not a crash
+        # either: `split(None, 1)` on an empty string is an empty list.
+        r = ask(wt, tool="Agent", tool_input={"model": "opus", "prompt": "",
+                                              "description": "x"}, run_cwd=wt)
+        check("an Agent launch with an empty prompt is allowed and says so",
+              r.returncode == 0 and "its prompt is empty" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+    # OUTSIDE EVERY BASE THE SAME LAUNCH IS ALLOWED. This guard is registered
+    # for every session on this machine, so a rule of this repository must not
+    # reach one working somewhere else -- and the allow says which rule it
+    # read and did not enforce, rather than passing silently.
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Agent",
+                tool_input={"description": "x", "prompt": "review PR 9 at high"},
+                run_cwd=d)
+        check("the same launch outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "inherits a default" in out(r)
+              and "in no campaign" in out(r), out(r)[:400])
+
+    # THE `Skill` CALL, which is where a review actually fans out (#278's
+    # NOTE, #282's DECISION). The bar is on `code-review` above `low`: `low`
+    # runs one diff pass with no subagents and prices under a narrowed plain
+    # brief, so it passes and every level above it does not. The level is the
+    # first token of `args` and nowhere else, which is the harness's parsing
+    # and not this file's convention.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "high 9"},
+                run_cwd=wt)
+        check("a /code-review Skill call above low is refused, naming the "
+              "fan-out",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the refusal names both ways down, `low` and a plain brief",
+              "`low`" in out(r) and "review PR <N> at <level>" in out(r),
+              out(r)[:400])
+        # THE BASELINE LEVEL IS NOT AN EXEMPTION. `medium` is § Review's
+        # working baseline for a plain brief, and it is 21 of the 36 recorded
+        # calls here -- the shape this refusal exists to catch, not an edge.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "medium 9"},
+                run_cwd=wt)
+        check("...and `medium`, the baseline, is refused the same way",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Skill", tool_input={"skill": "code-review"},
+                run_cwd=wt)
+        check("a /code-review naming no level is refused, naming the fallback "
+              "it would take",
+              r.returncode == 2 and "persisted setting" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A LEVEL FURTHER ALONG `args` SETS NOTHING, so a call that reads like
+        # a low one but does not open with it is the refusal, not the allow.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "9 low"},
+                run_cwd=wt)
+        check("...and `low` past the first token does not rescue it",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "low 9"},
+                run_cwd=wt)
+        check("a /code-review at low is allowed: it cannot fan out",
+              r.returncode == 0 and "cannot fan out" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow says it satisfies no merge condition",
+              "merge condition 1" in out(r), out(r)[:400])
+        # EVERY OTHER SKILL IS ALLOWED UNREAD AND SAYS SO, the shape
+        # `bash_call` uses for a command holding no `gh`: a guard that judged
+        # the rest would be enforcing a rule nobody wrote.
+        r = ask(wt, tool="Skill", tool_input={"skill": "opening-campaign"},
+                run_cwd=wt)
+        check("another skill is allowed unread, and says which bar it was not "
+              "read against",
+              r.returncode == 0 and "allowed unread" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE NAME IS MATCHED WHOLE, which nothing pinned until #281's seventh
+        # review: `!=` widened to a `startswith` or an `in` passed all 430
+        # cases, and either would refuse a skill whose name merely CONTAINS the
+        # bar's. A name is a directory name, so a neighbour like this one is
+        # the ordinary shape, not an edge.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review-lite", "args": "high 9"},
+                run_cwd=wt)
+        check("...and a skill whose name only contains `code-review` is "
+              "allowed unread too",
+              r.returncode == 0 and "allowed unread" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE LOGGED ROW. A `Skill` payload has neither `command` nor
+        # `prompt`, so without the third fallback every fan-out refusal lands
+        # in `guard-precision.py`'s "nothing to match on" bucket.
+        log = f.base / "runtime" / "guard.log"
+        before = log.read_text() if log.is_file() else ""
+        ask(wt, tool="Skill",
+            tool_input={"skill": "code-review", "args": "high 9"}, run_cwd=wt)
+        added = log.read_text()[len(before):] if log.is_file() else ""
+        check("a Skill refusal logs the skill and its args as the call it "
+              "judged",
+              "code-review high 9" in added, added[:300])
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Skill",
+                tool_input={"skill": "code-review", "args": "high 9"},
+                run_cwd=d)
+        check("the same /code-review outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "fans out into an orchestrator" in out(r)
+              and "in no campaign" in out(r), out(r)[:400])
+
+    # THE MATCHER IS THE OTHER HALF OF THIS RULE. The branches above cannot
+    # fire for a tool the harness never routes here, and nothing else in this
+    # tree reads that string, so it is asserted where it is written.
+    matcher = (HERE / "install-hooks.sh").read_text()
+    check("install-hooks.sh registers the guard on Agent and Skill",
+          '"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent|Skill"' in matcher,
+          "MATCHER no longer lists both; the rules on the call would be "
+          "unreachable however this file is written")
+
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
     # somebody thought of; these are the shapes the campaign actually typed,
     # replayed against a fixture in which the session holds the claims it held
@@ -2028,21 +2810,55 @@ def main():
             # and a blanket exemption would have hidden the second.
             posts = {i for i, row in enumerate(rows)
                      if row["tool"] == "Bash" and row_posts_comment(mod, row)}
+            # THE SECOND DELIBERATE BREAK (#278), and it is the same shape as
+            # the first: the corpus is the calls this campaign made, one of
+            # which is the `pkill -f alloy-6.2.0.jar` that PR #255's REPORT
+            # records killing three runs of two other sessions. A rule written
+            # because of a recorded call must refuse that call, so it is
+            # exempted BY NUMBER rather than by a blanket allow, and a second
+            # row entering this set is itself a failure.
+            #
+            # WHAT THIS CANNOT SAY, and the review at 1b81b84 was right to
+            # name it: `guard-corpus.py`'s filter 4 drops every command the
+            # guard finds no `gh` in, and its own header says the cost -- the
+            # corpus "cannot catch a change to the allow-unread branch
+            # itself", which is exactly the branch these rules were added to.
+            # The corpus holds no `--no-verify` and no `hooksPath` at all, and
+            # this `pkill` row survived the filter only because the same
+            # command also runs a `gh pr view`. So this pair is a floor and
+            # not the measurement: the breadth of these rules was read over
+            # every recorded call on the machine instead, and the numbers are
+            # in the guard's own comments beside each rule.
+            breaks = {i for i, row in enumerate(rows)
+                      if row_breaks_a_shell_rule(mod, row, f.base)}
+            check("the corpus's one recorded rule-break is the incident "
+                  "itself, and nothing joined it",
+                  len(breaks) == 1
+                  and "pkill" in rows[sorted(breaks)[0]]["command"],
+                  f"{len(breaks)} row(s): "
+                  + "; ".join(rows[i]["command"][:70] for i in sorted(breaks)))
             # THE EXEMPT SET IS FROZEN TO A NUMBER, because it is computed by
             # the reader under test: any row the comment check MISCLASSIFIES as
             # a comment has its refusal excused by the very mistake that caused
             # it, and the `already` control below cannot see a narrow false
             # positive. Frozen, a row newly entering the set is itself a
-            # failure. 611 rows, 64 of them comment writes, at the corpus as
+            # failure. 611 rows, 97 of them comment writes, at the corpus as
             # `guard-corpus.py` last wrote it; re-bless both numbers when the
             # corpus is regenerated, and read a change here as a question about
             # `comment_body` before reading it as a question about the corpus.
-            check("the corpus's comment rows are the 64 last blessed",
-                  len(rows) == 611 and len(posts) == 64,
+            # IT WAS 64 UNTIL #278's REVIEW made a newline a separator: 33 of
+            # these rows put the comment on a line after another command, so
+            # the segment's command word was that other command and the
+            # comment was never read at all. The jump is coverage the splitter
+            # gained, and each of the 33 is refused for its shape like the
+            # rest -- which is why `other` below did not move.
+            check("the corpus's comment rows are the 97 last blessed",
+                  len(rows) == 611 and len(posts) == 97,
                   f"{len(posts)} of {len(rows)}")
-            other = sorted(set(refused_at) - posts)
+            other = sorted(set(refused_at) - posts - breaks)
             check(f"of the {replayed} recorded allows the guard refuses only "
-                  f"comment writes, whose shape #217 changed",
+                  f"comment writes, whose shape #217 changed, and the one "
+                  f"recorded kill #278 refuses",
                   not other, "\n      ".join(refused[i] for i in other[:8]))
             check("...and it does refuse some of them, so the rule bites on "
                   "the record rather than passing it",
@@ -2318,10 +3134,34 @@ def main():
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1
-    for x in fails:
+    # THE EXACT COUNT, because "ran no case at all" is not the only way a case
+    # can go missing: one whose body sits behind an `if` that is false, or a
+    # loop over an empty sequence, runs nothing and reports nothing. One such
+    # case shipped and was found by a mutation that no case failed for.
+    #
+    # EXACT AND NOT A FLOOR. The first cut was `>= 400` against 403, which is
+    # three cases of slack -- and emptying one two-case loop cost nothing,
+    # which is the whole shape it was written for. Raise this in the commit
+    # that adds a case; the corpus replay twelve hundred lines up asserts its
+    # own count the same way.
+    #
+    # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
+    # and swallowed every named failure and the summary line, so a run that
+    # both lost a case and broke one reported only the count.
+    EXPECTED = 441
+    counted = []
+    if len(ran) != EXPECTED:
+        counted.append(
+            f"the suite ran {len(ran)} cases, not {EXPECTED}\n"
+            f"      FEWER means a case whose body did not run, which reports "
+            f"nothing; MORE means this number was not raised in the commit "
+            f"that added one")
+    for x in fails + counted:
         print(f"FAIL  {x}")
+    # `counted` IS NOT A CASE, so it stays out of the tally: folding it in
+    # printed `407/408 cases pass` on a run where all 408 named cases passed.
     print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return 1 if fails or counted else 0
 
 
 if __name__ == "__main__":

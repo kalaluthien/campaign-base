@@ -669,6 +669,10 @@ pred handoff[p, t: Session] {
   Now.event = Handoff and Who.session = t and Who.predecessor = p
   t in Compacted
   no peer.t & Launched
+  /* A stood-down or limit-stopped agent is not handed off: the first is being
+     retired already, and the second's successor would sit at the same
+     account's banner. */
+  no heldBy[p] & (StandDownTaken + Stopped)
   let olds = heldBy[p], h = heirOf[p, t] {
     all a: olds | one a.h
     all b: Agent.h | one h.b

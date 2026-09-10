@@ -144,6 +144,18 @@ one sig Who { var session: lone Session, var predecessor: lone Session }
 
 fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Handoff) }
 
+/* SESSIONS A HANDOFF HAS CLOSED: the successor's `/exit` landed in their pane.
+   Grown only by a handoff and never shrunk, and a closed session performs
+   nothing again -- without this the predecessor kept `worksOn` and could
+   claim, launch and stand the heir down after handing off (review of pr#290).
+   One fact rather than a frame clause in every event, as `Judged` is. */
+var sig Exited in Session {}
+
+fact ExitedByHandoffOnly {
+  no Exited
+  always (Exited' = Exited + Who.predecessor and no Who.session & Exited)
+}
+
 /* Derived, so no event has to maintain it. */
 fun working: set Session { { s: Session | some s.worksOn and s.machine in machinesHolding[s.worksOn] } }
 
@@ -217,7 +229,7 @@ pred sessionFrame {
 pred sessionHandoff[t, p: Session] {
   Now.event = Handoff and no Now.issue
   Who.session = t and Who.predecessor = p
-  t != p
+  t != p and p not in Exited
   t.machine = p.machine
   some p.role and t.role = p.role
   some p.worksOn and t.campaignNamed = p.worksOn

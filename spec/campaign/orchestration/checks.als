@@ -149,42 +149,46 @@ assert SessionCompactsBetweenSubIssues {
 /* THE HANDOFF (#289), four claims, each reddened by deleting one clause of
    `handoff` or `sessionHandoff`, named beside it. */
 
-/* After it, the predecessor holds nothing live and the successor holds each
-   of its sub-issues exactly once. Dropping `+ olds.h` from `Live'` reddens
-   it. Dropping `- olds` does not, and Cov_Handoff is what goes red instead:
+/* After it, the predecessor never again holds anything live, and the
+   successor holds each of its sub-issues exactly once. Dropping `+ olds.h`
+   from `Live'` reddens it, and so does dropping `no Who.session & Exited`,
+   since the predecessor could then launch again. Dropping `- olds` does not, and Cov_Handoff is what goes red instead:
    the old atom is then both Live and Retired, which AgentWellFormed forbids,
    so no handoff moving work is reachable and this check holds vacuously. */
 assert HandoffLeavesOneHolder {
   always all p, t: Session, a: Agent |
     (Now.event = Handoff and Who.predecessor = p and Who.session = t and a in heldBy[p])
-    implies after (no heldBy[p] and one (heldBy[t] & task.(a.task)))
+    implies after ((always no heldBy[p]) and one (heldBy[t] & task.(a.task)))
 }
 
-/* The successor performs it, and every agent the predecessor held is retired
-   by it. Dropping `t != p` reddens it, and so does dropping `Retired'`. */
+/* The successor performs it, every agent the predecessor held is retired by
+   it, and the predecessor performs nothing afterwards. Dropping `t != p`
+   reddens it, and so does dropping `Retired'` or `no Who.session & Exited`. */
 assert HandoffClosedBySuccessor {
   always all p, t: Session |
     (Now.event = Handoff and Who.predecessor = p and Who.session = t)
-    implies (p != t and (all a: heldBy[p] | after a in Retired))
+    implies (p != t and (all a: heldBy[p] | after a in Retired)
+             and after always Who.session != p)
 }
 
-/* No claim moves off GitHub and none is left on the predecessor; the work on
-   the checkout and a pending BLOCKED move to the heir. Dropping the
+/* Every claim the predecessor held becomes the successor's; the work on the
+   checkout and a pending BLOCKED move to the heir. The ref itself is framed
+   by github/system.als, so it is not asserted here. Dropping the
    `t->(p.claimedIssues)` term reddens it, and so does dropping either
    `(olds & ...).h` term it reads. */
 assert HandoffLosesNoClaim {
   always all p, t: Session |
     (Now.event = Handoff and Who.predecessor = p and Who.session = t)
     implies ((all i: p.claimedIssues | after i in t.claimedIssues)
-             and (all i: Claimed | after i in Claimed)
              and (all a: heldBy[p] & LocalOnly | after some (heldBy[t] & LocalOnly & task.(a.task)))
              and (all a: heldBy[p] & Waiting   | after some (heldBy[t] & Waiting   & task.(a.task))))
 }
 
-/* A successor named for another campaign never takes the work over. Dropping
-   `t.campaignNamed = p.worksOn` reddens it. */
+/* A successor named for another campaign, or for none, never takes the work
+   over. Dropping `t.campaignNamed = p.worksOn` reddens it. It restates that
+   guard, and is here so deleting the guard is loud. */
 assert SuccessorNamedForAnotherRefused {
-  always (Now.event = Handoff implies no (Who.session.campaignNamed - Who.predecessor.worksOn))
+  always (Now.event = Handoff implies Who.session.campaignNamed = Who.predecessor.worksOn)
 }
 
 /* ---------------- reachability floor ---------------- */

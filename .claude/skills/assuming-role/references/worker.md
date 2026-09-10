@@ -37,8 +37,10 @@ no hook reaches it.
 
 ## Handing off
 
-A fresh worker takes over when this one cannot go on: a slug rename, a context
-too large to compact, a harness upgrade. The model is `handoff` in
+A fresh worker takes over when this one cannot go on: a context too large to
+compact, a harness upgrade. Not a slug rename: the claim ref carries the old
+slug, which the guard stops reading once the label moves, so a rename waits
+for the claim's release. The model is `handoff` in
 `spec/campaign/orchestration/system.als`; the planner's reference names its
 first run.
 
@@ -55,7 +57,8 @@ first run.
    named for another campaign stops here: the guard would refuse it this
    campaign's issues.
 4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
-   prompt`, and reads `herdr agent list` until the pane is gone. The
+   prompt`, and reads `herdr agent list` until the pane is gone; still listed
+   after a minute, it reports that on the sub-issue, never kills. The
    predecessor never exits itself, so the claim always has a live holder.
 
 The state travels in the NOTE, the claim ref and its checkout, and the pull

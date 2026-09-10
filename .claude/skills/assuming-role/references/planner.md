@@ -71,16 +71,17 @@ posted its NOTE, started `rule-check-planner-10`, and the successor closed it.
 
 1. **The predecessor posts its last comment**, `NOTE <old>: handed off to
    <new>`, on the campaign issue: the pending list (which sub-issue each
-   session works, which wait), decisions not yet on an issue, and the pane to
-   close. It writes nothing after it.
+   session works, which wait) and the pane to close. A decision not yet on an
+   issue goes first, as its own `DECISION`. It writes nothing after the NOTE.
 2. **It starts the successor** in a pane of its own at the base root, named
    `<slug>-planner-<n>` by `campaign-name-session.py`. The first prompt is one
    sentence: take over from `<old>`, read its NOTE on `<slug>#N`.
 3. **The successor reads that NOTE on GitHub**, then `bound <N>` and
-   `campaign-claim live <N>`. A successor named for another campaign stops
-   here.
+   `campaign-claim live <N>`. It checks its own name carries this campaign's
+   slug: no guard refuses a planner of another campaign.
 4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
-   prompt`, and reads `herdr agent list` until the pane is gone. The
+   prompt`, and reads `herdr agent list` until the pane is gone; still listed
+   after a minute, it reports that on the campaign issue, never kills. The
    predecessor never exits itself, so there is never an instant with no
    planner.
 

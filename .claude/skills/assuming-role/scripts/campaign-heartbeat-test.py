@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: L1b_PromptAfterTheResetIsAnswered, SessionCompactsBetweenSubIssues
+# witnesses: H1_HeartbeatRetiresADoneWorker, H1b_HeartbeatRetiresNoHolder, L1b_PromptAfterTheResetIsAnswered, SessionCompactsBetweenSubIssues
 """Prove campaign-heartbeat reads each session's transcript and banner and
 gives one verdict per session -- and that each branch is pinned by a case.
 
@@ -71,6 +71,15 @@ def usage(minute, tokens, **extra):
 def prompt(minute, text="Work sub-issue kalaluthien/campaign-base#9 now", **extra):
     return dict({"type": "user", "timestamp": ts(minute),
                  "message": {"content": text}}, **extra)
+
+
+def call(minute, tool="Bash"):
+    """An assistant turn calling a tool, as the release turn does after the
+    release: a REPORT, a memory filed."""
+    return {"type": "assistant", "timestamp": ts(minute), "message": {
+        "content": [{"type": "tool_use", "name": tool, "input": {}}],
+        "usage": {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                  "cache_read_input_tokens": 5000}}}
 
 
 def lines(*records):
@@ -180,6 +189,28 @@ def _(m):
     return r["prompted"] is None, r
 
 
+@case("the bare /compact that release queues is not a prompt")
+def _(m):
+    r = reading(m, release(1), prompt(2, "/compact"), boundary(3))
+    return r["prompted"] is None, r
+
+
+@case("a synthetic record, a limit banner, does not zero the context")
+def _(m):
+    r = reading(m, usage(1, 351_805), {"type": "assistant", "timestamp": ts(2),
+        "message": {"model": "<synthetic>", "content": [{"type": "text",
+        "text": "You've hit your session limit"}], "usage": {
+        "input_tokens": 0, "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0}}})
+    return r["context"] == 351_805, r
+
+
+@case("a tool call is read as the session acting")
+def _(m):
+    r = reading(m, release(1), call(2))
+    return r["acted"] == ts(2), r
+
+
 @case("a harness note and a summary are not a prompt")
 def _(m):
     r = reading(m, prompt(1, "Stop hook feedback: x", isMeta=True),
@@ -193,7 +224,7 @@ IDLE = (True, None)
 BUSY = (False, "status is working, not idle")
 NONE = "no limit (herdr lists w1:p2 idle)"
 DONE = {"released": ts(1), "compacted": ts(2), "prompted": None,
-        "context": 9000, "context_at": ts(2), "records": 2}
+        "acted": None, "context": 9000, "context_at": ts(2), "records": 2}
 
 
 def big(tokens):
@@ -234,6 +265,19 @@ def _(m):
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, DONE)
     return v[0] == "retire", v
+
+
+@case("tool calls in the release turn, before the compaction, still retire")
+def _(m):
+    between = "2026-09-10T10:01:30.000Z"   # after the release, before the compaction
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=between))
+    return v[0] == "retire", v
+
+
+@case("a tool call after the compaction is not retired")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)))
+    return v[0] == "keep", v
 
 
 @case("a worker prompted since its release is not retired")
@@ -320,17 +364,22 @@ def row(sid, name, pane, status="idle"):
 
 FLEET = [  # (sid, name, pane, status, records, screen)
     ("S1", "tk-planner-1", "w1:p1", "working", [usage(1, 250_000)], None),
-    ("S2", "tk-worker-2", "w1:p2", "idle", [release(1, "w1:p2"), boundary(2)], ""),
+    ("S2", "tk-worker-2", "w1:p2", "idle",
+     [release(1, "w1:p2"), call(2), prompt(3, "/compact"), boundary(4)], ""),
     ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 210_000)], ""),
     ("S4", "tk-worker-4", "w1:p4", "idle", [usage(1, 10)], banner(2)),
     ("S5", "tk-worker-5", "w1:p5", "idle", [usage(1, 10)], banner(2)),
     ("S6", "tk-worker-6", "w1:p6", "working", [usage(1, 900_000)], ""),
     ("S7", "other-worker-7", "w1:p7", "idle", [usage(1, 900_000)], ""),
     ("S8", None, "w1:p8", "idle", [usage(1, 900_000)], ""),
+    # A planner that is not this one also releases and compacts: never retired.
+    ("S9", "tk-planner-9", "w1:p9", "idle", [release(1, "w1:p9"), boundary(2)], ""),
+    # Two transcripts carry this id: unread, so keep, never compact.
+    ("SA", "tk-worker-10", "w1:pA", "idle", [usage(1, 900_000)], ""),
 ]
 
 
-def fleet(d, prompt_exit=0):
+def fleet(d, prompt_exit=0, sh=True):
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True)
@@ -339,7 +388,8 @@ def fleet(d, prompt_exit=0):
         (b / name).chmod(0o755)
     (b / "sleep").write_text("#!/bin/sh\nexit 0\n")
     (b / "sleep").chmod(0o755)
-    (b / "sh").symlink_to("/bin/sh")
+    if sh:
+        (b / "sh").symlink_to("/bin/sh")
     (d / "prompt-exit").write_text(str(prompt_exit))
     (d / "listing.json").write_text(json.dumps({"result": {"agents": [
         row(sid, name, pane, status) for sid, name, pane, status, _, _ in FLEET]}}))
@@ -349,15 +399,20 @@ def fleet(d, prompt_exit=0):
         (proj / f"{sid}.jsonl").write_text("\n".join(lines(*records)) + "\n")
         if screen is not None:
             (d / ("screen-" + pane.replace(":", "_"))).write_text(screen)
+    other = d / "home" / ".claude" / "projects" / "-other"
+    other.mkdir()
+    (other / "SA.jsonl").write_text(lines(usage(1, 900_000))[0] + "\n")
     return d
 
 
-def heartbeat(m, d, *args):
+def heartbeat(m, d, *args, own="w1:p1"):
     """(exit, stdout, prompts) of `main` run in-process inside the fake."""
-    env = {"PATH": str(d / "bin"), "HOME": str(d / "home"),
-           "HERDR_PANE_ID": "w1:p1", "TMPDIR": str(d)}
+    env = {"PATH": str(d / "bin"), "HOME": str(d / "home"), "TMPDIR": str(d)}
+    if own:
+        env["HERDR_PANE_ID"] = own
     saved, cwd = dict(os.environ), os.getcwd()
     os.environ.pop("HERDR_ENV", None)
+    os.environ.pop("HERDR_PANE_ID", None)
     os.environ.update(env)
     os.chdir(d)
     out = io.StringIO()
@@ -395,7 +450,8 @@ def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d), "7")
     want = {"w1:p1": "compact", "w1:p2": "retire", "w1:p3": "compact",
-            "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep"}
+            "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep",
+            "w1:p9": "keep", "w1:pA": "keep"}
     return code == 0 and verdicts(out) == want, out
 
 
@@ -403,7 +459,7 @@ def _(m):
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d), "7")
-    return ("6 of tk (#7)" in out and "S3.jsonl" in out
+    return ("8 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
             and "own pane, banner not read" in out and "herdr idle" in out), out
 
 
@@ -446,6 +502,27 @@ def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d, prompt_exit=3), "7", "--apply")
     return code == 1 and "could not send /exit to w1:p2" in out, out
+
+
+@case("with no own pane, --apply cannot wake anyone and exits 1")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, fleet(d), "7", "--apply", own=None)
+    return code == 1 and "could not send the wake for w1:p4" in out, out
+
+
+@case("...while without --apply the same run exits 0")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, fleet(d), "7", own=None)
+    return code == 0 and "would run campaign-limit-reset.py w1:p4" in out, out
+
+
+@case("a wake that could not be scheduled exits 1")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, fleet(d, sh=False), "7", "--apply")
+    return code == 1 and "could not fire" in out, out
 
 
 @case("an unreadable slug is exit 1 and no verdict")
@@ -510,7 +587,7 @@ MUTATIONS = [
      "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
     ("a prompt is text", 'later("prompted", ts)', "pass",
      "a prompt is a user record carrying text"),
-    ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
+    ("the compaction's echo", 'COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")',
      'COMPACTION_ECHOES = ("\\x00",)', "the compaction's own echoes are not a prompt"),
     ("a harness note", 'if r.get("isMeta") or r.get("isCompactSummary"):',
      'if r.get("isCompactSummary"):', "a harness note and a summary are not a prompt"),
@@ -524,6 +601,27 @@ MUTATIONS = [
      "--apply sends each action, guarded, to the pane it names"),
     ("one wake per run", "if fired:", "if False:",
      "two banners schedule one wake, into the own pane"),
+    ("the bare /compact is an echo",
+     'COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")',
+     'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
+     "the bare /compact that release queues is not a prompt"),
+    ("skip a synthetic record", 'elif kind == "assistant" and msg.get("model") != "<synthetic>":',
+     'elif kind == "assistant":', "a synthetic record, a limit banner, does not zero the context"),
+    ("read a tool call", 'later("acted", ts)', "pass",
+     "a tool call is read as the session acting"),
+    ("no tool call after the compaction", 'and not (reading["acted"] and reading["acted"] > comp)',
+     "and True", "a tool call after the compaction is not retired"),
+    ("the release turn's calls do not block", 'reading["acted"] > comp)',
+     'reading["acted"] > rel)', "tool calls in the release turn, before the compaction, still retire"),
+    ("the role off the name", 'role = row["name"].split("-")[-2]', 'role = "worker"',
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("one transcript per id", "if len(hits) != 1:", "if not hits:",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("no own pane, no wake", "            if not own:\n                print(f\"could not send the wake",
+     "            if False:\n                print(f\"could not send the wake",
+     "with no own pane, --apply cannot wake anyone and exits 1"),
+    ("a failed wake is exit 1", "            failed |= r.returncode != 0\n",
+     "            pass\n", "a wake that could not be scheduled exits 1"),
     ("a failed send is exit 1", "            failed = True\n        else:",
      "            pass\n        else:", "an action that could not be sent says so and exits 1"),
 ]

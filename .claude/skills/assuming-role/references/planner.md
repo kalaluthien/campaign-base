@@ -24,8 +24,8 @@ through a subagent, which carries the planner's session id and so its role.
 7. **Answer a `BLOCKED`** with the decision, or carry it to the owner. A relay
    is never the authority; point at the durable artifact instead.
 8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
-   transcript shows released, compacted and unprompted since; any other listed
-   peer is asked which claim it holds, never killed.
+   transcript shows released and compacted, with no prompt and no work since;
+   any other listed peer is asked which claim it holds, never killed.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.

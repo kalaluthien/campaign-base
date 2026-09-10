@@ -358,7 +358,7 @@ fun orchestrationOwn: set Event {
    here, added by #177: `agentCommitLocal` and `unattendedCommitLocal` are
    disjuncts on it, and joining this set is what removes it from the
    fall-through. */
-fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff }
+fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff + SessionExit }
 
 /* The bits divide by how long they live: a pull request's, and a process's.
    None has a directory's any more. */
@@ -718,6 +718,18 @@ pred agentRelease {
   no Target.agent
 }
 
+/* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: the worker
+   is compacted -- it released and launched nothing since -- and holds no live
+   agent. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads
+   both off the session's transcript: a release, a compaction after it, and
+   no tool call and no prompt since the release. */
+pred exitSession[s: Session] {
+  Now.event = SessionExit and Who.session = s
+  s in Compacted
+  no heldBy[s]
+  agentFrame and no Target.agent
+}
+
 pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
   no Reported and no Asked and no Answered
@@ -743,6 +755,7 @@ pred orchestrationStep {
   or unattendedCommitLocal
   or agentRelease
   or (some p, t: Session | handoff[p, t])
+  or (some s: Session | exitSession[s])
   or (Now.event not in Stutter + orchestrationActed and agentFrame and no Target.agent)
 }
 

@@ -463,6 +463,22 @@ pred L1b_PromptAfterTheResetIsAnswered {
                    and eventually (limitReset and after (status[a] and after answer[a])))
 }
 
+/* THE HEARTBEAT RETIRES A DONE WORKER (#296). A worker that released its
+   sub-issue, compacted with the release, and took nothing since is sent
+   `/exit`; one holding a claim or a live agent, one that launched since its
+   release, and a planner are not. The first is reachable; the second is
+   UNSAT, and dropping any one guard of `sessionExit` or `exitSession` makes it
+   SAT. */
+pred H1_HeartbeatRetiresADoneWorker {
+  some s: Session | eventually (Now.event = Release and Who.session = s
+                     and eventually (Now.event = SessionExit and Who.session = s))
+}
+pred H1b_HeartbeatRetiresNoHolder {
+  some s: Session | eventually (Now.event = SessionExit and Who.session = s
+    and (some s.claimedIssues or some heldBy[s] or s not in Compacted
+         or s.role = Planner))
+}
+
 /* Completion is a GitHub fact, so it survives the death and never undoes. */
 pred S3_DelegateDiesAfterPushing {
   one c: Campaign | one a: Agent {
@@ -1889,6 +1905,8 @@ run SilentAgentStillRetired         for exactly 2 Issue, 1 PullRequest, exactly 
 run L1_PollIntoTheBannerGetsNoAnswer         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- the same prompt sent after the reset is answered
 run L1b_PromptAfterTheResetIsAnswered         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
+run H1_HeartbeatRetiresADoneWorker      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run H1b_HeartbeatRetiresNoHolder         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
 run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S4_ReportWithoutPush        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1

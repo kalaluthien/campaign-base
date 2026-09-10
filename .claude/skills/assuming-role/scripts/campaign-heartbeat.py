@@ -12,8 +12,9 @@ verdict first, then what it read and from where:
              <pane> --fire <own pane>` schedules the planner's wake, once per
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
-    retire   a worker, idle, whose last release was followed by a compaction
-             and by no prompt since, so it holds nothing: `/exit`
+    retire   a worker, idle, whose last release was followed by a compaction,
+             with no prompt since the release and no tool call since the
+             compaction, so it holds nothing: `/exit`
     keep     anything else -- working, blocked, small, and every reading that
              could not be made. It never acts.
 
@@ -48,6 +49,12 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
+WHAT `retire` CANNOT SEE: a worker that takes new work in its release turn
+unprompted, then idles past COMPACT_AT and is compacted by this, reads as
+done. The worker's lifecycle forbids that -- the next sub-issue arrives as a
+prompt -- and the model's `sessionExit` requires no claim, which no reading
+here can attribute to a session.
+
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
 """
@@ -72,10 +79,12 @@ COMPACT_AT = 200_000
 RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
 
 # What a compaction writes into the transcript around itself, which is not a
-# prompt: the `/compact` command, its caveat and its stdout. Measured on this
-# machine's transcripts 2026-09-10; everything else a user record carries as
-# text counts as a prompt, which errs toward `keep`.
-COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")
+# prompt: the `/compact` that `release` queues (a bare user record), the
+# command's own record, its caveat and its stdout. Read off this machine's
+# transcripts 2026-09-10, where the bare one sat after 19 of 22 releases;
+# everything else a user record carries as text counts as a prompt, which errs
+# toward `keep`.
+COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")
 
 
 def load(path, name):
@@ -138,15 +147,21 @@ def transcript_reading(lines, anchor, pane):
                  text anything prints can forge it.
       prompted   the last user record carrying text that is not the
                  compaction's own echo and not a harness note (`isMeta`).
+      acted      the last assistant record calling a tool. The release turn
+                 goes on calling tools after the release (a REPORT, a memory
+                 filed), so `retire` asks only for none after the compaction,
+                 which a new turn or an auto-compaction mid-work would show.
       context    input plus cache tokens of the latest usage record, or the
-                 boundary's `postTokens` when a compaction came after it.
+                 boundary's `postTokens` when a compaction came after it. A
+                 `<synthetic>` record -- a limit banner, an API error -- is
+                 the harness's, carries zero usage, and is skipped.
 
-    BY TIMESTAMP, NOT POSITION: a record written later can carry an earlier
-    time (a resumed session appends), so every "last" is the latest time.
-    Records of a subagent (`isSidechain`) are its own context, not this
-    session's."""
+    BY TIMESTAMP, NOT POSITION: a command's record carries the time it was
+    queued, which can be earlier than records written before it, so every
+    "last" is the latest time. Records of a subagent (`isSidechain`) are its
+    own context, not this session's."""
     out = {"released": None, "compacted": None, "prompted": None,
-           "context": None, "context_at": None, "records": 0}
+           "acted": None, "context": None, "context_at": None, "records": 0}
     tail = f" in {pane}"
 
     def later(key, ts):
@@ -173,8 +188,15 @@ def transcript_reading(lines, anchor, pane):
         if kind == "system" and r.get("subtype") == "compact_boundary":
             later("compacted", ts)
             size(ts, (r.get("compactMetadata") or {}).get("postTokens"))
-        elif kind == "assistant" and isinstance(msg.get("usage"), dict):
-            u = msg["usage"]
+        elif kind == "assistant" and msg.get("model") != "<synthetic>":
+            calls = msg.get("content")
+            if isinstance(calls, list) and any(
+                    isinstance(b, dict) and b.get("type") == "tool_use"
+                    for b in calls):
+                later("acted", ts)
+            u = msg.get("usage")
+            if not isinstance(u, dict):
+                continue
             size(ts, sum(u.get(k) or 0 for k in (
                 "input_tokens", "cache_creation_input_tokens",
                 "cache_read_input_tokens")))
@@ -255,10 +277,12 @@ def verdict(role, own, idle, banner, reading):
     passed = " (the limit it stopped on has passed)" if (
         not own and banner_word(banner) == "passed") else ""
     since, why = compacted_since_release(reading)
+    rel, comp = reading["released"], reading["compacted"]
     if (role == "worker" and not own and since == "compacted"
-            and not (reading["prompted"]
-                     and reading["prompted"] > reading["released"])):
-        return "retire", f"{why}, no prompt since{passed}"
+            and not (reading["prompted"] and reading["prompted"] > rel)
+            and not (reading["acted"] and reading["acted"] > comp)):
+        return "retire", (f"{why}, no prompt since the release and no tool "
+                          f"call since the compaction{passed}")
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
@@ -352,14 +376,14 @@ def main(argv=None):
                       f"every session shares one reset")
                 continue
             fired = pane
+            argv = fire_args(issue, pane, own or "<own pane>")
+            if not args.apply:
+                print(f"would run campaign-limit-reset.py {' '.join(argv)}")
+                continue
             if not own:
                 print(f"could not send the wake for {pane}: HERDR_PANE_ID "
                       f"is unset, so there is no pane to wake")
                 failed = True
-                continue
-            argv = fire_args(issue, pane, own)
-            if not args.apply:
-                print(f"would run campaign-limit-reset.py {' '.join(argv)}")
                 continue
             r = limit_reset(*argv)
             print(r.stdout.rstrip())

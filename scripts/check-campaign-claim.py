@@ -179,19 +179,42 @@ PATH_KEYS = ("file_path", "notebook_path", "path")
 # `model`, `run_in_background` and `isolation` only where the launcher named
 # them. So every field below is read as possibly absent, and an absent `model`
 # is the finding rather than a payload this could not read.
+# WHAT THE RULE COSTS, re-measured on 2026-09-10: of the 385 launches recorded
+# under this base, 25 name no model and none of those is a `fork`, so 25 is
+# what it refuses. 114 open with `/code-review`, and every one of them is now
+# allowed here -- they run no skill, and the channel that does is `skill_call`.
 AGENT_TOOL = "Agent"
 AGENT_PROMPT, AGENT_MODEL = "prompt", "model"
-# The slash command that fans out, AGENTS.md § Review. READ AS THE OPENING WORD
-# AND NOWHERE ELSE, because that is the only position the harness runs a slash
-# command in: one named further down a brief is prose about it, and a scan of
-# the whole prompt would refuse a brief that says not to use it. Of the 367
-# `Agent` launches recorded under this base, 113 open with it and 24 name no
-# model.
-FANS_OUT = "/code-review"
 # A fork runs on the launcher's own model and a `model` given to one is
 # IGNORED, so for a fork "no model" is the correct spelling rather than a
 # default inherited by accident, and the rule below does not apply to it.
 AGENT_TYPE, INHERITS_MODEL = "subagent_type", "fork"
+
+# THE FAN-OUT LIVES IN A `Skill` CALL AND NEVER IN A PROMPT, probed twice on
+# this machine with the guard installed (NOTE upkeep-worker-5 on
+# kalaluthien/campaign-base#278, 2026-09-10). A subagent whose prompt OPENED
+# `/code-review low ...` made 19 `Bash` calls and loaded no skill: a slash
+# command in an `Agent` prompt is plain text. A subagent told to call
+# `Skill(skill="code-review", args="low ...")` loaded it, and it forked its own
+# review agent. So the first spelling of this rule -- the prompt's opening word
+# -- was wrong in both directions at once: it refused the launch that fans out
+# into nothing, and passed the one that fans out.
+# THE PAYLOAD, probed the way the Agent one was: 105 `Skill` blocks across
+# every transcript on this machine, carrying `skill` in all of them and `args`
+# in 90. Of the 44 made under this base, 36 name `code-review` -- `medium` 21,
+# `high` 7, `low` 6, and 2 whose first token is no level at all.
+SKILL_TOOL = "Skill"
+SKILL_NAME, SKILL_ARGS = "skill", "args"
+FANS_OUT = "code-review"
+# `low` is the one level that cannot fan out: the skill body at that level is
+# one diff pass, no verification stage, at most four findings and no subagents.
+# #282 priced it at 60,774 input_new against 127,442 for a narrowed plain brief
+# on the same diff, so the bar reaches every level above it and not this one.
+# What `low` does not do is satisfy merge condition 1 -- it reads no tests and
+# no full files, and it missed two of the three behavioural findings the plain
+# brief made on that diff -- which is prose in § Review, not a branch here: the
+# payload cannot say which review a merge is going to wait on.
+CHEAP_LEVEL = "low"
 
 WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
           "delete pin unpin lock unlock".split()} \
@@ -2015,9 +2038,12 @@ def log_verdict(payload, status, target, cwd: Path):
         # `command`; its prompt is what it ran, and without it every Agent
         # refusal landed in `guard-precision.py`'s "nothing to match on"
         # bucket -- so the instrument built to find false positives by
-        # measurement could not see either of the rules on a launch.
-        "command": (tool_input.get("command")
-                    or tool_input.get("prompt") or "")[:200],
+        # measurement could not see either of the rules on a launch. A `Skill`
+        # payload has neither field: the skill and its args are what it ran.
+        "command": (tool_input.get("command") or tool_input.get("prompt")
+                    or " ".join(str(v) for v in (tool_input.get(SKILL_NAME),
+                                                 tool_input.get(SKILL_ARGS))
+                                if v) or "")[:200],
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2430,13 +2456,14 @@ def bash_call(command, cwd: Path, session_id=""):
 
 
 def agent_call(tool_input, cwd: Path):
-    """An `Agent` launch, read against AGENTS.md § Review's two rules on the
-    call: a plain brief rather than `/code-review`, and a model named.
+    """An `Agent` launch, read against AGENTS.md § Review's rule on the call:
+    a model is named on every one.
 
-    Neither is a plane, so neither asks for a claim or a role. What they gate
-    is what a round COSTS and who reads the diff, and both are properties of
-    the payload alone -- which is why this half is the only one here that
-    reaches a verdict without touching git.
+    It is not a plane, so it asks for no claim and no role. What it gates is
+    who reads the diff and at what depth, a property of the payload alone --
+    which is why this half reaches a verdict without touching git. § Review's
+    OTHER rule on the call, the fan-out, is `skill_call`'s: it is a `Skill`
+    call, and a prompt that opens `/code-review` runs no skill at all.
 
     THE CAMPAIGN READING IS STILL MADE, and last: the two rules are this
     repository's, and refusing them for a session working somewhere else on
@@ -2454,14 +2481,6 @@ def agent_call(tool_input, cwd: Path):
     read = [f"its prompt opens {opener!r}." if opener
             else "its prompt is empty."]
     findings = []
-    if opener == FANS_OUT:
-        findings.append(
-            f"`{FANS_OUT}` inside a subagent fans out into an orchestrator, "
-            f"finders and their verifiers, each its own further subagent. "
-            f"Write a plain brief instead -- `review PR <N> at <level>`, then "
-            f"what to check -- until a fanned round prices under a narrowed "
-            f"one: .claude/skills/opening-campaign/references/reviewing.md "
-            f"§ The call keeps the figures.")
     if not model and kind != INHERITS_MODEL:
         findings.append(
             "a launch naming no model inherits a default rather than "
@@ -2469,7 +2488,7 @@ def agent_call(tool_input, cwd: Path):
             "launcher is`. Name it: the model by the depth of the change, the "
             "level by how much there is to read.")
     if not findings:
-        return allow([f"{what}: {read[0]} Neither rule on the call is broken, "
+        return allow([f"{what}: {read[0]} The rule on the call is not broken, "
                       f"and a launch is no plane, so no claim was read for it."])
     root, how = session_root(cwd)
     if root is None or not (root / BASE_MARKER).is_file():
@@ -2478,6 +2497,66 @@ def agent_call(tool_input, cwd: Path):
                       f"{why}, so this session is in no campaign and the rule "
                       f"broken is one of this repository's."])
     return refuse([f"{what}: {read[0]}", *[f"  {f}" for f in findings], how])
+
+
+def skill_call(tool_input, cwd: Path):
+    """A `Skill` call, read against AGENTS.md § Review's bar on `/code-review`.
+
+    `code-review` above `low` fans out into an orchestrator, finders and their
+    verifiers, each its own further subagent, and PR #255's five fanned rounds
+    cost close to 5.0M input_new combined. `low` cannot fan out and prices
+    under a narrowed plain brief (#282), so it passes.
+
+    A level is the first token of `args` and nowhere else, which is the
+    harness's own parsing rather than this file's convention -- so a call that
+    names none is refused too: it falls back to a persisted setting and then to
+    the session's own effort, a level chosen by neither the launcher nor the
+    work.
+
+    THE ONE THING THIS CANNOT READ is who asked. A person typing
+    `/code-review high` reaches this file as the same payload a session's own
+    choice does, and the refusal hits both. That is the standing rule rather
+    than a defect of this branch -- a hook is never bypassed, and what the
+    session owes the person is the refusal's text and a question -- but it is
+    the cost, and it is stated here because nothing in the payload could pay it.
+
+    Every other skill is allowed unread and says so: § Review's bar names this
+    one, and a guard that judged the rest would be enforcing a rule nobody
+    wrote.
+    """
+    name = str(tool_input.get(SKILL_NAME) or "").strip()
+    args = str(tool_input.get(SKILL_ARGS) or "").split()
+    level = args[0] if args else ""
+    if name != FANS_OUT:
+        return allow([f"a `{name}` skill call: § Review's bar is on "
+                      f"`/{FANS_OUT}` alone, so this was allowed unread."])
+    what = (f"a `/{FANS_OUT}` call at {level!r}" if level
+            else f"a `/{FANS_OUT}` call naming no level")
+    read = (f"the level is the first token of `args`, which reads {level!r}."
+            if level else "`args` names no first token, so the level falls "
+            "back to a persisted setting and then to this session's own "
+            "effort -- chosen by neither the launcher nor the work.")
+    if level == CHEAP_LEVEL:
+        return allow([f"{what}: it cannot fan out -- one diff pass, no "
+                      f"verification stage, no subagents -- and prices under a "
+                      f"narrowed plain brief (#282). It reads no tests and no "
+                      f"full files, so it is a cheap first pass and does not "
+                      f"satisfy merge condition 1."])
+    finding = (f"`/{FANS_OUT}` above `{CHEAP_LEVEL}` fans out into an "
+               f"orchestrator, finders and their verifiers, each its own "
+               f"further subagent. Two ways down: `{CHEAP_LEVEL}`, which "
+               f"cannot fan out but satisfies no merge condition, or a plain "
+               f"brief -- `review PR <N> at <level>`, then what to check -- "
+               f"which is the review a merge waits on. "
+               f".claude/skills/opening-campaign/references/reviewing.md "
+               f"§ The call keeps both figures.")
+    root, how = session_root(cwd)
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {read}", f"  {finding}",
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
+    return refuse([f"{what}: {read}", f"  {finding}", how])
 
 
 def pre(payload):
@@ -2503,6 +2582,8 @@ def pre(payload):
         # of its own, so it has no OSError to turn into a refusal, and folding
         # it in would put a launch behind a handler that names a path.
         return agent_call(tool_input, cwd)
+    if tool == SKILL_TOOL:
+        return skill_call(tool_input, cwd)
     return 0
 
 

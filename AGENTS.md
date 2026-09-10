@@ -670,13 +670,17 @@ brief sets nothing. A plain brief sets no level mechanically at all — put it
 after `at` anyway, since that is what `campaign-token-tally.py` reads for its
 own accounting, and say what you mean in the rest of the brief.
 
-**A plain brief, not `/code-review`, and a model named on every launch.**
-`scripts/check-campaign-claim.py` refuses an `Agent` whose prompt opens
-`/code-review`, which fans out into an orchestrator, finders and their
-verifiers, and one naming no `model`; `install-hooks.sh`'s matcher is what
-routes a launch to it, so a guard installed before #278 enforces neither. The
-level is not among them, because no position in a plain brief sets one. What a
-fanned round and a narrowed one cost, and when the switch back is due, are
+**A plain brief, not `/code-review` above `low`, and a model named on every
+launch.** `scripts/check-campaign-claim.py` refuses a `Skill` call of
+`code-review` above `low`, which fans out into an orchestrator, finders and
+their verifiers, and an `Agent` naming no `model`; `install-hooks.sh`'s matcher
+routes both to it, so a guard installed before #278 enforces neither. **It reads
+the `Skill` call and not the prompt**: a slash command in an `Agent` prompt is
+plain text and runs no skill. **`low` never fans out, and satisfies merge
+condition 1 for nothing** — it reads no tests and no full files, so it is a
+cheap first pass and not the review a merge waits on (#282, 2026-09-10). The
+level of a plain brief is not among the refusals, because no position in one
+sets it. What each shape costs, and when the bar lifts, are
 `.claude/skills/opening-campaign/references/reviewing.md` § The call's.
 
 **A session that cannot start a subagent is blocked**: it says so and the pull

@@ -2369,12 +2369,13 @@ def main():
               "skips the hook" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
-    # THE AGENT LAUNCH (kalaluthien/campaign-base#278). Two rules of
+    # THE AGENT LAUNCH (kalaluthien/campaign-base#278). One rule of
     # AGENTS.md § Review that the guard could not see at all until `Agent`
     # joined install-hooks.sh's `MATCHER`: a tool absent from that string
-    # reaches this file never. Each refusal is asserted on the sentence its
-    # own branch prints, because both share exit 2 and one payload can break
-    # both at once.
+    # reaches this file never. § Review's other rule on the call, the fan-out,
+    # is the `Skill` group below -- it was written here first, against a
+    # prompt's opening word, and #282's two live probes showed that channel
+    # runs no skill at all.
     with tempfile.TemporaryDirectory() as d:
         f = Fixture(d, claims=("demo/7-x",))
         wt = f.trees["demo/7-x"]
@@ -2384,7 +2385,7 @@ def main():
                           "before its refusals."}
         r = ask(wt, tool="Agent", tool_input=good, run_cwd=wt)
         check("an Agent launch with a plain brief and a model is allowed",
-              r.returncode == 0 and "Neither rule on the call is broken" in out(r),
+              r.returncode == 0 and "The rule on the call is not broken" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
         # NO CLAIM IN THE FIXTURE, and that is the point: a launch is not a
         # plane, so the allow above must not be coming from the claim the
@@ -2396,19 +2397,14 @@ def main():
                   "is no plane",
                   r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
+        # A SLASH COMMAND IN A PROMPT IS PLAIN TEXT, probed live: a subagent
+        # launched with this exact prompt made 19 Bash calls and loaded no
+        # skill (#278, 2026-09-10). The refusal that used to live here read
+        # the channel that fans out into nothing.
         fanned = dict(good, prompt="/code-review high 9\n\nReview PR 9.")
         r = ask(wt, tool="Agent", tool_input=fanned, run_cwd=wt)
-        check("an Agent prompt opening /code-review is refused, naming the "
-              "fan-out",
-              r.returncode == 2 and "fans out into an orchestrator" in out(r),
-              f"exit {r.returncode}: {out(r)[:300]}")
-        # THE OPENING WORD AND NOWHERE ELSE, which is the branch's stated
-        # ceiling: a brief that MENTIONS the command -- this repository's own
-        # rule telling a launcher not to use it -- is not a launch of it.
-        mentions = dict(good, prompt="review PR 9 at medium\n\nDo not run "
-                                     "/code-review inside this reviewer.")
-        r = ask(wt, tool="Agent", tool_input=mentions, run_cwd=wt)
-        check("...while a brief that only MENTIONS /code-review is allowed",
+        check("an Agent prompt opening /code-review is allowed: a prompt runs "
+              "no skill",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
 
         nomodel = {k: v for k, v in good.items() if k != "model"}
@@ -2421,15 +2417,16 @@ def main():
         check("...and a blank model is the same finding, not a model named",
               r.returncode == 2 and "inherits a default" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
-        # ONE PAYLOAD, BOTH FINDINGS. Without this a refusal that returned on
-        # the first would pass every case above while going silent about the
-        # second, which is #191 item 1 at an early return.
+        # THE PROMPT IS READ FOR NOTHING NOW, so a payload that would once
+        # have broken both rules breaks one, and the refusal says so and
+        # nothing more.
         r = ask(wt, tool="Agent",
                 tool_input={k: v for k, v in fanned.items() if k != "model"},
                 run_cwd=wt)
-        check("...and a launch breaking both rules prints both",
-              r.returncode == 2 and "fans out into an orchestrator" in out(r)
-              and "inherits a default" in out(r),
+        check("...and a /code-review prompt naming no model is refused for "
+              "the model alone",
+              r.returncode == 2 and "inherits a default" in out(r)
+              and "fans out" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
         # A FORK RUNS ON THE LAUNCHER'S OWN MODEL and ignores a `model` given
         # to it, so for a fork "no model" is the correct spelling and not a
@@ -2442,9 +2439,8 @@ def main():
         r = ask(wt, tool="Agent",
                 tool_input={"description": "x", "prompt": "/code-review high 9",
                             "subagent_type": "fork"}, run_cwd=wt)
-        check("...and the fan-out rule still reaches a fork",
-              r.returncode == 2 and "fans out into an orchestrator" in out(r),
-              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and a fork whose prompt opens /code-review is allowed too",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
         # THE LOGGED ROW CARRIES THE PROMPT. An Agent payload has no
         # `command`, and `guard-precision.py` pairs a refusal with the same
         # session's next allowed call on the same target -- so without this
@@ -2455,10 +2451,10 @@ def main():
         # fixture's worktree sits outside the campaign directory.
         log = f.base / "runtime" / "guard.log"
         before = log.read_text() if log.is_file() else ""
-        ask(wt, tool="Agent", tool_input=fanned, run_cwd=wt)
+        ask(wt, tool="Agent", tool_input=nomodel, run_cwd=wt)
         added = log.read_text()[len(before):] if log.is_file() else ""
         check("an Agent refusal logs the prompt as the call it judged",
-              "/code-review high 9" in added, added[:300])
+              "review PR 9 at medium" in added, added[:300])
         # AN EMPTY PROMPT IS NOT A `/code-review`, and it is not a crash
         # either: `split(None, 1)` on an empty string is an empty list.
         r = ask(wt, tool="Agent", tool_input={"model": "opus", "prompt": "",
@@ -2473,9 +2469,90 @@ def main():
     # read and did not enforce, rather than passing silently.
     with tempfile.TemporaryDirectory() as d:
         r = ask(d, tool="Agent",
-                tool_input={"description": "x", "prompt": "/code-review high 9"},
+                tool_input={"description": "x", "prompt": "review PR 9 at high"},
                 run_cwd=d)
         check("the same launch outside every base is allowed",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and says the rule it did not enforce, and why",
+              "inherits a default" in out(r)
+              and "in no campaign" in out(r), out(r)[:400])
+
+    # THE `Skill` CALL, which is where a review actually fans out (#278's
+    # NOTE, #282's DECISION). The bar is on `code-review` above `low`: `low`
+    # runs one diff pass with no subagents and prices under a narrowed plain
+    # brief, so it passes and every level above it does not. The level is the
+    # first token of `args` and nowhere else, which is the harness's parsing
+    # and not this file's convention.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "high 9"},
+                run_cwd=wt)
+        check("a /code-review Skill call above low is refused, naming the "
+              "fan-out",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the refusal names both ways down, `low` and a plain brief",
+              "`low`" in out(r) and "review PR <N> at <level>" in out(r),
+              out(r)[:400])
+        # THE BASELINE LEVEL IS NOT AN EXEMPTION. `medium` is § Review's
+        # working baseline for a plain brief, and it is 21 of the 36 recorded
+        # calls here -- the shape this refusal exists to catch, not an edge.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "medium 9"},
+                run_cwd=wt)
+        check("...and `medium`, the baseline, is refused the same way",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Skill", tool_input={"skill": "code-review"},
+                run_cwd=wt)
+        check("a /code-review naming no level is refused, naming the fallback "
+              "it would take",
+              r.returncode == 2 and "persisted setting" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A LEVEL FURTHER ALONG `args` SETS NOTHING, so a call that reads like
+        # a low one but does not open with it is the refusal, not the allow.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "9 low"},
+                run_cwd=wt)
+        check("...and `low` past the first token does not rescue it",
+              r.returncode == 2 and "fans out into an orchestrator" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review", "args": "low 9"},
+                run_cwd=wt)
+        check("a /code-review at low is allowed: it cannot fan out",
+              r.returncode == 0 and "cannot fan out" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        check("...and the allow says it satisfies no merge condition",
+              "merge condition 1" in out(r), out(r)[:400])
+        # EVERY OTHER SKILL IS ALLOWED UNREAD AND SAYS SO, the shape
+        # `bash_call` uses for a command holding no `gh`: a guard that judged
+        # the rest would be enforcing a rule nobody wrote.
+        r = ask(wt, tool="Skill", tool_input={"skill": "opening-campaign"},
+                run_cwd=wt)
+        check("another skill is allowed unread, and says which bar it was not "
+              "read against",
+              r.returncode == 0 and "allowed unread" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE LOGGED ROW. A `Skill` payload has neither `command` nor
+        # `prompt`, so without the third fallback every fan-out refusal lands
+        # in `guard-precision.py`'s "nothing to match on" bucket.
+        log = f.base / "runtime" / "guard.log"
+        before = log.read_text() if log.is_file() else ""
+        ask(wt, tool="Skill",
+            tool_input={"skill": "code-review", "args": "high 9"}, run_cwd=wt)
+        added = log.read_text()[len(before):] if log.is_file() else ""
+        check("a Skill refusal logs the skill and its args as the call it "
+              "judged",
+              "code-review high 9" in added, added[:300])
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Skill",
+                tool_input={"skill": "code-review", "args": "high 9"},
+                run_cwd=d)
+        check("the same /code-review outside every base is allowed",
               r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
         check("...and says the rule it did not enforce, and why",
               "fans out into an orchestrator" in out(r)
@@ -2485,9 +2562,9 @@ def main():
     # fire for a tool the harness never routes here, and nothing else in this
     # tree reads that string, so it is asserted where it is written.
     matcher = (HERE / "install-hooks.sh").read_text()
-    check("install-hooks.sh registers the guard on Agent",
-          '"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent"' in matcher,
-          "MATCHER no longer lists Agent; the two rules on the call would be "
+    check("install-hooks.sh registers the guard on Agent and Skill",
+          '"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent|Skill"' in matcher,
+          "MATCHER no longer lists both; the rules on the call would be "
           "unreachable however this file is written")
 
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
@@ -2861,7 +2938,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 410
+    EXPECTED = 420
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

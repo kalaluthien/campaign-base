@@ -1119,8 +1119,9 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 RELEASED = "campaign-claim: released"
 
 # The line `take` prints when it cut a claim. `campaign-heartbeat.py` reads it
-# in a session's transcript: a claim cut after a release is work the session
-# holds, so the heartbeat does not retire it.
+# in a session's transcript and pairs it with the release of the same branch:
+# a claim with no release after it is work the session holds, so the
+# heartbeat does not retire it.
 CLAIMED = "claimed"
 
 

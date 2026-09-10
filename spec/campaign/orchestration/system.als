@@ -722,9 +722,9 @@ pred agentRelease {
    released, is compacted -- it launched nothing since -- and holds no live
    agent. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads
    the first two off the session's transcript (a release, a compaction after
-   it) and stands in for the third with what a transcript can show: no
-   prompt and no claim cut since the release, no tool call since the
-   compaction. `once` because a fresh session is Compacted from the start and
+   it) and stands in for the third with what a transcript can show: every
+   claim it cut released, no prompt since the release, no tool call since
+   the compaction. `once` because a fresh session is Compacted from the start and
    the heartbeat never retires one that never released. */
 pred exitSession[s: Session] {
   Now.event = SessionExit and Who.session = s

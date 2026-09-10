@@ -53,9 +53,11 @@ WHAT `retire` CANNOT SEE, both ways. `take` and `release` both name the
 branch, so a claim is paired with its release; a claim whose `claimed` line
 this transcript does not hold -- cut by somebody else, or by a `take` whose
 output was filtered -- reads as not held, and a worker holding only such a
-claim reads as done once its release's compaction runs. And a done worker
-that answers a peer's message with a tool call after its compaction reads as
-working for good: `keep`, which errs the safe way.
+claim reads as done once its release's compaction runs. Two residues err the
+safe way, `keep` for good: a claim whose release line this transcript lacks
+(released by another session, deleted by hand, released with no pane found),
+and a done worker that answers a peer's message with a tool call after its
+compaction.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.

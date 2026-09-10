@@ -1012,6 +1012,19 @@ def _(m):
     return "- drift install o/m behind 1" in outs[1], outs
 
 
+@case("watch: an install never read that leaves the list and returns errors again")
+def _(m):
+    def r(listed):
+        x = readings(installs=[("o/base", "current")])
+        if listed:
+            x["install o/m"] = (None, "absent: /y")
+            x["installs"] = (["o/base", "o/m"], None)
+        return x
+    outs = polls(m, *enumerate([r(1)] * 4 + [r(0)] * 2 + [r(1)] * 4))
+    errs = [i for i, o in enumerate(outs) for ln in o if ln.startswith("error install o/m")]
+    return errs == [2, 8], outs
+
+
 @case("watch: the installs list failing again after a good read errors again")
 def _(m):
     bad, ok = readings(fail=("installs",)), readings(installs=[("o/base", "current")])
@@ -1024,6 +1037,7 @@ def _(m):
 def _(m):
     r = dict(readings(installs=[("o/base", "behind 1")]))
     r["install o/m"] = (None, "absent: /y")
+    r["installs"] = (["o/base", "o/m"], None)
     outs = polls(m, (0, r), (1, r), (2, r))
     return ("+ drift install o/base behind 1" in outs[0]
             and [ln for ln in outs[2] if ln.startswith("error install o/m")]), outs
@@ -1278,8 +1292,10 @@ MUTATIONS = [
     ("## Repos every poll", "        listed, why = claim.campaign_repos(issue)\n",
      "        listed, why = (repos[1:], None) if repos else claim.campaign_repos(issue)\n",
      "watch reader: ## Repos is read on every poll"),
-    ("an install that left is no source", "                    self.last.pop(gone)\n", "                    pass\n",
+    ("an install that left is no source", "                    self.last.pop(gone, None)\n", "                    pass\n",
      "watch: an install that leaves the list takes its drift with it"),
+    ("a departed install's count goes too", "for k in set(self.last) | set(self.fails)", "for k in set(self.last)",
+     "watch: an install never read that leaves the list and returns errors again"),
     ("the installs list is a source when read", "        out[\"installs\"] = (sorted(k[len(\"install \"):] for k in each), None)\n", "",
      "watch reader: each install is a source, and one unreadable fails alone"),
     ("an install drift per source", 'if source.startswith("install ") and word != "current"}',

@@ -416,9 +416,10 @@ class Watch:
             self.last[source] = value
             if source == "installs":
                 # The list of installs, read: one that left it is no source.
-                for gone in [k for k in self.last if k.startswith("install ")
+                for gone in [k for k in set(self.last) | set(self.fails)
+                             if k.startswith("install ")
                              and k[len("install "):] not in value]:
-                    self.last.pop(gone)
+                    self.last.pop(gone, None)
                     self.fails.pop(gone, None)
             if source == "sessions":
                 self.settle(value)

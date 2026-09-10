@@ -471,11 +471,31 @@ if a[:2] == ["agent", "prompt"]:
 sys.exit(1)
 '''
 GH = r'''#!%(py)s
-import sys
-if sys.argv[1:3] == ["api", "repos/kalaluthien/campaign-base/issues/7"]:
+import json, os, sys
+a = sys.argv[1:]
+T = "repos/kalaluthien/campaign-base"
+if a[:2] == ["api", T + "/issues/7"]:
     print('["campaign", "campaign:tk"]'); sys.exit(0)
-if sys.argv[1:3] == ["pr", "list"]:
-    print("not json"); sys.exit(0)
+broken = lambda f: os.path.exists(os.path.join(%(dir)r, f))
+if a[:3] == ["issue", "view", "7"] and not broken("repos-broken"):
+    print("## Repos\n\n- none\n"); sys.exit(0)
+if broken("gh-broken"):
+    if a[:2] == ["pr", "list"]:
+        print("not json"); sys.exit(0)
+    sys.exit(1)
+if a[:2] == ["api", T + "/git/matching-refs/heads/tk/"]:
+    print(json.dumps(["refs/heads/tk/5-a", "refs/heads/tk/6-b"])); sys.exit(0)
+if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
+    print(json.dumps([
+        {"number": 5, "state": "open", "labels": []},
+        {"number": 6, "state": "open", "labels": [{"name": "backlog"}]},
+        {"number": 8, "state": "closed", "labels": [{"name": "bug"}]}])); sys.exit(0)
+if a[:2] == ["pr", "list"]:
+    pr = lambda n, head, k: {"number": n, "headRefName": head, "state": "OPEN",
+                             "headRefOid": "abc1234def", "comments": [{}] * k,
+                             "reviews": [{}]}
+    print(json.dumps([pr(11, "tk/5-a", 2), pr(3, "tk/5-a", 0),
+                      pr(12, "other/5-a", 9)])); sys.exit(0)
 sys.exit(1)
 '''
 
@@ -857,17 +877,21 @@ def _(m):
     w = m.Watch("tk")
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        hung = m.run_watch(w, lambda: time.sleep(3) or readings(), 60, polls=1)
+        hung = m.run_watch(w, lambda: m.read_all(
+            {"sessions": lambda: time.sleep(3) or ({}, None)}), 60, polls=1)
         fine = m.run_watch(m.Watch("tk"), readings, 60, polls=2,
                            clock=lambda: 0, sleep=lambda s: None)
     return (hung == 1 and fine == 0
             and "error watchdog" in out.getvalue()), out.getvalue()
 
 
-@case("watch reader: sessions come from herdr with context and banner; an unreadable source is a why")
-def _(m):
+def watch_read(m, broken=None):
+    """One reading of `watch_reader` over the fake, or the exception it
+    raised. `broken` names the marker that makes the fake gh fail."""
     with tempfile.TemporaryDirectory() as d:
         d = fleet(d)
+        if broken:
+            (d / broken).write_text("")
         env = {"PATH": str(d / "bin"), "HOME": str(d / "home"), "TMPDIR": str(d)}
         saved, cwd = dict(os.environ), os.getcwd()
         os.environ.update(env)
@@ -875,15 +899,21 @@ def _(m):
         try:
             claim = m.load(m.RELEASE_SCRIPT, "campaign_claim")
             names = m.load(m.HERE / "campaign-name-session.py", "cns")
-            got = m.watch_reader("7", "tk", "w1:p1", claim, names, {})()
+            return m.watch_reader("7", "tk", "w1:p1", claim, names, {})()
         except Exception as e:  # noqa: BLE001 -- a reader that raised is the defect
-            return False, f"the reader raised {e.__class__.__name__}: {e}"
+            return e
         finally:
             os.chdir(cwd)
             os.environ.clear()
             os.environ.update(saved)
+
+
+@case("watch reader: sessions come from herdr with context and banner")
+def _(m):
+    got = watch_read(m)
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
     ss, why = got["sessions"]
-    others = [got[k][1] for k in ("claims", "issues", "prs", "installs")]
     return (why is None and set(ss) == {
                 "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
                 "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
@@ -891,9 +921,68 @@ def _(m):
             and ss["tk-worker-3"]["context"] == 210_000
             and ss["tk-worker-6"]["context"] is None
             and ss["tk-worker-4"]["banner"].startswith("session")
-            and ss["tk-planner-1"]["banner"] is None
-            and all(isinstance(w, str) and w for w in others)), got
+            and ss["tk-planner-1"]["banner"] is None), got
 
+
+@case("watch reader: claims, sub-issues and pull requests of this slug")
+def _(m):
+    got = watch_read(m)
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
+    return (got["claims"] == ({"tk/5-a": 5, "tk/6-b": 6}, None)
+            and got["issues"] == ({5: ("open", False), 6: ("open", True),
+                                   8: ("closed", False)}, None)
+            and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3)}, None)), got
+
+
+@case("watch reader: an unreadable or garbled source is a why, not a raise")
+def _(m):
+    got = watch_read(m, broken="gh-broken")
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
+    whys = {k: got[k][1] for k in ("claims", "issues", "prs", "installs")}
+    return (all(isinstance(w, str) and w for w in whys.values())
+            and "JSONDecodeError" in whys["prs"]), got
+
+
+@case("watch reader: an unread ## Repos fails the claims and pull requests")
+def _(m):
+    got = watch_read(m, broken="repos-broken")
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
+    return (got["claims"][0] is None and "campaign #7" in got["claims"][1]
+            and got["prs"][0] is None and got["issues"][1] is None), got
+
+
+@case("watch: an install that could not be read is a failed source, not a drift")
+def _(m):
+    ok = m.install_words([("o/b", "behind 2", "HEAD a"), ("o/m", "current", ""),
+                          ("o/x", "apply failed", "")])
+    bad = m.install_words([("o/b", "current", ""), ("o/m", "could not fetch", "x")])
+    return (ok == ([("o/b", "behind 2"), ("o/m", "current"), ("o/x", "apply failed")], None)
+            and bad[0] is None and "could not fetch" in bad[1]), (ok, bad)
+
+
+@case("watch: no drift is read from a source never read")
+def _(m):
+    [out] = polls(m, (0, readings(issues={5: ("open", False)},
+                                  sessions={"tk-worker-2": sess()}, fail=("claims",))))
+    return not [ln for ln in out if " drift " in ln], out
+
+
+@case("watch: a drift clears when its repair lands: a claim, a release")
+def _(m):
+    open5 = {5: ("open", False)}
+    closed5 = {5: ("closed", False)}
+    one = {"tk-worker-2": sess()}
+    outs = polls(m, (0, readings(sessions=one, issues=open5)),
+                 (1, readings(sessions=one, issues=open5, claims={"tk/5-a": 5})),
+                 (2, readings(sessions=one, issues=closed5, claims={"tk/5-a": 5})),
+                 (3, readings(sessions=one, issues=closed5)))
+    return ("+ drift unclaimed tk#5" in outs[0]
+            and "- drift unclaimed tk#5" in outs[1]
+            and "+ drift settled tk/5-a" in outs[2]
+            and "- drift settled tk/5-a" in outs[3]), outs
 
 # ------------------------------------------------------------- mutations
 
@@ -1083,12 +1172,30 @@ MUTATIONS = [
      "watch: a poll past the ceiling prints error watchdog and exits 1"),
     ("the reader reads this campaign's sessions", 'if names.campaign_of(row["name"]) != slug:\n                continue',
      "if False:\n                continue",
-     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
+     "watch reader: sessions come from herdr with context and banner"),
     ("the reader reads a working session's size", '            if st != "working":\n                s["context"]',
      '            if True:\n                s["context"]',
-     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
+     "watch reader: sessions come from herdr with context and banner"),
     ("a reader's crash is a why", 'out[source] = (None, f"{e.__class__.__name__}: {e}")', "raise",
-     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
+     "watch reader: an unreadable or garbled source is a why, not a raise"),
+    ("the overrun is no Exception", "class PollOverrun(BaseException):", "class PollOverrun(Exception):",
+     "watch: a poll past the ceiling prints error watchdog and exits 1"),
+    ("a pull request of this slug", 'if p["headRefName"].startswith(f"{slug}/"):', "if True:",
+     "watch reader: claims, sub-issues and pull requests of this slug"),
+    ("the latest pull request of a branch", "key=lambda p: p[\"number\"]):", "key=lambda p: -p[\"number\"]):",
+     "watch reader: claims, sub-issues and pull requests of this slug"),
+    ("backlog by its label", "lb.get(\"name\") == tracker.BACKLOG_LABEL", "False",
+     "watch reader: claims, sub-issues and pull requests of this slug"),
+    ("claims from the refs", "            out[b] = int(n) if n else None\n", "",
+     "watch reader: claims, sub-issues and pull requests of this slug"),
+    ("an unread ## Repos fails claims", "        if listed is None:\n            repos.clear()\n            return None, why\n", "",
+     "watch reader: an unread ## Repos fails the claims and pull requests"),
+    ("no pull requests without the repositories", "        if not repos:\n            return None,", "        if False:\n            return None,",
+     "watch reader: an unread ## Repos fails the claims and pull requests"),
+    ("an unread install is no drift", "            return None, f\"{repo}: {word}: {detail}\"", "            pass",
+     "watch: an install that could not be read is a failed source, not a drift"),
+    ("no drift before its sources", "        if {\"sessions\", \"claims\", \"issues\", \"prs\"} <= set(self.last):\n", "        if True:\n",
+     "watch: no drift is read from a source never read"),
 ]
 
 

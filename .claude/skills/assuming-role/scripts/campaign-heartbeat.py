@@ -94,8 +94,8 @@ Each poll builds a snapshot and prints `+ line` for a line that appeared and
 The rules count claims and workers and never pair them: which session works
 which claim is not derivable (AGENTS.md § Completion). A source that fails
 three polls running prints `error <source>` and its last reading stands; a poll
-running past 300s prints `error watchdog` and exits 1. `## Repos` is read once,
-at the start.
+running past 300s prints `error watchdog` and exits 1. No drift is read until
+every source it counts has been read once, since an unread one is not empty.
 """
 import argparse
 import importlib.util
@@ -469,7 +469,8 @@ class Watch:
                   for n, (st, bl) in issues.items()}
         lines |= {f"pr {p[0]} {b} {p[1]} {p[2]} comments={p[3]}"
                   for b, p in prs.items() if b in claims}
-        lines |= self.drift(claims, issues, prs, workers, now)
+        if {"sessions", "claims", "issues", "prs"} <= set(self.last):
+            lines |= self.drift(claims, issues, prs, workers, now)
         lines |= {f"drift install {repo} {word}"
                   for repo, word in self.last.get("installs", [])
                   if word != "current"}
@@ -504,8 +505,8 @@ class Watch:
         return out
 
 
-class PollOverrun(Exception):
-    pass
+class PollOverrun(BaseException):
+    """Not an Exception, so a reader's catch-all cannot swallow it."""
 
 
 def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
@@ -589,18 +590,43 @@ def context_of(session_id, pane, anchor, cache):
     return cache[path][1]
 
 
+def install_words(found):
+    """(value, why) over [(repo, word, detail)] from campaign-installed's
+    reader. `current`, `behind N` and `apply failed` are readings; any other
+    word says the install could not be read, which is a failed source and
+    not a drift."""
+    for repo, word, detail in found:
+        if word not in ("current", "apply failed") and not word.startswith(
+                "behind "):
+            return None, f"{repo}: {word}: {detail}"
+    return [(repo, word) for repo, word, _ in found], None
+
+
+def read_all(readers):
+    """Every source's (value, why). A reader that raises is a why, never a
+    crash of the watch -- but the watchdog's PollOverrun is no Exception, so
+    it passes through to `run_watch`."""
+    out = {}
+    for source, fn in readers.items():
+        try:
+            out[source] = fn()
+        except Exception as e:  # noqa: BLE001 -- counted, never raised
+            out[source] = (None, f"{e.__class__.__name__}: {e}")
+    return out
+
+
 def watch_reader(issue, slug, own, claim, names, cache):
     """The shell half of the watch: a function returning every source's
     reading as (value, why), through the readers the heartbeat and
-    campaign-claim already own."""
+    campaign-claim already own. `## Repos` is read each poll with the
+    claims, so a failed read is that source's why and a scope change shows."""
     tracker = load(BASE / "scripts" / "campaign-tracker.py", "campaign_tracker")
     installed = load(BASE / "scripts" / "campaign-installed.py",
                      "campaign_installed")
-    listed, _ = claim.campaign_repos(issue)
-    repos = [claim.TRACKER] + [r for r in listed or [] if r != claim.TRACKER]
     d = run(sys.executable, str(BASE / "scripts" / "campaign-directory.py"),
             issue)
     readme = Path(d.stdout.strip()) / "README.md" if d.returncode == 0 else None
+    repos = []
 
     def sessions():
         rows, why = claim.herdr_sessions()
@@ -623,6 +649,11 @@ def watch_reader(issue, slug, own, claim, names, cache):
         return out, None
 
     def claims():
+        listed, why = claim.campaign_repos(issue)
+        if listed is None:
+            repos.clear()
+            return None, why
+        repos[:] = [claim.TRACKER] + [r for r in listed if r != claim.TRACKER]
         found, unread = claim.all_refs(repos, issue, slug)
         if unread:
             return None, "; ".join(unread)
@@ -637,10 +668,12 @@ def watch_reader(issue, slug, own, claim, names, cache):
         if items is None:
             return None, why
         return {i["number"]: (i["state"], any(
-            lb.get("name") == "backlog" for lb in i.get("labels") or []))
-            for i in items}, None
+            lb.get("name") == tracker.BACKLOG_LABEL
+            for lb in i.get("labels") or [])) for i in items}, None
 
     def prs():
+        if not repos:
+            return None, "the repositories were not read this poll (claims)"
         out = {}
         for repo in repos:
             r = run("gh", "pr", "list", "-R", repo, "--state", "all",
@@ -662,21 +695,12 @@ def watch_reader(issue, slug, own, claim, names, cache):
         rows, why = installed.rows(readme)
         if rows is None:
             return None, why
-        return [(repo, installed.read_install(repo, path)[0])
-                for repo, path, _ in rows], None
+        return install_words([(repo, *installed.read_install(repo, path))
+                              for repo, path, _ in rows])
 
     readers = {"sessions": sessions, "claims": claims, "issues": issues,
                "prs": prs, "installs": installs}
-
-    def read():
-        out = {}
-        for source, fn in readers.items():
-            try:
-                out[source] = fn()
-            except Exception as e:  # noqa: BLE001 -- counted, never raised
-                out[source] = (None, f"{e.__class__.__name__}: {e}")
-        return out
-    return read
+    return lambda: read_all(readers)
 
 
 def main(argv=None):

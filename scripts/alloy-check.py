@@ -248,8 +248,9 @@ WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
 # its `=>`, and `else` only ever follows an implication.
 NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b")
 # What follows a set comprehension's brace, `{x: S | ...}` or `{disj x, y: S
-# | ...}`, and never a formula's: a body cannot open with a declaration.
-COMPREHENSION = re.compile(r"\s*(?:disj\s+)?\w+(?:\s*,\s*\w+)*\s*:")
+# | ...}`, and never a formula's: a body cannot open with a declaration. It
+# can open with a range restriction, `r :> S`, which is not one.
+COMPREHENSION = re.compile(r"\s*(?:disj\s+)?\w+(?:\s*,\s*\w+)*\s*:(?!>)")
 
 
 def composed(path):

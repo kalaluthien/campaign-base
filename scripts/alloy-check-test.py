@@ -20,7 +20,7 @@ THE NAMED FAILING CASES, one per refusal branch:
                                         shows Hand can fire
   a witness that comes out UNSAT        DEAD, whether or not its own `expect`
                                         already said so
-  a witness that is not one, 15 ways    MISSING: a trace satisfies it without
+  a witness that is not one, 16 ways    MISSING: a trace satisfies it without
                                         Hand firing
   a check naming Hand through a helper  MISSING, as if it named Hand itself,
                                         for a pred, a fun, and helpers whose
@@ -231,6 +231,14 @@ def main() -> int:
         check("a helper whose parameter is a set comprehension is read to its body",
               rc == 1 and refused(out, "MISSING", "Hand", path)
               and "ViaSetParam" in line(out, "MISSING"),
+              f"exit {rc}: {out[-6:]}")
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, pred=("pred Cov_Hand { machine :> Machine = machine }\n"
+                                     "pred decoy { eventually Now.event = Hand }"),
+                            run_line="run Cov_Hand for 2 expect 1")
+        check("not a witness, refused as MISSING: a body opening with `:>` is not a comprehension",
+              rc == 1 and refused(out, "MISSING", "Hand", path)
+              and "alloy exit 0" in line(out, "RESULT"),
               f"exit {rc}: {out[-6:]}")
     with tempfile.TemporaryDirectory() as d:
         rc, out, path = run(d, check_name="ViaSetType", more=(

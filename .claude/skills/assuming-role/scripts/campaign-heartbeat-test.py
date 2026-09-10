@@ -71,6 +71,15 @@ def prompt(minute, text="Work sub-issue kalaluthien/campaign-base#9 now", **extr
                  "message": {"content": text}}, **extra)
 
 
+def queued(minute, text="Work sub-issue kalaluthien/campaign-base#9 now",
+           mode="prompt", **extra):
+    """A prompt typed while the pane was busy, in the measured shape
+    (2026-09-11): an attachment record, not a user record."""
+    return {"type": "attachment", "timestamp": ts(minute), "attachment": dict(
+        {"type": "queued_command", "prompt": text, "commandMode": mode,
+         "timestamp": ts(minute)}, **extra)}
+
+
 def call(minute, tool="Bash"):
     """An assistant turn calling a tool, as the release turn does after the
     release: a REPORT, a memory filed."""
@@ -216,6 +225,33 @@ def _(m):
     return r["context"] == 351_805, r
 
 
+@case("a prompt typed into a busy pane, between release and compaction, keeps the worker")
+def _(m):
+    r = reading(m, release(1), queued(2, origin={"kind": "human"}), boundary(3))
+    v = m.verdict("worker", False, (True, None), "no limit", r)
+    return r["prompted"] == ts(2) and v[0] == "keep", (r, v)
+
+
+@case("a peer's message queued into the pane is not a prompt")
+def _(m):
+    r = reading(m, queued(2, "<cross-session-message from=x>", isMeta=True,
+                          origin={"kind": "peer"}))
+    return r["prompted"] is None, r
+
+
+@case("a queued task notification is not a prompt")
+def _(m):
+    r = reading(m, queued(2, "<task-notification> <task-id>b1</task-id>",
+                          mode="task-notification"))
+    return r["prompted"] is None, r
+
+
+@case("the release's /compact, queued while busy, is not a prompt")
+def _(m):
+    r = reading(m, release(1), queued(2, "/compact"), boundary(3))
+    return r["prompted"] is None, r
+
+
 @case("a person's `/compact <focus>` is a prompt")
 def _(m):
     r = reading(m, prompt(4, "/compact keep the review findings"))
@@ -349,6 +385,22 @@ def _(m):
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=ts(3)))
     return v[0] == "keep", v
+
+
+@case("a prompt after the release but before the compaction is not retired")
+def _(m):
+    between = "2026-09-10T10:01:30.000Z"   # after the release, before the compaction
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=between))
+    return v[0] == "keep", v
+
+
+@case("keep: a transcript with no context size")
+def _(m):
+    try:
+        v = m.verdict("worker", False, IDLE, NONE, big(None))
+    except Exception as e:  # noqa: BLE001 -- raising is not answering keep
+        return False, f"raised {e.__class__.__name__}"
+    return v[0] == "keep" and "no context size" in v[1], v
 
 
 @case("a planner is never retired")
@@ -654,8 +706,22 @@ MUTATIONS = [
      "context after a compaction is the boundary's postTokens"),
     ("skip a subagent", 'if not isinstance(r, dict) or r.get("isSidechain"):',
      "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
-    ("a prompt is text", 'later("prompted", ts)', "pass",
+    ("a prompt is text", 'if is_prompt(content):\n                later("prompted", ts)',
+     'if False:\n                later("prompted", ts)',
      "a prompt is a user record carrying text"),
+    ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
+     "a prompt typed into a busy pane, between release and compaction, keeps the worker"),
+    ("a queued peer message", 'and not a.get("isMeta") and is_prompt', "and is_prompt",
+     "a peer's message queued into the pane is not a prompt"),
+    ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
+     "a queued task notification is not a prompt"),
+    ("a queued echo", ' and is_prompt(a.get("prompt"))', "",
+     "the release's /compact, queued while busy, is not a prompt"),
+    ("a prompt before the compaction blocks", 'reading["prompted"] > rel)',
+     'reading["prompted"] > comp)',
+     "a prompt after the release but before the compaction is not retired"),
+    ("keep with no context size", 'if reading["context"] is None:', "if False:",
+     "keep: a transcript with no context size"),
     ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
      'COMPACTION_ECHOES = ("\\x00",)', "the compaction's own echoes are not a prompt"),
     ("a harness note", 'if r.get("isMeta") or r.get("isCompactSummary"):',
@@ -670,8 +736,8 @@ MUTATIONS = [
      "--apply sends each action, guarded, to the pane it names"),
     ("one wake per run", "if fired:", "if False:",
      "two banners schedule one wake, into the own pane"),
-    ("the bare /compact is an echo", "if said and said != QUEUED_COMPACT and not",
-     "if said and not", "the bare /compact that release queues is not a prompt"),
+    ("the bare /compact is an echo", "bool(said) and said != QUEUED_COMPACT and not",
+     "bool(said) and not", "the bare /compact that release queues is not a prompt"),
     ("only the bare /compact", "said != QUEUED_COMPACT and not",
      "not said.startswith(QUEUED_COMPACT) and not",
      "a person's `/compact <focus>` is a prompt"),

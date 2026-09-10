@@ -129,6 +129,14 @@ def texts(content):
             if isinstance(b, dict) and b.get("type") == "text"]
 
 
+def is_prompt(content):
+    """Does this content carry text a person or a peer typed, rather than the
+    compaction's own echo or the bare `/compact` release queues?"""
+    said = "".join(texts(content)).strip()
+    return bool(said) and said != QUEUED_COMPACT and not said.startswith(
+        COMPACTION_ECHOES)
+
+
 def result_lines(content):
     """Every line of every tool result in a user record's content."""
     for b in content if isinstance(content, list) else []:
@@ -156,7 +164,12 @@ def transcript_reading(lines, anchor, pane, took=None):
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
       prompted   the last user record carrying text that is not the
-                 compaction's own echo and not a harness note (`isMeta`).
+                 compaction's own echo and not a harness note (`isMeta`),
+                 or the last prompt typed while the pane was busy: an
+                 `attachment` record of type `queued_command`, mode
+                 `prompt`, not `isMeta` -- which a peer's message is, and a
+                 task notification is another mode. That is the one prompt
+                 that can land between a release and its `/compact`.
       acted      the last assistant record calling a tool. The release turn
                  goes on calling tools after the release (a REPORT, a memory
                  filed), so `retire` asks only for none after the compaction,
@@ -224,9 +237,13 @@ def transcript_reading(lines, anchor, pane, took=None):
                     cut[branch] = max(cut.get(branch, ts), ts)
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
-            said = "".join(texts(content)).strip()
-            if said and said != QUEUED_COMPACT and not said.startswith(
-                    COMPACTION_ECHOES):
+            if is_prompt(content):
+                later("prompted", ts)
+        elif kind == "attachment":
+            a = r.get("attachment") or {}
+            if (a.get("type") == "queued_command"
+                    and a.get("commandMode") == "prompt"
+                    and not a.get("isMeta") and is_prompt(a.get("prompt"))):
                 later("prompted", ts)
     out["held"] = sorted(b for b, t in cut.items()
                          if b not in freed or freed[b] < t)

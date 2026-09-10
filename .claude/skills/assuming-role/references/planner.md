@@ -41,7 +41,7 @@ kept:
    each one verdict: `fire` on a limit banner, `compact` at the context
    threshold, `retire` for a worker done and holding nothing, `keep` for the
    rest. Its header says what each reads and sends.
-2. `SendMessage` to each worker it kept, with `notify_when_idle: true` and no
+2. `SendMessage` to each worker it did not retire, with `notify_when_idle: true` and no
    content. That notice is what wakes the planner next.
 
 No cron. The only timer is the one `fire` schedules: a detached sleeper that

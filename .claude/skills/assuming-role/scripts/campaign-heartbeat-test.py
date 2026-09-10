@@ -704,6 +704,7 @@ def readings(sessions=None, claims=None, issues=None, prs=None, installs=None,
     r = {"sessions": (sessions or {}, None), "claims": (claims or {}, None),
          "issues": (issues or {}, None), "prs": (prs or {}, None)}
     r.update({f"install {repo}": (word, None) for repo, word in installs or []})
+    r["installs"] = ([repo for repo, _ in installs or []], None)
     for source in fail:
         r[source] = (None, "unreachable")
     return r
@@ -915,6 +916,7 @@ def watch_read(m, broken=None, reads=1, log=None):
         (d / "dir.py").write_text(STUB_DIRECTORY % str(d))
         (d / "inst.py").write_text(STUB_INSTALLED % str(
             m.BASE / "scripts" / "campaign-installed.py"))
+        real = m.DIRECTORY_SCRIPT, m.INSTALLED_SCRIPT
         m.DIRECTORY_SCRIPT, m.INSTALLED_SCRIPT = d / "dir.py", d / "inst.py"
         env = {"PATH": str(d / "bin"), "HOME": str(d / "home"), "TMPDIR": str(d)}
         saved, cwd = dict(os.environ), os.getcwd()
@@ -932,6 +934,7 @@ def watch_read(m, broken=None, reads=1, log=None):
         except Exception as e:  # noqa: BLE001 -- a reader that raised is the defect
             return e
         finally:
+            m.DIRECTORY_SCRIPT, m.INSTALLED_SCRIPT = real
             os.chdir(cwd)
             os.environ.clear()
             os.environ.update(saved)
@@ -991,7 +994,7 @@ def _(m):
     return (got.get("install o/base") == ("behind 1", None)
             and got.get("install o/m", (1, ""))[0] is None
             and "absent" in got["install o/m"][1]
-            and "installs" not in got), got
+            and got.get("installs") == (["o/base", "o/m"], None)), got
 
 
 @case("watch reader: ## Repos is read on every poll")
@@ -1000,6 +1003,21 @@ def _(m):
     got = watch_read(m, reads=2, log=log)
     views = [ln for ln in log if ln.startswith("issue view 7")]
     return (not isinstance(got, Exception) and len(views) == 2), (views, got)
+
+
+@case("watch: an install that leaves the list takes its drift with it")
+def _(m):
+    outs = polls(m, (0, readings(installs=[("o/m", "behind 1")])),
+                 (1, readings(installs=[("o/base", "current")])))
+    return "- drift install o/m behind 1" in outs[1], outs
+
+
+@case("watch: the installs list failing again after a good read errors again")
+def _(m):
+    bad, ok = readings(fail=("installs",)), readings(installs=[("o/base", "current")])
+    outs = polls(m, *enumerate([bad, bad, bad, ok, ok, bad, bad, bad]))
+    errs = [i for i, o in enumerate(outs) for ln in o if ln.startswith("error installs")]
+    return errs == [2, 7], outs
 
 
 @case("watch: an unreadable install hides no other install's drift")
@@ -1256,11 +1274,14 @@ MUTATIONS = [
      "watch reader: an unread ## Repos fails the claims and pull requests"),
     ("an unread install is no reading", "((word, None) if readable(word)", "((word, None) if True",
      "watch reader: each install is a source, and one unreadable fails alone"),
-    ("each install its own source", 'out.update(each if why is None else {"installs": (None, why)})',
-     'out["installs"] = (each, why)', "watch reader: each install is a source, and one unreadable fails alone"),
+    ("each install its own source", "        out.update(each)\n", "", "watch reader: each install is a source, and one unreadable fails alone"),
     ("## Repos every poll", "        listed, why = claim.campaign_repos(issue)\n",
      "        listed, why = (repos[1:], None) if repos else claim.campaign_repos(issue)\n",
      "watch reader: ## Repos is read on every poll"),
+    ("an install that left is no source", "                    self.last.pop(gone)\n", "                    pass\n",
+     "watch: an install that leaves the list takes its drift with it"),
+    ("the installs list is a source when read", "        out[\"installs\"] = (sorted(k[len(\"install \"):] for k in each), None)\n", "",
+     "watch reader: each install is a source, and one unreadable fails alone"),
     ("an install drift per source", 'if source.startswith("install ") and word != "current"}',
      'if False}', "watch: an unreadable install hides no other install's drift"),
     ("unclaimed waits for claims and issues", 'if {"claims", "issues"} <= read:', "if True:",

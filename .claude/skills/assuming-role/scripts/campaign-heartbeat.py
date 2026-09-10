@@ -414,6 +414,12 @@ class Watch:
                 continue
             self.fails[source] = 0
             self.last[source] = value
+            if source == "installs":
+                # The list of installs, read: one that left it is no source.
+                for gone in [k for k in self.last if k.startswith("install ")
+                             and k[len("install "):] not in value]:
+                    self.last.pop(gone)
+                    self.fails.pop(gone, None)
             if source == "sessions":
                 self.settle(value)
         lines = self.snapshot(now)
@@ -710,7 +716,11 @@ def watch_reader(issue, slug, own, claim, names, cache):
     def read():
         out = read_all(readers)
         each, why = out.pop("installs")
-        out.update(each if why is None else {"installs": (None, why)})
+        if why is not None:
+            out["installs"] = (None, why)
+            return out
+        out.update(each)
+        out["installs"] = (sorted(k[len("install "):] for k in each), None)
         return out
     return read
 

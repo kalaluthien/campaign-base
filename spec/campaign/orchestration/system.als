@@ -169,7 +169,7 @@ var sig Stopped in Agent {}
    (`orchestrationInit`), because a fresh process carries nothing. `launch`
    takes it away from the launching session -- taking a sub-issue is what grows
    a context -- and requires it first. `scripts/campaign-assign.py` enforces
-   that on a session ALREADY RUNNING, by reading its pane; a delegate's launch
+   that on a session ALREADY RUNNING, by reading its transcript; a delegate's launch
    satisfies it by construction, since the process does not exist yet and so
    carries nothing. Two ways of meeting one precondition, which is why this
    names neither as its reader. `agentRelease` gives it
@@ -358,7 +358,7 @@ fun orchestrationOwn: set Event {
    here, added by #177: `agentCommitLocal` and `unattendedCommitLocal` are
    disjuncts on it, and joining this set is what removes it from the
    fall-through. */
-fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff }
+fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff + SessionExit }
 
 /* The bits divide by how long they live: a pull request's, and a process's.
    None has a directory's any more. */
@@ -718,6 +718,22 @@ pred agentRelease {
   no Target.agent
 }
 
+/* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: the worker
+   released, is compacted -- it launched nothing since -- and holds no live
+   agent. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads
+   the first two off the session's transcript (a release, a compaction after
+   it) and stands in for the third with what a transcript can show: every
+   claim it cut released, no prompt since the release, no tool call since
+   the compaction. `once` because a fresh session is Compacted from the start and
+   the heartbeat never retires one that never released. */
+pred exitSession[s: Session] {
+  Now.event = SessionExit and Who.session = s
+  once (Now.event = Release and Who.session = s)
+  s in Compacted
+  no heldBy[s]
+  agentFrame and no Target.agent
+}
+
 pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
   no Reported and no Asked and no Answered
@@ -743,6 +759,7 @@ pred orchestrationStep {
   or unattendedCommitLocal
   or agentRelease
   or (some p, t: Session | handoff[p, t])
+  or (some s: Session | exitSession[s])
   or (Now.event not in Stutter + orchestrationActed and agentFrame and no Target.agent)
 }
 

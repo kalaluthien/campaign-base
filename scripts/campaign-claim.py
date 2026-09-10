@@ -1038,7 +1038,7 @@ def cmd_take(args):
               f"free.")
         return 3
 
-    print(f"claimed {branch}")
+    print(f"{CLAIMED} {branch}")
     print(f"  The ref IS the claim: nothing else was written, and "
           f"`{sys.argv[0]} live {args.campaign_issue}` reads it back.")
     return 0
@@ -1106,16 +1106,23 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 # and then read a delegate's pane found its own anchor and the delegate's
 # compaction marker, in order, and read itself as compacted. With it, an anchor
 # copied from elsewhere names the pane it came from and is not this one's.
-# Found by review at e680ef8. The marker cannot be qualified this way, so the
-# residue is kalaluthien/campaign-base#220.
+# Found by review at e680ef8. The same holds of a transcript, which records
+# what a `herdr pane read` displayed as a tool result.
 #
-# `campaign-assign.py` reads it to answer "has this pane compacted since its
-# last release". Keyed on the compaction's own success line instead -- which is
+# `campaign-heartbeat.py`'s transcript reader reads it, for itself and for
+# `campaign-assign.py`, to answer "has this session compacted since its last
+# release". Keyed on the compaction's own success line instead -- which is
 # how this shipped at 114e71a -- the one case the assignment guard exists for,
 # a release that could NOT compact, left no release line at all and read as a
 # pane that never released, which allows. Found by review and reproduced end to
 # end before this was written.
 RELEASED = "campaign-claim: released"
+
+# The line `take` prints when it cut a claim. `campaign-heartbeat.py` reads it
+# in a session's transcript and pairs it with the release of the same branch:
+# a claim with no release after it is work the session holds, so the
+# heartbeat does not retire it.
+CLAIMED = "claimed"
 
 
 def own_pane(sessions, session_id):

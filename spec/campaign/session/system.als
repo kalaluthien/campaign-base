@@ -144,16 +144,20 @@ one sig Who { var session: lone Session, var predecessor: lone Session }
 
 fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Handoff) }
 
-/* SESSIONS A HANDOFF HAS CLOSED: the successor's `/exit` landed in their pane.
-   Grown only by a handoff and never shrunk, and a closed session performs
-   nothing again -- without this the predecessor kept `worksOn` and could
-   claim, launch and stand the heir down after handing off (review of pr#290).
-   One fact rather than a frame clause in every event, as `Judged` is. */
+/* SESSIONS AN `/exit` HAS CLOSED: a handoff's successor sent it to its
+   predecessor, or the planner's heartbeat sent it to a worker done and
+   holding nothing (`SessionExit`). Grown only by those two and never shrunk,
+   and a closed session performs nothing again -- without this the predecessor
+   kept `worksOn` and could claim, launch and stand the heir down after
+   handing off (review of pr#290). One fact rather than a frame clause in
+   every event, as `Judged` is. */
 var sig Exited in Session {}
 
-fact ExitedByHandoffOnly {
+fact ExitedByHandoffOrExit {
   no Exited
-  always (Exited' = Exited + Who.predecessor and no Who.session & Exited)
+  always (Exited' = Exited + Who.predecessor
+                    + (Now.event = SessionExit implies Who.session else none)
+          and no Who.session & Exited)
 }
 
 /* Derived, so no event has to maintain it. */
@@ -164,9 +168,9 @@ fun working: set Session { { s: Session | some s.worksOn and s.machine in machin
 /* `Handoff` is declared here and not in orchestration/system.als, where the
    agents it moves live, for the reason `Launch` sits in synchronization: this
    is the lowest entity holding a field it moves -- the claims. */
-one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff extends Event {}
+one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit extends Event {}
 
-fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff }
+fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
    is somebody's act, and naming whose is what lets orchestration/scenarios.als's
@@ -241,6 +245,17 @@ pred sessionHandoff[t, p: Session] {
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
   bound' = bound
+}
+
+/* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
+   holds no claim. The session half; orchestration/system.als's `exitSession`
+   adds that it is compacted and holds no live agent. A planner is never
+   retired: it is the one running the heartbeat. */
+pred sessionExit[s: Session] {
+  Now.event = SessionExit and no Now.issue and Who.session = s
+  s.role = Worker
+  no s.claimedIssues
+  sessionFrame
 }
 
 /* The result is remembered; nothing keeps it fresh. */
@@ -458,7 +473,7 @@ pred sessionStep {
         or sessionFileCampaignIssue[s] or sessionAddMember[s] or sessionCloseIssue[s]
         or sessionCreateDir[s] or sessionDeleteDir[s] or sessionAcquire[s]
         or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s]
-        or brief[s] or contextReset[s])
+        or brief[s] or contextReset[s] or sessionExit[s])
   or (some t, p: Session | sessionHandoff[t, p])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Cases for campaign-assign.py, over a stubbed `herdr` on PATH.
+# witnesses: SessionCompactsBetweenSubIssues
+"""Cases for campaign-assign.py, over a stubbed `herdr` on PATH and a fake
+HOME holding the session's transcript.
 
 AN ALLOW CASE BESIDE EVERY REFUSAL. A guard is only worth its refusals if the
 thing it admits still gets through, and a refusing check with no allow case
 reads identically to one that refuses everything.
 
-The stub answers four subcommands -- `agent list`, `pane read`, `agent read`,
-`agent prompt` -- and logs every prompt, so "the assignment was sent" is
-asserted on what herdr was ASKED, never on an exit status: a run that refused
-and a run that sent the prompt to the wrong pane both exit 0 or 1 for reasons
-this suite has to separate. `read_pane` only ever calls `pane read`; the stub
-answers `agent read` too, but only one case (the one proving that) tells its
-answer apart from `pane read`'s.
+The stub answers `agent list` and `agent prompt`, logs every prompt, and
+refuses everything else -- so a case passes only if the reading came from
+the transcript and never from the pane. "The assignment was sent" is
+asserted on what herdr was ASKED, never on an exit status. How the
+transcript is read -- order, forgery, another pane's release -- is
+campaign-heartbeat-test.py's, since that reader is the heartbeat's.
 """
 import json
 import os
@@ -33,18 +34,27 @@ def check(name, ok, detail=""):
         FAILED.append(f"{name}" + (f" -- {detail}" if detail else ""))
 
 
-MARKER = "Compacted (ctrl+o to see full summary)"
-# The anchor as `campaign-claim.py` prints it. Spelled here rather than
-# imported so that a case fails if the two ever disagree -- which is the one
-# thing importing it on both sides would hide.
 # The anchor as `campaign-claim.py` prints it, PANE AND ALL. Spelled here
 # rather than imported so that a case fails if the two ever disagree.
 RELEASED = "campaign-claim: released machinery/195-token-tally in w1:p2"
-# The same release, printed in somebody else's pane. `herdr pane read` puts
-# another session's output into the reader's own scrollback, which is the
-# ordinary planner move -- so this string turns up in a pane that did not
-# release, and must not answer for it.
-ELSEWHERE = "campaign-claim: released machinery/177-commit-claim in w1:p1"
+
+
+def released(ts):
+    """A tool result carrying this session's release, as the transcript
+    records the Bash call that ran `campaign-claim.py release`."""
+    return {"type": "user", "timestamp": ts, "message": {"content": [
+        {"type": "tool_result", "content": f"sent /compact\n{RELEASED}"}]}}
+
+
+def compacted(ts):
+    return {"type": "system", "subtype": "compact_boundary", "timestamp": ts,
+            "compactMetadata": {"postTokens": 9000}}
+
+
+T1, T2 = "2026-09-10T10:00:00.000Z", "2026-09-10T10:01:00.000Z"
+COMPACTED = [released(T1), compacted(T2)]
+STALE = [released(T1)]
+FRESH = [{"type": "user", "timestamp": T1, "message": {"content": "hello"}}]
 
 
 def agent(sid, name, pane, status="idle"):
@@ -60,11 +70,6 @@ case "$1 $2" in
 %s
 JSON
     exit 0 ;;
-  "pane read")
-    printf 'read %%s %%s\\n' "$3" "$5" >> "$log"
-    %s ;;
-  "agent read")
-    %s ;;
   "agent prompt")
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
     exit %s ;;
@@ -74,74 +79,41 @@ exit 1
 """
 
 
-def _read_arm(screen, read_exit):
-    """The shell body of a read-like `case` arm: prints `screen` and exits 0,
-    or answers herdr's own `agent_not_idle` shape and exits `read_exit`. One
-    function so `pane read`'s arm and `agent read`'s arm in the stub cannot
-    drift from each other's quoting or exit convention."""
-    if read_exit == 0:
-        return "cat <<'SCREEN'\n%s\nSCREEN\n    exit 0" % screen
-    return ('echo \'{"error":{"code":"agent_not_idle"}}\' >&2; exit %d'
-            % read_exit)
-
-
-def shims(d, rows, screen="", read_exit=0, prompt_exit=0, agent_screen=None):
-    """A PATH holding only the stub. PATH is this directory ALONE, so a call
-    that escaped the stub would run nothing rather than silently reaching the
-    real herdr and driving somebody's pane.
-
-    `read_pane` asks `pane read`, never `agent read` -- `agent_screen` is ONLY
-    for a case proving that: it answers `agent read` with different content
-    than `pane read`'s `screen`, the way the two really diverge across a
-    compaction (NOTE on #1). Left at its default, `agent read` echoes the same
-    `screen` `pane read` does, so no case that does not pass it is testing
-    which subcommand was asked."""
-    b = Path(d) / "bin"
+def shims(d, rows, records=None, prompt_exit=0, sid="S2"):
+    """A PATH holding only the stub, and a HOME whose transcript for `sid`
+    holds `records` (no file at all when None). PATH is this directory ALONE,
+    so a call that escaped the stub would run nothing rather than silently
+    reaching the real herdr and driving somebody's pane."""
+    d = Path(d)
+    b = d / "bin"
     b.mkdir(parents=True, exist_ok=True)
-    read_arm = _read_arm(screen, read_exit)
-    # ONE FORMAT, ASKED TWICE. `agent_arm` used to hand-roll its own copy of
-    # this heredoc; a later change to its quoting or exit convention applied
-    # to one copy and missed in the other would silently reintroduce the
-    # pane-read/agent-read divergence this file exists to catch.
-    agent_arm = _read_arm(screen if agent_screen is None else agent_screen,
-                          read_exit)
     listing = json.dumps({"result": {"agents": rows}})
     (b / "herdr").write_text(
-        HERDR % (str(Path(d) / "prompts.log"), listing, read_arm, agent_arm,
-                 prompt_exit))
+        HERDR % (str(d / "prompts.log"), listing, prompt_exit))
     (b / "herdr").chmod(0o755)
     for tool in ("sh", "cat", "printf", "python3", "git"):
         found = shutil.which(tool)
         if found and not (b / tool).exists():
             (b / tool).symlink_to(found)
+    if records is not None:
+        proj = d / "home" / ".claude" / "projects" / "-tmp"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / f"{sid}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in records))
     return b
-
-
-def calls(path_dir, kind):
-    """Every call of `kind` the stub was asked to make, in order. One log for
-    both `pane read` and `agent prompt`, so a case can assert the window
-    `pane read` was given as well as the prompt `agent prompt` carried -- the
-    window was plumbed by nothing until a review mutated it away and the
-    suite stayed green."""
-    log = Path(path_dir).parent / "prompts.log"
-    if not log.exists():
-        return []
-    return [ln for ln in log.read_text().splitlines()
-            if ln.strip() and ln.startswith(kind)]
 
 
 def prompts(path_dir):
     """Every prompt the stub was asked to send. An absent log is no calls."""
-    return calls(path_dir, "HERDR_ENV=")
-
-
-def reads(path_dir):
-    """Every scrollback read, as `read <pane> <lines>`."""
-    return calls(path_dir, "read ")
+    log = Path(path_dir).parent / "prompts.log"
+    if not log.exists():
+        return []
+    return [ln for ln in log.read_text().splitlines() if ln.strip()]
 
 
 def assign(args, path_dir):
-    env = dict(os.environ, PATH=str(path_dir))
+    env = dict(os.environ, PATH=str(path_dir),
+               HOME=str(Path(path_dir).parent / "home"))
     # The suite runs inside a herdr pane, so HERDR_ENV=1 is already here; left
     # in, a case asserting the script set the guard would pass while the script
     # set nothing.
@@ -158,6 +130,8 @@ def pure_cases(m):
     row, note = m.row_for(rows, "w1:p2")
     check("row_for finds the row by pane, not by position",
           row is not None and row["name"] == "machinery-worker-2", note)
+    check("...and carries its session id, which names the transcript",
+          row is not None and row["sid"] == "S2", repr(row))
     row, note = m.row_for(rows, "w9:p9")
     check("a pane no row names lists the panes that were there",
           row is None and "w1:p1" in note and "w1:p2" in note, note)
@@ -177,133 +151,9 @@ def pure_cases(m):
     check("a status this does not recognise is not evidence of rest",
           not ok and "unheard-of" in why, why)
 
-    import importlib.machinery
-    import importlib.util
-    cspec = importlib.util.spec_from_loader(
-        "campaign_claim", importlib.machinery.SourceFileLoader(
-            "campaign_claim", str(HERE / "campaign-claim.py")))
-    cm = importlib.util.module_from_spec(cspec)
-    cspec.loader.exec_module(cm)
+    cm = m.claim_module()
     check("the anchor this suite fixtures is the line campaign-claim prints",
           RELEASED.startswith(cm.RELEASED), f"{cm.RELEASED!r} vs {RELEASED!r}")
-
-    def verdict(text, pane="w1:p2"):
-        return m.compaction_verdict(text, cm.RELEASED, pane)
-
-    # NO RELEASE LINE IS `unknown`, NOT `fresh`. It used to be `fresh`, which
-    # ALLOWED, on the reasoning that a read shorter than its window is the
-    # whole history. Measured 2026-09-05, that reasoning is false of the tool:
-    # `herdr agent read` caps at 1000 lines and returns fewer than asked even
-    # when more history exists (one 48-line pane answered `--lines 60` with 46
-    # and `--lines 10` with nothing). So the absence refuses.
-    v, why = verdict("nothing about a release here\nor here\n")
-    check("no release line is unknown, not a pane that never released",
-          v == "unknown" and "2 line(s)" in why
-          and "not evidence" in why, f"{v} {why}")
-    v, why = verdict(f"work\n{RELEASED}\n{MARKER}\n")
-    check("a marker after the release line is compacted", v == "compacted", why)
-    v, why = verdict(f"work\n{RELEASED}\nstill going\n")
-    check("a release with no marker after it is stale",
-          v == "stale" and "released at line 2" in why, why)
-    # ORDER, NOT PRESENCE. This is the case the obvious implementation fails.
-    v, why = verdict(f"{MARKER}\nwork\n{RELEASED}\nstill going\n")
-    check("a marker BEFORE the release line does not count as compacted",
-          v == "stale", f"{v} {why}")
-    v, why = verdict("")
-    check("an empty read is unknown with the count said, not a crash",
-          v == "unknown" and "0 line(s)" in why, f"{v} {why}")
-    # LAST RELEASE, NOT FIRST. A pane that released, compacted, worked and
-    # released again holds a marker between the two releases. `min` here reads
-    # that marker as coming after "the" release and admits the pane with its
-    # SECOND release uncompacted. No fixture with two release lines existed, so
-    # `max` -> `min` passed 33/33; found by review.
-    v, why = verdict(f"{RELEASED}\n{MARKER}\nmore work\n{RELEASED}\nnow what\n")
-    check("two releases: the LAST one decides, so this is stale",
-          v == "stale" and "released at line 4" in why, f"{v} {why}")
-    # ...and the allow beside it: a marker after the second release.
-    v, why = verdict(f"{RELEASED}\n{MARKER}\nwork\n{RELEASED}\n{MARKER}\n")
-    check("...and a marker after the last release is compacted",
-          v == "compacted" and "line 4" in why, f"{v} {why}")
-    # THE RELEASE THAT COULD NOT COMPACT is the single case this guard exists
-    # for, and at 114e71a it read `fresh` and was assigned: the anchor was the
-    # compaction's success line, which that release never printed.
-    could_not = (f"work\n{RELEASED}\n"
-                 f"not compacting: no herdr row names it (3 row(s) listed). "
-                 f"The claim is released; only the compaction did not "
-                 f"happen.\n")
-    v, why = verdict(could_not)
-    check("a release that could NOT compact reads stale, not unknown",
-          v == "stale", f"{v} {why[:140]}")
-
-    # THE FORGERY. `compacted` used to need only a line CONTAINING the marker,
-    # and the marker's own definition is a line of campaign-assign.py -- so a
-    # session that `cat`s or `grep`s this repository in its pane, which is what
-    # working on this sub-issue looks like, read as compacted while holding the
-    # whole previous sub-issue. Found by review at 2468517.
-    forged = (f"{RELEASED}\n"
-              f'MARKER = "Compacted (ctrl+o to see full summary)"\n')
-    v, why = verdict(forged)
-    check("this repository's own source does not forge a compaction",
-          v == "stale", f"{v} {why[:140]}")
-    # ...and the allow beside it: the marker as the transcript actually draws
-    # it, behind a gutter, still counts.
-    for gutter in ("  \u23bf  ", "\u2502 ", "   "):
-        v, why = verdict(f"{RELEASED}\n{gutter}{MARKER}   \n")
-        check(f"a marker behind the gutter {gutter!r} still counts",
-              v == "compacted", f"{v} {why[:120]}")
-    # A GUTTER GLYPH NOBODY MEASURED ONLY WIDENS THE ACCEPT SET. `|` and the
-    # bullet sat in the set on plausibility, and the bullet made a quoted
-    # marker in an issue body -- `gh issue view` output in a pane -- render to
-    # the marker exactly.
-    for forged in ("\u2022 ", "| ", "> ", "# "):
-        v, why = verdict(f"{RELEASED}\n{forged}{MARKER}\n")
-        check(f"a marker behind the unmeasured prefix {forged!r} does not count",
-              v == "stale", f"{v} {why[:120]}")
-    # ...and the harness appending to its own line must not cost a --force on
-    # every honest compaction, which strict equality did.
-    v, why = verdict(f"{RELEASED}\n  \u23bf  {MARKER}  (esc to interrupt)\n")
-    check("a marker the harness appended to still counts",
-          v == "compacted", f"{v} {why[:120]}")
-    # MATCHING THE LINE'S START IS ONLY SAFE WHILE THE MARKER IS THE WHOLE
-    # SENTENCE. Shortened to its first word it admits any line opening with it,
-    # and nothing caught that until this case: strict equality had been holding
-    # the marker's length by accident.
-    v, why = verdict(f"{RELEASED}\n  \u23bf  Compacted 3 files into 1\n")
-    check("a line merely opening with the marker's first word does not count",
-          v == "stale", f"{v} {why[:120]}")
-    # THE LAST MARKER NAMES ITSELF in the reason, which is what a reader
-    # chases; `after[0]` reports the first and was held by nothing.
-    v, why = verdict(f"{RELEASED}\n{MARKER}\nnoise\n{MARKER}\n")
-    check("the reason names the LAST marker line, not the first",
-          v == "compacted" and "compacted at line 4" in why, f"{v} {why}")
-    # The anchor is matched the same way, so campaign-claim.py's own source
-    # line does not manufacture a release.
-    v, why = verdict('RELEASED = "campaign-claim: released"\nnoise\n')
-    check("...and campaign-claim's source line does not forge a release",
-          v == "unknown", f"{v} {why[:140]}")
-    # ANOTHER PANE'S RELEASE IS NOT THIS PANE'S. A planner that reads a
-    # delegate's pane has the delegate's release AND its compaction marker in
-    # its own scrollback, in that order -- and read itself as compacted, which
-    # ASSIGNS. The anchor names the pane it was printed in for this reason.
-    # A LINE THAT MERELY CONTAINS THE ANCHOR is prose about a release, not a
-    # release -- and prose about THIS pane's release ends with this pane's id,
-    # so the pane tail alone does not separate the two. Only matching the
-    # line's START does. This is what a pull request comment quoting the run,
-    # read back in a pane, renders to.
-    v, why = verdict(f"the run printed {RELEASED}\n{MARKER}\n")
-    check("prose quoting a release mid-line is not a release",
-          v == "unknown", f"{v} {why[:140]}")
-    v, why = verdict(f"  \u23bf  {ELSEWHERE}\n  \u23bf  {MARKER}\n")
-    check("a release read out of ANOTHER pane does not answer for this one",
-          v == "unknown", f"{v} {why[:140]}")
-    # ...and the allow beside it: this pane's own release still counts, and a
-    # foreign one sitting after it does not move the answer.
-    v, why = verdict(f"{RELEASED}\n  \u23bf  {ELSEWHERE}\n{MARKER}\n")
-    check("...while this pane's own release still does",
-          v == "compacted", f"{v} {why[:140]}")
-    v, why = verdict(f"{RELEASED}\n{MARKER}\n", pane="w9:p9")
-    check("...and reading for a different pane finds no release of its own",
-          v == "unknown", f"{v} {why[:140]}")
 
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
@@ -316,12 +166,14 @@ def end_to_end_cases():
             agent("S2", "machinery-worker-2", "w1:p2")]
 
     with tempfile.TemporaryDirectory() as d:
-        # ALLOW: idle, compacted since its last release.
-        ok = shims(Path(d) / "ok", rows, screen=f"{RELEASED}\n{MARKER}\n")
+        # ALLOW: idle, compacted since its last release. This is #293's first
+        # item: the pane's scrollback lost the release line to the
+        # compaction and read `unknown`; the transcript keeps both.
+        ok = shims(Path(d) / "ok", rows, COMPACTED)
         r = assign(["w1:p2", "198"], ok)
         out = r.stdout + r.stderr
         sent = prompts(ok)
-        check("an idle, compacted pane is assigned",
+        check("a session that released and then compacted is assigned",
               r.returncode == 0 and "assigned kalaluthien/campaign-base#198"
               in out, f"exit {r.returncode}: {out[:300]}")
         check("...by exactly one guarded prompt to the pane named",
@@ -329,158 +181,96 @@ def end_to_end_cases():
               and "HERDR_ENV=1" in sent[0] and "#198" in sent[0], repr(sent))
         check("...and never to the other pane",
               not any("pane=w1:p1" in ln for ln in sent), repr(sent))
-        # A CLEAN PATH SAYS NOTHING ABOUT OVERRIDING. Held by nothing until the
-        # fifth review made the guard unconditional and the suite stayed green,
-        # printing `assigning anyway, verdict was compacted`.
+        check("...saying what it read and from where",
+              "compacted: released" in out and "S2.jsonl" in out, out[:400])
+        # A CLEAN PATH SAYS NOTHING ABOUT OVERRIDING.
         check("...and says nothing about overriding anything",
               "assigning anyway" not in out and "--force" not in out
               and "--assume-fresh" not in out, out[:400])
 
-        # THE NOTE ON #1, REPRODUCED: `pane read` carries a pane's scrollback
-        # across its own compaction; `agent read` scopes to the agent's own
-        # turn, which a release-then-compact resets. Measured live 2026-09-09:
-        # `agent read` on a just-compacted pane answered 62 lines with no
-        # release line in them, `pane read` on the same pane and `--lines`
-        # answered 530+ holding both the release and the marker. `agent_screen`
-        # answers `agent read` with a screen carrying no anchor at all, so this
-        # case only passes if `read_pane` asked `pane read`, whose `screen`
-        # carries the release and the marker.
-        agentread = shims(Path(d) / "agentread", rows,
-                          screen=f"{RELEASED}\n{MARKER}\n",
-                          agent_screen="a fresh session, no anchor here\n")
-        r = assign(["w1:p2", "198"], agentread)
-        out = r.stdout + r.stderr
-        check("read_pane asks herdr for `pane read`, not `agent read`, so "
-              "the release scrolled past `agent read`'s narrower window "
-              "is still seen",
-              r.returncode == 0 and "assigned kalaluthien/campaign-base#198"
-              in out, f"exit {r.returncode}: {out[:400]}")
+        # THE TRANSCRIPT READ IS THIS ROW'S. The other session's transcript
+        # is compacted and this one's is stale, so a reader that took the
+        # wrong session id assigns.
+        other = shims(Path(d) / "other", rows, STALE)
+        shims(Path(d) / "other", rows, COMPACTED, sid="S1")
+        r = assign(["w1:p2", "198"], other)
+        check("the transcript read is the named pane's session's, not another's",
+              r.returncode == 1 and prompts(other) == [],
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
-        # THE REVERSAL. A pane with no release line USED to be assigned, on
-        # the reasoning that a fresh session's context is small. Nothing here
-        # can tell a fresh session from one whose release scrolled out of a
-        # window that is capped and under-fills, so the two want opposite
-        # answers from the same bytes and the absence now refuses. A first
-        # assignment takes --force, which says what it overrode.
-        fresh = shims(Path(d) / "fresh", rows, screen="a fresh session\n")
+        # REFUSE: no release in the transcript. A first assignment takes
+        # --assume-fresh, which says what it overrode.
+        fresh = shims(Path(d) / "fresh", rows, FRESH)
         r = assign(["w1:p2", "198"], fresh)
-        check("a pane with no release line is NOT assigned on that alone",
-              r.returncode == 1 and prompts(fresh) == [],
-              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
-        fresh_f = shims(Path(d) / "freshf", rows, screen="a fresh session\n")
-        r = assign(["w1:p2", "198", "--force"], fresh_f)
-        check("...and --force is how a genuinely fresh pane is assigned",
-              r.returncode == 0 and len(prompts(fresh_f)) == 1,
-              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
-        # --lines REACHES herdr. The `unknown` refusal offers raising it as the
-        # remedy, and nothing asserted the flag was plumbed at all: dropping it
-        # from the call, and pinning the window to 1, both left 56/56 green.
-        windowed = shims(Path(d) / "windowed", rows,
-                         screen=f"{RELEASED}\n{MARKER}\n")
-        r = assign(["w1:p2", "198", "--lines", "137"], windowed)
-        check("the --lines window is what herdr is asked for",
-              reads(windowed) == ["read w1:p2 137"], repr(reads(windowed)))
-        defaulted = shims(Path(d) / "defaulted", rows,
-                          screen=f"{RELEASED}\n{MARKER}\n")
-        r = assign(["w1:p2", "198"], defaulted)
-        check("...and the default window is the one the docstring names",
-              reads(defaulted) == ["read w1:p2 400"], repr(reads(defaulted)))
-
-        # REFUSE: released and not compacted since.
-        stale = shims(Path(d) / "stale", rows, screen=f"{RELEASED}\nworking\n")
-        r = assign(["w1:p2", "198"], stale)
         out = r.stdout + r.stderr
-        check("a pane that has not compacted since its release is refused",
-              r.returncode == 1 and "has not compacted since its last release"
-              in out, f"exit {r.returncode}: {out[:300]}")
-        check("...and nothing was sent",
-              prompts(stale) == [], repr(prompts(stale)))
-        # ...and --force is the way past, printing what it overrides.
-        forced = shims(Path(d) / "forced", rows,
-                       screen=f"{RELEASED}\nworking\n")
-        r = assign(["w1:p2", "198", "--force"], forced)
-        out = r.stdout + r.stderr
-        check("--force assigns it and says what it is overriding",
-              r.returncode == 0 and "verdict was stale" in out
-              and len(prompts(forced)) == 1,
-              f"exit {r.returncode}: {out[:300]}")
-
-        # REFUSE: no release line anywhere in the read. Fails CLOSED now; at
-        # 114e71a and at 1eb0d9b under a wide `--lines` this was `fresh` and
-        # was assigned.
-        full = shims(Path(d) / "full", rows,
-                     screen="\n".join(["noise"] * 400))
-        r = assign(["w1:p2", "198"], full)
-        out = r.stdout + r.stderr
-        check("a pane with no release line in the read is refused",
+        check("a transcript with no release is refused",
               r.returncode == 1 and "unknown" in out
-              and prompts(full) == [], f"exit {r.returncode}: {out[:300]}")
-        check("...and the refusal offers --lines and names the cap",
-              "Raise --lines (at most 1000)" in out, out[:500])
-        check("...and offers --assume-fresh, not --force, for this verdict",
+              and prompts(fresh) == [], f"exit {r.returncode}: {out[:300]}")
+        check("...and the refusal offers --assume-fresh, not --force",
               "--assume-fresh" in out and "pass --force" not in out, out[:500])
-        # ...and --force is the door, naming the verdict it overrode rather
-        # than one sentence for three different states.
-        forced_unknown = shims(Path(d) / "fu", rows,
-                               screen="\n".join(["noise"] * 400))
-        r = assign(["w1:p2", "198", "--assume-fresh"], forced_unknown)
+        fresh_a = shims(Path(d) / "fresha", rows, FRESH)
+        r = assign(["w1:p2", "198", "--assume-fresh"], fresh_a)
         out = r.stdout + r.stderr
         check("...and --assume-fresh assigns it, naming the verdict",
               r.returncode == 0 and "verdict was unknown" in out
-              and len(prompts(forced_unknown)) == 1,
-              f"exit {r.returncode}: {out[:300]}")
-        # THE SPLIT. `--assume-fresh` reaches what a reading cannot; it must
-        # NOT reach the one case the guard exists for.
-        af_stale = shims(Path(d) / "afstale", rows,
-                         screen=f"{RELEASED}\nworking\n")
-        r = assign(["w1:p2", "198", "--assume-fresh"], af_stale)
-        out = r.stdout + r.stderr
-        check("--assume-fresh does NOT waive a pane read as stale",
-              r.returncode == 1 and prompts(af_stale) == [],
-              f"exit {r.returncode}: {out[:300]}")
-        af_forced = shims(Path(d) / "afforced", rows,
-                          screen=f"{RELEASED}\nworking\n")
-        r = assign(["w1:p2", "198", "--force"], af_forced)
-        out = r.stdout + r.stderr
-        check("...and --force does, which is the whole difference",
-              r.returncode == 0 and len(prompts(af_forced)) == 1,
-              f"exit {r.returncode}: {out[:250]}")
-        check("...naming --force, not the flag that would have refused",
-              "--force: assigning anyway" in out
-              and "--assume-fresh: assigning" not in out, out[:400])
-        # AND --force ON A VERDICT --assume-fresh COULD ALSO HAVE WAIVED must
-        # still name --force: it is what the caller typed, and a message naming
-        # the narrower flag sends the next reader to the wrong scope.
-        f_unknown = shims(Path(d) / "funknown", rows,
-                          screen="\n".join(["noise"] * 20))
-        r = assign(["w1:p2", "198", "--force"], f_unknown)
+              and len(prompts(fresh_a)) == 1, f"exit {r.returncode}: {out[:300]}")
+        fresh_f = shims(Path(d) / "freshf", rows, FRESH)
+        r = assign(["w1:p2", "198", "--force"], fresh_f)
         out = r.stdout + r.stderr
         check("--force on an unknown pane is named --force, not --assume-fresh",
               r.returncode == 0 and "--force: assigning anyway" in out
               and "--assume-fresh:" not in out, out[:400])
 
-        # A WINDOW ABOVE THE TOOL'S CAP reads no further, so asking for one is
-        # refused rather than answered with less than it promises.
-        over = shims(Path(d) / "over", rows, screen=f"{RELEASED}\n{MARKER}\n")
-        r = assign(["w1:p2", "198", "--lines", "1500"], over)
+        # REFUSE: released and not compacted since.
+        stale = shims(Path(d) / "stale", rows, STALE)
+        r = assign(["w1:p2", "198"], stale)
         out = r.stdout + r.stderr
-        check("a --lines above herdr's cap is refused, naming the cap",
-              r.returncode == 1 and "above herdr's 1000-line cap" in out
-              and prompts(over) == [], f"exit {r.returncode}: {out[:300]}")
-        atcap = shims(Path(d) / "atcap", rows,
-                      screen=f"{RELEASED}\n{MARKER}\n")
-        r = assign(["w1:p2", "198", "--lines", "1000"], atcap)
-        check("...and exactly the cap is admitted",
-              r.returncode == 0 and len(prompts(atcap)) == 1,
-              f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
+        check("a pane that has not compacted since its release is refused",
+              r.returncode == 1 and "has not compacted since its last release"
+              in out and prompts(stale) == [], f"exit {r.returncode}: {out[:300]}")
+        # THE SPLIT. `--assume-fresh` reaches what a reading cannot; it must
+        # NOT reach the one case the guard exists for.
+        af_stale = shims(Path(d) / "afstale", rows, STALE)
+        r = assign(["w1:p2", "198", "--assume-fresh"], af_stale)
+        check("--assume-fresh does NOT waive a pane read as stale",
+              r.returncode == 1 and prompts(af_stale) == [],
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:300]}")
+        forced = shims(Path(d) / "forced", rows, STALE)
+        r = assign(["w1:p2", "198", "--force"], forced)
+        out = r.stdout + r.stderr
+        check("...and --force does, naming itself and the verdict",
+              r.returncode == 0 and "--force: assigning anyway" in out
+              and "verdict was stale" in out and len(prompts(forced)) == 1,
+              f"exit {r.returncode}: {out[:300]}")
 
-        # REFUSE: not idle. Asserted on the pane's own status, and the read arm
-        # is left working so a pass cannot come from an unreadable screen.
+        # I COULD NOT LOOK is neither a yes nor a no.
+        unread = shims(Path(d) / "unread", rows, None)
+        r = assign(["w1:p2", "198"], unread)
+        out = r.stdout + r.stderr
+        check("a transcript that is not there refuses, saying it could not look",
+              r.returncode == 1 and "an unknown is not" in out
+              and "S2.jsonl" in out and prompts(unread) == [],
+              f"exit {r.returncode}: {out[:300]}")
+        forced_unread = shims(Path(d) / "forcedunread", rows, None)
+        r = assign(["w1:p2", "198", "--assume-fresh"], forced_unread)
+        out = r.stdout + r.stderr
+        check("...and --assume-fresh gets past it, saying what it did not read",
+              r.returncode == 0 and "verdict was unread" in out
+              and len(prompts(forced_unread)) == 1,
+              f"exit {r.returncode}: {out[:300]}")
+        forced_unread2 = shims(Path(d) / "fu2", rows, None)
+        r = assign(["w1:p2", "198", "--force"], forced_unread2)
+        out = r.stdout + r.stderr
+        check("--force alone also gets past a transcript that is not there",
+              r.returncode == 0 and len(prompts(forced_unread2)) == 1
+              and out.count("assigning anyway") == 1,
+              f"exit {r.returncode}: {out[:250]}")
+
+        # REFUSE: not idle, with a transcript that would have admitted it.
         busy = shims(Path(d) / "busy",
                      [agent("S1", "machinery-worker-1", "w1:p1"),
                       agent("S2", "machinery-worker-2", "w1:p2",
-                            status="working")],
-                     screen=f"{RELEASED}\n{MARKER}\n")
+                            status="working")], COMPACTED)
         r = assign(["w1:p2", "198"], busy)
         out = r.stdout + r.stderr
         check("a working pane is refused before anything is sent",
@@ -488,7 +278,7 @@ def end_to_end_cases():
               and prompts(busy) == [], f"exit {r.returncode}: {out[:300]}")
 
         # REFUSE: no row names the pane.
-        gone = shims(Path(d) / "gone", rows, screen=f"{RELEASED}\n{MARKER}\n")
+        gone = shims(Path(d) / "gone", rows, COMPACTED)
         r = assign(["w9:p9", "198"], gone)
         out = r.stdout + r.stderr
         check("a pane herdr does not list is refused, and the panes are named",
@@ -496,36 +286,8 @@ def end_to_end_cases():
               and "w1:p1" in out and prompts(gone) == [],
               f"exit {r.returncode}: {out[:300]}")
 
-        # I COULD NOT LOOK is neither a yes nor a no.
-        unread = shims(Path(d) / "unread", rows, read_exit=1)
-        r = assign(["w1:p2", "198"], unread)
-        out = r.stdout + r.stderr
-        check("a scrollback that would not read refuses, saying it could not look",
-              r.returncode == 1 and "an unknown is not" in out
-              and "pane read" in out and prompts(unread) == [],
-              f"exit {r.returncode}: {out[:300]}")
-        forced_unread = shims(Path(d) / "forcedunread", rows, read_exit=1)
-        r = assign(["w1:p2", "198", "--assume-fresh"], forced_unread)
-        out = r.stdout + r.stderr
-        check("...and --assume-fresh gets past it, saying what it did not read",
-              r.returncode == 0 and "verdict was unread" in out
-              and len(prompts(forced_unread)) == 1,
-              f"exit {r.returncode}: {out[:300]}")
-        # `--force` IMPLIES --assume-fresh, which its help promises and which
-        # this branch implements separately from `waived`. Every case here
-        # passed --assume-fresh, so dropping `args.force` from it survived.
-        forced_unread2 = shims(Path(d) / "fu2", rows, read_exit=1)
-        r2 = assign(["w1:p2", "198", "--force"], forced_unread2)
-        check("--force alone also gets past a pane that would not read",
-              r2.returncode == 0 and len(prompts(forced_unread2)) == 1,
-              f"exit {r2.returncode}: {(r2.stdout + r2.stderr)[:250]}")
-        check("...printing ONE --force line, not two about the same verdict",
-              out.count("assigning anyway") == 1
-              and "assigning without reading the pane" not in out, out[:400])
-
         # THE SEND ITSELF FAILING is not an assignment.
-        broke = shims(Path(d) / "broke", rows, screen=f"{RELEASED}\n{MARKER}\n",
-                      prompt_exit=4)
+        broke = shims(Path(d) / "broke", rows, COMPACTED, prompt_exit=4)
         r = assign(["w1:p2", "198"], broke)
         out = r.stdout + r.stderr
         check("a prompt that would not send reports it and is not an assignment",
@@ -534,15 +296,13 @@ def end_to_end_cases():
 
         # `#207` IS HOW AGENTS.md SPELLS A SUB-ISSUE, so it is what a caller
         # copying from an issue types; unstripped it prompts `<repo>##207`.
-        hashed = shims(Path(d) / "hashed", rows,
-                       screen=f"{RELEASED}\n{MARKER}\n")
+        hashed = shims(Path(d) / "hashed", rows, COMPACTED)
         r = assign(["w1:p2", "#207"], hashed)
         check("a sub-issue typed as #N reaches the prompt as #N, not ##N",
               r.returncode == 0 and len(prompts(hashed)) == 1
               and "campaign-base#207" in prompts(hashed)[0]
               and "##207" not in prompts(hashed)[0], repr(prompts(hashed)))
-        notnum = shims(Path(d) / "notnum", rows,
-                       screen=f"{RELEASED}\n{MARKER}\n")
+        notnum = shims(Path(d) / "notnum", rows, COMPACTED)
         r = assign(["w1:p2", "not-a-number"], notnum)
         check("...and something that is not an issue number is refused",
               r.returncode == 1 and prompts(notnum) == [],

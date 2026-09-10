@@ -262,9 +262,9 @@ pred P10_HeirWorksAfterHandoff {
    launches a delegate. Unconditional, the delegate launch would need the
    planner compacted, which only a release gives back, so a planner could
    launch at most one delegate between releases -- and that is a precondition
-   nothing on the machine reads, since `campaign-assign.py` reads the pane of
-   the session being ASSIGNED and a delegate has no pane until its launch makes
-   one. So this run going UNSAT is the signal that the model has drifted back
+   nothing on the machine reads, since `campaign-assign.py` reads the
+   transcript of the session being ASSIGNED and a delegate has none until its
+   launch makes one. So this run going UNSAT is the signal that the model has drifted back
    to demanding what no reader checks. */
 pred P9_DelegateAfterOwnSubIssue {
   some s: Session | some disj own, deleg: Agent |

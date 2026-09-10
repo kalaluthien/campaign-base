@@ -2036,7 +2036,7 @@ exit 1
               f"exit {r.returncode}: {out[:300]}")
         # THE ANCHOR A LATER READER KEYS ON, printed BEFORE the compaction is
         # attempted so that it is there whether or not the compaction happened.
-        # `campaign-assign.py` reads exactly this; keyed on the compaction's own
+        # `campaign-heartbeat.py` reads exactly this; keyed on the compaction's own
         # success line instead, a release that could not compact read as a pane
         # that never released and was assigned.
         check("...and prints the release anchor, naming branch AND pane",

@@ -40,7 +40,8 @@ each refusal naming the event and the file. Two ceilings. A witness is read at
 its own scope and not the check's, so one that fires only past the check's
 bound passes here. And a witness in a shape this does not read -- an indented,
 labelled or anonymous `run`, a body of two top-level lines -- counts as none,
-which refuses rather than passes.
+which refuses rather than passes; so does a variable named like a pred,
+whose events a check is then read as naming.
 
 THE SECOND HOLE is deletion. `expect` is checked per command, so a command someone
 removed misses no expectation: it simply is not there. Nothing generated *from*
@@ -246,8 +247,6 @@ WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
 # without its event: `or`, an implication, an equivalence. `<=>` is caught by
 # its `=>`, and `else` only ever follows an implication.
 NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b")
-# `pred P`, `pred P[x: S]`, `pred P(x: S)`, `pred S.P`: the name is the last word.
-HEAD = r"\b{keyword}\s+(?:\w+\.)?{name}\s*(?:\[[^\]]*\]|\([^)]*\))?\s*\{{"
 
 
 def composed(path):
@@ -275,16 +274,18 @@ def composed(path):
     return found
 
 
-def body(text, keyword, name):
-    """The brace-delimited body of `<keyword> <name> {`, in any HEAD form, or None."""
-    m = re.search(HEAD.format(keyword=keyword, name=name), text)
-    if not m:
-        return None
-    depth, i = 1, m.end()
-    while depth and i < len(text):
-        depth += {"{": 1, "}": -1}.get(text[i], 0)
-        i += 1
-    return text[m.end():i - 1] if not depth else None
+def declaration(text, keyword, name):
+    """(head, body) of the first `<keyword> [S.]<name> <head> { <body> }` in
+    <text>, or None. The head is whatever stands between the name and the
+    first brace -- parameters in `[...]` or `(...)`, nested or not, and a
+    fun's return type."""
+    for m in re.finditer(rf"\b{keyword}\s+(?:\w+\.)?{name}(?![\w.])", text):
+        start, depth = text.index("{", m.end()) + 1, 1
+        for i in range(start, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if not depth:
+                return text[m.end():start - 1], text[start:i]
+    return None
 
 
 def witnessed(pred_body):
@@ -313,9 +314,9 @@ def witnessed(pred_body):
 def reach(path, verdicts):
     """(declared events, [(event, [checks naming it], [(witness, verdict)])])
     over the checks declared in <path>. A check names an event its `assert`
-    body names, directly or through the preds and funs it calls. LookupError
-    when a check's `assert` cannot be read, which is not the same as none; a
-    run whose predicate cannot be read is not a witness."""
+    body names, directly or through the preds and funs it calls, read by name.
+    LookupError when a check's `assert` cannot be read, which is not the same
+    as none; a run of anything but a pred is not a witness."""
     modules = composed(path)
     text = "\n".join(modules.values())
     events = sorted({e.strip() for m in EVENTS.finditer(text)
@@ -325,26 +326,30 @@ def reach(path, verdicts):
     named = {}
     for kind, name in (m.groups() for m in own if m):
         if kind == "check":
-            b = body(text, "assert", name)
-            if b is None:
+            d = declaration(text, "assert", name)
+            if d is None:
                 raise LookupError(f"no `assert {name}` was found for its check")
-            todo, seen, hit = [b], set(), set()
+            todo, seen, hit = [d[1]], set(), set()
             while todo:
                 for word in set(re.findall(r"\w+", todo.pop())):
                     if word in events:
                         hit.add(word)
                     elif word in helpers and word not in seen:
                         seen.add(word)
-                        todo += [x for x in (body(text, "pred", word),
-                                             body(text, "fun", word)) if x]
+                        todo += [d[1] for d in (declaration(text, "pred", word),
+                                                declaration(text, "fun", word)) if d]
             for e in hit:
                 named.setdefault(e, []).append(name)
     shown = {}
     for kind, name in (m.groups() for m in own if m):
-        if kind == "run":
-            e = witnessed(body(text, "pred", name) or "")
-            if e:
-                shown.setdefault(e, []).append((name, verdicts.get(name)))
+        d = declaration(text, "pred", name) if kind == "run" else None
+        if d is None:
+            continue                     # a check, or a run of a fun
+        e = witnessed(d[1])
+        # A parameter named like the event shadows it: `pred W[Hand: Event]`
+        # shows some event firing, not Hand.
+        if e and not re.search(rf"\b{e}\b", d[0]):
+            shown.setdefault(e, []).append((name, verdicts.get(name)))
     return events, [(e, named[e], shown.get(e, [])) for e in sorted(named)]
 
 

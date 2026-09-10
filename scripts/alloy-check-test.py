@@ -20,15 +20,17 @@ THE NAMED FAILING CASES, one per refusal branch:
                                         shows Hand can fire
   a witness that comes out UNSAT        DEAD, whether or not its own `expect`
                                         already said so
-  a witness that is not one, ten ways   MISSING: a trace satisfies it without
+  a witness that is not one, 12 ways    MISSING: a trace satisfies it without
                                         Hand firing
-  a check naming Hand through a pred    MISSING, as if it named Hand itself
+  a check naming Hand through a helper  MISSING, as if it named Hand itself,
+                                        for a pred and for a fun
   three readings it could not make      `could not look`, exit 2, never a pass
 
 and the allow cases beside them: the repaired model, a witness with extra
 conjuncts, an `or` inside a quantifier's body, a witness predicate declared in
 the opened module or with parameters or a receiver, a model opening
-`util/ordering`, and a check naming no event over a model whose event is dead.
+`util/ordering`, a run of a fun, and a check naming no event over a model
+whose event is dead.
 
 Usage: scripts/alloy-check-test.py   (needs ~/.local/bin/alloy, as CI installs)
 """
@@ -62,8 +64,10 @@ CHECKS = """module sys/checks
 open sys/system
 {opens}
 pred handFires {{ Now.event = Hand }}
+fun handEvent: Event {{ Hand }}
 
 assert ViaHelper {{ always (handFires implies no Where.machine) }}
+assert ViaFun {{ always (Now.event = handEvent implies no Where.machine) }}
 assert HandNeverOnAMachine {{ always (Now.event = Hand implies no Where.machine) }}
 assert SomeEvent {{ always some Now.event /* not about Hand */ }}
 {witness}
@@ -184,11 +188,30 @@ def main() -> int:
                   and "alloy exit 0" in line(out, "RESULT"),
                   f"exit {rc}: {out[-6:]}")
 
+    for helper in ("ViaHelper", "ViaFun"):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out, path = run(d, check_name=helper)
+            check(f"an event a check names only through a helper is refused as MISSING: {helper}",
+                  rc == 1 and refused(out, "MISSING", "Hand", path)
+                  and helper in line(out, "MISSING"),
+                  f"exit {rc}: {out[-6:]}")
+
+    # Two witnesses that are about another event than their text says.
     with tempfile.TemporaryDirectory() as d:
-        rc, out, path = run(d, check_name="ViaHelper")
-        check("an event a check names only through a helper pred is refused as MISSING",
+        rc, out, path = run(d, pred="pred Cov_Hand(Hand: Event) { eventually Now.event = Hand }",
+                            run_line="run Cov_Hand for 2 expect 1")
+        check("not a witness, refused as MISSING: a parameter named like the event",
               rc == 1 and refused(out, "MISSING", "Hand", path)
-              and "ViaHelper" in line(out, "MISSING"),
+              and "alloy exit 0" in line(out, "RESULT"),
+              f"exit {rc}: {out[-6:]}")
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(
+            d, pred="pred Cov_Hand(m: set (Machine)) { eventually Now.event = Stutter }",
+            extra="pred Cov_Hand { eventually Now.event = Hand }",
+            run_line="run Cov_Hand for 2 expect 1")
+        check("not a witness, refused as MISSING: the root's pred is read, not a namesake it opens",
+              rc == 1 and refused(out, "MISSING", "Hand", path)
+              and "alloy exit 0" in line(out, "RESULT"),
               f"exit {rc}: {out[-6:]}")
 
     # ------------------------------------------------------------ allows
@@ -241,6 +264,13 @@ def main() -> int:
         rc, out, path = run(d, condition="", witness="eventually Now.event = Hand",
                             opens="open util/ordering[Machine]")
         check("a model opening alloy's own util library is read, not `could not look`",
+              rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
+              f"exit {rc}: {out[-6:]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, condition="", witness="eventually Now.event = Hand",
+                            run_line="run Cov_Hand for 2 expect 1\nrun handEvent for 2 expect 1")
+        check("a run of a fun is no witness and no error",
               rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
               f"exit {rc}: {out[-6:]}")
 

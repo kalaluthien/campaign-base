@@ -51,16 +51,24 @@ observation is quoted as it was observed). A session naming itself is always
 mid-turn, so refusing a working pane would refuse the ordinary case. Instead
 this sends at most one prompt per pane per call -- a pane named twice is
 refused before anything is applied -- and reads the pane's `agent_status` from
-`herdr agent list` before sending. `idle` and `done` (herdr's own help calls
-`done` the same underlying idle state) are waited on and reported as `applied`
-once the pane prints a NEW `Session renamed to: <name>` -- new against a count
-taken before the prompt, since a pane renamed to this name before already
-carries the line -- and as `sent, not applied yet` when the budget runs out.
-That budget is ECHO_BUDGET seconds PER PANE and it is spent only when the echo
-does not come, so a call over several silent panes takes that many multiples; `working` and any other status as
-`queued`, so the caller knows not to send that pane
-anything else until `ListAgents` shows the name; a status this could not read
-is said as such, and the prompt is still sent. A BLOCKED pane -- one sitting
+`herdr agent list` before sending. Four verdicts, one per status:
+
+  `applied`   an `idle` or `done` pane that printed a NEW
+              `Session renamed to: <name>` -- new against a count taken before
+              the prompt, since a pane renamed to this name before already
+              carries the line. The line quoted is the one read off the pane,
+              which may carry the CLI's own "held by another live session"
+              half.
+  `not applied yet`  the same pane when the budget ran out. It is ECHO_BUDGET
+              seconds PER PANE, spent only when the echo does not come, so a
+              call over several silent panes takes that many multiples.
+  `no verdict`  a pane whose screen could not be read BEFORE the prompt, where
+              a new echo cannot be told from one already there.
+  `queued`    `working` and every other status, so the caller knows not to send
+              that pane anything else until `ListAgents` shows the name.
+
+A status this could not read is said as such, and the prompt is still sent.
+A BLOCKED pane -- one sitting
 at a dialog -- gets no prompt at all: herdr would reject it with
 `agent_blocked` before any input is sent, and the dialog is a person's to
 clear, so this reports the herdr name as applied and the harness half as not
@@ -105,7 +113,8 @@ ROLES = _roles_module().ROLE_WORDS
 #     owner set 10 on 2026-09-10, and it is the binding bound: herdr's
 #     32-character limit on a session name is the other one, and the longest
 #     name this file EXPECTS, `<slug>-worker-99`, is now 20 and clears it by
-#     twelve -- expects and not admits, because NAME bounds no digit run. Slugs already spent over 10 belong to closed campaigns and are
+#     twelve -- expects and not admits, because NAME bounds no digit run.
+#     Slugs already spent over 10 belong to closed campaigns and are
 #     not re-checked;
 #   * no segment in RESERVED, for three reasons in one list. `planner` and
 #     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:
@@ -233,36 +242,71 @@ ECHO_SLEEP = 0.5
 ECHO_BUDGET = (ECHO_TRIES - 1) * ECHO_SLEEP   # the first read does not sleep
 
 
-def echo_count(pane, name):
-    """(how many times the pane's screen says `Session renamed to: <name>`,
-    None), or (None, why) when the read could not be made."""
+def echo_lines(pane, name):
+    """(the lines on the pane's screen that say `Session renamed to: <name>`,
+    None), or (None, why) when the read could not be made.
+
+    LINES AND NOT A COUNT, because the caller reports one back and the CLI has
+    two forms of this line: the bare one, and
+    `Session renamed to: <name> ("<other>" is held by another live session on
+    this machine)`. A report rebuilt from the name would delete that second
+    half, which is the one a person naming panes has to act on."""
     out = subprocess.run(["herdr", "agent", "read", pane],
                          capture_output=True, text=True)
     if out.returncode != 0:
         return None, (out.stderr.strip() or out.stdout.strip()
                       or "herdr agent read failed with no message")
     want = re.compile(re.escape(f"Session renamed to: {name}") + r"(?![\w-])")
-    return len(want.findall(out.stdout)), None
+    return [line.strip() for line in out.stdout.splitlines()
+            if want.search(line)], None
+
+
+def baseline(pane, name):
+    """`echo_lines` with the loop's own patience, so one refusal does not throw
+    the confirmation away.
+
+    The refusal this retries is the ordinary one: the status came from a
+    separate `agent list`, and a pane that went idle -> working in between
+    refuses `agent read`. Reading once here and eight times after the prompt
+    would spend the whole budget on the half that cannot fail."""
+    why = "the pane could not be read"
+    for attempt in range(ECHO_TRIES):
+        if attempt:
+            time.sleep(ECHO_SLEEP)
+        lines, err = echo_lines(pane, name)
+        if err is None:
+            return lines, None
+        why = err
+    return None, why
 
 
 def rename_echoed(pane, name, before):
-    """(the line the pane printed, None) once a NEW `Session renamed to: <name>`
-    is on the screen, or (None, why) when the budget ran out -- `why` naming the
-    last thing the read said, so an unconfirmed rename and an unreadable pane
-    are two different reports."""
+    """(the newest line the pane printed, None) once there is a NEW
+    `Session renamed to: <name>` on the screen, or (None, why) when the budget
+    ran out -- `why` naming the last thing the read said, so an unconfirmed
+    rename and an unreadable pane are two different reports.
+
+    NOT CONFIRMED IS NOT NOT APPLIED, and the wording says so. `herdr agent
+    read` returns a bounded window, so on a pane that already carried this
+    exact line the arriving echo can push the old one out of it and leave the
+    count where it was. That is a false NEGATIVE and never a false confirm,
+    which is the direction to be wrong in; it costs the caller the
+    confirmation and the budget, and `ListAgents` settles it."""
     why = "the pane never printed it"
     for attempt in range(ECHO_TRIES):
         if attempt:
             time.sleep(ECHO_SLEEP)
-        count, err = echo_count(pane, name)
+        lines, err = echo_lines(pane, name)
         if err:
             why = err
             continue
-        if count > before:
-            return f"Session renamed to: {name}", None
-        why = ("the pane never printed it" if not count else
-               f"the {count} `Session renamed to: {name}` on the pane were "
-               f"there before the prompt")
+        if len(lines) > before:
+            return lines[-1], None
+        why = ("the pane never printed it" if not lines else
+               f"the {len(lines)} `Session renamed to: {name}` on the pane are "
+               f"no more than the {before} there before the prompt, which on a "
+               f"bounded screen can also mean the new one pushed an old one "
+               f"off")
     return None, why
 
 
@@ -326,7 +370,7 @@ def main():
         # BEFORE the prompt, so an echo left by an earlier rename of this pane
         # cannot be read as this one's. A pane that is not idle is not read at
         # all: herdr refuses `agent read` on a working one.
-        before, before_why = ((echo_count(pane, name))
+        before, before_why = ((baseline(pane, name))
                               if status in ("idle", "done") else (None, None))
         res, err = herdr("agent", "prompt", pane, f"/rename {name}")
         if err:
@@ -343,7 +387,7 @@ def main():
                   f"says nothing about whether it applied (confirm with "
                   f"ListAgents)")
         elif status in ("idle", "done"):
-            line, why = rename_echoed(pane, name, before)
+            line, why = rename_echoed(pane, name, len(before))
             if line:
                 print(f"  {pane}  harness     /rename applied: the pane printed "
                       f"`{line}`")

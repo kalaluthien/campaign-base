@@ -43,9 +43,15 @@ elif args[:2] == ["agent", "read"]:
     # refuses a working pane. THE SCREEN HAS TWO STATES because the subject
     # reads it twice, once before the prompt and once after: a fake with one
     # state cannot tell an echo this rename produced from one already there.
+    # PER PANE, not per call: a screen shared across panes would let a case go
+    # green on another pane's echo.
     sent = [json.loads(l) for l in open(os.environ["FAKE_LOG"])]
-    prompted = [c[3] for c in sent if c[:2] == ["agent", "prompt"]]
+    prompted = [c[3] for c in sent
+                if c[:2] == ["agent", "prompt"] and c[2] == args[2]]
     if os.environ.get("FAKE_READ_FAILS"):
+        print("agent_busy", file=sys.stderr); sys.exit(1)
+    if not prompted and os.environ.get("FAKE_BASELINE_FAILS_ONCE") and not any(
+            c[:2] == ["agent", "read"] and c[2] == args[2] for c in sent[:-1]):
         print("agent_busy", file=sys.stderr); sys.exit(1)
     if prompted and os.environ.get("FAKE_READ_FAILS_AFTER"):
         print("agent_busy", file=sys.stderr); sys.exit(1)
@@ -65,7 +71,7 @@ else:
 
 def run(argv, agents=None, list_fails=False, rename_fails=False,
         prompt_fails=False, read_fails=False, read_fails_after=False,
-        screen=None, screen_after=None):
+        baseline_fails_once=False, screen=None, screen_after=None):
     """(completed process, list of recorded herdr calls)."""
     with tempfile.TemporaryDirectory() as d:
         bin_dir = Path(d) / "bin"
@@ -86,6 +92,8 @@ def run(argv, agents=None, list_fails=False, rename_fails=False,
             env["FAKE_READ_FAILS"] = "1"
         if read_fails_after:
             env["FAKE_READ_FAILS_AFTER"] = "1"
+        if baseline_fails_once:
+            env["FAKE_BASELINE_FAILS_ONCE"] = "1"
         if screen is not None:
             env["FAKE_SCREEN"] = screen
         if screen_after is not None:
@@ -230,7 +238,7 @@ def main():
                    screen=stale, screen_after=stale)
     check("an echo that was on the screen before the prompt confirms nothing",
           r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
-          and "were there before the prompt" in r.stdout
+          and "no more than the 1 there before the prompt" in r.stdout
           and "applied:" not in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
 
@@ -251,6 +259,31 @@ def main():
     check("another session's echo on this pane is not this rename's",
           r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
           and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE LINE IS READ OFF THE PANE, not rebuilt from the name. The CLI has a
+    # second form of it -- `... ("<other>" is held by another live session on
+    # this machine)` -- and a report synthesised from the name deletes the half
+    # a person naming panes has to act on.
+    held = ('  x  Session renamed to: machinery-worker-3 ("upkeep-worker-3" '
+            'is held by another live session on this machine)')
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen="nothing here yet", screen_after=held)
+    check("the applied line is quoted off the pane, warning and all",
+          r.returncode == 0 and "/rename applied" in r.stdout
+          and "is held by another live session" in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # ONE REFUSED BASELINE IS NOT A LOST CONFIRMATION. The status came from a
+    # separate `agent list`, so idle -> working in between is the ordinary
+    # race, and `agent read` refuses a working pane. Reading once here and
+    # eight times after the prompt would spend the budget on the half that
+    # cannot fail.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   baseline_fails_once=True)
+    check("a baseline herdr refused once is retried, not given up on",
+          r.returncode == 0 and "/rename applied" in r.stdout
+          and "could not be read before the prompt" not in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
 
     # THE BASELINE ITSELF CAN FAIL, and then there is no verdict to give: a
@@ -276,9 +309,18 @@ def main():
           and "the pane never printed it" in r.stdout
           and "applied:" not in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
-    check("...and the read was retried, not asked once",
-          len([c for c in calls if c[:2] == ["agent", "read"]]) > 1,
-          f"calls {calls}")
+    # THE BUDGET IS A NUMBER A READER TIMES AGAINST, so the message states it
+    # and a case reads it: the first read does not sleep, so 8 tries are 7
+    # sleeps, and `ECHO_TRIES * ECHO_SLEEP` would say 4s for a 3.5s wait.
+    check("...and the message states the reads and the seconds they take",
+          "8 reads over 3.5s" in r.stdout, f"out {r.stdout!r}")
+    # AFTER THE PROMPT, not in the whole call: the baseline read is one more
+    # `agent read` in the log, and a total-count assertion was satisfied by it
+    # alone with the loop cut to a single try.
+    after = calls[[c[:2] for c in calls].index(["agent", "prompt"]) + 1:]
+    check("...and the read after the prompt was retried, not asked once",
+          len([c for c in after if c[:2] == ["agent", "read"]]) > 1,
+          f"after {after}")
 
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
                    read_fails_after=True)
@@ -345,6 +387,23 @@ def main():
     # A WORKING PANE IS NOT READ AT ALL. herdr refuses `agent read` on one, and
     # the wait is scoped to the two statuses that can answer; without this case
     # the scoping could go and only a timing change would show it.
+    # TWO IDLE PANES EACH GET THEIR OWN BASELINE AND THEIR OWN ECHO, and each
+    # is confirmed off its own screen -- the fake's screen is per pane for the
+    # same reason.
+    both = [{"pane_id": "w1:p1", "agent_status": "idle"},
+            {"pane_id": "w1:p2", "agent_status": "idle"}]
+    r2, calls2 = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-planner-4"],
+                     agents=both)
+    check("two idle panes are each confirmed off their own screen",
+          r2.returncode == 0
+          and "w1:p1  harness     /rename applied" in r2.stdout
+          and "Session renamed to: machinery-worker-3" in r2.stdout
+          and "w1:p2  harness     /rename applied" in r2.stdout
+          and "Session renamed to: machinery-planner-4" in r2.stdout
+          and [c[2] for c in calls2 if c[:2] == ["agent", "read"]]
+              == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
+          f"exit {r2.returncode} out {r2.stdout!r} calls {calls2}")
+
     check("...and the working pane was never read, only the idle one",
           set(c[2] for c in calls if c[:2] == ["agent", "read"]) == {"w1:p1"},
           f"calls {calls}")

@@ -624,8 +624,9 @@ Condition 1's reader is `scripts/check-merge-review.py`: it answers `reviewed`,
 comments opening `REVIEW` that name it, and a pull request it could not read
 fails the job exactly as one with no review does. `campaign-claim release` reads
 it again before deleting a merged claim's ref, the last moment anything here
-looks at that merge. **Posting the REVIEW does not turn the check green**: a
-comment fires no workflow, so the merge waits on `gh run rerun <id>`.
+looks at that merge. **Posting the REVIEW re-runs the check**:
+`.github/workflows/review-rerun.yml` runs `scripts/rerun-check.py` on every
+comment and review, which re-runs a red `check` once a REVIEW names the head.
 `--report` asks the same sha from the writer's end — a `REPORT` pinning
 anything but it — and **nothing calls that mode**: a session runs it or does
 not.

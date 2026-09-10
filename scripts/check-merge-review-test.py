@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: M1_MergedWithNothingReadingTheReview, M1c_TheReaderAdmitsTheReadMerge
-# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheReaderExcludesTheStalePush
+# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush
 """Prove check-merge-review refuses on every branch it claims to refuse on.
 
 One case per refusal, each named after the branch it exercises, and each one

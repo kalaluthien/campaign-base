@@ -116,6 +116,17 @@ from pathlib import Path
 # grep: every `<!-- unguarded: ... -->` already written in the tree, and in a
 # tree this check does not see. Changing one silently turns those exemptions
 # into non-matches, and a non-matching exemption is reported, not honoured.
+# THE TOOLS THAT READ A FILE, named once because the campaign-directory form
+# below asks for them on both sides of the marker: `cat "$C/.campaign"` and
+# `< "$C/.campaign" cut -f2` are the same hand-rolled reading written two ways,
+# and a tool admitted by one spelling and not the other is a refusal with a
+# hole in it. One list also means one place to delete, so the test's one case
+# per tool is what proves each of them is live. `read` is here because
+# `read -r N SLUG < "$C/.campaign"` is the idiomatic way to take the two fields
+# out of a one-line marker, and it names no tool the older list held.
+MARKER_TOOLS = (r"\bgrep\b|\bls\b|\bfind\b|\bawk\b|\bsed\b|\bcat\b"
+                r"|\bcut\b|\bhead\b|\brg\b|\bread\b|dirname|basename")
+
 FORMS = [
     (
         "campaign-anchors",
@@ -229,12 +240,12 @@ FORMS = [
         # names one directory it already resolved.
         # The middle half is for the redirect written first, `< "$C/.campaign"
         # cut -f2`, where the tool sits AFTER the marker and the leading
-        # alternation cannot see it. Each half has its own named case in the
-        # test, because a half nothing pins is a refusal nobody would miss.
-        re.compile(r"(\bgrep\b|\bls\b|\bfind\b|\bawk\b|\bsed\b|\bcat\b"
-                   r"|\bcut\b|\bhead\b|\brg\b|dirname|basename)"
-                   r"[^|;&]*\.campaign"
-                   r"|\.campaign[^|;&]*(\bgrep\b|\bawk\b|\bsed\b|\bcut\b)"
+        # alternation cannot see it; it takes the SAME tool list, because a
+        # tool one spelling admits and the other does not is a hole. Each half
+        # has its own named case in the test and so does each tool, because a
+        # branch nothing pins is a refusal nobody would miss losing.
+        re.compile(rf"({MARKER_TOOLS})[^|;&]*\.campaign"
+                   rf"|\.campaign[^|;&]*({MARKER_TOOLS})"
                    r"|\*/\.campaign"),
         "the campaign-directory reading",
     ),

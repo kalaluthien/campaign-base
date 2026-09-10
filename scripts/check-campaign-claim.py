@@ -123,7 +123,8 @@ BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # It was once the `-YYMMDD` suffix on the name, and #181 round 2 put that
 # suffix back for the person reading `ls` -- but the bare `<slug>` form it
 # replaced is still on disk, and no name shape can tell an arbitrary slug from
-# `scripts/` anyway. So the directory says so itself, in a file `opening-campaign` writes at scaffold: one line,
+# `scripts/` anyway. So the directory says so itself, in a file
+# `opening-campaign` writes at scaffold: one line,
 # `<N> <slug>`, derived from the campaign issue and re-derivable at any time,
 # which is what lets it live in the git-ignored directory at all.
 #
@@ -586,7 +587,8 @@ def campaign_dirs_at(base):
     `known_slugs` collects every slug, and `guard-precision.py` globs for the
     logs. `launching.md` held a third that WAS this question, hand-rolled as
     `dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)"` -- silently the cwd on no
-    match and a mangled path on two -- and it calls the reader now. The name form has moved twice (dated,
+    match and a mangled path on two -- and it calls the reader now. The name
+    form has moved twice (dated,
     bare, dated again) and the marker has not; a second walk written beside this
     one is what would have to be found and changed each time.
 

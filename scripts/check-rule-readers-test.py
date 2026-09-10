@@ -61,8 +61,33 @@ FORM_CASES = [
      fence('CAMPAIGN=$(dirname "$(grep -l \'^<N> \' "$BASE"/*/.campaign)")'), 1),
     ("campaign directory: the glob-loop, where the `;` cuts before the tool",
      fence('for f in "$BASE"/*/.campaign; do dirname "$f"; done'), 1),
+    # ...ONE CASE PER TOOL, each naming ONE marker so that only the leading
+    # alternation can catch it: a fixture carrying `*/.campaign` as well is
+    # caught by the glob half instead, and its tool ships unpinned. That is
+    # what happened to `head` and to `grep`, whose retired-walk case above
+    # still reads as though it pinned the tool and does not.
+    ("campaign directory: a grep over one marker",
+     fence('grep -q \'^1 \' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: an ls of one marker",
+     fence('ls -l "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a find for the markers by name",
+     fence('find "$BASE" -maxdepth 2 -name .campaign'), 1),
+    ("campaign directory: an awk over one marker",
+     fence('awk \'{print $2}\' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a sed over one marker",
+     fence('sed -n 1p "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a cat of one marker",
+     fence('cat "$CAMPAIGN/.campaign"'), 1),
     ("campaign directory: a bare head over one marker",
      fence('head -1 "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: an rg over one marker",
+     fence('rg -N \'^1 \' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: the two fields read out of one marker",
+     fence('read -r N SLUG < "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a dirname taken off one marker",
+     fence('dirname "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a basename taken off one marker",
+     fence('basename "$CAMPAIGN/.campaign"'), 1),
     ("campaign directory: a field cut out of one marker",
      fence('cut -d" " -f1 "$CAMPAIGN/.campaign"'), 1),
     # ...and the same read with the redirect written first, which is the whole

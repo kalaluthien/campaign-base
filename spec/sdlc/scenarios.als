@@ -63,12 +63,14 @@ pred skipDiscipline {
   always (Now.event = Skip implies maySkip[Now.subject, Now.at])
 }
 
-/* THE CHECK AT THE COMMIT: the tree a commit leaves is tied. Read on the
-   tree AFTER the commit, so a rename that rewrites its namers in the same
-   commit passes and one that leaves a name dangling is refused. This is the
-   pre-commit check the campaign's Scope names. */
+/* THE CHECK AT THE COMMIT: the tree a commit leaves is tied, and every
+   witness it declares names a scenario. Read on the tree AFTER the commit, so
+   a rename that rewrites its namers in the same commit passes and one that
+   leaves a name dangling is refused -- even where another name still ties the
+   code path (`WitnessesResolve_Bites`). This is the pre-commit check the
+   campaign's Scope names. */
 pred tieDiscipline {
-  always ((Now.event in Write + Rename) implies after treeTied)
+  always ((Now.event in Write + Rename) implies after (treeTied and witnessesResolve))
 }
 
 /* THE CHECK AT THE LANDING: every stage the change has no artifact for is

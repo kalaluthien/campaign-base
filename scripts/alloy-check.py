@@ -14,7 +14,7 @@ script neither restates nor re-reads it. There is no verdict table anywhere,
 and reintroducing one would be a second reader of what the solver already
 decided.
 
-That leaves one hole and two jobs.
+That leaves two holes and two jobs.
 
 RUNNING (the default mode) is `alloy exec -f -t text -c '*'` into <dir>, a
 fresh temporary directory unless -o names one, so the traces outlive the run
@@ -23,7 +23,27 @@ status through; a run that printed no command result at all -- a parse error, a
 missing solver -- is reported as that and never as a pass, because looking and
 finding nothing is not the same as being unable to look.
 
-THE HOLE is deletion. `expect` is checked per command, so a command someone
+THE DEAD EVENT is the first hole. A `check` over an event no trace reaches
+holds by vacuity, and comes out UNSAT exactly as a true one does: #289 shipped
+four checks over a `Handoff` whose own predicate set `Where.machine`, which
+every step above session pins empty. So a run also reads, for every event a
+`check` in <file> names, a WITNESS: a `run` declared in <file> -- the only file
+whose commands alloy runs -- of a predicate shaped `eventually Now.event = E`,
+or `eventually (Now.event = E and ...)` whose other conjuncts are joined by
+`and` alone, since a disjunct the witness does not name satisfies it without E
+ever firing. The events are the `one sig ... extends Event` declarations of
+<file> and every module it opens, comments stripped, and a check names one when
+its `assert` body does, directly or through the preds and funs it calls. The
+witness's verdict is the one alloy printed for it, so this reads a verdict
+rather than computing one: SAT passes, UNSAT is DEAD and no witness is MISSING,
+each refusal naming the event and the file. Two ceilings. A witness is read at
+its own scope and not the check's, so one that fires only past the check's
+bound passes here. And a witness in a shape this does not read -- an indented,
+labelled or anonymous `run`, a body of two top-level lines -- counts as none,
+which refuses rather than passes; so does a variable named like a pred,
+whose events a check is then read as naming.
+
+THE SECOND HOLE is deletion. `expect` is checked per command, so a command someone
 removed misses no expectation: it simply is not there. Nothing generated *from*
 the models can see it either -- regenerate an inventory after the deletion and
 the command is absent from the claim exactly as it is from the model, so every
@@ -49,8 +69,9 @@ command and regenerates in one go, any more than a hand-kept count stops one
 that also edits the number. It catches the careless deletion. A floor, not a
 fence -- and unlike a count, what it prints is the command's name.
 
-Exit 0 when the mode's checks pass, 1 when they fail, and 2 when a run produced
-no command result to check at all.
+Exit 0 when the mode's checks pass, 1 when they fail -- a missed `expect` or a
+dead event -- and 2 when it could not look: a run that produced no command
+result, or a model whose checks and witnesses it could not read.
 
 `--digest` condenses the traces the run above just wrote. The raw `-t text` dump
 repeats every static signature in every state, which buries the handful of
@@ -193,7 +214,8 @@ def commands_mode(directory, write):
 
 
 def run_alloy(path, outdir):
-    """(alloy's exit status, how many commands ran -- None if none could be read)."""
+    """(alloy's exit status, how many commands ran -- None if none could be
+    read, {command name: SAT or UNSAT})."""
     cmd = [ALLOY, "exec", "-f", "-o", outdir, "-t", "text", "-c", "*", path]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     # Alloy prints its per-command lines and its expectation errors to stderr,
@@ -201,13 +223,149 @@ def run_alloy(path, outdir):
     output = (proc.stdout + proc.stderr).replace("\b", "")
     sys.stdout.write(output)
     sys.stdout.flush()
-    names = {m.group(2) for m in map(RESULT.match, output.splitlines()) if m}
-    if not names:
-        return proc.returncode, None
+    verdicts = {m.group(2): m.group(3) for m in map(RESULT.match, output.splitlines()) if m}
+    if not verdicts:
+        return proc.returncode, None, verdicts
     receipt = os.path.join(outdir, "receipt.json")
     if os.path.exists(receipt):
-        return proc.returncode, len(json.load(open(receipt))["commands"])
-    return proc.returncode, len(names)
+        return proc.returncode, len(json.load(open(receipt))["commands"]), verdicts
+    return proc.returncode, len(verdicts), verdicts
+
+
+# ------------------------------------------------------------- the dead event
+
+COMMENT = re.compile(r"/\*.*?\*/|(?:--|//)[^\n]*", re.S)
+MODULE = re.compile(r"^\s*module\s+([\w/]+)", re.M)
+OPEN = re.compile(r"^\s*open\s+([\w/]+)", re.M)
+EVENTS = re.compile(r"\bone\s+sig\s+([\w\s,]+?)\s+extends\s+Event\b")
+# The event stands alone or is followed by `and`: `Now.event = E.r` is some
+# other event.
+WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
+                     r"|\(\s*Now\.event\s*=\s*(\w+)((?:\s+and\b|\s*&&).*)?\s*\))", re.S)
+# What may join a conjunct to the rest of a formula without making it
+# optional. Anything else at the top level lets a trace satisfy the witness
+# without its event: `or`, an implication, an equivalence. `<=>` is caught by
+# its `=>`, and `else` only ever follows an implication.
+NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b")
+# What follows a set comprehension's brace, `{x: S | ...}` or `{disj x, y: S
+# | ...}`, and never a formula's: a body cannot open with a declaration. It
+# can open with a range restriction, `r :> S`, which is not one.
+COMPREHENSION = re.compile(r"\s*(?:disj\s+)?\w+(?:\s*,\s*\w+)*\s*:(?!>)")
+
+
+def composed(path):
+    """{module path: its text, comments stripped} for <path> and every module
+    it opens, resolved as alloy resolves them: from the directory the root
+    file's own `module` line names, or its own directory when it has none. A
+    `util/` module not found there is alloy's own library, which declares no
+    Event, and is not read."""
+    path = os.path.abspath(path)
+    top = COMMENT.sub(" ", open(path).read())
+    m = MODULE.search(top)
+    root = path[: -len(m.group(1) + ".als")] if m else os.path.dirname(path) + os.sep
+    found, todo = {}, [path]
+    while todo:
+        p = todo.pop()
+        if p in found:
+            continue
+        if not os.path.exists(p):
+            raise LookupError(f"{p} is opened and is not there")
+        found[p] = COMMENT.sub(" ", open(p).read())
+        for o in OPEN.findall(found[p]):
+            q = os.path.join(root, o + ".als")
+            if not (o.startswith("util/") and not os.path.exists(q)):
+                todo.append(q)
+    return found
+
+
+def declaration(text, keyword, name):
+    """(head, body) of the first `<keyword> [S.]<name> <head> { <body> }` in
+    <text>, or None. The head is whatever stands between the name and the
+    first brace that neither opens a set comprehension nor sits inside one --
+    parameters in `[...]` or `(...)` and a fun's return type, a comprehension
+    in either."""
+    for m in re.finditer(rf"\b{keyword}\s+(?:\w+\.)?{name}(?![\w.])", text):
+        depth, i = 0, m.end()
+        while depth or text[i] != "{" or COMPREHENSION.match(text, i + 1):
+            depth += (text[i] == "{") - (text[i] == "}")
+            i += 1
+        start, depth = i + 1, 1
+        for i in range(start, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if not depth:
+                return text[m.end():start - 1], text[start:i]
+    return None
+
+
+def witnessed(pred_body):
+    """The event a predicate body shows firing in every trace it admits, or None."""
+    m = WITNESS.fullmatch(" ".join(pred_body.split()))
+    if not m:
+        return None
+    if m.group(1):
+        return m.group(1)
+    rest = m.group(3) or ""
+    depth, bound = 0, False
+    for i, c in enumerate(rest):
+        depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(c, 0)
+        if depth < 0:
+            return None                  # the outer parenthesis closed early
+        if depth or bound:
+            continue
+        if NOT_AND.match(rest, i):
+            return None
+        # A quantifier's or a `let`'s body runs to the outer parenthesis and
+        # is one conjunct, so only an early close is read past its bar.
+        bound = c == "|"
+    return m.group(2)
+
+
+def reach(path, verdicts):
+    """(declared events, [(event, [checks naming it], [(witness, verdict)])])
+    over the checks declared in <path>. A check names an event its `assert`
+    body names, directly or through the preds and funs it calls, read by name.
+    LookupError when a check's `assert` cannot be read, which is not the same
+    as none; a run of anything but a pred is not a witness."""
+    modules = composed(path)
+    text = "\n".join(modules.values())
+    events = sorted({e.strip() for m in EVENTS.finditer(text)
+                     for e in m.group(1).split(",")})
+    helpers = set(re.findall(r"\b(?:pred|fun)\s+(?:\w+\.)?(\w+)", text))
+    own = [DECL.match(l) for l in modules[os.path.abspath(path)].splitlines()]
+    named = {}
+    for kind, name in (m.groups() for m in own if m):
+        if kind == "check":
+            d = declaration(text, "assert", name)
+            if d is None:
+                raise LookupError(f"no `assert {name}` was found for its check")
+            todo, seen, hit = [d[1]], set(), set()
+            while todo:
+                for word in set(re.findall(r"\w+", todo.pop())):
+                    if word in events:
+                        hit.add(word)
+                    elif word in helpers and word not in seen:
+                        seen.add(word)
+                        todo += [d[1] for d in (declaration(text, "pred", word),
+                                                declaration(text, "fun", word)) if d]
+            for e in hit:
+                named.setdefault(e, []).append(name)
+    root = modules[os.path.abspath(path)]
+    shown = {}
+    for kind, name in (m.groups() for m in own if m):
+        if kind != "run":
+            continue
+        # Alloy runs the root's own declaration of the name, pred or fun, over
+        # a namesake in a module it opens.
+        own_decl = re.search(rf"\b(?:pred|fun)\s+(?:\w+\.)?{name}(?![\w.])", root)
+        d = declaration(root if own_decl else text, "pred", name)
+        if d is None:
+            continue                     # a run of a fun
+        e = witnessed(d[1])
+        # A parameter named like the event, `Now` or `event` shadows what the
+        # body reads: `pred W[Hand: Event]` shows some event firing, not Hand.
+        if e and not re.search(rf"\b(?:{e}|Now|event)\b", d[0]):
+            shown.setdefault(e, []).append((name, verdicts.get(name)))
+    return events, [(e, named[e], shown.get(e, [])) for e in sorted(named)]
 
 
 # ------------------------------------------------------------- the trace digest
@@ -386,16 +544,53 @@ def main(argv):
     if outdir is None:
         outdir = tempfile.mkdtemp(prefix="alloy-" + os.path.basename(path)[:-4] + "-")
 
-    status, ran = run_alloy(path, outdir)
-    print(f"model     {os.path.abspath(path)}")
+    status, ran, verdicts = run_alloy(path, outdir)
+    model = os.path.abspath(path)
+    print(f"model     {model}")
     print(f"traces    {outdir}")
     if ran is None:
         print("commands  NONE READ  alloy printed no command result, so nothing "
               "about this model was checked")
-        print(f"RESULT    could not read the model (alloy exit {status})")
+        print(f"RESULT    could not look: alloy printed no command result "
+              f"(alloy exit {status})")
         return 2
     print(f"commands  {ran} ran; each one's verdict was checked by its own "
           f"`expect` clause")
+    try:
+        events, rows = reach(model, verdicts)
+    except (OSError, LookupError) as e:
+        print(f"RESULT    could not look: the checks' events and their witnesses "
+              f"were not read ({e}) (alloy exit {status})")
+        return 2
+    print(f"events    {len(events)} declared ({', '.join(events)}); "
+          + (f"the checks here name {len(rows)}: {', '.join(r[0] for r in rows)}"
+             if rows else "no check here names one"))
+    dead, unread = [], []
+    for event, checks, witnesses in rows:
+        by = f"named by {', '.join(checks)}"
+        sat = [w for w, v in witnesses if v == "SAT"]
+        if sat:
+            print(f"witness   {event:<16} {sat[0]:<28} SAT    {by}")
+        elif not witnesses:
+            dead.append(event)
+            print(f"MISSING   {event:<16} no `run` of `eventually (Now.event = "
+                  f"{event} ...)`  {by}  in {model}")
+        elif all(v == "UNSAT" for _, v in witnesses):
+            dead.append(event)
+            print(f"DEAD      {event:<16} {', '.join(w for w, _ in witnesses):<28} "
+                  f"UNSAT  {by}  in {model}")
+        else:
+            unread.append(event)
+            print(f"UNREAD    {event:<16} {', '.join(w for w, _ in witnesses):<28} "
+                  f"alloy printed no verdict for it  {by}")
+    if dead:
+        print(f"RESULT    alloy exit {status}; {len(dead)} event(s) a check names "
+              f"cannot be shown to fire: {', '.join(dead)}")
+        return 1
+    if status == 0 and unread:
+        print(f"RESULT    could not look: no verdict for the witness of "
+              f"{', '.join(unread)} (alloy exit {status})")
+        return 2
     print(f"RESULT    alloy exit {status}")
     return 0 if status == 0 else 1
 

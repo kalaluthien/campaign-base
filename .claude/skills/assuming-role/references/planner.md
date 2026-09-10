@@ -60,3 +60,29 @@ Two harness facts, from `CronCreate`'s own description:
 - A recurring cron auto-expires after 7 days, firing once more first — a
   campaign running longer than a week re-arms the recurring cron then, or the
   cache heartbeat lapses silently.
+
+## Handing off
+
+A fresh planner takes over when this one cannot go on: a slug rename, a
+context too large to compact, a harness upgrade. The model is `handoff` in
+`spec/campaign/orchestration/system.als`. The first run was the rename of
+`upkeep` to `rule-check` (rule-check#272, 2026-09-10): `upkeep-planner-1`
+posted its NOTE, started `rule-check-planner-10`, and the successor closed it.
+
+1. **The predecessor posts its last comment**, `NOTE <old>: handed off to
+   <new>`, on the campaign issue: the pending list (which sub-issue each
+   session works, which wait), decisions not yet on an issue, and the pane to
+   close. It writes nothing after it.
+2. **It starts the successor** in a pane of its own at the base root, named
+   `<slug>-planner-<n>` by `campaign-name-session.py`. The first prompt is one
+   sentence: take over from `<old>`, read its NOTE on `<slug>#N`.
+3. **The successor reads that NOTE on GitHub**, then `bound <N>` and
+   `campaign-claim live <N>`. A successor named for another campaign stops
+   here.
+4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
+   prompt`, and reads `herdr agent list` until the pane is gone. The
+   predecessor never exits itself, so there is never an instant with no
+   planner.
+
+The state travels in the NOTE, the claim refs, and the sub-issue index; the
+old pane, its transcript and a scratchpad carry none of it.

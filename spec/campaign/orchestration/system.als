@@ -1,6 +1,6 @@
 /*
  * Agents and how a campaign session coordinates them: launch, work, the four
- * messages, review, stand-down and retirement. It opens session/system because
+ * messages, review, stand-down, retirement and handoff. It opens session/system because
  * every agent has a launcher and every message has a session at one end, and it
  * is the top entity, so this module composed is the whole model.
  *
@@ -21,7 +21,8 @@
  *              last release. The one bit this entity has about a session's
  *              own cost.
  *   StandDownTaken  agents that have been told to stand down.
- *   Retired    agents whose workspace has been destroyed.
+ *   Retired    agents whose workspace has been destroyed, or handed to a
+ *              successor session by `handoff`.
  *   Reviewed   a bit on the PULL REQUEST, not on the agent: a review outlives
  *              the agent exactly as the pull request does.
  *   Target     the observer: which agent the current event is about.
@@ -357,7 +358,7 @@ fun orchestrationOwn: set Event {
    here, added by #177: `agentCommitLocal` and `unattendedCommitLocal` are
    disjuncts on it, and joining this set is what removes it from the
    fall-through. */
-fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal }
+fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff }
 
 /* The bits divide by how long they live: a pull request's, and a process's.
    None has a directory's any more. */
@@ -629,6 +630,69 @@ pred limitReset {
   Now.event = LimitReset and no Now.issue and no Target.agent and no Who.session
 }
 
+/* The agents a session holds live: its own atoms, one per sub-issue it works. */
+fun heldBy[s: Session]: set Agent { peer.s & Live }
+
+/* Which unlaunched agent of the successor takes each of the predecessor's:
+   the same sub-issue, the same branch, so the same checkout. */
+fun heirOf[p, t: Session]: Agent -> Agent {
+  { a, b: Agent | a in heldBy[p] and b.peer = t and b not in Launched
+                  and b.task = a.task and b.branch = a.branch }
+}
+
+/* ONE EVENT OVER TWO SESSIONS, not a launch and a retire. The successor `t`
+   performs it: every live agent of the predecessor `p` is retired and an heir
+   of `t`'s is launched in its place, on the same sub-issue and branch, in the
+   same instant -- so no instant has both, or neither, holding the work. Two
+   events would have that instant, and a crash between them would leave it.
+   session/system.als's `sessionHandoff` moves the claims and refuses a
+   successor named for another campaign.
+
+   WHAT MOVES IS WHAT GITHUB HOLDS. The work on the checkout (`LocalOnly`, the
+   branch on the remote) moves with the checkout; a REPORT and a BLOCKED are
+   comments, so `Reported` and `Waiting` move. A STATUS is a prompt into the
+   old pane and dies with it, so `Asked` and `Answered` do not: whoever asked
+   asks the successor again. `Confirmed` does not either, since nobody has
+   looked at the heir yet.
+
+   WHAT IS NOT MODELLED: the predecessor's `NOTE <old>: handed off to <new>`,
+   and that the successor reads it on GitHub before it sends `/exit`. The
+   ordering is the procedure's, in
+   `.claude/skills/assuming-role/references/planner.md` § Handing off and its
+   worker twin; this event is the instant the `/exit` lands.
+
+   Retiring here is not `retire`: no stand-down, and no workspace destroyed,
+   because the heir stands in it. Being in `Retired` is what keeps a later
+   `retire` from reaching the old atom and deleting the checkout under the
+   heir. */
+pred handoff[p, t: Session] {
+  Now.event = Handoff and Who.session = t and Who.predecessor = p
+  t in Compacted
+  no peer.t & Launched
+  let olds = heldBy[p], h = heirOf[p, t] {
+    all a: olds | one a.h
+    all b: Agent.h | one h.b
+    Launched'       = Launched + olds.h
+    Live'           = Live - olds + olds.h
+    Retired'        = Retired + olds
+    LocalOnly'      = LocalOnly - olds + (olds & LocalOnly).h
+    PushedToRemote' = PushedToRemote + (olds & PushedToRemote).h
+    Reported'       = Reported + (olds & Reported).h
+    Waiting'        = Waiting + (olds & Waiting).h
+    /* Cleared on the heir and not merely kept: `confirm` has no liveness
+       guard, so an heir can be Confirmed before it is launched, and keeping
+       that bit let `retire` destroy the work the heir inherited on a stale
+       confirmation. Found by TwoStepCoLocatedSuffices going SAT. */
+    Confirmed'      = Confirmed - olds.h
+    Asked'          = Asked - olds.h
+    Answered'       = Answered - olds.h
+    /* Taking work grows the successor's context, as a launch does. */
+    (some olds) implies Compacted' = Compacted - t else Compacted' = Compacted
+  }
+  StandDownTaken' = StandDownTaken and keepStopped and keepReview
+  no Target.agent
+}
+
 /* Both guards are what a session can actually read. Liveness elsewhere is
    not, so R6 is the residue that leaves. */
 pred agentRelease {
@@ -674,6 +738,7 @@ pred orchestrationStep {
   or (some a: Agent | agentCommitLocal[a])
   or unattendedCommitLocal
   or agentRelease
+  or (some p, t: Session | handoff[p, t])
   or (Now.event not in Stutter + orchestrationActed and agentFrame and no Target.agent)
 }
 

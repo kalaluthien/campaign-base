@@ -135,8 +135,56 @@ assert SessionCompactsBetweenSubIssues {
        true for a release that happened before a1 ever started. It held only
        because nothing else in the model returns the bit; a later event that
        did would leave it green and the comment false. Found by review. */
-    implies once (Now.event = Release and Who.session = a1.peer
-                  and once (Now.event = Launch and Target.agent = a1))
+    /* `a1 in Launched` at the release, and not a nested `once` of a1's
+       `Launch`: since #289 an agent also starts by `handoff`, which is no
+       `Launch`, and the nested form read a successor's heir as never started
+       -- so a successor's release could never come after it and the assert
+       went false for a trace doing exactly what it asks -- measured SAT at
+       3 Agent, the predecessor, its heir and the successor's next, which is
+       why the command below runs at 3. `Launched` only grows, so being in it
+       at the release says the release came after. */
+    implies once (Now.event = Release and Who.session = a1.peer and a1 in Launched)
+}
+
+/* THE HANDOFF (#289), four claims, each reddened by deleting one clause of
+   `handoff` or `sessionHandoff`, named beside it. */
+
+/* After it, the predecessor holds nothing live and the successor holds each
+   of its sub-issues exactly once. Dropping `+ olds.h` from `Live'` reddens
+   it. Dropping `- olds` does not, and Cov_Handoff is what goes red instead:
+   the old atom is then both Live and Retired, which AgentWellFormed forbids,
+   so no handoff moving work is reachable and this check holds vacuously. */
+assert HandoffLeavesOneHolder {
+  always all p, t: Session, a: Agent |
+    (Now.event = Handoff and Who.predecessor = p and Who.session = t and a in heldBy[p])
+    implies after (no heldBy[p] and one (heldBy[t] & task.(a.task)))
+}
+
+/* The successor performs it, and every agent the predecessor held is retired
+   by it. Dropping `t != p` reddens it, and so does dropping `Retired'`. */
+assert HandoffClosedBySuccessor {
+  always all p, t: Session |
+    (Now.event = Handoff and Who.predecessor = p and Who.session = t)
+    implies (p != t and (all a: heldBy[p] | after a in Retired))
+}
+
+/* No claim moves off GitHub and none is left on the predecessor; the work on
+   the checkout and a pending BLOCKED move to the heir. Dropping the
+   `t->(p.claimedIssues)` term reddens it, and so does dropping either
+   `(olds & ...).h` term it reads. */
+assert HandoffLosesNoClaim {
+  always all p, t: Session |
+    (Now.event = Handoff and Who.predecessor = p and Who.session = t)
+    implies ((all i: p.claimedIssues | after i in t.claimedIssues)
+             and (all i: Claimed | after i in Claimed)
+             and (all a: heldBy[p] & LocalOnly | after some (heldBy[t] & LocalOnly & task.(a.task)))
+             and (all a: heldBy[p] & Waiting   | after some (heldBy[t] & Waiting   & task.(a.task))))
+}
+
+/* A successor named for another campaign never takes the work over. Dropping
+   `t.campaignNamed = p.worksOn` reddens it. */
+assert SuccessorNamedForAnotherRefused {
+  always (Now.event = Handoff implies no (Who.session.campaignNamed - Who.predecessor.worksOn))
 }
 
 /* ---------------- reachability floor ---------------- */
@@ -157,6 +205,23 @@ pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
+/* A handoff that moves work, so the four checks above are not green over a
+   handoff of an empty session. */
+pred Cov_Handoff          { eventually (Now.event = Handoff and some heldBy[Who.predecessor]) }
+
+/* THE CONTROL THAT THE CLAIM MOVE IS LOAD-BEARING: under the role rule, the
+   heir works the sub-issue it was handed, with no claim cut in between.
+   Dropping `t->(p.claimedIssues)` from `sessionHandoff` makes this UNSAT,
+   since `mayAct` then refuses the heir the code plane. The `until` is the
+   whole discriminator: without it the successor claims the sub-issue again
+   after the handoff and the run is SAT either way -- measured. */
+pred P10_HeirWorksAfterHandoff {
+  permissionByRole
+  some t: Session, b: Agent | b.peer = t
+    and eventually (Now.event = Handoff and Who.session = t
+                    and after ((Now.event != Claim)
+                               until (Now.event = Work and Target.agent = b)))
+}
 /* THE CONTROL FOR THE ASSERT ABOVE. Without it, deleting the release's
    `Compacted' = Compacted + Who.session` makes a session's second launch
    unreachable and the assert stays green on a vacuity nobody would read. This
@@ -248,8 +313,16 @@ run Cov_AgentDie         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 
 -- a release compacts, a launch spends it, so two sub-issues need a release between them
-check SessionCompactsBetweenSubIssues for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 0
+check SessionCompactsBetweenSubIssues for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 0
 -- and two sub-issues on one session do happen, so the check above is not vacuous
 run P8_TwoSubIssuesOneSession        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 12 steps expect 1
+-- the handoff: one holder after, closed by the successor, no claim lost, the wrong name refused
+check HandoffLeavesOneHolder          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check HandoffClosedBySuccessor        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check HandoffLosesNoClaim             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check SuccessorNamedForAnotherRefused for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
+-- and each is about a handoff that moved work, which the heir then works
+run Cov_Handoff                       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run P10_HeirWorksAfterHandoff         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- and a delegate launch is NOT guarded, so one session can work a sub-issue and then launch one
 run P9_DelegateAfterOwnSubIssue      for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 3 Repo, 3 Branch, 2 CampaignDir, 12 steps expect 1

@@ -159,19 +159,26 @@ def gh_json(what, *args):
         return None, f"{what} answered with something that is not JSON: {e}"
 
 
-def head_of(repo, pr):
-    """(head sha, why). `headRefOid` is the head of the BRANCH, which is the
-    sha a merge of this pull request lands -- not the runner's merge commit,
-    which exists only inside a checkout."""
+def head_ref(repo, pr):
+    """((head sha, branch name), why). `headRefOid` is the head of the BRANCH,
+    which is the sha a merge of this pull request lands -- not the runner's
+    merge commit, which exists only inside a checkout. The branch name rides
+    along for rerun-check.py, so the pull request's head has one reader."""
     data, why = gh_json(f"gh pr view {pr} -R {repo}", "gh", "pr", "view", str(pr),
-                        "-R", repo, "--json", "headRefOid")
+                        "-R", repo, "--json", "headRefOid,headRefName")
     if why:
         return None, why
     head = (data or {}).get("headRefOid") if isinstance(data, dict) else None
     if not head:
         return None, (f"{repo}#{pr} came back with no headRefOid, so there is "
                       f"no sha to read a review against")
-    return head, None
+    return (head, data.get("headRefName") or ""), None
+
+
+def head_of(repo, pr):
+    """(head sha, why) -- head_ref without the branch."""
+    ref, why = head_ref(repo, pr)
+    return (ref[0] if ref else None), why
 
 
 def bodies_of(repo, pr):

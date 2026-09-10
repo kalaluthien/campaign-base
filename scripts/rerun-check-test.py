@@ -60,7 +60,13 @@ if args[:1] == ["api"]:
 if args[:2] == ["run", "list"]:
     out(state.get("runs", []), state.get("list_status", 0))
 if args[:2] == ["run", "view"]:
-    out(pop("views"), state.get("view_status", 0))
+    # Only the fields asked for, as gh answers: a script that forgets to ask
+    # for `jobs` must not be handed them.
+    now = pop("views")
+    if isinstance(now, dict):
+        asked = args[args.index("--json") + 1].split(",")
+        now = {k: v for k, v in now.items() if k in asked}
+    out(now, state.get("view_status", 0))
 if args[:2] == ["run", "rerun"]:
     out("", state.get("rerun_status", 0))
 sys.stderr.write("fake gh: no answer for " + line + "\n")
@@ -88,8 +94,11 @@ def review(sha):
 
 
 def view(status, conclusion="", failed=()):
-    """A `gh run view --json status,conclusion,jobs` answer."""
-    steps = [{"name": "Every suite", "conclusion": "success"}]
+    """A `gh run view --json status,conclusion,jobs` answer. A skipped step in
+    every one, since a real run has them (34478543559 has two) and a step that
+    did not fail must not be read as one that did."""
+    steps = [{"name": "Every suite", "conclusion": "success"},
+             {"name": "Fetch the Alloy jar", "conclusion": "skipped"}]
     steps += [{"name": n, "conclusion": "failure"} for n in failed]
     return {"status": status, "conclusion": conclusion,
             "jobs": [{"name": "check", "steps": steps}]}
@@ -212,6 +221,14 @@ def main() -> int:
                                       view("completed", "failure", [gate_step()])]))
         expect("a branch that moved during the wait is moved, and not re-run",
                got, "moved", 0, False)
+
+        got = call(root, state(heads=[HEAD, HEAD, None],
+                               views=[view("in_progress"),
+                                      view("completed", "failure", [gate_step()])]))
+        expect("a head unreadable after the wait is unknown, and not re-run",
+               got, "unknown", 2, False)
+        check("...and says it was the head, not a crash",
+              "headRefOid" in got[2] and "crashed" not in got[2], got[2])
 
         got = call(root, state(views=[view("in_progress")]))
         expect("a run still going after the last poll is unknown, not re-run",

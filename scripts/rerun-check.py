@@ -81,19 +81,6 @@ def gate_word(repo, pr, head):
     return (text.split(" ", 1)[0] if text else None), text
 
 
-def head_of(gate, repo, pr):
-    """((sha, branch), why). The branch too, so the run list cannot pick a
-    run another pull request made at the same sha."""
-    data, why = gate.gh_json(f"gh pr view {pr} -R {repo}", "gh", "pr", "view",
-                             str(pr), "-R", repo, "--json",
-                             "headRefOid,headRefName")
-    if why:
-        return None, why
-    if not isinstance(data, dict) or not data.get("headRefOid"):
-        return None, f"{repo}#{pr} came back with no headRefOid"
-    return (data["headRefOid"], data.get("headRefName") or ""), None
-
-
 def failed_steps(run):
     """Every step, in every job, whose conclusion is `failure`."""
     return [s.get("name") for j in run.get("jobs") or []
@@ -116,7 +103,7 @@ def main(gate, argv=None) -> int:
     if not repo:
         return say("unknown", "no --repo, and no default repository to read")
 
-    got, why = head_of(gate, repo, a.pr)
+    got, why = gate.head_ref(repo, a.pr)
     if why:
         return say("unknown", why)
     head, branch = got
@@ -160,7 +147,7 @@ def main(gate, argv=None) -> int:
         polls += 1
 
     if polls:
-        now, why = head_of(gate, repo, a.pr)
+        now, why = gate.head_ref(repo, a.pr)
         if why:
             return say("unknown", why)
         if now[0] != head:

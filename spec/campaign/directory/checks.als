@@ -12,6 +12,10 @@ pred Cov_CreateDir     { eventually Now.event = CreateDir }
 pred Cov_DeleteDir     { eventually Now.event = DeleteDir }
 pred Cov_Acquire       { eventually Now.event = Acquire }
 pred Cov_Reach         { eventually Now.event = Reach }
+/* Two github events MergeReachesInstall reaches through its discipline.
+   github/checks.als has its own, which does not see this composition. */
+pred Cov_MergePullRequest { eventually Now.event = MergePullRequest }
+pred Cov_CloseIssue       { eventually Now.event = CloseIssue }
 
 /* ---------------- the post-merge step ---------------- */
 
@@ -51,3 +55,6 @@ run Cov_Reach         for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo,
 -- the post-merge step: holds under the discipline, and has a counterexample without it
 check MergeReachesInstall      for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 0
 run MergeReachesInstall_Bites  for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
+-- and the two lower events it names, at its scope
+run Cov_MergePullRequest  for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
+run Cov_CloseIssue        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1

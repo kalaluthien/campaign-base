@@ -55,7 +55,8 @@ scenario however that path ties (`S5_CodeWithoutSpecRefused`).
 `# witnesses: <Name>[, ...]` line declares, and `drives`, the code path its own
 name pairs with. Write that line in every suite -- a mention in prose ties
 nothing since #268, and `scripts/check-sdlc-tie.py` matches the declared names
-exactly. `treeTied` asks it of every code path in the tree, read from the code
+exactly. Every name on it must resolve (`witnessesResolve`): one live name ties
+the code path but does not cover a dead one beside it. `treeTied` asks it of every code path in the tree, read from the code
 path up and never from the scenario down — a scenario with no test is a claim
 the solver checks on its own. `tieDiscipline` is the reading at the commit.
 

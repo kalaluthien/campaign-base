@@ -100,7 +100,7 @@
 <dl class="provenance">
   <dt>Doctype</dt>  <dd>explanation</dd>
   <dt>Question</dt> <dd>변경 하나는 어떤 단계를 지나고, 무엇이 무엇을 이름으로 묶으며, 단계를 건너뛸 수 있는 조건은 무엇인가?</dd>
-  <dt>Updated</dt>  <dd>2026-09-09</dd>
+  <dt>Updated</dt>  <dd>2026-09-10</dd>
 </dl>
 
 <h2>여섯 단계와 <code>feeds</code></h2>
@@ -228,11 +228,16 @@
     t-&gt;s in witnesses and t-&gt;k in drives }
 }
 pred tied[k: Artifact] { some tie.k }
-pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
+pred treeTied { all k: Written &amp; stage.Code | tied[k] }
+pred witnessesResolve {
+  all t: Written &amp; stage.Test | t.witnesses in Written and t not in Dangling
+}</pre>
 
 <p>둘 다 테스트에서 읽지만, 읽는 방식이 다르다. <code>witnesses</code> 는 테스트의 텍스트에 적힌 <strong>선언</strong>이다 &mdash; <code># witnesses: &lt;이름&gt;</code> 줄이고, <code>scripts/check-sdlc-tie.py</code> 가 선언된 명령 이름과 정확히 맞춰 본다. <code>drives</code> 는 <strong>두 이름의 짝</strong>이다 &mdash; 테스트의 파일 이름과 코드 경로의 파일 이름이 서로를 가리키는 동안만 성립한다. 시나리오 쪽 이름을 바꾸어 묶음이 끊기는 것이 <code>S4b_RenameOfTheScenarioBreaksTheTie</code> 이고, 방향을 되돌리면 그 하나가 UNSAT 이 된다. <span class="src">spec/sdlc/system.als:146-163 @ 89918aa</span></p>
 
 <p>#268 이전에는 하나의 <code>names</code> 였고, 그것이 대상 쪽에서만 끊겼다. 그래서 <strong>테스트</strong>의 이름을 바꾸면 모형에서는 아무 짝도 떨어지지 않는데 검사기의 T2 는 거절했다 &mdash; <code>t-&gt;k</code> 는 스위트의 <em>이름</em>에서 읽는데 합쳐진 관계는 그것을 텍스트라고 불렀기 때문이다. 쪼개고 나면 <code>drives</code> 는 <strong>어느 쪽 끝을 바꾸어도</strong> 떨어지고 (<code>S4c_RenameOfTheTestBreaksTheTie</code>, SAT), <code>witnesses</code> 는 자기 출발점의 이름이 바뀌어도 살아남는다 (<code>S4d_RenameOfTheTestKeepsItsWitness</code>, UNSAT). 두 명령이 그 비대칭을 고정한다. <span class="src">spec/sdlc/system.als:94-121, spec/sdlc/scenarios.als:205-229 @ 89918aa</span></p>
+
+<p><strong>살아 있는 이름 하나가 나머지를 덮지 않는다.</strong> <code>tied[k]</code> 는 시나리오가 <em>하나라도</em> 닿는지를 묻는다. 그래서 두 이름을 선언한 스위트에서 하나의 시나리오 이름이 바뀌어도, 다른 하나로 코드 경로는 계속 묶여 있고 첫 이름은 아무것도 가리키지 않는다 &mdash; bd2143d 가 남긴 모양이다. 이름 바꾸기가 떨어뜨린 <code>witnesses</code> 짝의 테스트는 <code>Dangling</code> 에 들어가고 (텍스트는 여전히 옛 이름을 적고 있다), <code>witnessesResolve</code> 가 <code>treeTied</code> 옆에서 <code>tieDiscipline</code> 에 함께 읽힌다. <code>WitnessesResolve_Bites</code> 는 모든 상태에서 묶여 있으면서도 죽은 이름이 남는 흔적이고, 검사기의 T6 이 그것을 거절한다. <span class="src">spec/sdlc/system.als:131-137, spec/sdlc/system.als:172-178, spec/sdlc/checks.als:41-54 @ 1b489c3</span></p>
 
 <div class="callout">
   <div class="g">&#9755;</div>
@@ -242,10 +247,11 @@ pred treeTied { all k: Written &amp; stage.Code | tied[k] }</pre>
 <table>
   <tr><th>이름을 쓰거나 끊는 자리</th><th>모형의 식별자</th><th>무엇인가</th></tr>
   <tr><td>산출물 하나가 쓰이며 자기가 선언하는 것과 짝지을 것을 적는다</td><td><code>write[a]</code> — <code>witnesses' - a-&gt;Artifact = …</code>, <code>drives'</code> 도 같다</td><td>여기서만 적힌다</td></tr>
-  <tr><td>시나리오의 이름이 바뀌면, 같은 커밋이 다시 쓰지 않은 선언은 끊긴다</td><td><code>rename[a]</code> — <code>witnesses' - Artifact-&gt;a = …</code></td><td>들어오는 쪽에서만 끊긴다</td></tr>
+  <tr><td>시나리오의 이름이 바뀌면, 같은 커밋이 다시 쓰지 않은 선언은 끊기고 그 테스트는 죽은 이름을 적은 채 남는다</td><td><code>rename[a]</code> — <code>witnesses' - Artifact-&gt;a = …</code>, <code>Dangling' = Dangling + (witnesses - witnesses').Artifact</code></td><td>들어오는 쪽에서만 끊긴다</td></tr>
   <tr><td>테스트나 코드 경로의 이름이 바뀌면 그 짝이 끊긴다</td><td><code>rename[a]</code> — <code>drives' - (Artifact-&gt;a + a-&gt;Artifact) = …</code></td><td>양쪽 끝 어디서든 끊긴다</td></tr>
-  <tr><td>커밋이 남긴 트리가 묶여 있어야 한다</td><td><code>tieDiscipline</code></td><td>캠페인 Scope가 부르는 <code>pre-commit</code> 검사</td></tr>
+  <tr><td>커밋이 남긴 트리가 묶여 있고, 선언된 이름이 모두 시나리오여야 한다</td><td><code>tieDiscipline</code> — <code>treeTied and witnessesResolve</code></td><td>캠페인 Scope가 부르는 <code>pre-commit</code> 검사</td></tr>
   <tr><td>묶음이 끊긴 트리</td><td><code>TreeStaysTied_Bites</code>, <code>S4_RenameBreaksTheTie</code>, <code>S4c_RenameOfTheTestBreaksTheTie</code></td><td>검사가 거절해야 하는 것 (T1, T2)</td></tr>
+  <tr><td>묶여 있지만 죽은 이름을 선언한 트리</td><td><code>WitnessesResolve_Bites</code></td><td>검사가 거절해야 하는 것 (T6)</td></tr>
   <tr><td>같은 커밋이 짝지은 쪽도 함께 옮겨서 묶음이 버틴다</td><td><code>S4a_RenameKeepsItsNamers</code></td><td>검사가 통과시켜야 하는 것</td></tr>
 </table>
 

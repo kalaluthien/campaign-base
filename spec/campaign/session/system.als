@@ -22,7 +22,8 @@
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
  *   Briefed   the sessions whose CURRENT CONTEXT holds their role's brief.
  *   Binding   the campaign issue's `bound:<machine>` label.
- *   Who       the observer: which session performed the current event.
+ *   Who       the observer: which session performed the current event, and on
+ *             a handoff which session it took over from.
  *
  * A session is in a campaign exactly when the campaign is bound to its machine.
  * What this entity does NOT know is whether anything is running, so every
@@ -137,16 +138,35 @@ fact BindingWellFormed {
   always all c: Campaign | lone Binding.bound[c]
 }
 
-one sig Who { var session: lone Session }
+/* `predecessor` is set on a `Handoff` and on nothing else: it is the session
+   the performer takes over from, which no other event has. */
+one sig Who { var session: lone Session, var predecessor: lone Session }
+
+fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Handoff) }
+
+/* SESSIONS A HANDOFF HAS CLOSED: the successor's `/exit` landed in their pane.
+   Grown only by a handoff and never shrunk, and a closed session performs
+   nothing again -- without this the predecessor kept `worksOn` and could
+   claim, launch and stand the heir down after handing off (review of pr#290).
+   One fact rather than a frame clause in every event, as `Judged` is. */
+var sig Exited in Session {}
+
+fact ExitedByHandoffOnly {
+  no Exited
+  always (Exited' = Exited + Who.predecessor and no Who.session & Exited)
+}
 
 /* Derived, so no event has to maintain it. */
 fun working: set Session { { s: Session | some s.worksOn and s.machine in machinesHolding[s.worksOn] } }
 
 /* ---------------- observable events ---------------- */
 
-one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset extends Event {}
+/* `Handoff` is declared here and not in orchestration/system.als, where the
+   agents it moves live, for the reason `Launch` sits in synchronization: this
+   is the lowest entity holding a field it moves -- the claims. */
+one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff extends Event {}
 
-fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset }
+fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
    is somebody's act, and naming whose is what lets orchestration/scenarios.als's
@@ -190,6 +210,37 @@ pred sessionFrame {
   and reposInBodyAsRead' = reposInBodyAsRead
   and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
   and Briefed' = Briefed and bound' = bound
+}
+
+/* A FRESH SESSION TAKES OVER ANOTHER'S ROLE AND WORK: a context too large to
+   compact, a harness upgrade, and for a planner, which holds no claim, a slug
+   rename. The session half: the
+   performer is the successor, it holds the predecessor's role on the same
+   machine, it is named for the predecessor's campaign, and every claim the
+   predecessor held becomes its own. A claim is a ref, so nothing on GitHub is
+   written; `claimedIssues` moves because `mayAct` reads it, and a successor
+   left out of it could not work the sub-issue it was handed.
+
+   THE NAME IS THE REFUSAL. A successor named for another campaign would work
+   this campaign's claims under that one's name, which the guard then reads
+   against the wrong label; `SuccessorNamedForAnotherRefused` is the check.
+
+   Agents, liveness and the old session's close are orchestration/system.als's
+   `handoff`, which refines this event. */
+pred sessionHandoff[t, p: Session] {
+  Now.event = Handoff and no Now.issue
+  Who.session = t and Who.predecessor = p
+  t != p
+  t.machine = p.machine
+  some p.role and t.role = p.role
+  some p.worksOn and t.campaignNamed = p.worksOn
+  no t.claimedIssues
+  worksOn'       = worksOn - t->Campaign + t->(p.worksOn)
+  claimedIssues' = claimedIssues - p->Issue + t->(p.claimedIssues)
+  surveyResult' = surveyResult and reposInReadme' = reposInReadme
+  and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
+  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  bound' = bound
 }
 
 /* The result is remembered; nothing keeps it fresh. */
@@ -408,6 +459,7 @@ pred sessionStep {
         or sessionCreateDir[s] or sessionDeleteDir[s] or sessionAcquire[s]
         or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s]
         or brief[s] or contextReset[s])
+  or (some t, p: Session | sessionHandoff[t, p])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])
   or (Now.event in unattended and sessionFrame and no Who.session)

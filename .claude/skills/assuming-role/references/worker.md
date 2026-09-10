@@ -34,3 +34,33 @@ and, on a claim, the code the sub-issue names.
 A subagent of a worker inherits the worker's role, because the guard reads the
 parent's session id. It is briefed by the parent's context and by nothing else:
 no hook reaches it.
+
+## Handing off
+
+A fresh worker takes over when this one cannot go on: a context too large to
+compact, a harness upgrade. Not a slug rename: the claim ref carries the old
+slug, and the guard admits a claim only when its slug matches a campaign
+directory's marker and the session's name, so a rename waits for the claim's
+release. The model is `handoff` in
+`spec/campaign/orchestration/system.als`; the planner's reference names its
+first run.
+
+1. **The predecessor posts its last comment**, `NOTE <old>: handed off to
+   <new>`, on the sub-issue: the checkout, the pull request and the sha it
+   sits at, the round it is in, and the pane to close. It writes nothing after
+   it, and does not release the claim.
+2. **It starts the successor** at the base root, or in the same clone for a
+   delegate (`opening-campaign/references/launching.md`), named
+   `<slug>-worker-<n>` by `campaign-name-session.py`. The first prompt is one
+   sentence: take over `<slug>#N` from `<old>`, read its NOTE.
+3. **The successor reads that NOTE on GitHub**, confirms the ref with
+   `campaign-claim live <N>`, and works in the same checkout. A successor
+   named for another campaign stops here: the guard would refuse it this
+   campaign's issues.
+4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
+   prompt`, and reads `herdr agent list` until the pane is gone; still listed
+   after a minute, it reports that on the sub-issue, never kills. The
+   predecessor never exits itself, so the claim always has a live holder.
+
+The state travels in the NOTE, the claim ref and its checkout, and the pull
+request; the old pane, its transcript and a scratchpad carry none of it.

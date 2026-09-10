@@ -301,7 +301,7 @@ scripts/alloy-check.py --commands spec</pre>
       <dt>var</dt>
       <dd><code>Surveyed in Session</code> <code>UnderBase in Session</code> <code>Briefed in Session</code></dd>
       <dt>events</dt>
-      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code> <code>Brief</code> <code>ContextReset</code></dd>
+      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code> <code>Brief</code> <code>ContextReset</code> <code>Handoff</code> — 새 세션이 같은 역할과 청구를 넘겨받는다. <code>orchestration</code> 의 <code>handoff</code> 가 에이전트를 옮긴다.</dd>
     </dl>
   </div>
   <div class="rec">
@@ -322,7 +322,7 @@ scripts/alloy-check.py --commands spec</pre>
   </div>
 </div>
 
-<p><code>Event</code> 원자는 다섯 엔티티를 합쳐 <span class="ct">35&times; 이벤트</span> 다. <code>Reviewed</code> 하나만 <code>Agent</code> 가 아니라 <code>PullRequest</code> 위에 앉는다. 리뷰는 풀 리퀘스트가 살아 있는 만큼 살고, 리뷰로 브리핑받은 새 에이전트가 그것을 물려받는다. <span class="src">spec/campaign/orchestration/system.als:88-91 @ 03643fb</span></p>
+<p><code>Event</code> 원자는 다섯 엔티티를 합쳐 <span class="ct">40&times; 이벤트</span> 다. <code>Reviewed</code> 하나만 <code>Agent</code> 가 아니라 <code>PullRequest</code> 위에 앉는다. 리뷰는 풀 리퀘스트가 살아 있는 만큼 살고, 리뷰로 브리핑받은 새 에이전트가 그것을 물려받는다. <span class="src">spec/campaign/orchestration/system.als:88-91 @ 03643fb</span></p>
 
 <p>병합 조건 1 — 병합하는 sha 에서 읽은 리뷰 — 은 <code>mergedOnCurrentReview</code> 가 이미 말하고 A6, A7, A16b 가 증언한다. 없던 것은 <strong>그것을 읽는 쪽</strong>이었고, PR #262 는 <code>REVIEW</code> 로 시작하는 댓글 하나 없이 8ca2609 에서 병합됐다. 읽는 쪽은 <code>scripts/check-merge-review.py</code> 이고, 이 어휘 밖에 산다: 여기에는 sha 도 체크 런도 없어서 걸 자리가 없다. <code>M2</code> 는 그 규율의 가장 좁은 경우 하나만 더한다 — 밀어 올린 바로 다음 상태의 병합. <span class="src">spec/campaign/orchestration/scenarios.als:1753-1788 @ bd2143d</span></p>
 
@@ -404,7 +404,7 @@ scripts/alloy-check.py --commands spec</pre>
     <li><span class="k">1</span><p><strong>github → <code>Now</code></strong> — 지금 어떤 이벤트가 어느 이슈에 일어나는가. <code>event</code> 는 <code>one Event</code> 고 <code>issue</code> 는 <code>lone Issue</code> 다.</p></li>
     <li><span class="k">2</span><p><strong>directory → <code>Where</code></strong> — 그 이벤트가 어느 기계와 어느 저장소를 건드렸는가. 둘 다 <code>lone</code> 이다.</p></li>
     <li><span class="k">3</span><p><strong>synchronization → 없음</strong> — 이 엔티티는 자기 시그니처를 선언하지 않는다. 관찰할 새 원자가 없으므로 관찰자도 없다.</p></li>
-    <li><span class="k">4</span><p><strong>session → <code>Who</code></strong> — 어느 세션이 이 이벤트를 했는가. <code>session</code> 은 <code>lone Session</code> 이다.</p></li>
+    <li><span class="k">4</span><p><strong>session → <code>Who</code></strong> — 어느 세션이 이 이벤트를 했는가. <code>session</code> 은 <code>lone Session</code> 이다. <code>Handoff</code> 에서만 <code>predecessor</code> 가 넘겨준 세션을 가리킨다.</p></li>
     <li><span class="k">5</span><p><strong>orchestration → <code>Target</code></strong> — 이 이벤트가 어느 에이전트에 대한 것인가. <code>agent</code> 는 <code>lone Agent</code> 다.</p></li>
   </ol>
 </figure>

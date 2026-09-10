@@ -127,8 +127,11 @@ def main():
     # from `slug_ok` turns exactly one of these green.
     for name, why in [
             ("Machinery-worker-6", "not kebab-case: a capital"),
-            ("a-slug-that-is-far-too-long-worker-6",
-             "over the ceiling: 28 characters of slug"),
+            # ONE CHARACTER OVER, not far over: a 28-character slug was
+            # refused at 20 and at 10 alike, so it named no number. This one
+            # goes green the moment the ceiling moves back up.
+            ("abcdefghijk-worker-6",
+             "over the ceiling: 11 characters of slug"),
             ("campaign-machinery-worker-6", "a `campaign` segment"),
             ("machinery-planner-worker-6", "a `planner` segment"),
             # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `spec` would
@@ -146,6 +149,16 @@ def main():
         check(f"a slug with {why} is refused",
               r.returncode == 1 and not calls and name in r.stderr,
               f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
+
+    # ...AND THE OTHER SIDE OF THE SAME NUMBER. Together with the 11-character
+    # refusal above this pins SLUG_CEILING at 10 exactly: one of the two goes
+    # red for any other value.
+    r, calls = run(["w1:p1", "abcdefghij-worker-6"],
+                   agents=[{"pane_id": "w1:p1", "agent_status": "idle"}])
+    check("a slug at the ceiling exactly is admitted",
+          r.returncode == 0 and len(prompts(calls)) == 1
+          and prompts(calls)[0][3] == "/rename abcdefghij-worker-6",
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     # A NAME WITH TWO ROLE WORDS parses one way or not at all. Barring the role
     # words from the slug is what makes that true; admit them and `foo-worker-3`

@@ -1,6 +1,8 @@
-<!-- The sub-issue. Title: a verb-first mission carrying the words a search
-     would use -- `Refuse a heredoc body the guard cannot split`, never a
-     sentence about the situation. Body: bullets or tables, no prose
+<!-- The sub-issue. Title: one plain sentence, verb first, carrying the words
+     a search would use -- `Refuse a heredoc body the guard cannot split`,
+     never a sentence about the situation. No clause of reason: the reason
+     goes in `## Intent`, where a reader can ask for it. No internal word a
+     newcomer has no key to. Body: bullets or tables, no prose
      paragraphs. Both ceilings are numbers in `scripts/campaign-tracker.py`
      and are not repeated here; `campaign-tracker.py check <N>` prints each
      one beside what it measured.

@@ -558,8 +558,8 @@ def main():
           m.shape_findings(m.THIRD_KIND, "anything at all", "prose", False) == [])
     # ...BUT THE CEILINGS ARE NOT A KIND'S. A title is a title.
     check("...and still on the ceilings",
-          any("over 80" in f for f in m.shape_findings(
-              m.THIRD_KIND, "x" * 81, "prose", False)))
+          any("over 40" in f for f in m.shape_findings(
+              m.THIRD_KIND, "x" * 41, "prose", False)))
 
     # ONE MISSING SECTION AT A TIME, named. A case that removed two would pass
     # while either branch was deleted.
@@ -636,10 +636,10 @@ def main():
           m.shape_findings(m.SUB_ISSUE, "t", no_plan, True) != [])
 
     check("a title one character over the ceiling is refused, with both numbers",
-          m.shape_findings(m.SUB_ISSUE, "x" * 81, good_sub, True)
-          == ["the title is 81 characters, over 80"])
+          m.shape_findings(m.SUB_ISSUE, "x" * 41, good_sub, True)
+          == ["the title is 41 characters, over 40"])
     check("...and a title at the ceiling exactly is not",
-          m.shape_findings(m.SUB_ISSUE, "x" * 80, good_sub, True) == [])
+          m.shape_findings(m.SUB_ISSUE, "x" * 40, good_sub, True) == [])
     # PADDED UNDER ITS OWN HEADING, not appended: appended, the padding became a
     # SECOND `## Lands in` entry and the body carried two faults, so the "two
     # findings" case below counted three.
@@ -734,7 +734,7 @@ def main():
               r.returncode == 0 and "--add-label bound:" in calls)
         check("...and says so, naming the findings it did not act on",
               "reported and not enforced here" in r.stdout
-              and "over 80" in r.stdout)
+              and "over 40" in r.stdout)
         # AN UNREADABLE SHAPE IS A THIRD ANSWER, not a clean bill: `bind` must
         # say it did not look rather than print a shape it never read.
         d2 = Path(tmp) / "bindunread"

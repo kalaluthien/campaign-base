@@ -94,9 +94,13 @@ ROLES = _roles_module().ROLE_WORDS
 #
 #   * kebab-case starting with a letter, so it is one path segment, one ref
 #     segment and one herdr name without quoting or escaping anywhere;
-#   * at most SLUG_CEILING characters, so the longest name this file admits,
-#     `<slug>-worker-99`, stays inside herdr's 32-character limit on a session
-#     name -- 20 + len("-worker-99") is 30;
+#   * at most SLUG_CEILING characters, so a person picks one campaign out of
+#     `ls` at the base root and out of `herdr agent list` at a glance. The
+#     owner set 10 on 2026-09-10, and it is the binding bound: herdr's
+#     32-character limit on a session name is the other one, and the longest
+#     name this file admits, `<slug>-worker-99`, is now 20 and clears it by
+#     twelve. Slugs already spent over 10 belong to closed campaigns and are
+#     not re-checked;
 #   * no segment in RESERVED, for three reasons in one list. `planner` and
 #     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:
 #     with the role words absent from the slug, a name holds one `-planner-` or
@@ -110,7 +114,7 @@ ROLES = _roles_module().ROLE_WORDS
 #     would name a directory the base already owns, and `scripts/guard-corpus.py`
 #     -- which classifies a RECORDED path it cannot stat -- would read that
 #     campaign's whole tree as the base's own.
-SLUG_CEILING = 20
+SLUG_CEILING = 10
 # The base's own directories at its root. Named here because a slug becomes a
 # directory there, and imported by scripts/guard-corpus.py, which excludes the
 # same words when it classifies a recorded path it cannot stat -- one set, one

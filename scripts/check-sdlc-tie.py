@@ -143,8 +143,9 @@ reading it down would refuse every scenario spec/campaign holds.
 
 The line is read wherever it stands in a suite's text, a multi-line string
 included, so a fixture that holds one is a declaration here: it can tie a code
-path, and T6 refuses it when its name is dead. Write a fixture's `# witnesses:`
-line on a line that does not begin with `#`, as check-sdlc-tie-test.py does.
+path, and T6 refuses it when its name is dead, indented or not. Keep a
+fixture's `# witnesses:` off any line whose first non-blank character is `#`,
+as check-sdlc-tie-test.py does by writing it inside a quoted string.
 
 READING VERSUS VERDICT
 

@@ -197,10 +197,10 @@ T6_CASES = [
     ("T6 a suite written before its code path, declaring a dead name",
      {SPEC: DECL},
      {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"}),
-    ("T6 a `# witnesses:` line inside a multi-line string is a declaration too",
+    ("T6 an indented `# witnesses:` line inside a multi-line string is a declaration too",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
-      "scripts/a-test.py": SUITE + 'F = """\n# witnesses: S9_Nowhere\n"""\n'}),
+      "scripts/a-test.py": SUITE + 'F = """\n    # witnesses: S9_Nowhere\n"""\n'}),
     ("T6 a dead name already there, in a suite this change edits",
      DEBT, {"scripts/a-test.py": DEBT["scripts/a-test.py"] + "x = 1\n"}),
 ]

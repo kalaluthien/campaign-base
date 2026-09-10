@@ -244,6 +244,7 @@
     ["campaign/synchronization/scenarios.als", "run", "S17b_OldCloneRuleInsufficient"],
     ["campaign/synchronization/scenarios.als", "run", "S17c_PullBeforeLaunchAdmitsLaunch"],
     ["sdlc/checks.als", "check", "AbsenceLicensed"],
+    ["sdlc/checks.als", "check", "DanglingLeavesOnlyByAWrite"],
     ["sdlc/checks.als", "check", "OrderedByFeeds"],
     ["sdlc/checks.als", "check", "TreeStaysTied"],
     ["sdlc/checks.als", "check", "WitnessesResolve"],

@@ -55,6 +55,13 @@ pred WitnessesResolve_Bites {
               and after some Dangling & (Artifact.tie).Written)
 }
 
+/* A DEAD NAME LEAVES ONLY BY A REWRITE OF ITS TEST. No other event clears
+   `Dangling`: renaming something else does not fix a text that still spells a
+   dead name, which is the frame `rename` holds it to. */
+assert DanglingLeavesOnlyByAWrite {
+  always all t: Dangling | t not in Dangling' implies (Now.event = Write and Now.artifact = t)
+}
+
 /* ---------------- the skip rule ---------------- */
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
@@ -102,6 +109,7 @@ check TreeStaysTied            for 2 Change, 2 Profile, 6 Artifact, 10 steps exp
 run   TreeStaysTied_Bites      for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
 check WitnessesResolve         for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run   WitnessesResolve_Bites   for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
+check DanglingLeavesOnlyByAWrite for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 
 -- the skip rule: every absence is licensed under the landing check, and not without it
 check AbsenceLicensed          for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0

@@ -1,0 +1,57 @@
+# Posting a REVIEW re-runs `check` on the pull request head, with no hand step.
+#
+# check.yml's last step reads the comments for a REVIEW naming the head, but a
+# comment fires no `pull_request` event, so the run that read them before the
+# REVIEW arrived stayed red until somebody typed `gh run rerun <id>`. This
+# workflow is that somebody: scripts/rerun-check.py asks check-merge-review.py
+# whether a REVIEW names the head, and re-runs the head's `check` run only when
+# one does and that run ended red (kalaluthien/campaign-base#274).
+#
+# Three constraints, each quiet when broken:
+#
+#   1. The job is never named `check`. That is the required context on `main`,
+#      and a second job answering to it would be a second verdict on the merge.
+#   2. Both events, because the gate reads both channels: a REVIEW posted with
+#      `gh pr comment` is an `issue_comment`, one posted with
+#      `gh pr review --comment` is a `pull_request_review`. An `issue_comment`
+#      run uses this file and the scripts as they are on `main`; a
+#      `pull_request_review` run uses the pull request's own.
+#   3. Every `uses:` names a 40-character commit sha, as in check.yml.
+
+name: review-rerun
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  # `gh run rerun` on the `check` run.
+  actions: write
+
+# One waiter per pull request: a second comment supersedes the first, since
+# both would read the same head and re-run the same run.
+concurrency:
+  group: review-rerun-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rerun:
+    # An `issue_comment` on a plain issue has no head to re-run.
+    if: github.event_name == 'pull_request_review' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    # The script waits for a `check` run still in progress, bounded by its own
+    # polls (60 x 30 s); this is the backstop above that.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Re-run check on the head once a REVIEW names it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/rerun-check.py ${{ github.event.issue.number || github.event.pull_request.number }} \
+            --repo ${{ github.repository }}

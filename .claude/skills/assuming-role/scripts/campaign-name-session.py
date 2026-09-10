@@ -53,8 +53,11 @@ this sends at most one prompt per pane per call -- a pane named twice is
 refused before anything is applied -- and reads the pane's `agent_status` from
 `herdr agent list` before sending. `idle` and `done` (herdr's own help calls
 `done` the same underlying idle state) are waited on and reported as `applied`
-once the pane prints the CLI's `Session renamed to: <name>`, and as `sent, not
-applied yet` when the budget runs out; `working` and any other status as
+once the pane prints a NEW `Session renamed to: <name>` -- new against a count
+taken before the prompt, since a pane renamed to this name before already
+carries the line -- and as `sent, not applied yet` when the budget runs out.
+That budget is ECHO_BUDGET seconds PER PANE and it is spent only when the echo
+does not come, so a call over several silent panes takes that many multiples; `working` and any other status as
 `queued`, so the caller knows not to send that pane
 anything else until `ListAgents` shows the name; a status this could not read
 is said as such, and the prompt is still sent. A BLOCKED pane -- one sitting
@@ -209,30 +212,58 @@ def herdr(*args):
 # is `working`, which is exactly what a pane is for the moment it spends
 # applying the rename, so the loop retries rather than concluding. It returns
 # text and not JSON, so it does not go through `herdr()`.
+#
+# THE ECHO IS COUNTED, AND THE COUNT IS TAKEN BEFORE THE PROMPT. Presence alone
+# confirms the wrong thing: `AGENTS.md` says to set the name at the start of
+# EVERY session, so re-running this on a pane that already carries the name is
+# the ordinary case, and that pane already has the line on its screen from the
+# last time. A read that merely found it would answer `applied` instantly for
+# the pending prompt -- the very defect this reading exists to close, coming
+# back through the confirmation. So a NEW occurrence is what counts, and a pane
+# that could not be read BEFORE the prompt gets no verdict at all rather than
+# one taken against a baseline of zero.
+#
+# THE MATCH IS ANCHORED ON THE RIGHT, not on the whole line: `<n>` is an
+# unbounded digit run, so a plain substring test confirms `machinery-worker-1`
+# off `machinery-worker-12`'s echo. It is not anchored on the LEFT because the
+# CLI prints the line inside its own decoration, and a whole-line equality would
+# pass every fake and fail on the real screen.
 ECHO_TRIES = 8
 ECHO_SLEEP = 0.5
+ECHO_BUDGET = (ECHO_TRIES - 1) * ECHO_SLEEP   # the first read does not sleep
 
 
-def rename_echoed(pane, name):
-    """(True, None) once the pane has printed `Session renamed to: <name>`,
-    or (False, why) when the budget ran out -- `why` naming the last thing the
-    read said, so an unconfirmed rename and an unreadable pane are two
-    different reports."""
-    want = f"Session renamed to: {name}"
+def echo_count(pane, name):
+    """(how many times the pane's screen says `Session renamed to: <name>`,
+    None), or (None, why) when the read could not be made."""
+    out = subprocess.run(["herdr", "agent", "read", pane],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        return None, (out.stderr.strip() or out.stdout.strip()
+                      or "herdr agent read failed with no message")
+    want = re.compile(re.escape(f"Session renamed to: {name}") + r"(?![\w-])")
+    return len(want.findall(out.stdout)), None
+
+
+def rename_echoed(pane, name, before):
+    """(the line the pane printed, None) once a NEW `Session renamed to: <name>`
+    is on the screen, or (None, why) when the budget ran out -- `why` naming the
+    last thing the read said, so an unconfirmed rename and an unreadable pane
+    are two different reports."""
     why = "the pane never printed it"
     for attempt in range(ECHO_TRIES):
         if attempt:
             time.sleep(ECHO_SLEEP)
-        out = subprocess.run(["herdr", "agent", "read", pane],
-                             capture_output=True, text=True)
-        if out.returncode != 0:
-            why = (out.stderr.strip() or out.stdout.strip()
-                   or "herdr agent read failed with no message")
+        count, err = echo_count(pane, name)
+        if err:
+            why = err
             continue
-        if want in out.stdout:
-            return True, None
-        why = "the pane never printed it"
-    return False, why
+        if count > before:
+            return f"Session renamed to: {name}", None
+        why = ("the pane never printed it" if not count else
+               f"the {count} `Session renamed to: {name}` on the pane were "
+               f"there before the prompt")
+    return None, why
 
 
 def pane_status(pane):
@@ -292,6 +323,11 @@ def main():
                   f"Clear the dialog and re-run for this pane")
             failed = True
             continue
+        # BEFORE the prompt, so an echo left by an earlier rename of this pane
+        # cannot be read as this one's. A pane that is not idle is not read at
+        # all: herdr refuses `agent read` on a working one.
+        before, before_why = ((echo_count(pane, name))
+                              if status in ("idle", "done") else (None, None))
         res, err = herdr("agent", "prompt", pane, f"/rename {name}")
         if err:
             print(f"  {pane}  harness     FAILED: {err}")
@@ -300,16 +336,22 @@ def main():
         # The prompt is never applied here: the session runs /rename on its
         # next turn. Report it as sent or queued rather than as done, because
         # the only honest confirmation is ListAgents afterwards.
-        if status in ("idle", "done"):
-            echoed, why = rename_echoed(pane, name)
-            if echoed:
+        if status in ("idle", "done") and before is None:
+            print(f"  {pane}  harness     /rename sent; the pane could not be "
+                  f"read before the prompt ({before_why}), so a new echo "
+                  f"cannot be told from one already on the screen and this "
+                  f"says nothing about whether it applied (confirm with "
+                  f"ListAgents)")
+        elif status in ("idle", "done"):
+            line, why = rename_echoed(pane, name, before)
+            if line:
                 print(f"  {pane}  harness     /rename applied: the pane printed "
-                      f"`Session renamed to: {name}`")
+                      f"`{line}`")
             else:
                 print(f"  {pane}  harness     /rename sent, not applied yet "
-                      f"after {ECHO_TRIES * ECHO_SLEEP:g}s ({why}); do not "
-                      f"prompt this pane until ListAgents shows the name, or "
-                      f"the two inputs merge into one")
+                      f"after {ECHO_TRIES} reads over {ECHO_BUDGET:g}s ({why}); "
+                      f"do not prompt this pane until ListAgents shows the "
+                      f"name, or the two inputs merge into one")
         elif status is None:
             print(f"  {pane}  harness     /rename sent; the pane's status could "
                   f"not be read ({why}), so whether it queued is unknown "

@@ -1189,21 +1189,28 @@ def paired_segments(command):
     # as a separator before this and `-b '<newline>'` is read as one now. Only
     # a body that is entirely punctuation is reached, and it loses the operand
     # rather than misreading it.
+    #
+    # THE UNITS ARE NOT SPECIAL-CASED, because `split_punct` returns a unit
+    # unchanged -- it is longest-match over PUNCT_UNITS itself. A `t not in
+    # PUNCT_UNITS` guard rode here until #281's full review, F4: it could
+    # decide nothing, so no case could fail for it, which is the shape this
+    # file refuses everywhere else.
     flat = []
     for t in tokens:
-        if PUNCT_RUN.match(t) and t not in PUNCT_UNITS:
+        if PUNCT_RUN.match(t):
             flat += split_punct(t)
         else:
             flat.append(t)
     # OUTER-NESS IS RECORDED HERE and nowhere else, because this loop is the
     # only place that still has the separators (#281's narrowed rounds). A
     # segment is outer when it runs in the shell the command started in: not
-    # inside `( )`, and on NEITHER side of a pipe, and not backgrounded. Both
-    # separators are read, the one before it and the one that closes it -- the
-    # first cut read only the one before, so `cd /tmp | true; git commit
-    # --no-verify` was credited and the commit was judged at /tmp, which both
-    # shells here disagree with (`zsh -c 'cd /tmp | true; echo $PWD'` prints
-    # the original directory, and so does bash).
+    # inside `( )`, not backgrounded, and not a stage of a pipeline OTHER than
+    # its last. The separator read is the one that CLOSES the segment, and it
+    # is the only one that answers this: `cd /tmp | true; git commit
+    # --no-verify` is closed by a pipe, so the `cd` is a stage that exits and
+    # the commit is judged where the command started -- which is what both
+    # shells here do (`zsh -c 'cd /tmp | true; echo $PWD'` prints the original
+    # directory, and so does bash).
     #
     # A BRACE GROUP IS NOT A SUBSHELL, BUT ONE ON THE LEFT OF A PIPE IS.
     # `{ cd X; } | true` and `{ cd X; } &` both leave the shell where it was,
@@ -1212,21 +1219,24 @@ def paired_segments(command):
     # remembered and cleared when the separator after its `}` turns out to be
     # a pipe or a `&`.
     #
-    # THE RIGHT OF A PIPE IS NOT THE SAME QUESTION, and the two shells answer
-    # it differently: `true | { cd X; }` leaves bash where it was and moves
-    # zsh, which runs a pipeline's last stage in the current shell. The Bash
-    # tool here runs zsh, so that `cd` IS credited -- a brace makes no
-    # difference to it, and a version of this that skipped `before` for a brace
-    # turned a real `--no-verify` over a hooked repository into an allow.
-    out, cur, depth, before = [], [], 0, None
+    # THE LAST STAGE OF A PIPELINE IS THE SHELL ITSELF HERE, and the separator
+    # before a segment is therefore not read at all (#281's full review, F2).
+    # zsh runs a pipeline's last stage in the current shell and bash runs it in
+    # a subshell; the Bash tool here runs zsh, so `true | cd X` really moves --
+    # probed, both spellings: `zsh -c 'cd /; true | cd /usr; print $PWD'` and
+    # the same with `{ cd /usr; }` both print /usr, where bash prints /. Reading
+    # the separator before as well gave those two spellings OPPOSITE verdicts,
+    # since `{` is a separator and reset it, and the suite pinned both answers
+    # at once.
+    out, cur, depth = [], [], 0
     braces, closed = [], None
     for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
             continue
         if cur:
-            out.append([cur, depth == 0 and before not in PIPES
-                        and t not in PIPES and t != BACKGROUND])
+            out.append([cur, depth == 0 and t not in PIPES
+                        and t != BACKGROUND])
             cur = []
         if closed is not None:
             if t in PIPES or t == BACKGROUND:
@@ -1239,7 +1249,6 @@ def paired_segments(command):
             closed = braces.pop()
         depth += (t in NESTS) - (t in UNNESTS)
         depth = max(depth, 0)
-        before = t
     # A string another command runs is that string's segments too: a shell's
     # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
     # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
@@ -1264,7 +1273,7 @@ def paired_segments(command):
         word, rest = head(seg)
         if word is None:
             continue
-        inners = []
+        inners, in_this_shell = [], False
         if word in SHELLS:
             i = next((j for j, t in enumerate(rest[:-1]) if is_dash_c(t)), None)
             if i is not None:
@@ -1272,6 +1281,7 @@ def paired_segments(command):
             inners += mine
         elif word in EVALS:
             inners = [t for t in rest[1:] if not t.startswith("-")]
+            in_this_shell = outer
         for text in inners:
             more, why = paired_segments(text)
             if more is None:
@@ -1280,9 +1290,19 @@ def paired_segments(command):
             # takes its snapshot before the loop and `paired` is what this
             # returns, so the append had no reader after #217 split the walk.
             #
-            # AND NONE OF THEM IS OUTER, whatever it was inside its own string:
-            # `bash -c 'cd /tmp'` moves that shell and not this one.
-            paired += [(t, h, False) for t, h, _ in more]
+            # WHOSE SHELL THE STRING RUNS IN DECIDES (#281's full review,
+            # F1). `bash -c 'cd /tmp'` moves a shell that then exits, so none
+            # of its segments is outer whatever it was inside its own string.
+            # `eval 'cd /tmp'` moves THIS one -- both shells here, probed --
+            # so its segments are outer exactly when the `eval` itself was and
+            # they were outer inside the string too: `eval '(cd /tmp)'` moves
+            # nothing, and `eval 'cd /tmp' | true` is a stage that exits --
+            # while `cd /tmp | eval 'cd /usr'` really ends in /usr, since the
+            # eval is the stage zsh keeps.
+            # Read the other way, `eval 'cd /tmp'; git commit --no-verify` was
+            # refused over a directory holding no hook, and the reverse
+            # spelling allowed a bypass over the one that does.
+            paired += [(t, h, in_this_shell and o) for t, h, o in more]
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.

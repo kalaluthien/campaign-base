@@ -680,8 +680,10 @@ own accounting, and say what you mean in the rest of the brief.
 **A plain brief, not `/code-review` above `low`, and a model named on every
 launch.** `scripts/check-campaign-claim.py` refuses a `Skill` call of
 `code-review` above `low`, which fans out into an orchestrator, finders and
-their verifiers, and an `Agent` naming no `model`; `install-hooks.sh`'s matcher
-routes both to it, so a guard installed before #278 enforces neither. **It reads
+their verifiers, and an `Agent` naming no `model` — **every** launch and not
+only a reviewer's, since no field of the payload says what a subagent is for;
+`install-hooks.sh`'s matcher routes both to it, so a guard installed before #278
+enforces neither. **It reads
 the `Skill` call and not the prompt**: a slash command in an `Agent` prompt is
 plain text and runs no skill. **`low` never fans out, and satisfies merge
 condition 1 for nothing** — it reads no tests and no full files, so it is a

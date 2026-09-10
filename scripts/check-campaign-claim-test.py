@@ -2224,15 +2224,15 @@ def main():
         # (#281's narrowed review, F1). A subshell, a pipeline stage, a
         # `bash -c` string and a heredoc script each move a shell that exits;
         # crediting one turned the rule off for the rest of the command.
-        # BOTH SEPARATORS ARE READ, the one before a segment and the one
-        # closing it: the first cut read only the one before, so a `cd` in the
-        # FIRST stage of a pipe was credited. Probed against both shells here:
+        # THE SEPARATOR THAT CLOSES A SEGMENT IS THE ONE READ, and it is the
+        # only one that answers this. Probed against both shells here:
         # `cd /tmp | true; echo $PWD` prints the original directory in zsh and
-        # in bash.
+        # in bash. The LAST stage is the other question and lives below --
+        # zsh keeps it in the current shell, and reading the separator BEFORE
+        # a segment as well gave `true | cd X` and `true | { cd X; }` opposite
+        # verdicts, with this suite pinning both (#281's full review, F2).
         for name, command in (
                 ("a subshell", "(cd /tmp && ls); git commit --no-verify -m x"),
-                ("the last stage of a pipe",
-                 "true | cd /tmp; git commit --no-verify -m x"),
                 ("the first stage of a pipe",
                  "cd /tmp | true; git commit --no-verify -m x"),
                 ("a backgrounded command",
@@ -2311,18 +2311,68 @@ def main():
               r.returncode == 2 and "skips the hook" in out(r)
               and "FAILED" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
-        # A GROUP ON THE RIGHT OF THE PIPE IS THE OTHER SIDE, and the shells
-        # disagree: bash makes it a subshell, zsh runs a pipeline's last stage
-        # in the current shell and really moves. The Bash tool here runs zsh,
-        # so the `cd` counts -- and a version that read it the other way turned
-        # a real `--no-verify` over a hooked repository into an allow.
+        # THE LAST STAGE OF A PIPELINE IS THE OTHER SIDE, and the shells
+        # disagree: bash makes it a subshell, zsh runs it in the current shell
+        # and really moves. The Bash tool here runs zsh, so the `cd` counts --
+        # and a version that read it the other way turned a real `--no-verify`
+        # over a hooked repository into an allow. BOTH SPELLINGS, because they
+        # are one question and the guard gave them opposite answers until
+        # #281's full review: a brace group is a separator, so reading the
+        # separator before a segment credited the braced one and refused the
+        # bare one.
+        for name, command in (
+                ("bare", f"true | cd {f.d}/nohooks; "
+                         f"git commit --no-verify -m x"),
+                ("in a brace group", f"true | {{ cd {f.d}/nohooks; }}; "
+                                     f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"a `cd` in a pipeline's last stage counts, {name}, which is "
+                  f"what the shell that runs here does",
+                  r.returncode == 0 and "holds no hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # `eval` RUNS IN THIS SHELL, where a shell's `-c` runs in one that
+        # exits (#281's full review, F1). Probed in both shells here:
+        # `zsh -c 'cd /; eval "cd /usr"; print $PWD'` prints /usr, and so does
+        # bash. Read as a `bash -c` string, the first of these was refused over
+        # a directory holding no hook and the second allowed a bypass over the
+        # directory that has one.
         r = ask(wt, tool="Bash",
-                command=f"true | {{ cd {f.d}/nohooks; }}; "
-                        f"git commit --no-verify -m x", run_cwd=wt)
-        check("a `cd` on the right of a pipe counts, which is what the shell "
-              "that runs here does",
+                command=f"eval 'cd {f.d}/nohooks'; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("an `eval` moves the shell the next command runs in",
               r.returncode == 0 and "holds no hook" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks; eval 'cd {wt}'; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...so an `eval` back into a hooked repository is refused there",
+              r.returncode == 2 and "skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # AND WHAT IS OUTER INSIDE THE STRING STILL DECIDES: the string runs
+        # here, its own subshells and pipeline stages do not.
+        for name, command in (
+                ("a subshell inside it",
+                 f"eval '(cd {f.d}/nohooks)'; git commit --no-verify -m x"),
+                ("the eval being a stage that exits",
+                 f"eval 'cd {f.d}/nohooks' | true; "
+                 f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"an `eval` moves nothing with {name}",
+                  r.returncode == 2 and "skips the hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A RELATIVE `cd` AFTER AN UNREADABLE ONE HAS NO BASE, and answering
+        # it would be answering about a directory this guard never saw. The
+        # branch that says so was unpinned until #281's full review, F3:
+        # removing it makes the join crash into a last-resort allow, which is
+        # an allow that names no rule.
+        r = ask(wt, tool="Bash",
+                command='d=$(mktemp -d); cd "$d"; cd scripts; '
+                        'git commit --no-verify -m x', run_cwd=wt)
+        check("a relative `cd` after one this could not read stays unreadable, "
+              "and does not crash",
+              r.returncode == 0 and "could not be read" in out(r)
+              and "FAILED" not in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
         # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
         # unreadable -- and unreadable turns the rule off for the rest.
         r = ask(wt, tool="Bash", command="cd; git commit --no-verify -m x",
@@ -3056,7 +3106,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 431
+    EXPECTED = 436
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

@@ -4,7 +4,8 @@
 The reader of `tieDiscipline` in spec/sdlc/scenarios.als: after a commit that
 writes or renames an artifact the tree is tied (`treeTied` in
 spec/sdlc/system.als), which is to say every code path walks back to a
-scenario through the test that drives it. The model says what a tie is; this
+scenario through the test that drives it, and every name a test declares is a
+scenario (`witnessesResolve`). The model says what a tie is; this
 says how one is read off this tree, and judges the commit by what it CHANGES
 about the reading rather than by the tree's whole debt.
 
@@ -52,8 +53,9 @@ before it; a code path the commit renamed keeps its identity across the two
 readings where git pairs the rename (`-M`), and a rewrite git cannot pair is a
 new path, judged as one. A path that was in the tree before but not a code
 path -- nested, extensionless, under fixtures/ -- ENTERS the code set when it
-is moved into a scripts/ slot, and is judged as new. Five shapes are refused,
-one per cause:
+is moved into a scripts/ slot, and is judged as new. Six shapes are refused,
+one per cause; a suite whose only declared name is dead reads T1 or T3 and T6
+together, the first saying what the code path lost and T6 which name did it:
 
   T1  a code path the commit ADDS is untied: no suite carries its stem, or
       the suite declares no scenario. The write that `TreeStaysTied_Bites`
@@ -84,6 +86,14 @@ one per cause:
       of them made. A rename is licensed by EITHER name, so moving the line and
       moving the file are one commit rather than a commit and the wall after
       it.
+  T6  a suite's `# witnesses:` line declares a name no `run` or `check` under
+      spec/ declares. One live name ties the code path, so T1 and T3 read the
+      rest of the line not at all, and a scenario renamed away from a suite that
+      declared two left the second name dead with nothing refusing it (bd2143d,
+      `WitnessesResolve_Bites`). Scoped the way T4 is: in a suite this change
+      touched every dead name is refused, and in one it never opened only a
+      name that resolved before the change and does not after it; the dead
+      names left in unopened suites are counted in the reading.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
@@ -126,9 +136,16 @@ A suite declaring a scenario it does not exercise is a tie by name and passes:
 the check reads names, never verdicts, and the solver stays the one reader of
 a verdict. What the declaration buys is that the name was written on purpose,
 not that it was earned. A code path whose suite declares any scenario at all is
-tied; which scenario is the author's. And a scenario with no test is not
+tied; which scenario is the author's, though every name it declares must
+resolve (T6). And a scenario with no test is not
 refused: the tie is read from the code path up, as the model says, because
 reading it down would refuse every scenario spec/campaign holds.
+
+The line is read wherever it stands in a suite's text, a multi-line string
+included, so a fixture that holds one is a declaration here: it can tie a code
+path, and T6 refuses it when its name is dead, indented or not. Keep a
+fixture's `# witnesses:` off any line whose first non-blank character is `#`,
+as check-sdlc-tie-test.py does by writing it inside a quoted string.
 
 READING VERSUS VERDICT
 
@@ -408,8 +425,8 @@ def changed(before_ref, after_kind):
     readings. Whether a path is NEW is not read from here but from the tree
     before: an intent-to-add entry is in the index and absent from
     `diff --cached`, and a guard that asked the diff would have read it as an
-    old path. The touched set is read from here on purpose, and only T4 uses
-    it -- see the T4 note in judge().
+    old path. The touched set is read from here on purpose, and only T4 and T6
+    use it -- see the T4 note in judge().
 
     `-z` for the same reason the listings use it, and its records come in
     threes for a rename or a copy -- status, source, destination -- against
@@ -577,11 +594,29 @@ def judge(after_kind, against, legacy_path):
             findings.append(("T5", e, f"the allow-list ({source}) names it and it "
                                       f"is tied now: the licence is spent. Drop "
                                       f"it"))
+    left = 0
+    for s in after.suites:
+        dead = after.declared(s) - after.scenarios
+        if s not in touched:                     # a rename puts both ends in it
+            # ONLY WHAT THIS CHANGE KILLED, in a suite it never opened: a name
+            # already dead before is not this change's debt, the scope T4 has.
+            # The ones left are counted in the reading, so a tree carrying
+            # that debt does not read like a clean one.
+            old = dead & (before.declared(s) - before.scenarios)
+            left += len(old)
+            dead -= old
+        for n in sorted(dead):
+            findings.append(("T6", s, f"its `# witnesses:` line declares `{n}`, "
+                                      f"and no `run` or `check` under spec/ in "
+                                      f"{after.label} declares it. Rename it to "
+                                      f"the scenario it witnesses, or drop it"))
     for code, path, what in sorted(findings):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "
           f"path(s) untied and licensed by the allow-list ({source}, "
-          f"{len(allowed)} entr(ies), {absent} naming no code path here)")
+          f"{len(allowed)} entr(ies), {absent} naming no code path here); "
+          f"{left} dead witness name(s) left where the change never opened "
+          f"the suite")
     return 1 if findings else 0
 
 

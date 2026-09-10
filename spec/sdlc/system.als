@@ -128,6 +128,13 @@ sig GrowsShape in Artifact {}
 
 var sig Written in Artifact {}
 var sig Landed  in Change {}
+/* THE TESTS WHOSE TEXT DECLARES A NAME NO SCENARIO CARRIES. A rename drops a
+   `witnesses` pair, but the text still spells the old name, and that spelling
+   is what this remembers: a declaration that names nothing, which `tie` never
+   reads, because one live name ties the code path whatever the rest say. A
+   test is written into it or out of it by `write`, and a scenario's `rename`
+   may put a test that lost a pair into it. */
+var sig Dangling in Artifact {}
 
 fact SdlcWellFormed {
   all p: Profile | p.optional in skippable
@@ -136,6 +143,7 @@ fact SdlcWellFormed {
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
   always (witnesses in stage.Test -> stage.Spec and drives in stage.Test -> stage.Code)
+  always Dangling in stage.Test
 }
 
 fun writtenOf[c: Change]:     set Artifact { change.c & Written }
@@ -161,6 +169,13 @@ pred tied[k: Artifact] { some tie.k }
 /* EVERY CODE PATH IN THE TREE WALKS BACK TO A SCENARIO. The invariant
    `tieDiscipline` keeps and `TreeStaysTied_Bites` breaks. */
 pred treeTied { all k: Written & stage.Code | tied[k] }
+/* EVERY DECLARED WITNESS NAMES A SCENARIO. Not implied by `treeTied`, which
+   asks for SOME scenario per code path: a suite declaring two, one of them
+   renamed away, stays tied through the other and still names nothing with the
+   first. `WitnessesResolve_Bites` in checks.als is that trace. */
+pred witnessesResolve {
+  all t: Written & stage.Test | t.witnesses in Written and t not in Dangling
+}
 
 /* THE SKIP RULE. A stage may be skipped when the kind's profile lets it be
    AND the stage's own criterion holds of the change -- one criterion per
@@ -203,7 +218,7 @@ one sig Now {
 
 pred sdlcFrame {
   Written' = Written and Landed' = Landed and skipped' = skipped
-  witnesses' = witnesses and drives' = drives
+  witnesses' = witnesses and drives' = drives and Dangling' = Dangling
 }
 
 /* ONE COMMIT WRITING ONE ARTIFACT. Loose on the order (`orderDiscipline`) and
@@ -223,6 +238,7 @@ pred write[a: Artifact] {
   skipped' = skipped - a.change->a.stage
   witnesses' - a->Artifact = witnesses - a->Artifact
   drives'    - a->Artifact = drives    - a->Artifact
+  Dangling'  - a = Dangling - a
   Landed' = Landed
   Now.event = Write and Now.subject = a.change and Now.artifact = a and Now.at = a.stage
 }
@@ -235,7 +251,7 @@ pred skip[c: Change, s: Stage] {
   s not in c.skipped and s not in writtenStages[c]
   skipped' = skipped + c->s
   Written' = Written and Landed' = Landed
-  witnesses' = witnesses and drives' = drives
+  witnesses' = witnesses and drives' = drives and Dangling' = Dangling
   Now.event = Skip and Now.subject = c and no Now.artifact and Now.at = s
 }
 
@@ -247,6 +263,13 @@ pred skip[c: Change, s: Stage] {
    renamed away from its suite and a suite renamed away from its code path are
    one event with one effect. Everything not touching a holds.
 
+   A `witnesses` pair it drops is a text still spelling the old name, so its
+   test may go into `Dangling`: the declaration names nothing now, whether or
+   not another of its names still ties the code path. May, not must: the same
+   commit may have rewritten that text to drop the name, which leaves the test
+   out -- the same freedom `witnesses'` has. Nothing else enters, and nothing
+   leaves but by a rewrite of the test.
+
    It is the one event that removes a tie, and the one a check must refuse when
    what it drops was load-bearing: `S4_RenameBreaksTheTie` at the code path's
    end, `S4b` at the scenario's, `S4c` at the test's. */
@@ -254,6 +277,7 @@ pred rename[a: Artifact] {
   a in Written
   witnesses' in witnesses
   witnesses' - Artifact->a = witnesses - Artifact->a
+  Dangling in Dangling' and Dangling' in Dangling + (witnesses - witnesses').Artifact
   drives' in drives
   drives' - (Artifact->a + a->Artifact) = drives - (Artifact->a + a->Artifact)
   Written' = Written and Landed' = Landed and skipped' = skipped
@@ -273,7 +297,7 @@ pred land[c: Change] {
   all s: Stage | done[c, s]
   Landed' = Landed + c
   Written' = Written and skipped' = skipped
-  witnesses' = witnesses and drives' = drives
+  witnesses' = witnesses and drives' = drives and Dangling' = Dangling
   Now.event = Land and Now.subject = c and no Now.artifact and no Now.at
 }
 
@@ -284,6 +308,7 @@ pred stutter {
 
 pred sdlcInit {
   no Written and no Landed and no skipped and no witnesses and no drives
+  no Dangling
 }
 
 pred sdlcStep {

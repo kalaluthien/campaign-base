@@ -242,25 +242,22 @@ SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 EVALS = {"eval"}
 # ------------------------------------------ shell rules that name no target
 #
-# A KILL NAMES A PID, AND A PID NAMES NOTHING HERE. `AGENTS.md` § Watching and
+# A NAME OR A PATTERN KILL, AND NOT `kill <pid>`. `AGENTS.md` § Watching and
 # retiring says a listed peer is asked and never killed, and the sentence is
-# about a SESSION; the incident under it is a process. A review finder killed
+# about a SESSION; the incident under it is a process -- a review finder killed
 # three alloy runs belonging to two other sessions (PR #255's REPORT, 18:23Z),
-# and what it cost was that "any measurement ... needs re-running" -- none of
-# them named. No payload this guard is handed maps a pid, or a `pkill` pattern,
-# to the session that owns it, so there is no narrower form to decide and the
-# refusal is the whole verb. It says so, and it names the two things that DO
-# stop a peer: the four messages, and the person.
-# A NAME OR A PATTERN KILL, AND NOT `kill <pid>`. The DECISION on
-# kalaluthien/campaign-base#278 narrowed the ledger's blanket form after the
-# measurement: over 18,449 recorded in-base calls the blanket rule refused 31,
-# of which ONE was the incident (`pkill -f 'alloy-6.2.0.jar'`, PR #255's
-# REPORT) and the rest were sessions stopping processes they had started
-# themselves. What separates the two is not the verb but what it names: a
-# pattern reaches every process that matches it, the caller identified none of
-# them, and that is the incident's shape; a pid names one process the caller
-# had to look up first, and whether it is a peer's is not decidable from the
-# payload, so it stays prose. Re-measured over the same calls after the
+# and what it cost was that "any measurement ... needs re-running", none of
+# them named.
+#
+# The DECISION on kalaluthien/campaign-base#278 narrowed the ledger's blanket
+# form after the measurement: over the 18,449 in-base calls recorded to
+# 2026-09-10 (the tree grows, so the figure is dated) the blanket rule refused
+# 31, of which ONE was the incident and the rest were sessions stopping
+# processes they had started themselves. What separates the two is the VERB,
+# which is all this reads: `pkill` and `killall` take a pattern and reach every
+# process matching it, and `kill` takes pids. The operands are NOT read, so
+# `kill $(pgrep -f alloy)` and `kill -9 -1` pass -- the rule is narrowed to the
+# half a verb decides and the other half stays prose. Re-measured after the
 # narrowing: 22 findings over 17 distinct commands, the incident among them.
 KILLS = {"pkill", "killall"}
 # THE RULE A FINDING BROKE, carried beside its sentence so the refusal's first
@@ -321,8 +318,17 @@ GIT_PRE_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
 # it. Only such a token is split; a quoted string that happens to hold a
 # newline or a semicolon has other characters in it and is left alone.
 PUNCT_RUN = re.compile(r"^[();<>|&{}`\n]+$")
-PUNCT_UNITS = ("&&", "||", "|&", "<<", ">>", "\n", "<", ">", "|", "&", ";",
-               "(", ")", "{", "}", "`")
+# `>&`, `&>` and `<&` are here for the same reason `<<` is: they are one
+# operator, and splitting `2>&1` into `>` and `&` put an `&` -- a separator --
+# in the middle of a segment, which detached a heredoc from the command that
+# opened it and made its body read as no body at all (#281's narrowed review).
+PUNCT_UNITS = ("&&", "||", "|&", ">&", "&>", "<&", "<<", ">>", "\n", "<", ">",
+               "|", "&", ";", "(", ")", "{", "}", "`")
+# A separator that puts what follows it in a SUBSHELL, so a `cd` there does not
+# move the shell the next command runs in.
+PIPES = {"|", "|&"}
+NESTS = {"(", "{"}
+UNNESTS = {")", "}"}
 
 
 def split_punct(token):
@@ -1081,11 +1087,12 @@ def segments(command):
     but the comment check wants, and it is a projection of that one rather than
     a second walk."""
     pairs, why = paired_segments(command)
-    return (None if pairs is None else [tokens for tokens, _ in pairs]), why
+    return (None if pairs is None else [t for t, _, _ in pairs]), why
 
 
 def paired_segments(command):
-    """[(tokens, the heredoc bodies that segment opened)], or (None, why).
+    """[(tokens, the heredoc bodies it opened, whether it is outer)], or
+    (None, why).
 
     `punctuation_chars` makes `;`, `|`, `&` their own tokens.
 
@@ -1120,19 +1127,34 @@ def paired_segments(command):
     # whose command word was `x`. The run is split back into its units here
     # rather than by widening SEPARATORS to "anything made of punctuation",
     # which would swallow `<<` and break the heredoc pairing that counts it.
+    #
+    # ITS COST, STATED: shlex strips quotes, so a token whose WHOLE content is
+    # punctuation is indistinguishable from the operator -- `-b ';'` was read
+    # as a separator before this and `-b '<newline>'` is read as one now. Only
+    # a body that is entirely punctuation is reached, and it loses the operand
+    # rather than misreading it.
     flat = []
     for t in tokens:
         if PUNCT_RUN.match(t) and t not in PUNCT_UNITS:
             flat += split_punct(t)
         else:
             flat.append(t)
-    out, cur = [], []
+    # OUTER-NESS IS RECORDED HERE and nowhere else, because this loop is the
+    # only place that still has the separators (#281's narrowed review, F1).
+    # A segment is outer when it runs in the shell the command started in: not
+    # inside `( )` or `{ }`, and not a stage after a `|`, both of which are
+    # subshells whose `cd` the next command never sees.
+    out, cur, depth, before = [], [], 0, None
     for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
-        elif cur:
-            out.append(cur)
+            continue
+        if cur:
+            out.append((cur, depth == 0 and before not in PIPES))
             cur = []
+        depth += (t in NESTS) - (t in UNNESTS)
+        depth = max(depth, 0)
+        before = t
     # A string another command runs is that string's segments too: a shell's
     # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
     # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
@@ -1150,10 +1172,10 @@ def paired_segments(command):
     # one.
     taken = 0
     paired = []
-    for seg in list(out):
+    for seg, outer in list(out):
         mine = heredocs[taken:taken + seg.count("<<")]
         taken += seg.count("<<")
-        paired.append((seg, mine))
+        paired.append((seg, mine, outer))
         word, rest = head(seg)
         if word is None:
             continue
@@ -1172,7 +1194,10 @@ def paired_segments(command):
             # `out` is NOT extended here any more. `for seg in list(out)`
             # takes its snapshot before the loop and `paired` is what this
             # returns, so the append had no reader after #217 split the walk.
-            paired += more
+            #
+            # AND NONE OF THEM IS OUTER, whatever it was inside its own string:
+            # `bash -c 'cd /tmp'` moves that shell and not this one.
+            paired += [(t, h, False) for t, h, _ in more]
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.
@@ -1275,6 +1300,10 @@ def literal_path(token, base):
 
     `base` is what a relative path is resolved against, and is itself None once
     a `cd` this could not read has moved the shell somewhere unknown."""
+    # `~` IS IN `COMPOSED` because the shell expands it and this guard expands
+    # nothing: a `cd ~` is a place it did not look, which is the third outcome.
+    # `cd` with NO operand is different -- that is cd's own default and needs
+    # no expansion, so `cd_target` answers it.
     if not token or any(c in token for c in COMPOSED):
         return None
     path = Path(token)
@@ -1363,7 +1392,23 @@ def git_bypass(rest):
     return out
 
 
-def shell_findings(segs, cwd=None):
+def cd_target(rest, where):
+    """Where a `cd` leaves the shell, or None when that cannot be read.
+
+    No operand at all is HOME, which is decidable and used to read as
+    unreadable -- and unreadable turns the hook-bypass rule OFF for the rest of
+    the command, so `cd; git commit --no-verify` walked straight through
+    (#281's narrowed review, F1). `cd -` is the previous directory, which this
+    never saw, and stays the third outcome."""
+    ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
+    if not ops:
+        return Path.home()
+    if ops[0] == "-":
+        return None
+    return literal_path(ops[0], where)
+
+
+def shell_findings(pairs, cwd=None):
     """(the findings, the rules seen and left to somebody else).
 
     One line each, and a finding is a sentence a reader can act on rather than
@@ -1374,8 +1419,8 @@ def shell_findings(segs, cwd=None):
 
     THE HOOK BYPASS ASKS WHETHER THERE IS A HOOK TO BYPASS, and that is the
     whole of the second return value (kalaluthien/campaign-base#278's review,
-    F2). Over 18,449 recorded in-base calls, 33 broke this rule as first
-    written and 31 of them were a throwaway repository -- `mktemp -d`,
+    F2). Over the 18,449 in-base calls recorded to 2026-09-10, 33 broke this
+    rule as first written and 31 of them were a throwaway repository -- `mktemp -d`,
     `git init -q`, a copy of this tree's scripts -- built by this tree's own
     probes, where a fresh `.git/hooks` holds nothing but git's samples and the
     flag skipped nothing. So the shell's directory is tracked across the `cd`s
@@ -1384,24 +1429,27 @@ def shell_findings(segs, cwd=None):
     bypassed; unreadable is the third outcome and is said as one, because a
     shell that composes its own path (`cd "$d"`) is a place this cannot look.
 
-    ITS CEILING: a `cd` inside a shell's `-c` string moves that string's own
-    segments, which this walk reaches after the outer ones rather than in
-    place, and `pushd` is not read at all.
+    ITS CEILING: `pushd` is not read at all, and neither is a `cd` whose
+    operand the shell composes -- both leave the directory unreadable, which is
+    the third outcome and not a no.
     """
     out, notes, where = [], [], cwd
-    for seg in segs:
+    for seg, _heredocs, outer in pairs:
         word, rest = head(seg)
-        if word == "cd":
-            ops = [t for t in rest[1:] if not t.startswith("-")]
-            where = literal_path(ops[0], where) if ops else None
+        # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
+        # subshell, a pipeline stage, a `bash -c` string or a heredoc script
+        # moves that shell and exits; crediting it turned the rule off for the
+        # rest of the command, which six ordinary shapes reached.
+        if word == "cd" and outer:
+            where = cd_target(rest, where)
         if word in KILLS:
             out.append((KILL_RULE,
-                f"`{word}` stops every process its pattern matches, and the "
-                f"caller identified none of them -- which is how a review "
-                f"finder killed three alloy runs belonging to two other "
-                f"sessions. Stop your own process by its pid: `kill <pid>` is "
-                f"allowed, in every form. A peer is asked instead: `STATUS`, "
-                f"then `STAND DOWN`."))
+                f"`{word}` takes a pattern and stops every process matching "
+                f"it -- which is how a review finder killed three alloy runs "
+                f"belonging to two other sessions. Name what you are stopping: "
+                f"`kill <pid>` is allowed, in every form, and only the verb is "
+                f"read here. A peer is asked instead: `STATUS`, then "
+                f"`STAND DOWN`."))
         elif word == "herdr" and tuple(herdr_words(rest)[:2]) == HERDR_KILL:
             out.append((PEER_RULE,
                 "`herdr agent kill` stops a session that has not agreed to "
@@ -1962,7 +2010,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
 
 def bash_call(command, cwd: Path, session_id=""):
     pairs, why = paired_segments(command)
-    segs = None if pairs is None else [t for t, _ in pairs]
+    segs = None if pairs is None else [t for t, _, _ in pairs]
     if segs is None:
         # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
         # call this cannot split is not read as harmless" for a command with no
@@ -1991,7 +2039,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # because a command may hold one of these and no `gh` at all -- which is
     # the ordinary case and the one the allow-unread return below would have
     # swallowed.
-    broken, unenforced = shell_findings(segs, cwd)
+    broken, unenforced = shell_findings(pairs, cwd)
     if broken:
         rules = ", ".join(sorted({r for r, _ in broken}))
         root, how = session_root(cwd)
@@ -2044,7 +2092,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
     shape, unread, unjudged = [], [], []
-    for tokens, heredocs in pairs:
+    for tokens, heredocs, _outer in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue

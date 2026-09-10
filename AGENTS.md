@@ -713,11 +713,9 @@ claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
 can say which claim it holds. `scripts/check-campaign-claim.py` refuses
-`herdr agent kill`, `pkill` and `killall`: a name or a pattern reaches
-processes the caller never identified, which is the incident's shape.
-`kill <pid>` passes in every form -- a pid names one process the caller had to
-look up, and whether it is a peer's is not decidable from the payload, so that
-half stays here.
+`herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
+matching it, which is the incident's shape. It reads the verb and not the
+operands, so `kill` passes in every form — that half stays prose.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead

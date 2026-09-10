@@ -43,14 +43,16 @@ pred TreeStaysTied_Bites {
    at every state and still carry a dead name: a test declares two scenarios,
    one is renamed and the text is not rewritten, and the code path stays tied
    through the other -- bd2143d's shape, which a check reading `treeTied` alone
-   passed. */
+   passed. The last conjunct pins that shape: the test the rename left spelling
+   a dead name still ties a written code path, so it declared two. */
 assert WitnessesResolve {
   tieDiscipline implies always witnessesResolve
 }
 pred WitnessesResolve_Bites {
   always treeTied
   eventually (Now.event = Rename and Now.at = Spec
-              and witnessesResolve and after not witnessesResolve)
+              and witnessesResolve and after not witnessesResolve
+              and after some Dangling & (Artifact.tie).Written)
 }
 
 /* ---------------- the skip rule ---------------- */

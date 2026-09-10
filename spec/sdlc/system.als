@@ -133,7 +133,7 @@ var sig Landed  in Change {}
    is what this remembers: a declaration that names nothing, which `tie` never
    reads, because one live name ties the code path whatever the rest say. A
    test is written into it or out of it by `write`, and a scenario's `rename`
-   puts every test that lost a pair into it. */
+   may put a test that lost a pair into it. */
 var sig Dangling in Artifact {}
 
 fact SdlcWellFormed {
@@ -264,8 +264,11 @@ pred skip[c: Change, s: Stage] {
    one event with one effect. Everything not touching a holds.
 
    A `witnesses` pair it drops is a text still spelling the old name, so its
-   test goes into `Dangling`: the declaration names nothing now, whether or not
-   another of its names still ties the code path.
+   test may go into `Dangling`: the declaration names nothing now, whether or
+   not another of its names still ties the code path. May, not must: the same
+   commit may have rewritten that text to drop the name, which leaves the test
+   out -- the same freedom `witnesses'` has. Nothing else enters, and nothing
+   leaves but by a rewrite of the test.
 
    It is the one event that removes a tie, and the one a check must refuse when
    what it drops was load-bearing: `S4_RenameBreaksTheTie` at the code path's
@@ -274,7 +277,7 @@ pred rename[a: Artifact] {
   a in Written
   witnesses' in witnesses
   witnesses' - Artifact->a = witnesses - Artifact->a
-  Dangling' = Dangling + (witnesses - witnesses').Artifact
+  Dangling in Dangling' and Dangling' in Dangling + (witnesses - witnesses').Artifact
   drives' in drives
   drives' - (Artifact->a + a->Artifact) = drives - (Artifact->a + a->Artifact)
   Written' = Written and Landed' = Landed and skipped' = skipped

@@ -55,10 +55,11 @@ scenario however that path ties (`S5_CodeWithoutSpecRefused`).
 `# witnesses: <Name>[, ...]` line declares, and `drives`, the code path its own
 name pairs with. Write that line in every suite -- a mention in prose ties
 nothing since #268, and `scripts/check-sdlc-tie.py` matches the declared names
-exactly. Every name on it must resolve (`witnessesResolve`): one live name ties
-the code path but does not cover a dead one beside it. `treeTied` asks it of every code path in the tree, read from the code
-path up and never from the scenario down — a scenario with no test is a claim
-the solver checks on its own. `tieDiscipline` is the reading at the commit.
+exactly. `treeTied` asks for a tie at every code path in the tree, read from
+the code path up and never from the scenario down — a scenario with no test is a claim
+the solver checks on its own. Every name on the line must resolve as well
+(`witnessesResolve`): one live name ties the code path but does not cover a
+dead one beside it. `tieDiscipline` is the reading at the commit.
 
 A rename is the one commit that breaks a tie (`rename`), and the two relations
 break at different ends: `witnesses` at the scenario's

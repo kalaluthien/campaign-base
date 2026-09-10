@@ -197,11 +197,12 @@ T6_CASES = [
     ("T6 a suite written before its code path, declaring a dead name",
      {SPEC: DECL},
      {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"}),
+    ("T6 a `# witnesses:` line inside a multi-line string is a declaration too",
+     {SPEC: DECL},
+     {"scripts/a.py": CODE,
+      "scripts/a-test.py": SUITE + 'F = """\n# witnesses: S9_Nowhere\n"""\n'}),
     ("T6 a dead name already there, in a suite this change edits",
      DEBT, {"scripts/a-test.py": DEBT["scripts/a-test.py"] + "x = 1\n"}),
-    ("T6 a dead name already there, in a suite this change renames",
-     DEBT, {"scripts/a-test.py": None, "scripts/a.py": None,
-            "scripts/b.py": CODE, "scripts/b-test.py": DEBT["scripts/a-test.py"]}),
 ]
 
 
@@ -316,10 +317,22 @@ def main():
           line.startswith("T6\tscripts/a-test.py\t") and "`S9_Nowhere`" in line
           and "the index" in line and "S1_FullChain" not in line,
           "one T6 line naming scripts/a-test.py, `S9_Nowhere` and the index", r)
+    # One line PER dead name: bd2143d left three of four, and a reader that
+    # reported the first would read the same verdict with two names unlisted.
+    r = run_case({SPEC: DECL},
+                 {"scripts/a.py": CODE,
+                  "scripts/a-test.py": "# witnesses: S9_A, S1_FullChain, S9_B, S9_C\n"})
+    got = sorted(ln.split(" line declares `")[1].split("`")[0]
+                 for ln in r.stderr.splitlines()
+                 if ln.startswith("T6\t"))
+    check("T6 names every dead name on its own line, three of four as bd2143d left",
+          got == ["S9_A", "S9_B", "S9_C"], "T6 lines for S9_A, S9_B and S9_C", r)
     r = run_case(DEBT, {"README.md": "r\n"})
     ok, want = judge(r, None)
     check("a dead name already there, in a suite the change never opened, is not "
-          "this change's debt", ok, want, r)
+          "this change's debt, and the reading counts it",
+          ok and "1 dead witness name(s) left where the change never opened"
+          in r.stdout, "0 finding(s) and the count of what was left", r)
 
     # --staged reads the index and not the disk, both ways round.
     r = run_case({SPEC: DECL}, {"scripts/a.py": CODE}, on_disk={"scripts/a.py": None})

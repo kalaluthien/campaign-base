@@ -1789,7 +1789,10 @@ pred M2b_TheRuleExcludesTheStalePush {
 }
 
 /* M2c. ...and a review taken AFTER the push still lands, or M2b would be the
-   rule that no pushed branch ever merges. */
+   rule that no pushed branch ever merges. On GitHub the `Review` step is a
+   comment, which fires no `check` run; scripts/rerun-check.py, run by
+   .github/workflows/review-rerun.yml, re-runs the head's red one so the merge
+   this scenario reaches needs no hand step. */
 pred M2c_AFreshReviewAfterThePushLands {
   mergedOnCurrentReview
   some s: Session, a: Agent {

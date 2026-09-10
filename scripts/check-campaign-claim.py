@@ -8,7 +8,10 @@ commit half (spec/campaign/orchestration/scenarios.als, `claimBeforeWork` and
 `claimBeforeCommit`). A claim is a `<slug>/<issue>-<topic>` branch whose
 ref exists on the remote, and nothing on disk (#176).
 
-WHAT IS READ. Two bounded languages. A FILE TOOL names its target. A `gh`
+WHAT IS READ. Three bounded languages. A FILE TOOL names its target. An
+`Agent` LAUNCH names its own two fields, `prompt` and `model`, and neither
+needs a claim or a role: AGENTS.md § Review's rules on the call gate cost and
+the choice of a reader, not a plane. A `gh`
 call is one program with a stable grammar: each segment (shlex; ``;|&(){}` ``
 split it, and so do the strings another command runs -- the `-c` of a shell
 NAMED IN `SHELLS`, alone or last in a cluster like `-lc`, and `eval`'s
@@ -32,6 +35,21 @@ NOT a loop body: `do` and `then` are prefixes, so
 narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
 shell string is an unbounded language, and a shell write on campaign work
 lands at the commit, where the other half reads it.
+
+TWO SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
+than past that ceiling: a PATTERN KILL, and a HOOK BYPASS. Neither is a write
+with a landing, so neither reaches the commit gate, and each has an incident
+behind it (kalaluthien/campaign-base#278). They are read from the segment's
+command word and its own flags, so a command matching neither name is allowed
+unread exactly as it was. The bypass half asks one thing more, the repository
+the call would run in: a hook that is not installed is not one being skipped,
+and the `cd`s of the command are walked to find it.
+
+A NEWLINE ENDS A COMMAND, which shlex does not say -- it is whitespace there,
+and a glued `);` or `&&\n` matches no separator either. Both are put back
+before the split (#278's review), because without them the line under a
+`git commit` was read as its flags and a `cd` after a substitution was read as
+an argument.
 
 EVERY VERDICT IS LOGGED, one JSON line to `<campaign>/runtime/guard.log` for
 the campaign the call was classified into, or `<base>/runtime/guard.log`
@@ -97,7 +115,10 @@ first line is what the log stores as `reason` and what `guard-precision.py`
 groups on.
 
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
-it. A `gh` write from a cwd under no base is allowed as not in a campaign.
+it. A `gh` write, an `Agent` launch or a shell rule broken from a cwd under no
+base is allowed as not in a campaign: this guard is registered for every
+session on this machine, and one of this repository's rules walling a session
+that has nothing to do with it is an outage and not a gate.
 """
 import datetime
 import importlib.machinery
@@ -158,6 +179,54 @@ NAMELESS = ("A session with no campaign name has no role, and a session with "
 FILE_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 PATH_KEYS = ("file_path", "notebook_path", "path")
 
+# THE AGENT PAYLOAD, PROBED AND NOT ASSUMED (kalaluthien/campaign-base#278). An
+# assistant `tool_use` block in a transcript carries the tool input verbatim,
+# which is what guard-corpus.py already relies on for Bash and the file tools.
+# Read across every transcript on this machine on 2026-09-10, SUBAGENT
+# SIDECHAINS INCLUDED -- the first pass counted only top-level ones and
+# undercounted the launches this rule most concerns, since a fan-out's finders
+# are launched from inside a subagent -- 759 `Agent` blocks carried
+# `description` and `prompt` in every one, `subagent_type` in all but 56, and
+# `model`, `run_in_background` and `isolation` only where the launcher named
+# them. So every field below is read as possibly absent, and an absent `model`
+# is the finding rather than a payload this could not read.
+# WHAT THE RULE COSTS, re-measured on 2026-09-10: of the 385 launches recorded
+# under this base, 25 name no model and none of those is a `fork`, so 25 is
+# what it refuses. 114 open with `/code-review`, and every one of them is now
+# allowed here -- they run no skill, and the channel that does is `skill_call`.
+AGENT_TOOL = "Agent"
+AGENT_PROMPT, AGENT_MODEL = "prompt", "model"
+# A fork runs on the launcher's own model and a `model` given to one is
+# IGNORED, so for a fork "no model" is the correct spelling rather than a
+# default inherited by accident, and the rule below does not apply to it.
+AGENT_TYPE, INHERITS_MODEL = "subagent_type", "fork"
+
+# THE FAN-OUT LIVES IN A `Skill` CALL AND NEVER IN A PROMPT, probed twice on
+# this machine with the guard installed (NOTE upkeep-worker-5 on
+# kalaluthien/campaign-base#278, 2026-09-10). A subagent whose prompt OPENED
+# `/code-review low ...` made 19 `Bash` calls and loaded no skill: a slash
+# command in an `Agent` prompt is plain text. A subagent told to call
+# `Skill(skill="code-review", args="low ...")` loaded it, and it forked its own
+# review agent. So the first spelling of this rule -- the prompt's opening word
+# -- was wrong in both directions at once: it refused the launch that fans out
+# into nothing, and passed the one that fans out.
+# THE PAYLOAD, probed the way the Agent one was: 105 `Skill` blocks across
+# every transcript on this machine, carrying `skill` in all of them and `args`
+# in 90. Of the 44 made under this base, 36 name `code-review` -- `medium` 21,
+# `high` 7, `low` 6, and 2 whose first token is no level at all.
+SKILL_TOOL = "Skill"
+SKILL_NAME, SKILL_ARGS = "skill", "args"
+FANS_OUT = "code-review"
+# `low` is the one level that cannot fan out: the skill body at that level is
+# one diff pass, no verification stage, at most four findings and no subagents.
+# #282 priced it at 60,774 input_new against 127,442 for a narrowed plain brief
+# on the same diff, so the bar reaches every level above it and not this one.
+# What `low` does not do is satisfy merge condition 1 -- it reads no tests and
+# no full files, and it missed two of the three behavioural findings the plain
+# brief made on that diff -- which is prose in § Review, not a branch here: the
+# payload cannot say which review a merge is going to wait on.
+CHEAP_LEVEL = "low"
+
 WRITES = {("issue", v) for v in "close edit comment reopen develop transfer "
           "delete pin unpin lock unlock".split()} \
     | {("pr", v) for v in "create merge comment review edit close reopen ready "
@@ -188,7 +257,14 @@ VALUED = {"-R", "--repo", "-X", "--method", "-H", "--header", "-F", "--field",
 # role -- it is read per call from the target's checkout and this session's
 # worktrees.
 API_WRITE_FLAGS = {"-F", "--field", "-f", "--raw-field", "--input"}
-SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`"}
+# A NEWLINE IS ONE OF THESE, and leaving it out was a defect
+# (kalaluthien/campaign-base#278's review, F1). shlex treats it as whitespace,
+# so `git commit -m x` and the `find . -name x` on the line below it were ONE
+# segment: `-name` reached the `git commit` flag scan and read as a cluster
+# holding `-n`. It also cost the `gh` half, which reads a segment's FIRST word
+# -- `ls` on line one hid a `gh issue close` on line two, leaving it to the
+# unreadable-`gh` fallback.
+SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}", "`", "\n"}
 # Words before a command that are not it, and shells that run a string.
 PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
             "else", "builtin", "nice"}
@@ -198,8 +274,133 @@ PREFIXES = {"env", "command", "time", "nohup", "sudo", "exec", "do", "then",
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 # Words whose OPERAND is itself a command string, re-read as one.
 EVALS = {"eval"}
+# ------------------------------------------ shell rules that name no target
+#
+# A NAME OR A PATTERN KILL, AND NOT `kill <pid>`. `AGENTS.md` § Watching and
+# retiring says a listed peer is asked and never killed, and the sentence is
+# about a SESSION; the incident under it is a process -- a review finder killed
+# three alloy runs belonging to two other sessions (PR #255's REPORT, 18:23Z),
+# and what it cost was that "any measurement ... needs re-running", none of
+# them named.
+#
+# The DECISION on kalaluthien/campaign-base#278 narrowed the ledger's blanket
+# form after the measurement: over the 18,449 in-base calls recorded to
+# 2026-09-10 (the tree grows, so the figure is dated) the blanket rule refused
+# 31, of which ONE was the incident and the rest were sessions stopping
+# processes they had started themselves. What separates the two is the VERB,
+# which is all this reads: `pkill` and `killall` take a pattern and reach every
+# process matching it, and `kill` takes pids. The operands are NOT read, so
+# `kill $(pgrep -f alloy)` and `kill -9 -1` pass -- the rule is narrowed to the
+# half a verb decides and the other half stays prose. Re-measured over the same
+# dated calls after the narrowing: 22 findings over 17 distinct commands, the
+# incident among them.
+KILLS = {"pkill", "killall"}
+# THE RULE A FINDING BROKE, carried beside its sentence so the refusal's first
+# line -- which is what `log_verdict` stores and `guard-precision.py` groups
+# on -- separates the three branches. Stored whole rather than as codes: the
+# sentence is the diagnosis and this is only its heading.
+KILL_RULE = "a kill"
+PEER_RULE = "a `herdr agent kill`"
+BYPASS_RULE = "a hook bypass"
+# herdr's own stop, read as the two words after the command rather than as a
+# string, so `herdr --json agent kill w40:p2D` reads the same as the plain
+# spelling. A kill through herdr names a PANE and not a pid, which is a better
+# handle -- and still not a peer's consent, which is what the rule is about.
+HERDR_KILL = ("agent", "kill")
+# herdr's own options before the subcommand that take a separate word. Same
+# hazard as git's, found in the same review: without them
+# `herdr --session main agent kill <pane>` shifts the two words this reads and
+# the verb hides behind a flag.
+HERDR_PRE_VALUED = {"--session", "--remote"}
+# What moves the shell the next command runs in. `pushd` and `popd` are here
+# because leaving them out did not make the directory UNREADABLE -- it left the
+# previous reading standing, and the guard then answered confidently about a
+# directory the shell had left (#281's narrowed rounds).
+MOVES = {"cd", "pushd", "popd"}
+
+# A HOOK BYPASS IS A FLAG, AND MOVING THE HOOKS IS THE SAME BYPASS SHAPED LIKE
+# CONFIGURATION. `AGENTS.md` § Execution mode says a hook is never bypassed;
+# 89918aa was committed with `--no-verify` all the same (#268, 2026-09-09), and
+# the correction after it was a commit, not a check. Three spellings, and the
+# third is why this is not a scan for one word: `git -c core.hooksPath=X`,
+# `git config core.hooksPath X`, and `GIT_CONFIG_KEY_0=core.hooksPath` reach
+# the same end through a flag, a subcommand and the environment.
+NO_VERIFY = "--no-verify"
+# git accepts an UNAMBIGUOUS ABBREVIATION of a long option, so `--no-verif`
+# and `--no-v` skip the hook exactly as the full spelling does -- probed
+# against a repository with a real `pre-commit`. The shortest prefix that is
+# unambiguous among `git commit`'s `--no-*` options is `--no-v`, so any prefix
+# from there up is the flag.
+NO_VERIFY_MIN = "--no-v"
+# The subcommands that HAVE the flag. Without this, `git log -S '--no-verify'`
+# was refused -- the search term is not an option, and AGENTS.md itself tells
+# a session to `git log -S` a word before adopting it.
+NO_VERIFY_SUBS = {"commit", "push", "merge", "am"}
+# Words whose OPERANDS are environment assignments, so
+# `export GIT_CONFIG_KEY_0=core.hooksPath` reads like the inline spelling.
+SETTERS = {"export", "setenv", "declare", "typeset"}
+# What makes a token a path this can resolve rather than one the shell
+# composes. A token holding any of these reaches git as something this guard
+# never sees, so the directory is unreadable and says so.
+COMPOSED = ("$", "`", "*", "?", "[", "~")
+# ...except a leading `~` or `~/`, which names this account's home and nothing
+# else. `~other` is a different account's and stays composed. Without this,
+# `cd ~` was unreadable while a bare `cd` was home -- the same directory, two
+# answers -- and `cd ~/campaign-base && git commit --no-verify` was allowed
+# over the hooked base itself.
+HOME_PREFIX = ("~/", "~")
+HOOKS_PATH = "core.hooksPath"
+# git's own options BEFORE the subcommand that take a separate word, so the
+# subcommand is found past them. Only the separate-word spellings are here:
+# `--git-dir=X` carries its value and needs no skip.
+GIT_PRE_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
+                  "--exec-path"}
+
 # A heredoc opener and its delimiter: `<<EOF`, `<<'MSG'`, `<<-"X"`. The body
 # that follows is data (#193) and is removed before the command is split.
+# A token shlex made of nothing but its punctuation characters, newline
+# included, and the units such a run is split back into -- longest first, so
+# `&&` is one unit and `<<` survives whole for the heredoc counter that counts
+# it. Only such a token is split; a quoted string that happens to hold a
+# newline or a semicolon has other characters in it and is left alone.
+PUNCT_RUN = re.compile(r"^[();<>|&{}`\n]+$")
+# THE REDIRECTIONS ARE ONE OPERATOR EACH, for the same reason `<<` is: split
+# apart, the `|` of `>|` and the `&` of `2>&1` are SEPARATORS, so the segment
+# broke in two and a heredoc went with the half that did not open it -- which
+# made `gh issue comment -F - 2>&1 <<EOF` read as a comment with no body at
+# all, silently (#281's narrowed rounds). LONGEST FIRST, because `split_punct`
+# takes the first entry that matches: read shortest-first, `&&` at the end of a
+# line becomes `&`, `&` and a newline, and the first `&` closes the segment
+# before it -- which since outer-ness began reading the closing separator means
+# a `cd` there stops being credited. zsh's `>|` and `>>&` are here because this
+# machine's shell has `noclobber` set, which is what makes `>|` the spelling
+# reached for.
+PUNCT_UNITS = ("&>>", ">>&", "&&", "||", "|&", ">&", "&>", "<&", ">|", "<<",
+               ">>", "\n", "<", ">", "|", "&", ";", "(", ")", "{", "}", "`")
+# A separator that puts a command in a SUBSHELL, so a `cd` there does not move
+# the shell the next command runs in: either side of a pipe, and a `&` that
+# backgrounds it. `{ }` IS NOT ONE -- a brace group runs in the current shell
+# (`bash -c '{ cd /tmp; }; echo $PWD'` prints /tmp), and counting it cost twice
+# over: the group's own `cd` went uncredited, and an unbalanced `{` in a quoted
+# token left the depth raised for every segment after it.
+PIPES = {"|", "|&"}
+BACKGROUND = "&"
+NESTS = {"("}
+UNNESTS = {")"}
+
+
+def split_punct(token):
+    """A glued run of punctuation as its units. shlex hands back `);` and
+    `&&\n` as single tokens, which match no separator -- so
+    `R=$(mktemp -d); cd $R; git commit --no-verify` read the `cd` as an
+    argument of `mktemp` and the commit as running where the session started
+    (kalaluthien/campaign-base#278's review, F2)."""
+    out, i = [], 0
+    while i < len(token):
+        unit = next((u for u in PUNCT_UNITS if token.startswith(u, i)), None)
+        out.append(unit or token[i])
+        i += len(unit) if unit else 1
+    return out
 HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
 
@@ -966,11 +1167,12 @@ def segments(command):
     but the comment check wants, and it is a projection of that one rather than
     a second walk."""
     pairs, why = paired_segments(command)
-    return (None if pairs is None else [tokens for tokens, _ in pairs]), why
+    return (None if pairs is None else [t for t, _, _ in pairs]), why
 
 
 def paired_segments(command):
-    """[(tokens, the heredoc bodies that segment opened)], or (None, why).
+    """[(tokens, the heredoc bodies it opened, whether it is outer)], or
+    (None, why).
 
     `punctuation_chars` makes `;`, `|`, `&` their own tokens.
 
@@ -984,19 +1186,93 @@ def paired_segments(command):
     thing. Pairing on the LINE instead would read the commit message in
     `bash x.sh && git commit -F - <<M` as a comment body."""
     command, heredocs = strip_heredocs(command)
-    lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`")
+    # A LINE CONTINUATION IS NOT A SEPARATOR, and it has to go first: with the
+    # newline made a token below, `git commit \\<newline> -m x` would split
+    # into two segments and the flags would leave with the second.
+    command = command.replace("\\\n", " ")
+    lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&{}`\n")
     lex.whitespace_split = True
+    # THE NEWLINE OUT OF `whitespace` AND INTO `punctuation_chars`, which takes
+    # both edits: in `punctuation_chars` alone it is still whitespace and is
+    # swallowed, and out of `whitespace` alone it glues the two lines' words
+    # into one token. A newline inside quotes is untouched, being neither.
+    lex.whitespace = " \t\r"
     try:
         tokens = list(lex)
     except ValueError as e:
         return None, f"the command would not split ({e})"
-    out, cur = [], []
-    for t in tokens + [";"]:
+    # shlex GLUES A RUN OF PUNCTUATION into one token, so a `&&` at the end of
+    # a line arrives as `&&\n` and a `);` as itself, and neither matches a
+    # separator -- which read `x && <newline> gh issue close 11` as one segment
+    # whose command word was `x`. The run is split back into its units here
+    # rather than by widening SEPARATORS to "anything made of punctuation",
+    # which would swallow `<<` and break the heredoc pairing that counts it.
+    #
+    # ITS COST, STATED: shlex strips quotes, so a token whose WHOLE content is
+    # punctuation is indistinguishable from the operator -- `-b ';'` was read
+    # as a separator before this and `-b '<newline>'` is read as one now. Only
+    # a body that is entirely punctuation is reached, and it loses the operand
+    # rather than misreading it.
+    #
+    # THE UNITS ARE NOT SPECIAL-CASED, because `split_punct` returns a unit
+    # unchanged -- it is longest-match over PUNCT_UNITS itself. A `t not in
+    # PUNCT_UNITS` guard rode here until #281's full review, F4: it could
+    # decide nothing, so no case could fail for it, which is the shape this
+    # file refuses everywhere else.
+    flat = []
+    for t in tokens:
+        if PUNCT_RUN.match(t):
+            flat += split_punct(t)
+        else:
+            flat.append(t)
+    # OUTER-NESS IS RECORDED HERE and nowhere else, because this loop is the
+    # only place that still has the separators (#281's narrowed rounds). A
+    # segment is outer when it runs in the shell the command started in: not
+    # inside `( )`, not backgrounded, and not a stage of a pipeline OTHER than
+    # its last. The separator read is the one that CLOSES the segment, and it
+    # is the only one that answers this: `cd /tmp | true; git commit
+    # --no-verify` is closed by a pipe, so the `cd` is a stage that exits and
+    # the commit is judged where the command started -- which is what both
+    # shells here do (`zsh -c 'cd /tmp | true; echo $PWD'` prints the original
+    # directory, and so does bash).
+    #
+    # A BRACE GROUP IS NOT A SUBSHELL, BUT ONE ON THE LEFT OF A PIPE IS.
+    # `{ cd X; } | true` and `{ cd X; } &` both leave the shell where it was,
+    # in both shells here, and the separator that says so arrives two tokens
+    # after the group's own segments were emitted. So the group's span is
+    # remembered and cleared when the separator after its `}` turns out to be
+    # a pipe or a `&`.
+    #
+    # THE LAST STAGE OF A PIPELINE IS THE SHELL ITSELF HERE, and the separator
+    # before a segment is therefore not read at all (#281's full review, F2).
+    # zsh runs a pipeline's last stage in the current shell and bash runs it in
+    # a subshell; the Bash tool here runs zsh, so `true | cd X` really moves --
+    # probed, both spellings: `zsh -c 'cd /; true | cd /usr; print $PWD'` and
+    # the same with `{ cd /usr; }` both print /usr, where bash prints /. Reading
+    # the separator before as well gave those two spellings OPPOSITE verdicts,
+    # since `{` is a separator and reset it, and the suite pinned both answers
+    # at once.
+    out, cur, depth = [], [], 0
+    braces, closed = [], None
+    for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
-        elif cur:
-            out.append(cur)
+            continue
+        if cur:
+            out.append([cur, depth == 0 and t not in PIPES
+                        and t != BACKGROUND])
             cur = []
+        if closed is not None:
+            if t in PIPES or t == BACKGROUND:
+                for row in out[closed:]:
+                    row[1] = False
+            closed = None
+        if t == "{":
+            braces.append(len(out))
+        elif t == "}" and braces:
+            closed = braces.pop()
+        depth += (t in NESTS) - (t in UNNESTS)
+        depth = max(depth, 0)
     # A string another command runs is that string's segments too: a shell's
     # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
     # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
@@ -1014,14 +1290,14 @@ def paired_segments(command):
     # one.
     taken = 0
     paired = []
-    for seg in list(out):
+    for seg, outer in list(out):
         mine = heredocs[taken:taken + seg.count("<<")]
         taken += seg.count("<<")
-        paired.append((seg, mine))
+        paired.append((seg, mine, outer))
         word, rest = head(seg)
         if word is None:
             continue
-        inners = []
+        inners, in_this_shell = [], False
         if word in SHELLS:
             i = next((j for j, t in enumerate(rest[:-1]) if is_dash_c(t)), None)
             if i is not None:
@@ -1029,6 +1305,7 @@ def paired_segments(command):
             inners += mine
         elif word in EVALS:
             inners = [t for t in rest[1:] if not t.startswith("-")]
+            in_this_shell = outer
         for text in inners:
             more, why = paired_segments(text)
             if more is None:
@@ -1036,7 +1313,20 @@ def paired_segments(command):
             # `out` is NOT extended here any more. `for seg in list(out)`
             # takes its snapshot before the loop and `paired` is what this
             # returns, so the append had no reader after #217 split the walk.
-            paired += more
+            #
+            # WHOSE SHELL THE STRING RUNS IN DECIDES (#281's full review,
+            # F1). `bash -c 'cd /tmp'` moves a shell that then exits, so none
+            # of its segments is outer whatever it was inside its own string.
+            # `eval 'cd /tmp'` moves THIS one -- both shells here, probed --
+            # so its segments are outer exactly when the `eval` itself was and
+            # they were outer inside the string too: `eval '(cd /tmp)'` moves
+            # nothing, and `eval 'cd /tmp' | true` is a stage that exits --
+            # while `cd /tmp | eval 'cd /usr'` really ends in /usr, since the
+            # eval is the stage zsh keeps.
+            # Read the other way, `eval 'cd /tmp'; git commit --no-verify` was
+            # refused over a directory holding no hook, and the reverse
+            # spelling allowed a bypass over the one that does.
+            paired += [(t, h, in_this_shell and o) for t, h, o in more]
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.
@@ -1081,6 +1371,17 @@ def head(seg):
     return seg[i].rsplit("/", 1)[-1], seg[i:]
 
 
+def herdr_words(tokens):
+    """The non-flag words after `herdr`, a valued flag's value skipped."""
+    words, i = [], 1
+    while i < len(tokens):
+        t = tokens[i]
+        i += 2 if t in HERDR_PRE_VALUED else 1
+        if not t.startswith("-"):
+            words.append(t)
+    return words
+
+
 def gh_words(tokens):
     """The non-flag words after `gh`, a valued flag's value skipped."""
     words, i = [], 1
@@ -1121,6 +1422,289 @@ def gh_write(tokens):
     if pair in WRITES:
         return True, "gh " + " ".join(pair)
     return False, "gh " + " ".join(pair) + ", not a write"
+
+
+def literal_path(token, base):
+    """The directory a token names, or None when the shell would compose it.
+
+    `base` is what a relative path is resolved against, and is itself None once
+    a `cd` this could not read has moved the shell somewhere unknown."""
+    # `~` IS IN `COMPOSED` because the shell expands it and this guard expands
+    # nothing: a `cd ~` is a place it did not look, which is the third outcome.
+    # `cd` with NO operand is different -- that is cd's own default and needs
+    # no expansion, so `cd_target` answers it.
+    if not token:
+        return None
+    # THE TAIL IS READ LIKE ANY OTHER TOKEN. The first cut expanded `~/` and
+    # returned, so `~/$d` came back as a path with a `$` in it -- a directory
+    # the shell never visits, answered about confidently -- and `~//x` came
+    # back as `/x`, because joining an absolute tail REPLACES the home it was
+    # joined to, which walked straight past the very case the `~` branch was
+    # written for (#281's narrowed rounds).
+    home, tail = None, token
+    if token == HOME_PREFIX[1] or token.startswith(HOME_PREFIX[0]):
+        home, tail = Path.home(), token[2:].lstrip("/")
+    if any(c in tail for c in COMPOSED):
+        return None
+    if home is not None:
+        path = home / tail if tail else home
+    else:
+        path = Path(tail)
+        if not path.is_absolute():
+            if base is None:
+                return None
+            path = base / path
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def git_dir(rest, where):
+    """(the directory this `git` call would run in, how it was read).
+
+    `-C` wins, being the call's own answer; otherwise the shell's current
+    directory, which the walk in `shell_findings` keeps across the `cd`s
+    before this segment. None means it could not be read, which is a third
+    outcome and not a no."""
+    i = 1
+    while i < len(rest):
+        t = rest[i]
+        if t == "-C" and i + 1 < len(rest):
+            return literal_path(rest[i + 1], where), f"`-C {rest[i + 1]}`"
+        if t.startswith("-"):
+            i += 2 if t in GIT_PRE_VALUED else 1
+            continue
+        break
+    return where, "the directory the shell is in"
+
+
+def git_bypass(rest):
+    """The hook-bypass findings in one segment whose command word is `git`.
+
+    Three spellings, each bounded to where git would read it as an option
+    rather than as data. `--no-verify` and any unambiguous abbreviation of it,
+    among the SUBCOMMAND's own arguments and only for a subcommand that has
+    the flag -- without that, `git log -S '--no-verify'` was refused, which is
+    the search AGENTS.md tells a session to run before adopting a word. `-n`
+    where the subcommand is `commit` and only there: it is `--dry-run` for
+    `git push` and `--no-commit` for `git merge`. And
+    `git config core.hooksPath <value>`, the same move spelled as a
+    subcommand; a `--get` of the key reads it and is left alone, the value
+    word being what separates setting it from asking.
+
+    WHETHER THERE IS A HOOK TO BYPASS is not asked here. `shell_findings`
+    asks it, because the answer is about the repository the call would run in
+    and not about the call.
+    """
+    out, sub, i = [], "", 1
+    while i < len(rest):
+        t = rest[i]
+        if t.startswith("-"):
+            i += 2 if t in GIT_PRE_VALUED else 1
+            continue
+        sub = t
+        i += 1
+        break
+    args = rest[i:]
+    abbrev = next((t for t in args if t.startswith(NO_VERIFY_MIN)
+                   and NO_VERIFY.startswith(t)), None)
+    if abbrev and sub in NO_VERIFY_SUBS:
+        out.append(f"`{abbrev}` skips the hook that would have judged this "
+                   f"call. A hook is never bypassed: report what it refused "
+                   f"and ask, because a guard that did not run has permitted "
+                   f"nothing.")
+    if sub == "commit":
+        # A CLUSTER, NOT THE TOKEN `-n`: `git commit -nm x` is `-n -m x`. No
+        # flag's VALUE is skipped on the way, and none needs to be: shlex
+        # keeps `-m 'note -n'` as one word that does not open with `-`, and a
+        # message that is exactly `-n` is a call nobody makes.
+        for t in args:
+            if (len(t) > 1 and t[0] == "-" and t[1] != "-"
+                    and t[1:].isalpha() and "n" in t[1:]):
+                out.append(f"`{t}` is `{NO_VERIFY}` for `git commit`, in a "
+                           f"cluster or alone. A hook is never bypassed: "
+                           f"report what it refused and ask.")
+                break
+    if sub == "config" and HOOKS_PATH in args:
+        k = args.index(HOOKS_PATH)
+        if any(not a.startswith("-") for a in args[k + 1:]):
+            out.append(f"`git config {HOOKS_PATH}` moves the hooks rather than "
+                       f"skipping one, which is the same bypass shaped like "
+                       f"configuration.")
+    return out
+
+
+def cd_target(rest, where):
+    """Where a `cd` or a `pushd` leaves the shell, or None when that cannot be
+    read.
+
+    No operand at all is HOME, which is decidable and used to read as
+    unreadable -- and unreadable turns the hook-bypass rule OFF for the rest of
+    the command, so `cd; git commit --no-verify` walked straight through
+    (#281's narrowed rounds). `cd -` and `popd` are a directory this never saw,
+    and stay the third outcome; `pushd <dir>` moves the shell exactly as `cd`
+    does, and reading it as neither left the guard answering confidently at the
+    directory the command had just left."""
+    word, _ = head(rest)
+    ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
+    if word == "popd":
+        return None
+    if word == "pushd":
+        # WHAT STOPS THE MOVE, AND ONLY THAT. `pushd -n <dir>` pushes WITHOUT
+        # moving, and `pushd` alone, `pushd +N` and `pushd -N` work the stack
+        # rather than naming a place. Everything else moves under THE SHELL
+        # THAT RUNS HERE, which is zsh: it takes `--`, `-L` and `-P` and moves;
+        # bash 3.2 rejects `-L`/`-P` outright and stays put. Reading every
+        # option-shaped word as a stack flag made `pushd -- .` and `pushd -P .`
+        # unreadable -- which is an ALLOW, so two spellings of the same move
+        # got opposite verdicts (#281's narrowed rounds).
+        #
+        # `-n` GETS ITS OWN ANSWER, and it is not `None`: the shell stays where
+        # it is, which this knows, so `where` comes back unchanged and the
+        # commit after it is judged where it really runs. The rotations are the
+        # third outcome, since the stack is a thing this never saw -- including
+        # a bare `pushd`, whose destination depends on what is on that stack.
+        # `--` NEEDS NO BRANCH OF ITS OWN. It is option-shaped, so it lands in
+        # `opts` and out of `ops`, and no answer below is worse for it than a
+        # branch consuming it would give -- for `pushd -- -n` it is better,
+        # since both shells error there and stay put, which is what `where`
+        # says and what a consuming branch would have called unreadable. A
+        # branch no mutation could make a named case fail for is a branch
+        # nothing tests, so it went out before it shipped.
+        opts = [t for t in rest[1:] if t.startswith("-") and t != "-"]
+        if "-n" in opts:
+            return where
+        if len(ops) != 1 or ops[0].startswith(("+", "-")):
+            return None
+        return literal_path(ops[0], where)
+    if not ops:
+        return Path.home()
+    if ops[0] == "-":
+        return None
+    return literal_path(ops[0], where)
+
+
+def shell_findings(pairs, cwd=None):
+    """(the findings, the rules seen and left to somebody else).
+
+    One line each, and a finding is a sentence a reader can act on rather than
+    a code. The segments are what `segments` already produced -- a shell's
+    `-c` string and an `eval` operand among them -- so a rule broken inside
+    `bash -c "..."` is read exactly like one broken outside it, and a heredoc
+    body is not read at all, being data.
+
+    THE HOOK BYPASS ASKS WHETHER THERE IS A HOOK TO BYPASS, and that is the
+    whole of the second return value (kalaluthien/campaign-base#278's review,
+    F2). Over the 18,449 in-base calls recorded to 2026-09-10, 33 broke this
+    rule as first written and 31 of them were a throwaway repository -- `mktemp -d`,
+    `git init -q`, a copy of this tree's scripts -- built by this tree's own
+    probes, where a fresh `.git/hooks` holds nothing but git's samples and the
+    flag skipped nothing. So the shell's directory is tracked across the `cd`s
+    of the command, `-C` is read where it is given, and the finding is a
+    finding only where that repository really has a hook. No hook is nothing
+    bypassed; unreadable is the third outcome and is said as one, because a
+    shell that composes its own path (`cd "$d"`) is a place this cannot look.
+
+    ITS CEILING: a `cd` whose operand the shell composes leaves the directory
+    unreadable, which is the third outcome and not a no; and a `cd` inside a
+    subshell that also holds the `git` call (`(cd /tmp && git commit -n)`) is
+    not tracked, so that call is judged where the outer shell stands. That one
+    is an over-refusal. NOT EVERY MISREADING HERE IS: which way one falls
+    depends on where the hook sits, since reading the wrong directory can put
+    the call in a repository that has none, and unreadable is an allow.
+    """
+    out, notes, where = [], [], cwd
+    for seg, _heredocs, outer in pairs:
+        word, rest = head(seg)
+        # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
+        # subshell, a pipeline stage, a `bash -c` string or a heredoc script
+        # moves that shell and exits; crediting it turned the rule off for the
+        # rest of the command, which six ordinary shapes reached.
+        if word in MOVES and outer:
+            where = cd_target(rest, where)
+        if word in KILLS:
+            out.append((KILL_RULE,
+                f"`{word}` takes a name or a pattern and stops every process "
+                f"matching "
+                f"it -- which is how a review finder killed three alloy runs "
+                f"belonging to two other sessions. Name what you are stopping: "
+                f"`kill <pid>` is allowed, in every form, and only the verb is "
+                f"read here. A peer is asked instead: `STATUS`, then "
+                f"`STAND DOWN`."))
+        elif word == "herdr" and tuple(herdr_words(rest)[:2]) == HERDR_KILL:
+            out.append((PEER_RULE,
+                "`herdr agent kill` stops a session that has not agreed to "
+                "stop. A listed peer is asked and never killed: it is the only "
+                "thing that can say which claim it holds."))
+        # THE ASSIGNMENT FORM IS READ ON EVERY SEGMENT, not only a `git` one,
+        # and over `seg` rather than `rest` so an env assignment before the
+        # command word is in it. `git -c core.hooksPath=X`, the two
+        # `GIT_CONFIG_*` variables and an `export` of either are one shape:
+        # the key sits on one side of an `=`. A bare `core.hooksPath` with no
+        # `=` is a word in prose or a `--get`, and is not this.
+        # ...AND ONLY WHERE IT IS BEING SET. The first cut read every token of
+        # the segment, so `git log -S 'core.hooksPath='` -- a search term, the
+        # very call AGENTS.md tells a session to make before adopting a word --
+        # was refused. A setting position is one of two: before the command
+        # word, which is an environment assignment, or straight after a `-c`.
+        bypass = []
+        cmd_at = len(seg) - len(rest)
+        for i, t in enumerate(seg):
+            name, sep, value = t.partition("=")
+            # `sep` HAD NO CASE. The sweep could not make a named case fail
+            # for it: a bare `core.hooksPath` reaches a setting position only
+            # as `git -c core.hooksPath` or an environment name with a dot in
+            # it, neither of which is a call anybody makes. A branch nothing
+            # pins is a branch nothing tests, so the test is the key sitting
+            # on one side of the split and the POSITION does the rest.
+            if HOOKS_PATH not in (name, value):
+                continue
+            if not (i < cmd_at or word in SETTERS
+                    or (i and seg[i - 1] == "-c" and word == "git")):
+                continue
+            bypass.append(f"`{t}` sets {HOOKS_PATH}, which moves the hooks "
+                          f"rather than skipping one -- the same bypass "
+                          f"shaped like configuration.")
+            break
+        if word == "git":
+            bypass += git_bypass(rest)
+        if bypass:
+            where_git, how = git_dir(rest if word == "git" else [""], where)
+            has, why = hooks_present(where_git)
+            for b in bypass:
+                line = f"{b} ({how}: {why})"
+                (out.append((BYPASS_RULE, line)) if has
+                 else notes.append(line))
+    return out, notes
+
+
+def hooks_present(path):
+    """(whether this repository has a hook to bypass, how that was read).
+
+    THE RULE IS "A HOOK IS NEVER BYPASSED", so the question is whether there
+    is one. `--git-path hooks` is git's own answer and honours `core.hooksPath`,
+    so a repository whose hooks were already moved answers about the directory
+    that is really consulted. `.sample` files are what `git init` ships and
+    what nothing runs.
+
+    None is the third outcome and is said as one: no directory to look at, or
+    a git that would not answer. It is what a fixture repository built inside
+    the same command reaches, since the directory does not exist yet."""
+    if path is None:
+        return None, "the shell's directory could not be read from the command"
+    out, why, _ = git(["rev-parse", "--git-path", "hooks"], path)
+    if out is None:
+        return None, f"git could not say where its hooks are ({why})"
+    d = Path(path) / out.strip()
+    try:
+        live = sorted(f.name for f in d.iterdir()
+                      if f.is_file() and not f.name.endswith(".sample"))
+    except OSError as e:
+        return False, f"{d} holds no hook ({e.__class__.__name__})"
+    if not live:
+        return False, f"{d} holds no hook but git's samples"
+    return True, f"{d} holds {', '.join(live[:4])}"
 
 
 # ---------------------------------------------------------- the comment shape
@@ -1553,7 +2137,16 @@ def log_verdict(payload, status, target, cwd: Path):
         # would keep in step with the sentences.
         "reason": LAST.get("reason", ""),
         "target": str(target) if target is not None else "",
-        "command": (tool_input.get("command") or "")[:200],
+        # THE CALL, whatever tool made it. An `Agent` payload has no
+        # `command`; its prompt is what it ran, and without it every Agent
+        # refusal landed in `guard-precision.py`'s "nothing to match on"
+        # bucket -- so the instrument built to find false positives by
+        # measurement could not see either of the rules on a launch. A `Skill`
+        # payload has neither field: the skill and its args are what it ran.
+        "command": (tool_input.get("command") or tool_input.get("prompt")
+                    or " ".join(str(v) for v in (tool_input.get(SKILL_NAME),
+                                                 tool_input.get(SKILL_ARGS))
+                                if v) or "")[:200],
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1652,7 +2245,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
 
 def bash_call(command, cwd: Path, session_id=""):
     pairs, why = paired_segments(command)
-    segs = None if pairs is None else [t for t, _ in pairs]
+    segs = None if pairs is None else [t for t, _, _ in pairs]
     if segs is None:
         # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
         # call this cannot split is not read as harmless" for a command with no
@@ -1673,6 +2266,29 @@ def bash_call(command, cwd: Path, session_id=""):
             "A heredoc body is not part of this: it is removed before the "
             "split, so a commit message with an apostrophe in it is data.",
         ])
+    # THE TWO RULES THAT NAME NO TARGET, asked FIRST and on their own reading.
+    # First because they are the narrowest thing this file decides: a kill and
+    # a hook bypass are about the command itself, where every branch below is
+    # about a plane and a claim, and a refusal that named the claim would send
+    # the reader to take one for a call no claim licenses. Their own reading,
+    # because a command may hold one of these and no `gh` at all -- which is
+    # the ordinary case and the one the allow-unread return below would have
+    # swallowed.
+    broken, unenforced = shell_findings(pairs, cwd)
+    if broken:
+        rules = ", ".join(sorted({r for r, _ in broken}))
+        root, how = session_root(cwd)
+        if root is not None and (root / BASE_MARKER).is_file():
+            return refuse([f"a shell command breaking {rules}, which names no "
+                           f"target, so no claim licenses it.",
+                           *[f"  {f}" for _, f in broken], *unenforced, how,
+                           "Nothing else in this command was read: it is "
+                           "refused whatever else it holds."])
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"a shell command breaking {rules}, which names no target.",
+                      *[f"  {f}" for _, f in broken], *unenforced,
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
     gh, stray = [], []
     for seg in segs:
         word, rest = head(seg)
@@ -1684,12 +2300,17 @@ def bash_call(command, cwd: Path, session_id=""):
             stray.append(" ".join(seg)[:60])
     writes = [rest for rest, is_write, _ in gh if is_write]
     if not writes and not stray:
-        return allow([f"{what}." for _, _, what in gh]
+        return allow([f"{what}." for _, _, what in gh] + list(unenforced)
                      + ["The command was not read for a target: only a file "
                         "tool's path and a gh write are; its write, if any, is "
                         "gated where it lands, by the pre-commit claim gate."])
     what = ", ".join([w for _, is_write, w in gh if is_write]
                      + [f"a `gh` this cannot read as a call, in `{x}`" for x in stray])
+    # THE RULES SEEN AND NOT ENFORCED ride on `what`, the one string every exit
+    # below prints, for the reason `unjudged` does: a second list would go
+    # silent on exactly the exits a reader is most likely to meet.
+    if unenforced:
+        what += " [" + "; ".join(unenforced) + "]"
     root, how = session_root(cwd)
     # IS THIS CAMPAIGN WORK AT ALL -- asked before the role, and that order is
     # the whole of it. Asked after, a session whose name is not campaign-shaped
@@ -1706,7 +2327,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
     shape, unread, unjudged, warnings = [], [], [], []
-    for tokens, heredocs in pairs:
+    for tokens, heredocs, _outer in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue
@@ -1948,6 +2569,115 @@ def bash_call(command, cwd: Path, session_id=""):
                   f"({source}). It covers {named}.", *fell_back])
 
 
+def agent_call(tool_input, cwd: Path):
+    """An `Agent` launch, read against AGENTS.md § Review's rule on the call:
+    a model is named on every one.
+
+    It is not a plane, so it asks for no claim and no role. What it gates is
+    who reads the diff and at what depth, a property of the payload alone --
+    which is why this half reaches a verdict without touching git. § Review's
+    OTHER rule on the call, the fan-out, is `skill_call`'s: it is a `Skill`
+    call, and a prompt that opens `/code-review` runs no skill at all.
+
+    THE CAMPAIGN READING IS STILL MADE, and last: the two rules are this
+    repository's, and refusing them for a session working somewhere else on
+    this machine would be an outage. So a finding outside every base is
+    printed and allowed, in the wording `bash_call` uses for the same shape.
+    """
+    prompt = str(tool_input.get(AGENT_PROMPT) or "")
+    model = str(tool_input.get(AGENT_MODEL) or "").strip()
+    kind = str(tool_input.get(AGENT_TYPE) or "").strip()
+    words = prompt.split(None, 1)
+    opener = words[0] if words else ""
+    what = (f"an Agent launch, model {model!r}" if model
+            else f"an Agent launch naming no model, subagent_type {kind!r}"
+            if kind else "an Agent launch naming no model")
+    read = [f"its prompt opens {opener!r}." if opener
+            else "its prompt is empty."]
+    findings = []
+    if not model and kind != INHERITS_MODEL:
+        findings.append(
+            "a launch naming no model inherits a default rather than "
+            "expressing a choice, and there is no value meaning `whatever the "
+            "launcher is`. Name it: the model by the depth of the change, the "
+            "level by how much there is to read.")
+    if not findings:
+        return allow([f"{what}: {read[0]} The rule on the call is not broken, "
+                      f"and a launch is no plane, so no claim was read for it."])
+    root, how = session_root(cwd)
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {read[0]}", *[f"  {f}" for f in findings],
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
+    return refuse([f"{what}: {read[0]}", *[f"  {f}" for f in findings], how])
+
+
+def skill_call(tool_input, cwd: Path):
+    """A `Skill` call, read against AGENTS.md § Review's bar on `/code-review`.
+
+    `code-review` above `low` fans out into an orchestrator, finders and their
+    verifiers, each its own further subagent, and PR #255's five fanned rounds
+    cost close to 5.0M input_new combined. `low` cannot fan out and prices
+    under a narrowed plain brief (#282), so it passes.
+
+    A level is the first token of `args` and nowhere else, which is the
+    harness's own parsing rather than this file's convention -- so a call that
+    names none is refused too: it falls back to a persisted setting and then to
+    the session's own effort, a level chosen by neither the launcher nor the
+    work.
+
+    WHO ASKED, MEASURED RATHER THAN ASSUMED. What this judges is a session's
+    OWN `Skill` call, not a person's typed `/code-review`: of the 215 typed
+    slash commands recorded on this machine exactly one is followed by a
+    `Skill` call for that same skill, and `code-review` was typed none of those
+    215 times against 74 `Skill(code-review)` calls. A `permissions.deny` entry
+    of `Skill(<name>)` shows the same split -- it blocks the model's call while
+    a typed `/<name>` still runs. So the payload cannot say who asked, and the
+    measurement says the refusal below has not been reaching a person; if one
+    ever does arrive this way, the standing rule covers it -- a hook is never
+    bypassed, and what the session owes the person is the refusal's text and a
+    question.
+
+    Every other skill is allowed unread and says so: § Review's bar names this
+    one, and a guard that judged the rest would be enforcing a rule nobody
+    wrote.
+    """
+    name = str(tool_input.get(SKILL_NAME) or "").strip()
+    args = str(tool_input.get(SKILL_ARGS) or "").split()
+    level = args[0] if args else ""
+    if name != FANS_OUT:
+        return allow([f"a `{name}` skill call: § Review's bar is on "
+                      f"`/{FANS_OUT}` alone, so this was allowed unread."])
+    what = (f"a `/{FANS_OUT}` call at {level!r}" if level
+            else f"a `/{FANS_OUT}` call naming no level")
+    read = (f"the level is the first token of `args`, which reads {level!r}."
+            if level else "`args` names no first token, so the level falls "
+            "back to a persisted setting and then to this session's own "
+            "effort -- chosen by neither the launcher nor the work.")
+    if level == CHEAP_LEVEL:
+        return allow([f"{what}: it cannot fan out -- one diff pass, no "
+                      f"verification stage, no subagents -- and prices under a "
+                      f"narrowed plain brief (#282). It reads no tests and no "
+                      f"full files, so it is a cheap first pass and does not "
+                      f"satisfy merge condition 1."])
+    finding = (f"`/{FANS_OUT}` above `{CHEAP_LEVEL}` fans out into an "
+               f"orchestrator, finders and their verifiers, each its own "
+               f"further subagent. Two ways down: `{CHEAP_LEVEL}`, which "
+               f"cannot fan out but satisfies no merge condition, or a plain "
+               f"brief -- `review PR <N> at <level>`, then what to check -- "
+               f"which is the review a merge waits on. "
+               f".claude/skills/opening-campaign/references/reviewing.md "
+               f"§ The call keeps both figures.")
+    root, how = session_root(cwd)
+    if root is None or not (root / BASE_MARKER).is_file():
+        why = how if root is None else f"{how}, which is a repository and not a base"
+        return allow([f"{what}: {read}", f"  {finding}",
+                      f"{why}, so this session is in no campaign and the rule "
+                      f"broken is one of this repository's."])
+    return refuse([f"{what}: {read}", f"  {finding}", how])
+
+
 def pre(payload):
     # CLEARED ON THE CLAIM, not on release: one process judges one call in
     # production, but a caller that judges two -- a suite, a replay -- would
@@ -1970,6 +2700,13 @@ def pre(payload):
         return refuse([f"a path would not resolve ({e.__class__.__name__})."])
     if tool == "Bash":
         return bash_call(tool_input.get("command") or "", cwd, session_id)
+    if tool == AGENT_TOOL:
+        # AFTER the `try` above and not inside it: this half resolves no path
+        # of its own, so it has no OSError to turn into a refusal, and folding
+        # it in would put a launch behind a handler that names a path.
+        return agent_call(tool_input, cwd)
+    if tool == SKILL_TOOL:
+        return skill_call(tool_input, cwd)
     return 0
 
 

@@ -458,9 +458,12 @@ the branch is claimed by `campaign-claim take` after the issue exists, because t
 number is minted there; the `post-commit` hook pushes; it lands by a pull request.
 **Write atomic commits with a search-optimized message and land them without
 waiting to be asked**, since work is not finished until it is merged and pushed.
-**A hook is never bypassed** — not with `--no-verify`, and not by moving
-`core.hooksPath`, which is the same bypass shaped like configuration; report what
-it refused and ask.
+**A hook is never bypassed**, and `scripts/check-campaign-claim.py` refuses the
+three spellings that would: `--no-verify` and its abbreviations, `git commit -n`,
+and setting `core.hooksPath` through a flag, a subcommand or the environment.
+It asks git where the target repository's hooks are and refuses only where
+there is one, so a throwaway fixture repository still commits. Report what the
+hook refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
@@ -679,13 +682,20 @@ brief sets nothing. A plain brief sets no level mechanically at all — put it
 after `at` anyway, since that is what `campaign-token-tally.py` reads for its
 own accounting, and say what you mean in the rest of the brief.
 
-**`/code-review` inside a reviewer subagent fans out**, into an orchestrator,
-finders and their verifiers, each metered at the launching call's own turns
-alone until `campaign-token-tally.py reviews` rolls a fan-out's nested
-transcripts into the round that spawned it. PR #255's five fanned rounds cost
-close to 5.0M input_new combined, against 57,374-134,222 for one narrowed round
-(NOTE on #1, 2026-09-09). **Launch a reviewer with a plain brief, not
-`/code-review`, until a fanned round prices under that narrowed-round figure.**
+**A plain brief, not `/code-review` above `low`, and a model named on every
+launch.** `scripts/check-campaign-claim.py` refuses a `Skill` call of
+`code-review` above `low`, which fans out into an orchestrator, finders and
+their verifiers, and an `Agent` naming no `model` — **every** launch and not
+only a reviewer's, since no field of the payload says what a subagent is for;
+`install-hooks.sh`'s matcher routes both to it, so a guard installed before #278
+enforces neither. **It reads
+the `Skill` call and not the prompt**: a slash command in an `Agent` prompt is
+plain text and runs no skill. **`low` never fans out, and satisfies merge
+condition 1 for nothing** — it reads no tests and no full files, so it is a
+cheap first pass and not the review a merge waits on (#282, 2026-09-10). The
+level of a plain brief is not among the refusals, because no position in one
+sets it. What each shape costs, and when the bar lifts, are
+`.claude/skills/opening-campaign/references/reviewing.md` § The call's.
 
 **A session that cannot start a subagent is blocked**: it says so and the pull
 request waits, which is never a licence to review some other way. The call itself,
@@ -720,7 +730,10 @@ all three readings (`campaign-claim live`). A campaign may not close while a
 claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
-can say which claim it holds.
+can say which claim it holds. `scripts/check-campaign-claim.py` refuses
+`herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
+matching it, which is the incident's shape. It reads the verb and not the
+operands, so `kill` passes in every form — that half stays prose.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead

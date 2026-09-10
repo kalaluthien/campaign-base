@@ -29,6 +29,8 @@ pred Cov_PullBase { eventually Now.event = PullBase }
 pred Cov_PullClone     { eventually Now.event = PullClone }
 pred Cov_CommitLocal   { eventually Now.event = CommitLocal }
 pred Cov_Launch        { eventually Now.event = Launch }
+/* directory/checks.als has its own, which does not see this composition. */
+pred Cov_DeleteDir     { eventually Now.event = DeleteDir }
 
 /* ---------------- commands ---------------- */
 
@@ -40,3 +42,5 @@ run Cov_PullBase for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Br
 run Cov_PullClone     for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_CommitLocal   for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_Launch        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
+-- and the one lower event MachineIndependence names, at its scope
+run Cov_DeleteDir     for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 6 steps expect 1

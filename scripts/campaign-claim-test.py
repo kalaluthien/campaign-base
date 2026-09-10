@@ -1379,9 +1379,9 @@ def scope_cases(m):
     """#187 Q4: which campaign directory a reading is about."""
     # The walk, as a calculation. Driven by a path rather than by where this
     # file sits, which differs in a worktree, in a clone, and on CI.
-    # ON DISK, not on the name: since #181 a campaign directory is one carrying
-    # the `.campaign` marker, because the slug dropped the date and no
-    # name shape can tell an arbitrary slug from `scripts/`. So these paths have
+    # ON DISK, not on the name: a campaign directory is one carrying the
+    # `.campaign` marker, whichever name form it wears, because no name shape
+    # can tell an arbitrary slug from `scripts/`. So these paths have
     # to exist, where the shape reading could be asked of any string.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -1396,9 +1396,10 @@ def scope_cases(m):
         (root / "scripts").mkdir(exist_ok=True)
         check("the campaign directory is the marker-bearing ancestor",
               m.own_campaign_dir(demo / "repos/acme/scripts/x.py") == demo)
-        # THE MARKER AND NOT THE NAME. A directory named exactly as one was
-        # before #181 is not a campaign directory without it, which is the case
-        # that reddens if the date shape comes back as a second reader.
+        # THE MARKER AND NOT THE NAME. A dated name is what a campaign
+        # directory wears again since #181 round 2, and it is still not a
+        # campaign directory without the marker -- the case that reddens if the
+        # date shape comes back as a second reader.
         (root / "demo-260905" / "repos").mkdir(parents=True)
         check("...and a dated name alone is not one",
               m.own_campaign_dir(root / "demo-260905/repos/x.py") is None)

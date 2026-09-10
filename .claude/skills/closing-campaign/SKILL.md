@@ -43,20 +43,26 @@ silently on a relative value.
 
 ```sh
 SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") && [ -n "$SLUG" ] ||
-  { echo "REFUSE: the slug of #$N did not read, so its directory cannot be named"; exit 1; }
-CAMPAIGN_DIR=$(cd "$BASE/$SLUG" && pwd -P)
+  { echo "REFUSE: the slug of #$N did not read; step 5 needs it for the claim refs"; exit 1; }
+CAMPAIGN_DIR=$("$BASE/scripts/campaign-directory.py" "$N" "$BASE")  # a path | none | unknown
+[ -d "$CAMPAIGN_DIR" ] || { echo "REFUSE: the directory of #$N read as $CAMPAIGN_DIR"; exit 1; }
 [ "$(dirname "$CAMPAIGN_DIR")" = "$BASE" ] || echo "REFUSE: not a direct child of $BASE"
-[ -f "$CAMPAIGN_DIR/.campaign" ] || echo "REFUSE: no .campaign marker, so this is not a campaign directory"
 ```
 
-Stop on either. **The marker and not the name**: since #181 a campaign directory
-is named for its slug, which is a word, and the `-YYMMDD` suffix that used to say
-so is gone. A directory whose marker was swept is one `rm -rf` away from the
-base's own `scripts/`.
+Stop on any of the three. **The marker and not the name**, and the path is never composed
+out of the slug: a campaign directory is `campaign-<slug>-<date>` or the older
+bare `<slug>`, and only the `.campaign` file inside it says which campaign it
+is. Read the word — `none` is this machine holding no directory for the
+campaign, `unknown` is two directories naming it or a reading that failed, and
+neither is a path to `rm -rf`. A directory whose marker was swept reads as
+`none`, which is why the close stops rather than guessing at a name one
+`rm -rf` away from the base's own `scripts/`.
 
 Holds when: the campaign issue carries one `bound:` label naming this machine, and
-`$CAMPAIGN_DIR` is absolute, a direct child of the base, and named
-`<slug>`, carrying a `.campaign` marker.
+`$CAMPAIGN_DIR` is an existing directory, absolute, and a direct child of the
+base, resolved from its `.campaign` marker. `$SLUG` is bound too — step 5 builds
+the claim-ref prefix from it, which is the branch's name and not the
+directory's.
 
 ### 1. Refuse while a claim is occupied or a session is still running
 

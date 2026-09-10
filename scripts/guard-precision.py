@@ -248,8 +248,9 @@ def main(argv=None):
 
     base = Path(os.path.expanduser(a.base))
     # EVERY CAMPAIGN DIRECTORY'S LOG, found by its `.campaign` marker rather
-    # than by a `-YYMMDD` name: #181 named campaign directories by their slug,
-    # and a glob over a slug is a glob over every directory here. The marker is
+    # than by a name: a campaign directory wears `campaign-<slug>-<date>` or
+    # the older bare `<slug>`, and a glob over the second is a glob over every
+    # directory here. The marker is
     # the same one check-campaign-claim.py reads, so a log this misses is a
     # directory that guard would not call a campaign's either.
     paths = a.logs or sorted(

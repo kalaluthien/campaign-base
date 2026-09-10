@@ -22,6 +22,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -640,6 +641,25 @@ def main():
           == ["the title is 41 characters, over 40"])
     check("...and a title at the ceiling exactly is not",
           m.shape_findings(m.SUB_ISSUE, "x" * 40, good_sub, True) == [])
+
+    # THE TEMPLATE'S OWN EXAMPLE, measured rather than trusted. When the ceiling
+    # moved from 80 to 40 the example title in the sub-issue template went over
+    # it and nothing said so: a filer copying the shape it points at would be
+    # refused by `check` and by `campaign-claim take --plan`. The example is
+    # picked out by the one thing that separates a title from every other
+    # backticked span in that comment -- it starts with a capital letter and
+    # holds a space, where the section names start with `#` and the paths and
+    # labels hold neither -- and the case NAMES what it selected, so a
+    # selector that matched nothing fails on the count instead of passing
+    tpl = (Path(__file__).resolve().parent.parent / ".claude" / "skills"
+           / "opening-campaign" / "assets" / "sub-issue.md")
+    comment = tpl.read_text().split("-->")[0]
+    examples = [s for s in re.findall(r"`([^`]+)`", comment.replace("\n", " "))
+                if s[:1].isupper() and " " in s]
+    over = [s for s in examples
+            if m.shape_findings(m.THIRD_KIND, s, "prose", False)]
+    check(f"the template's one example title {examples} is under the ceiling",
+          len(examples) == 1 and not over)
     # PADDED UNDER ITS OWN HEADING, not appended: appended, the padding became a
     # SECOND `## Lands in` entry and the body carried two faults, so the "two
     # findings" case below counted three.

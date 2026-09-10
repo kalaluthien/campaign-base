@@ -98,8 +98,8 @@ ROLES = _roles_module().ROLE_WORDS
 #     `ls` at the base root and out of `herdr agent list` at a glance. The
 #     owner set 10 on 2026-09-10, and it is the binding bound: herdr's
 #     32-character limit on a session name is the other one, and the longest
-#     name this file admits, `<slug>-worker-99`, is now 20 and clears it by
-#     twelve. Slugs already spent over 10 belong to closed campaigns and are
+#     name this file EXPECTS, `<slug>-worker-99`, is now 20 and clears it by
+#     twelve -- expects and not admits, because NAME bounds no digit run. Slugs already spent over 10 belong to closed campaigns and are
 #     not re-checked;
 #   * no segment in RESERVED, for three reasons in one list. `planner` and
 #     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:

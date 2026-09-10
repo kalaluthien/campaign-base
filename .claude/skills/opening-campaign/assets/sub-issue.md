@@ -1,8 +1,9 @@
 <!-- The sub-issue. Title: one plain sentence, verb first, carrying the words
-     a search would use -- `Refuse a heredoc body the guard cannot split`,
-     never a sentence about the situation. No clause of reason: the reason
-     goes in `## Intent`, where a reader can ask for it. No internal word a
-     newcomer has no key to. Body: bullets or tables, no prose
+     a search would use -- `Refuse a heredoc the guard cannot split`, never a
+     description of the situation. No clause of reason: the reason goes in
+     `## Intent`, where a reader can ask for it. No internal word a newcomer
+     has no key to. The example is under the ceiling on purpose, and a case in
+     `scripts/campaign-tracker-test.py` keeps it there when the number moves. Body: bullets or tables, no prose
      paragraphs. Both ceilings are numbers in `scripts/campaign-tracker.py`
      and are not repeated here; `campaign-tracker.py check <N>` prints each
      one beside what it measured.

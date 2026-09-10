@@ -300,7 +300,9 @@ pattern encodes it — in every language the tree is written in.
 
 **Open** — load `opening-campaign` when the request opens a campaign, or joins one
 this machine has no directory for. **Close** — load `closing-campaign`; only a
-person decides a close.
+person decides a close, and a `standing` label on the campaign issue is that
+decision already made the other way: `closing-campaign` step 1 refuses while it
+is on and only a person takes it off.
 
 ## Sub-issues
 
@@ -322,6 +324,11 @@ reads `closedByPullRequestsReferences`, which a keyword populates and a bare
 mention does not, and the short `#<issue>` closes the member repository's own
 issue of that number instead. Which repository the work lands in is the
 template's `## Lands in` section, since the issue's own location no longer says.
+
+**Refer to an issue as `<slug>#N` and to a pull request as `pr#N`** — never a
+bare `#N`, which names no campaign when five of them file onto one tracker;
+`campaign-tracker check` and the comment guard print it as a warning, since
+every body written before the rule carries them.
 
 **One shape per kind, decided by structure and read by one script.** An issue is
 a campaign issue by its `campaign` label, a sub-issue by its parent, both at once

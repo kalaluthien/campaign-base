@@ -20,6 +20,12 @@
      branch, the pull request, the merge conditions, the review and the four
      messages are all there.
 
+     REFERENCES CARRY THEIR SLUG. An issue is `<slug>#N` -- `machinery#1`,
+     `sdlc-alloy#246` -- and a pull request is `pr#N`; five campaigns file onto
+     one tracker, so a bare `#N` names no campaign. `campaign-tracker.py check`
+     prints a bare one as a warning, not a finding, because every body written
+     before the rule carries them.
+
      THE `backlog` LABEL, not a section: a sub-issue carrying it is not worked
      until the owner takes it off, and `take` refuses a claim on it. -->
 

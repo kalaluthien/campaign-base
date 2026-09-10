@@ -858,6 +858,35 @@ def main():
         check("an issue body is not judged by the comment rule",
               r.returncode == 0 and "shape does not hold" not in r.stderr,
               out(r)[:300])
+
+        # ------ #217 reopened: `<slug>#N`, WARNED ABOUT AND NEVER REFUSED ------
+        # The whole corpus predates the rule, so the verdict must not move; the
+        # warning rides on the line every exit prints instead.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue comment 7 --body '{ok}, see #185'")
+        check("a bare reference in a comment is warned about and still allowed",
+              r.returncode == 0 and "WARNING" in r.stdout
+              and "#185" in r.stdout, out(r)[:400])
+        # THE CONTROL. Printed on every comment, the warning says nothing --
+        # this is the case that separates reading the text from printing a line.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue comment 7 --body '{ok}, see machinery#185'")
+        check("...and a slug-qualified one draws no warning",
+              r.returncode == 0 and "WARNING" not in r.stdout, out(r)[:400])
+        # BOTH THINGS WRONG, ONE READING. A comment refused for its first line
+        # still carries the reference finding, so its author makes one edit.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'a review of #185'")
+        check("a refused comment carries the reference warning beside the refusal",
+              r.returncode == 2 and "WARNING" in r.stderr
+              and "#185" in r.stderr, out(r)[:400])
+        # AN ISSUE BODY IS `campaign-tracker check`'s TO WARN ABOUT, not this
+        # guard's: this reads what a COMMENT posts and nothing else.
+        r = ask(f.base, tool="Bash",
+                command="gh issue edit 7 --body 'a new brief for #185'")
+        check("an issue body draws no comment warning here",
+              r.returncode == 0 and "WARNING" not in r.stdout, out(r)[:400])
+
         # ------ the fix round on e73ec4b's review ------
         # `--comment` IS THE REVIEW'S KIND ON `gh pr review`, not its body.
         # gh's own example is `gh pr review --comment -b "..."`; reading
@@ -1870,6 +1899,41 @@ def main():
         check("...and the guard says where that verdict went",
               r.returncode == 2 and f"logged to {base_log}" in r.stderr,
               out(r)[:300])
+        # A WARNING IS NOT PART OF THE SENTENCE `guard-precision.py` GROUPS ON.
+        # `normalize` maps a `#N` to `N` but not the NUMBER of them, so a
+        # warning folded into `lines[0]` split one refusal into a bucket per
+        # reference count. Asserted as two logged reasons being EQUAL, which is
+        # the property the grouping needs and which no single run can show.
+        ok = "NOTE demo-worker-1: x"
+        ask(f.base, tool="Bash",
+            command=f"gh issue close 8 -c '{ok} about #1 and #2'")
+        two = last(base_log)
+        ask(f.base, tool="Bash", command=f"gh issue close 8 -c '{ok}'")
+        none = last(base_log)
+        check("a warning does not change the sentence the verdict is logged as",
+              two.get("reason") and two.get("reason") == none.get("reason"),
+              f"{two.get('reason')!r} vs {none.get('reason')!r}")
+        # ...AND IT IS STILL PRINTED. Keeping it out of the log by dropping it
+        # would pass the case above and lose the warning.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue close 8 -c '{ok} about #1'")
+        check("...and the warning is still printed beside that verdict",
+              "WARNING" in out(r) and "#1" in out(r), out(r)[:400])
+        # A WARNING BELONGS TO ONE CALL. Production runs one call per process,
+        # so only an IN-PROCESS pair can show it: the corpus replay drives the
+        # guard this way, and a note that outlives its call would print the
+        # first comment's references beside the second's verdict.
+        mod = guard_module()
+        env = {"CLAUDE_CODE_SESSION_ID": "s"}
+        base = str(f.base)
+        ask_inproc(mod, {"session_id": "s", "tool_name": "Bash", "cwd": base,
+                         "tool_input": {"command":
+                                        f"gh issue close 8 -c '{ok} about #1'"}}, env)
+        _rc, o2, e2 = ask_inproc(
+            mod, {"session_id": "s", "tool_name": "Bash", "cwd": base,
+                  "tool_input": {"command": f"gh issue close 8 -c '{ok}'"}}, env)
+        check("a warning does not outlive the call it was read from",
+              "WARNING" not in o2 + e2, (o2 + e2)[:400])
 
     with tempfile.TemporaryDirectory() as d:
         # A call under no base is not campaign work, and saying "logged" about
@@ -2030,6 +2094,12 @@ def main():
             skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
             skill.mkdir(parents=True)
             shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+            # THE TRACKER COMES TOO, so this loop tests only what it names. Left
+            # out, the reference rule was unloadable in every arm and its
+            # "would not load" satisfied the assertions below whichever skill
+            # script was actually missing (review of 7c0d175).
+            shutil.copy(HERE / "campaign-tracker.py",
+                        tree / "scripts" / "campaign-tracker.py")
             for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
                       / "scripts").glob("*.py"):
                 if s.name != missing:
@@ -2047,10 +2117,16 @@ def main():
                       f"exit {r.returncode}: {out(r)[-300:]}")
             r = ask(f.base, tool="Bash", guard=copy,
                     command="gh issue comment 7 --body 'not a kinded line'")
-            check(f"...and with {missing} gone the verdict says the shape was "
-                  f"NOT checked, naming the file",
-                  "shape NOT checked" in out(r) and "would not load" in out(r),
-                  out(r)[:400])
+            # NAMED, and the name is `campaign-name-session.py` in BOTH arms:
+            # that file imports `campaign-roles.py` for the role words, so
+            # deleting either leaves the first-line rule unloadable. What the
+            # assertion buys is that the sentence is not the OTHER import's --
+            # `campaign-tracker.py`'s -- which says "would not load" too.
+            check(f"...and with {missing} gone the verdict says the first-line "
+                  f"rule was NOT read, and names its own file",
+                  "shape NOT checked" in out(r) and "would not load" in out(r)
+                  and "campaign-name-session.py" in out(r)
+                  and "campaign-tracker.py" not in out(r), out(r)[:400])
             # THE CEILING IS A SECOND CHECK, and it needs no pattern. Letting
             # an unreadable name rule silence it would trade one hole for
             # another: `comment_findings` measures the length whatever the
@@ -2061,6 +2137,36 @@ def main():
             check(f"...and the CEILING is still measured with {missing} gone",
                   r.returncode == 2 and "over" in out(r)
                   and "3000 characters" in out(r), out(r)[:300])
+
+    # THE REFERENCE RULE IS THE SECOND IMPORT, and it gets its own tree: the
+    # loop above deletes a skill script and leaves `campaign-tracker.py` absent
+    # as a side effect, so nothing there pins WHICH rule went. Here the skill
+    # scripts are all present and only the tracker is missing.
+    with tempfile.TemporaryDirectory() as d:
+        tree = Path(d) / "tree"
+        (tree / "scripts").mkdir(parents=True)
+        skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
+        skill.mkdir(parents=True)
+        shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+        for s2 in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                   / "scripts").glob("*.py"):
+            shutil.copy(s2, skill / s2.name)
+        copy = tree / "scripts" / GUARD.name
+        f = Fixture(d, claims=("demo/7-x",))
+        r = ask(f.base, tool="Bash", guard=copy,
+                command="gh issue comment 7 --body 'NOTE demo-worker-1: see #185'")
+        check("with campaign-tracker.py gone the reference rule is reported "
+              "unjudged, naming it",
+              "campaign-tracker.py" in out(r) and "would not load" in out(r),
+              out(r)[:400])
+        check("...and the call is allowed, not walled, and never exits 1",
+              r.returncode == 0, f"exit {r.returncode}: {out(r)[:300]}")
+        # THE FIRST LINE IS STILL JUDGED. Letting one unreadable import silence
+        # the other would trade one hole for another.
+        r = ask(f.base, tool="Bash", guard=copy,
+                command="gh issue comment 7 --body 'not a kinded line'")
+        check("...and the first line is still read with the tracker gone",
+              r.returncode == 2 and "which is not `KIND" in out(r), out(r)[:400])
 
     # AN UNPREDICTED FAILURE IS A LOUD ALLOW, never a traceback and never a
     # wall. Exit 1 is what the harness reads as the hook's own error, so it is

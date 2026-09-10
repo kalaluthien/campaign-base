@@ -247,6 +247,9 @@ WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
 # without its event: `or`, an implication, an equivalence. `<=>` is caught by
 # its `=>`, and `else` only ever follows an implication.
 NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b")
+# What follows a set comprehension's brace, `{x: S | ...}` or `{disj x, y: S
+# | ...}`, and never a formula's: a body cannot open with a declaration.
+COMPREHENSION = re.compile(r"\s*(?:disj\s+)?\w+(?:\s*,\s*\w+)*\s*:")
 
 
 def composed(path):
@@ -277,13 +280,13 @@ def composed(path):
 def declaration(text, keyword, name):
     """(head, body) of the first `<keyword> [S.]<name> <head> { <body> }` in
     <text>, or None. The head is whatever stands between the name and the
-    first brace outside a bracket -- parameters in `[...]` or `(...)`, a set
-    comprehension among them, and a fun's return type, unless that type is
-    itself a comprehension, which is read as the body."""
+    first brace that neither opens a set comprehension nor sits inside one --
+    parameters in `[...]` or `(...)` and a fun's return type, a comprehension
+    in either."""
     for m in re.finditer(rf"\b{keyword}\s+(?:\w+\.)?{name}(?![\w.])", text):
         depth, i = 0, m.end()
-        while depth or text[i] != "{":
-            depth += {"(": 1, "[": 1, ")": -1, "]": -1}.get(text[i], 0)
+        while depth or text[i] != "{" or COMPREHENSION.match(text, i + 1):
+            depth += (text[i] == "{") - (text[i] == "}")
             i += 1
         start, depth = i + 1, 1
         for i in range(start, len(text)):

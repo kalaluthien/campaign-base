@@ -23,8 +23,9 @@ THE NAMED FAILING CASES, one per refusal branch:
   a witness that is not one, 15 ways    MISSING: a trace satisfies it without
                                         Hand firing
   a check naming Hand through a helper  MISSING, as if it named Hand itself,
-                                        for a pred, a fun, and a pred whose
-                                        parameter is a set comprehension
+                                        for a pred, a fun, and helpers whose
+                                        parameter or return type is a set
+                                        comprehension
   three readings it could not make      `could not look`, exit 2, never a pass
 
 and the allow cases beside them: the repaired model, a witness with extra
@@ -199,7 +200,8 @@ def main() -> int:
                   and helper in line(out, "MISSING"),
                   f"exit {rc}: {out[-6:]}")
 
-    # Two witnesses that are about another event than their text says.
+    # Witnesses about another event than their text says, and helpers whose
+    # head hides where their body starts.
     shadows = {
         "the event": ("pred Cov_Hand(Hand: Event) { eventually Now.event = Hand }", ""),
         "`event`": ("pred Cov_Hand[event: univ -> Event] { eventually Now.event = Hand }", ""),
@@ -229,6 +231,14 @@ def main() -> int:
         check("a helper whose parameter is a set comprehension is read to its body",
               rc == 1 and refused(out, "MISSING", "Hand", path)
               and "ViaSetParam" in line(out, "MISSING"),
+              f"exit {rc}: {out[-6:]}")
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, check_name="ViaSetType", more=(
+            "fun hg: {m: Machine | some m} { Now.event = Hand implies Machine else none }\n"
+            "assert ViaSetType { always (some hg implies no Where.machine) }"))
+        check("a helper fun whose return type is a set comprehension is read to its body",
+              rc == 1 and refused(out, "MISSING", "Hand", path)
+              and "ViaSetType" in line(out, "MISSING"),
               f"exit {rc}: {out[-6:]}")
     with tempfile.TemporaryDirectory() as d:
         rc, out, path = run(

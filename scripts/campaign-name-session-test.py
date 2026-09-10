@@ -43,8 +43,10 @@ elif args[:2] == ["agent", "read"]:
     # refuses a working pane. THE SCREEN HAS TWO STATES because the subject
     # reads it twice, once before the prompt and once after: a fake with one
     # state cannot tell an echo this rename produced from one already there.
-    # PER PANE, not per call: a screen shared across panes would let a case go
-    # green on another pane's echo.
+    # PER PANE because real herdr is. No case separates this from a shared
+    # screen, and none can through this subject: it matches the echo by NAME,
+    # so another pane's line on a shared screen carries the wrong name and
+    # counts for nothing. Kept for fidelity, not as a pin.
     sent = [json.loads(l) for l in open(os.environ["FAKE_LOG"])]
     prompted = [c[3] for c in sent
                 if c[:2] == ["agent", "prompt"] and c[2] == args[2]]
@@ -274,6 +276,21 @@ def main():
           and "is held by another live session" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
 
+    # THE NEWEST LINE, EXACTLY. A pane renamed to this name before holds that
+    # rename's line above this one's; quoting the first match would hand the
+    # caller last time's "held by another live session" as this rename's.
+    # Asserted as the whole quotation, so the decoration being stripped is
+    # pinned by the same case.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen=held,
+                   screen_after=held + "\n  x  Session renamed to: machinery-worker-3")
+    check("the newest matching line is quoted, whole and undecorated",
+          r.returncode == 0
+          and "the pane printed `Session renamed to: machinery-worker-3`\n"
+              in r.stdout
+          and "is held by another live session" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
     # ONE REFUSED BASELINE IS NOT A LOST CONFIRMATION. The status came from a
     # separate `agent list`, so idle -> working in between is the ordinary
     # race, and `agent read` refuses a working pane. Reading once here and
@@ -387,26 +404,25 @@ def main():
     # A WORKING PANE IS NOT READ AT ALL. herdr refuses `agent read` on one, and
     # the wait is scoped to the two statuses that can answer; without this case
     # the scoping could go and only a timing change would show it.
-    # TWO IDLE PANES EACH GET THEIR OWN BASELINE AND THEIR OWN ECHO, and each
-    # is confirmed off its own screen -- the fake's screen is per pane for the
-    # same reason.
-    both = [{"pane_id": "w1:p1", "agent_status": "idle"},
-            {"pane_id": "w1:p2", "agent_status": "idle"}]
-    r2, calls2 = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-planner-4"],
-                     agents=both)
-    check("two idle panes are each confirmed off their own screen",
-          r2.returncode == 0
-          and "w1:p1  harness     /rename applied" in r2.stdout
-          and "Session renamed to: machinery-worker-3" in r2.stdout
-          and "w1:p2  harness     /rename applied" in r2.stdout
-          and "Session renamed to: machinery-planner-4" in r2.stdout
-          and [c[2] for c in calls2 if c[:2] == ["agent", "read"]]
-              == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
-          f"exit {r2.returncode} out {r2.stdout!r} calls {calls2}")
-
     check("...and the working pane was never read, only the idle one",
           set(c[2] for c in calls if c[:2] == ["agent", "read"]) == {"w1:p1"},
           f"calls {calls}")
+
+    # TWO IDLE PANES EACH GET THEIR OWN BASELINE AND THEIR OWN ECHO: two reads
+    # per pane, in pane order, and each line quoting its own name.
+    both = [{"pane_id": "w1:p1", "agent_status": "idle"},
+            {"pane_id": "w1:p2", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-planner-4"],
+                   agents=both)
+    check("two idle panes each get their own baseline and their own echo",
+          r.returncode == 0
+          and "w1:p1  harness     /rename applied" in r.stdout
+          and "Session renamed to: machinery-worker-3" in r.stdout
+          and "w1:p2  harness     /rename applied" in r.stdout
+          and "Session renamed to: machinery-planner-4" in r.stdout
+          and [c[2] for c in calls if c[:2] == ["agent", "read"]]
+              == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     for f in fails:
         print(f"FAIL  {f}")

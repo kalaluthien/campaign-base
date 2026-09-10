@@ -51,21 +51,31 @@ observation is quoted as it was observed). A session naming itself is always
 mid-turn, so refusing a working pane would refuse the ordinary case. Instead
 this sends at most one prompt per pane per call -- a pane named twice is
 refused before anything is applied -- and reads the pane's `agent_status` from
-`herdr agent list` before sending. Four verdicts, one per status:
+`herdr agent list` before sending. The harness line for a pane then says one
+of these, in these words:
 
-  `applied`   an `idle` or `done` pane that printed a NEW
+  `/rename applied`  an `idle` or `done` pane that printed a NEW
               `Session renamed to: <name>` -- new against a count taken before
               the prompt, since a pane renamed to this name before already
-              carries the line. The line quoted is the one read off the pane,
-              which may carry the CLI's own "held by another live session"
-              half.
-  `not applied yet`  the same pane when the budget ran out. It is ECHO_BUDGET
-              seconds PER PANE, spent only when the echo does not come, so a
-              call over several silent panes takes that many multiples.
-  `no verdict`  a pane whose screen could not be read BEFORE the prompt, where
-              a new echo cannot be told from one already there.
-  `queued`    `working` and every other status, so the caller knows not to send
-              that pane anything else until `ListAgents` shows the name.
+              carries the line. The line quoted is the newest one read off the
+              pane, which may carry the CLI's own "held by another live
+              session" half.
+  `/rename sent, not applied yet`  the same pane when the echo did not come.
+  `could not be read before the prompt`  an `idle` or `done` pane whose screen
+              was refused on every baseline read, where a new echo cannot be
+              told from one already there, so no verdict is given.
+  `/rename queued`  `working` and every other status read, so the caller knows
+              not to send that pane anything else until `ListAgents` shows the
+              name.
+
+Blocked, unreadable-status and failed-call panes have their own lines below.
+
+WHAT IT COSTS, per `idle` or `done` pane: nothing extra when the pane reads
+at once and echoes at once. Up to ECHO_BUDGET seconds before the prompt goes
+out, when the baseline read is refused; up to ECHO_BUDGET again after it, when
+the echo does not come -- so twice that for one pane in the worst case, and a
+call over several such panes takes that many multiples. The "not applied yet"
+message states the second wait only, which is the one it is about.
 
 A status this could not read is said as such, and the prompt is still sent.
 A BLOCKED pane -- one sitting
@@ -257,18 +267,25 @@ def echo_lines(pane, name):
         return None, (out.stderr.strip() or out.stdout.strip()
                       or "herdr agent read failed with no message")
     want = re.compile(re.escape(f"Session renamed to: {name}") + r"(?![\w-])")
-    return [line.strip() for line in out.stdout.splitlines()
-            if want.search(line)], None
+    # FROM THE MATCH TO THE END OF THE LINE: what the CLI printed, without the
+    # gutter the terminal draws in front of it (`⎿`, a box edge), which a
+    # whitespace strip would keep.
+    return [line[m.start():].rstrip() for line in out.stdout.splitlines()
+            for m in [want.search(line)] if m], None
 
 
 def baseline(pane, name):
     """`echo_lines` with the loop's own patience, so one refusal does not throw
     the confirmation away.
 
-    The refusal this retries is the ordinary one: the status came from a
-    separate `agent list`, and a pane that went idle -> working in between
-    refuses `agent read`. Reading once here and eight times after the prompt
-    would spend the whole budget on the half that cannot fail."""
+    What this retries is a SHORT refusal: the status came from a separate
+    `agent list`, and a pane that flipped idle -> working in between refuses
+    `agent read`. A pane that went working for a whole turn stays refused far
+    longer than this loop waits, so the retry buys a confirmation only for the
+    short flip, and for the long one buys ECHO_BUDGET of delay before the
+    prompt goes out -- stated in the header rather than hidden. It is kept
+    because the short flip is the one a caller can do nothing about, where the
+    long one it can see in `herdr agent list`."""
     why = "the pane could not be read"
     for attempt in range(ECHO_TRIES):
         if attempt:

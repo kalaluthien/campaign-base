@@ -186,6 +186,13 @@ def read_install(slug, path):
     return word, f"HEAD {head}  origin/{branch} {tip}"
 
 
+def readable(word):
+    """Is this `read_install` word a reading of the install -- current,
+    behind N, or apply failed -- rather than a failure to read it? The one
+    statement of that; `check`, `reach` and the heartbeat's watch ask it."""
+    return word in ("current", "apply failed") or word.startswith("behind")
+
+
 def apply_failed_mark(path):
     """The file `reach` leaves inside the install's `.git/` when `apply`
     failed, and removes when it ran through. Both callers have already read
@@ -231,7 +238,7 @@ def cmd_check(body_path, args):
             behind += 1
         elif word == "apply failed":
             failed += 1
-        elif word != "current":
+        elif not readable(word):
             unread += 1
     verdict = "clear" if behind == failed == unread == 0 else "NOT clear"
     print(f"{len(listed)} row(s) read, {behind} behind, {failed} apply failed, "
@@ -263,7 +270,7 @@ def cmd_reach(body_path, args):
     word, detail = read_install(slug, path)
     # `apply failed` is reachable: the fast-forward is a no-op and the point
     # of the second reach is to run the command through and clear the mark.
-    if word not in ("current", "apply failed") and not word.startswith("behind"):
+    if not readable(word):
         print(f"campaign-installed: refusing to reach {slug}: {word} ({detail})",
               file=sys.stderr)
         return 1

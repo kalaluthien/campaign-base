@@ -216,6 +216,8 @@
     ["campaign/orchestration/scenarios.als", "run", "Sanity"],
     ["campaign/orchestration/scenarios.als", "run", "SilentAgentIsRetirableUnderWait"],
     ["campaign/orchestration/scenarios.als", "run", "SilentAgentStillRetired"],
+    ["campaign/orchestration/scenarios.als", "run", "W1_UnclaimedDriftClearsOnClaim"],
+    ["campaign/orchestration/scenarios.als", "run", "W1b_SettledDriftClearsOnRelease"],
     ["campaign/session/checks.als", "run", "Cov_AcquireBySession"],
     ["campaign/session/checks.als", "run", "Cov_Adopt"],
     ["campaign/session/checks.als", "run", "Cov_Bound"],

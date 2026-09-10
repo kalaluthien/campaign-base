@@ -2,6 +2,7 @@
 """Read every session of a campaign and say, per session, what the planner's heartbeat does to it.
 
     .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> [--apply]
+    .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch [--every S]
 
 The planner runs this on every wake (planner.md § The planner's clock). It
 reads every session of campaign N -- a herdr row whose name carries N's slug,
@@ -61,6 +62,41 @@ compaction.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
+
+--watch IS THE PLANNER'S WAKE: it polls every S seconds (60) until killed and
+prints only what changed, so a Monitor over it wakes the planner on an event,
+and the planner runs this with --apply. Keyed by N and its slug, which the
+planner holds at launch; a pull request that appears later is one more line.
+Each poll builds a snapshot and prints `+ line` for a line that appeared and
+`- line` for one that went; a drift still standing after 30m reprints as
+`= line`. The first poll prints `watching <slug>` and every drift and limit.
+
+  session <name> <status>   herdr, counted after two equal polls, since herdr
+                            calls a mid-turn pause idle; the own pane has none
+  limit <pane> <banner>     limit-reset's first line, on a non-working pane
+  claim <branch>            campaign-claim's refs, in the tracker and ## Repos
+  issue <n> <state> [backlog]   the campaign's sub-issue index
+  pr <n> <branch> <state> <sha> comments=<k>   a claim's pull request;
+                            k counts comments and reviews, so a REPORT or a
+                            REVIEW moves it
+  drift <rule> <subject>    a desired state that does not hold:
+    unclaimed    an open sub-issue without `backlog` has no claim
+    unworked     more claims than workers
+    stuck        a claim with no pull request change for 30m while no worker
+                 works
+    settled      a claim whose sub-issue is closed
+    idle-worker  more workers than claims, and a worker idle for 10m
+    context      a non-working session at or over COMPACT_AT, read through
+                 `transcript_reading`, which stops at a compaction
+    install      an install whose HEAD is not its origin's tip, by
+                 campaign-installed's reader
+
+The rules count claims and workers and never pair them: which session works
+which claim is not derivable (AGENTS.md § Completion). A source that fails
+three polls running prints `error <source>` and its last reading stands; a poll
+running past 300s prints `error watchdog` and exits 1. A drift rule runs once
+every source it reads has been read, since an unread one is not empty; each
+install is a source of its own, so one unreadable install hides no other.
 """
 import argparse
 import importlib.util
@@ -81,6 +117,9 @@ COMPACT_AT = 200_000
 # The line `campaign-claim.py release` prints, and the pane it names. Taken
 # from that script, never copied.
 RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
+# What the watch asks for a campaign's directory and its installs.
+DIRECTORY_SCRIPT = BASE / "scripts" / "campaign-directory.py"
+INSTALLED_SCRIPT = BASE / "scripts" / "campaign-installed.py"
 
 # What a compaction writes into the transcript around itself, which is not a
 # prompt: the `/compact` that `release` queues (a bare user record), the
@@ -90,6 +129,10 @@ RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
 # toward `keep`.
 COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")
 QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is a person's prompt
+# A background task's notice reaching an IDLE pane: a plain user record, no
+# isMeta, its text opening with this tag (820 on this machine, 2026-09-11).
+# Busy, the same notice is a queued_command of another mode.
+TASK_NOTICE = "<task-notification>"
 
 
 def load(path, name):
@@ -131,10 +174,11 @@ def texts(content):
 
 def is_prompt(content):
     """Does this content carry text a person or a peer typed, rather than the
-    compaction's own echo or the bare `/compact` release queues?"""
+    compaction's own echo, the bare `/compact` release queues, or a
+    background task's notice?"""
     said = "".join(texts(content)).strip()
     return bool(said) and said != QUEUED_COMPACT and not said.startswith(
-        COMPACTION_ECHOES)
+        COMPACTION_ECHOES + (TASK_NOTICE,))
 
 
 def result_lines(content):
@@ -175,7 +219,9 @@ def transcript_reading(lines, anchor, pane, took=None):
                  filed), so `retire` asks only for none after the compaction,
                  which a new turn or an auto-compaction mid-work would show.
       context    input plus cache tokens of the latest usage record, or the
-                 boundary's `postTokens` when a compaction came after it. A
+                 boundary's `postTokens` when a compaction came after it --
+                 none when the boundary carries none, since the usage before
+                 it describes a context the compaction replaced. A
                  `<synthetic>` record -- a limit banner, an API error -- is
                  the harness's, carries zero usage, and is skipped.
 
@@ -194,8 +240,7 @@ def transcript_reading(lines, anchor, pane, took=None):
             out[key] = ts
 
     def size(ts, tokens):
-        if tokens is not None and (out["context_at"] is None
-                                   or ts > out["context_at"]):
+        if out["context_at"] is None or ts > out["context_at"]:
             out["context"], out["context_at"] = tokens, ts
 
     for line in lines:
@@ -330,6 +375,186 @@ def verdict(role, own, idle, banner, reading):
     return "keep", f"context {reading['context']:,} < {COMPACT_AT:,}{passed}"
 
 
+# --------------------------------------------------------- the watch
+
+# THE WATCH'S CLOCKS, the owner's numbers (DECISION on rule-check#296,
+# 2026-09-11). A poll a minute, since a claim, a push or a comment is minutes
+# of work; a stall or an idle worker is news after the time a turn takes.
+WATCH_EVERY = 60
+STUCK_AFTER = 30 * 60
+IDLE_AFTER = 10 * 60
+REPRINT_AFTER = 30 * 60
+UNREAD_POLLS = 3       # a source failing this many polls running prints `error`
+POLL_CEILING = 300     # one poll past this exits 1, so a hung watch is loud
+
+
+class Watch:
+    """What the watch remembers between polls, and the one step over it.
+
+    `poll` is pure: it takes every source's reading as (value, why) -- `why`
+    None for a reading made -- and the time, and returns the lines to print.
+    A source that could not be read keeps its last reading."""
+
+    def __init__(self, slug, own=None):
+        self.slug, self.own = slug, own
+        self.last, self.fails = {}, {}
+        self.raw, self.stable, self.idle_since = {}, {}, {}
+        self.moved = {}      # claim -> (its pull request as last read, since)
+        self.shown = None    # the last snapshot; None before the first poll
+        self.printed = {}    # drift line -> when it was last printed
+
+    def poll(self, readings, now):
+        out = []
+        for source, (value, why) in sorted(readings.items()):
+            if why is not None:
+                self.fails[source] = self.fails.get(source, 0) + 1
+                if self.fails[source] == UNREAD_POLLS:
+                    out.append(f"error {source}: unread for {UNREAD_POLLS} "
+                               f"polls, showing the last reading: {why}")
+                continue
+            self.fails[source] = 0
+            self.last[source] = value
+            if source == "installs":
+                # The list of installs, read: one that left it is no source.
+                for gone in [k for k in set(self.last) | set(self.fails)
+                             if k.startswith("install ")
+                             and k[len("install "):] not in value]:
+                    self.last.pop(gone, None)
+                    self.fails.pop(gone, None)
+            if source == "sessions":
+                self.settle(value)
+        lines = self.snapshot(now)
+        if self.shown is None:
+            out.insert(0, f"watching {self.slug}: {len(lines)} line(s)")
+            added = sorted(ln for ln in lines
+                           if ln.startswith(("drift ", "limit ")))
+            removed = []
+        else:
+            added, removed = sorted(lines - self.shown), sorted(self.shown - lines)
+        reprint = sorted(ln for ln in lines if ln.startswith("drift ")
+                         and ln not in added
+                         and now - self.printed.get(ln, now) >= REPRINT_AFTER)
+        self.printed = {ln: (now if ln in added or ln in reprint else t)
+                        for ln, t in self.printed.items() if ln in lines}
+        for ln in added:
+            if ln.startswith("drift "):
+                self.printed[ln] = now
+        self.shown = lines
+        return (out + [f"- {ln}" for ln in removed] + [f"+ {ln}" for ln in added]
+                + [f"= {ln}" for ln in reprint])
+
+    def settle(self, sessions):
+        """A status counts only after two equal polls: herdr calls a mid-turn
+        pause idle. A session seen for the first time counts at once."""
+        for name, s in sessions.items():
+            if self.raw.get(name, s["status"]) == s["status"]:
+                self.stable[name] = s["status"]
+            self.raw[name] = s["status"]
+        for gone in set(self.raw) - set(sessions):
+            for d in (self.raw, self.stable, self.idle_since):
+                d.pop(gone, None)
+
+    def snapshot(self, now):
+        sessions = self.last.get("sessions", {})
+        claims = self.last.get("claims", {})
+        issues = self.last.get("issues", {})
+        prs = self.last.get("prs", {})
+        lines, workers = set(), {}
+        for name, s in sessions.items():
+            st = self.stable[name]
+            if st == "working":
+                self.idle_since.pop(name, None)
+            else:
+                self.idle_since.setdefault(name, now)
+            if s["pane"] != self.own:
+                lines.add(f"session {name} {st}")
+            if name.split("-")[-2] == "worker":
+                workers[name] = st
+            if s.get("banner") and banner_word(s["banner"]) != "none":
+                lines.add(f"limit {s['pane']} {s['banner']}")
+            if (st != "working" and s.get("context") is not None
+                    and s["context"] >= COMPACT_AT):
+                lines.add(f"drift context {name} {s['context'] // 1000}k")
+        lines |= {f"claim {b}" for b in claims}
+        lines |= {f"issue {n} {st}{' backlog' if bl else ''}"
+                  for n, (st, bl) in issues.items()}
+        lines |= {f"pr {p[0]} {b} {p[1]} {p[2]} comments={p[3]}"
+                  for b, p in prs.items() if b in claims}
+        lines |= self.drift(claims, issues, prs, workers, now)
+        lines |= {f"drift {source} {word}"
+                  for source, word in self.last.items()
+                  if source.startswith("install ") and word != "current"}
+        return lines
+
+    def drift(self, claims, issues, prs, workers, now):
+        """The rules count claims and workers and never pair one with the
+        other: which session works which claim is not derivable (AGENTS.md
+        § Completion). A rule runs once every source it reads has been read:
+        an unread source is not an empty one."""
+        out = set()
+        read = set(self.last)
+        claimed = set(claims.values())
+        if {"claims", "issues"} <= read:
+            for n, (state, backlog) in issues.items():
+                if state == "open" and not backlog and n not in claimed:
+                    out.add(f"drift unclaimed {self.slug}#{n}")
+            for b, n in claims.items():
+                if issues.get(n, ("open",))[0] == "closed":
+                    out.add(f"drift settled {b}")
+        if not {"sessions", "claims"} <= read:
+            return out
+        if len(claims) > len(workers):
+            out.add(f"drift unworked {len(claims)} claim(s), "
+                    f"{len(workers)} worker(s)")
+        working = any(st == "working" for st in workers.values())
+        for b in claims if "prs" in read else ():
+            if working or b not in self.moved or self.moved[b][0] != prs.get(b):
+                self.moved[b] = (prs.get(b), now)
+            if now - self.moved[b][1] >= STUCK_AFTER:
+                out.add(f"drift stuck {b}")
+        self.moved = {b: v for b, v in self.moved.items() if b in claims}
+        if len(workers) > len(claims):
+            for w in workers:
+                if w in self.idle_since and now - self.idle_since[w] >= IDLE_AFTER:
+                    out.add(f"drift idle-worker {w}")
+        return out
+
+
+class PollOverrun(BaseException):
+    """Not an Exception, so a reader's catch-all cannot swallow it."""
+
+
+def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
+    """Poll until killed, or `polls` times; exit 1 when one poll runs past
+    POLL_CEILING. `read` returns the readings `Watch.poll` takes."""
+    import signal
+    import time
+    clock, sleep = clock or time.time, sleep or time.sleep
+
+    def overrun(*_):
+        raise PollOverrun()
+
+    signal.signal(signal.SIGALRM, overrun)
+    done = 0
+    try:
+        while polls is None or done < polls:
+            signal.alarm(POLL_CEILING)
+            try:
+                out = watch.poll(read(), clock())
+            finally:
+                signal.alarm(0)
+            if out:
+                print("\n".join(out), flush=True)
+            done += 1
+            if polls is None or done < polls:
+                sleep(every)
+    except PollOverrun:
+        print(f"error watchdog: one poll ran past {POLL_CEILING}s; exiting",
+              flush=True)
+        return 1
+    return 0
+
+
 # --------------------------------------------------------- the shell
 
 
@@ -363,11 +588,153 @@ def fire_args(issue, pane, own):
     return argv
 
 
+def context_of(session_id, pane, anchor, cache):
+    """A session's context size through `transcript_reading`, re-read only
+    when its transcript changed: an idle session's file does not."""
+    path, _ = transcript_path(session_id)
+    if path is None:
+        return None
+    try:
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_size)
+        if cache.get(path, (None,))[0] != key:
+            with open(path, encoding="utf-8") as fh:
+                cache[path] = (key, transcript_reading(fh, anchor, pane)["context"])
+    except OSError:
+        return None
+    return cache[path][1]
+
+
+def install_readings(rows, read_install, readable):
+    """{`install <repo>`: (word, why)}, one source per install, so one that
+    cannot be read fails alone and the others' drift still shows. Which words
+    are a reading is campaign-installed's `readable`."""
+    out = {}
+    for repo, path, _ in rows:
+        word, detail = read_install(repo, path)
+        out[f"install {repo}"] = ((word, None) if readable(word)
+                                  else (None, f"{word}: {detail}"))
+    return out
+
+
+def read_all(readers):
+    """Every source's (value, why). A reader that raises is a why, never a
+    crash of the watch -- but the watchdog's PollOverrun is no Exception, so
+    it passes through to `run_watch`."""
+    out = {}
+    for source, fn in readers.items():
+        try:
+            out[source] = fn()
+        except Exception as e:  # noqa: BLE001 -- counted, never raised
+            out[source] = (None, f"{e.__class__.__name__}: {e}")
+    return out
+
+
+def watch_reader(issue, slug, own, claim, names, cache):
+    """The shell half of the watch: a function returning every source's
+    reading as (value, why), through the readers the heartbeat and
+    campaign-claim already own. `## Repos` is read each poll with the
+    claims, so a failed read is that source's why and a scope change shows."""
+    tracker = load(BASE / "scripts" / "campaign-tracker.py", "campaign_tracker")
+    installed = load(INSTALLED_SCRIPT, "campaign_installed")
+    d = run(sys.executable, str(DIRECTORY_SCRIPT), issue)
+    readme = Path(d.stdout.strip()) / "README.md" if d.returncode == 0 else None
+    repos = []
+
+    def sessions():
+        rows, why = claim.herdr_sessions()
+        if rows is None:
+            return None, why
+        out = {}
+        for sid, row in rows.items():
+            if names.campaign_of(row["name"]) != slug:
+                continue
+            st = "idle" if row["status"] in ("idle", "done") else row["status"]
+            s = {"pane": row["pane"], "status": st, "context": None,
+                 "banner": None}
+            if st != "working":
+                s["context"] = context_of(sid, row["pane"], claim.RELEASED,
+                                          cache)
+                if row["pane"] != own:
+                    b = limit_reset(row["pane"]).stdout.strip().splitlines()
+                    s["banner"] = b[0] if b else "(no answer)"
+            out[row["name"]] = s
+        return out, None
+
+    def claims():
+        listed, why = claim.campaign_repos(issue)
+        if listed is None:
+            repos.clear()
+            return None, why
+        repos[:] = [claim.TRACKER] + [r for r in listed if r != claim.TRACKER]
+        found, unread = claim.all_refs(repos, issue, slug)
+        if unread:
+            return None, "; ".join(unread)
+        out = {}
+        for b in found:
+            n = claim.issue_of_branch(b, issue, slug)
+            out[b] = int(n) if n else None
+        return out, None
+
+    def issues():
+        items, why = tracker.fetch_index(claim.TRACKER, issue)
+        if items is None:
+            return None, why
+        return {i["number"]: (i["state"], any(
+            lb.get("name") == tracker.BACKLOG_LABEL
+            for lb in i.get("labels") or [])) for i in items}, None
+
+    def prs():
+        if not repos:
+            return None, "the repositories were not read this poll (claims)"
+        out = {}
+        for repo in repos:
+            r = run("gh", "pr", "list", "-R", repo, "--state", "all",
+                    "--limit", "100", "--json",
+                    "number,headRefName,state,headRefOid,comments,reviews")
+            if r.returncode != 0:
+                return None, f"gh pr list -R {repo}: {r.stderr.strip()[:160]}"
+            for p in sorted(json.loads(r.stdout or "[]"),
+                            key=lambda p: p["number"]):
+                if p["headRefName"].startswith(f"{slug}/"):
+                    out[p["headRefName"]] = (
+                        p["number"], p["state"].lower(), p["headRefOid"][:7],
+                        len(p.get("comments") or []) + len(p.get("reviews") or []))
+        return out, None
+
+    def installs():
+        if readme is None:
+            return None, f"campaign-directory {issue}: {d.stderr.strip()[:160]}"
+        rows, why = installed.rows(readme)
+        if rows is None:
+            return None, why
+        return install_readings(rows, installed.read_install,
+                                installed.readable), None
+
+    readers = {"sessions": sessions, "claims": claims, "issues": issues,
+               "prs": prs, "installs": installs}
+
+    def read():
+        out = read_all(readers)
+        each, why = out.pop("installs")
+        if why is not None:
+            out["installs"] = (None, why)
+            return out
+        out.update(each)
+        out["installs"] = (sorted(k[len("install "):] for k in each), None)
+        return out
+    return read
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("campaign_issue")
     ap.add_argument("--apply", action="store_true",
                     help="send the actions; without it nothing is sent")
+    ap.add_argument("--watch", action="store_true",
+                    help="poll until killed, printing what changed")
+    ap.add_argument("--every", type=int, default=WATCH_EVERY,
+                    help="seconds between the watch's polls")
     args = ap.parse_args(argv)
     issue = args.campaign_issue.lstrip("#")
 
@@ -377,6 +744,11 @@ def main(argv=None):
         return 1
     claim = load(RELEASE_SCRIPT, "campaign_claim")
     names = load(HERE / "campaign-name-session.py", "cns")
+    if args.watch:
+        own = os.environ.get("HERDR_PANE_ID")
+        return run_watch(Watch(slug, own),
+                         watch_reader(issue, slug, own, claim, names, {}),
+                         args.every)
     assign = load(BASE / "scripts" / "campaign-assign.py", "campaign_assign")
     sessions, why = claim.herdr_sessions()
     if sessions is None:

@@ -1696,10 +1696,11 @@ def bash_call(command, cwd: Path, session_id=""):
             shape += found
             if why_shape:
                 unjudged.append(why_shape)
-            # THE REFERENCE FORM, WARNED AND NEVER REFUSED. Folded into `what`
-            # before the shape verdict below, so a comment that is refused for
-            # its first line still carries the second thing wrong with it and
-            # its author makes one edit instead of two.
+            # THE REFERENCE FORM, WARNED AND NEVER REFUSED. Collected here and
+            # put into `NOTES` below, which `refuse` and `allow` print beside
+            # every verdict -- so a comment refused for its first line still
+            # carries the second thing wrong with it and its author makes one
+            # edit instead of two.
             warning, why_ref = bare_references(text)
             if warning:
                 warnings.append(warning)

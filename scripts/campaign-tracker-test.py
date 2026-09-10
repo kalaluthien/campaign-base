@@ -788,14 +788,20 @@ def main():
     check("one number twice is one finding, in the order it first appears",
           m.bare_references("#9 then #4 then #9") == ["#9", "#4"])
     check("a markdown heading is not a reference", m.bare_references("## Intent") == [])
-    # THE LOOKBEHIND, MEMBER BY MEMBER. What qualifies a reference is the WORD
-    # CHARACTER before the `#`, and a wider class was measured to cost real
-    # misses across the 162 issues on this tracker while protecting nothing:
-    # each of these forms is already saved by its own last letter or digit.
+    # THE BOUNDARY, NOT THE MEMBERS. What qualifies a reference is the WORD
+    # CHARACTER before the `#`, written as `\w`, so there is no hand-picked
+    # class whose members each need a case; what needs cases is where the
+    # boundary falls. `a_#255` and not `a_b#255`, because the `b` in the latter
+    # qualifies it whether or not `_` is a word character.
     check("a letter before the hash qualifies it", m.bare_references("pr#255") == [])
     check("a digit before the hash qualifies it", m.bare_references("v2#255") == [])
-    check("an underscore before the hash qualifies it",
-          m.bare_references("a_b#255") == [])
+    check("an underscore is a word character and qualifies it too",
+          m.bare_references("a_#255") == [])
+    # ...AND `#` IS NOT ONE, so a doubled hash reads as a bare reference. Stated
+    # rather than discovered: it is warning-only, and CommonMark needs a space
+    # after the hashes for a heading, so `##42` is text and not one.
+    check("a doubled hash does not qualify a reference",
+          m.bare_references("##42") == ["#42"])
     # THE THREE THAT WERE IN THE CLASS AND COST MISSES, one case each. Every
     # one of these is a bare reference a reader cannot resolve.
     check("a hyphen does not qualify a reference", m.bare_references("pre-#181") == ["#181"])

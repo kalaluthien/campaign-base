@@ -714,18 +714,25 @@ SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 # `kalaluthien/campaign-base#217`, the full name the `Closes` keyword needs, is
 # already qualified and is not bare: what qualifies every one of these forms is
 # the WORD CHARACTER immediately before the `#` -- the `y` of `sdlc-alloy`, the
-# `r` of `pr`, the `e` of `campaign-base` -- so the lookbehind bars that and
-# nothing else. A wider class was measured and cost real misses: barring `-`,
-# `/` and `.` suppressed `pre-#181`, `#116/#160` and four more bare references
-# across the 162 issues on this tracker, and protected no qualified form, since
-# each of those was already saved by its own last letter.
+# `r` of `pr`, the `e` of `campaign-base`. So the lookbehind is `\w` and not a
+# hand-picked class: a list would need a case per member to say why each is in
+# it, and the definition needs one case for the BOUNDARY instead. `#` is not a
+# word character, so `##42` reads as a bare `#42`, which is warning-only and
+# has its own case.
+#
+# A WIDER CLASS WAS MEASURED AND COST REAL MISSES. Barring `-`, `/` and `.`
+# suppressed five bare references in the BODIES of the 164 issues on this
+# tracker -- `pre-#181`, `#116/#160`, `#59/#80`, `pre-#68`, `pre-#41` -- and a
+# sixth in issue 48's TITLE, which the narrow class gains too but which only a
+# `check` that reads titles ever reaches. It protected no qualified form: each
+# of those was already saved by its own last letter.
 #
 # A WARNING AND NOT A REFUSAL, and that is measured rather than lenient: every
 # issue and every comment on this tracker predates the rule and carries bare
 # references, so refusing would wall the tracker's own history the first time
 # anybody edited one of them. `check` prints the finding and still exits on the
 # shape alone.
-BARE_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])#(\d+)")
+BARE_REFERENCE = re.compile(r"(?<!\w)#(\d+)")
 
 
 def bare_references(text):

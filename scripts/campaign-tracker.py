@@ -720,19 +720,28 @@ SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 # word character, so `##42` reads as a bare `#42`, which is warning-only and
 # has its own case.
 #
+# `re.ASCII`, BECAUSE A SLUG IS ASCII. `campaign-name-session.py`'s `SLUG` is
+# `[a-z][a-z0-9]*(-[a-z0-9]+)*`, so nothing that qualifies a reference is
+# outside ASCII -- while `\w` is unicode by default, which made `한#42` and
+# `café#42` read as qualified. Korean prose is what a person writes here, so
+# that is the hole and not the edge case.
+#
 # A WIDER CLASS WAS MEASURED AND COST REAL MISSES. Barring `-`, `/` and `.`
-# suppressed five bare references in the BODIES of the 164 issues on this
-# tracker -- `pre-#181`, `#116/#160`, `#59/#80`, `pre-#68`, `pre-#41` -- and a
-# sixth in issue 48's TITLE, which the narrow class gains too but which only a
-# `check` that reads titles ever reaches. It protected no qualified form: each
-# of those was already saved by its own last letter.
+# suppressed five occurrences in the BODIES of the 164 issues on this tracker
+# -- `pre-#181`, `#116/#160`, `#59/#80`, `pre-#68`, `pre-#41` -- and a sixth in
+# issue 48's TITLE, which the narrow class gains too but which only a `check`
+# that reads titles ever reaches. OCCURRENCES AND NOT WARNINGS: this dedupes by
+# number, and four of the five bodies name the same issue again somewhere the
+# wide class already caught, so what a reader is newly told about is issue 48's
+# `#41` alone. It protected no qualified form: each of those was already saved
+# by its own last letter.
 #
 # A WARNING AND NOT A REFUSAL, and that is measured rather than lenient: every
 # issue and every comment on this tracker predates the rule and carries bare
 # references, so refusing would wall the tracker's own history the first time
 # anybody edited one of them. `check` prints the finding and still exits on the
 # shape alone.
-BARE_REFERENCE = re.compile(r"(?<!\w)#(\d+)")
+BARE_REFERENCE = re.compile(r"(?<!\w)#(\d+)", re.ASCII)
 
 
 def bare_references(text):

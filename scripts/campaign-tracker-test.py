@@ -802,6 +802,12 @@ def main():
     # after the hashes for a heading, so `##42` is text and not one.
     check("a doubled hash does not qualify a reference",
           m.bare_references("##42") == ["#42"])
+    # ...AND THE WORD CHARACTER IS ASCII'S. A slug is `[a-z][a-z0-9-]*`, so
+    # nothing outside ASCII can qualify a reference -- while `\w` is unicode by
+    # default, and Korean prose is what a person writes here.
+    check("a Korean word before the hash does not qualify a reference",
+          m.bare_references("이슈#42") == ["#42"])
+    check("nor does an accented letter", m.bare_references("caf\u00e9#42") == ["#42"])
     # THE THREE THAT WERE IN THE CLASS AND COST MISSES, one case each. Every
     # one of these is a bare reference a reader cannot resolve.
     check("a hyphen does not qualify a reference", m.bare_references("pre-#181") == ["#181"])

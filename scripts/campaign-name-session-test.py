@@ -283,7 +283,8 @@ def main():
     # pinned by the same case.
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
                    screen=held,
-                   screen_after=held + "\n  x  Session renamed to: machinery-worker-3")
+                   screen_after=held
+                   + "\n  x  Session renamed to: machinery-worker-3   ")
     check("the newest matching line is quoted, whole and undecorated",
           r.returncode == 0
           and "the pane printed `Session renamed to: machinery-worker-3`\n"

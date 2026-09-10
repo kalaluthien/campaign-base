@@ -68,7 +68,8 @@ of these, in these words:
               not to send that pane anything else until `ListAgents` shows the
               name.
 
-Blocked, unreadable-status and failed-call panes have their own lines below.
+A blocked pane and one whose status could not be read are described below;
+a herdr call that failed is the `exit 2` row above.
 
 WHAT IT COSTS, per `idle` or `done` pane: nothing extra when the pane reads
 at once and echoes at once. Up to ECHO_BUDGET seconds before the prompt goes

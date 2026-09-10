@@ -54,6 +54,73 @@ FORM_CASES = [
      fence('gh api "repos/o/r/git/matching-refs/heads/campaign-$N/" --jq ".[].ref"'), 1),
     ("claim refs: the slug-form listing",
      fence('gh api "repos/o/r/git/matching-refs/heads/$SLUG/" --jq ".[].ref"'), 1),
+    # The campaign-directory reading. The REFUSALS first, the retired line this
+    # form exists for at the head of them, then the three rewrites a tool
+    # alternation alone would have missed.
+    ("campaign directory: the retired hand-rolled walk off the markers",
+     fence('CAMPAIGN=$(dirname "$(grep -l \'^<N> \' "$BASE"/*/.campaign)")'), 1),
+    ("campaign directory: the glob-loop, where the `;` cuts before the tool",
+     fence('for f in "$BASE"/*/.campaign; do dirname "$f"; done'), 1),
+    # ...ONE CASE PER TOOL, each naming ONE marker so that only the leading
+    # alternation can catch it: a fixture carrying `*/.campaign` as well is
+    # caught by the glob half instead, and its tool ships unpinned. That is
+    # what happened to `head` and to `grep`, whose retired-walk case above
+    # still reads as though it pinned the tool and does not.
+    ("campaign directory: a grep over one marker",
+     fence('grep -q \'^1 \' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: an ls of one marker",
+     fence('ls -l "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a find for the markers by name",
+     fence('find "$BASE" -maxdepth 2 -name .campaign'), 1),
+    ("campaign directory: an awk over one marker",
+     fence('awk \'{print $2}\' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a sed over one marker",
+     fence('sed -n 1p "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a cat of one marker",
+     fence('cat "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a bare head over one marker",
+     fence('head -1 "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: an rg over one marker",
+     fence('rg -N \'^1 \' "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: the two fields read out of one marker",
+     fence('read -r N SLUG < "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a dirname taken off one marker",
+     fence('dirname "$CAMPAIGN/.campaign"'), 1),
+    # ...and the retired walk aimed at ONE directory rather than the glob: two
+    # tools in one line, which pins neither of them. It is a refusal in its own
+    # right, and it is the data the walk's second-tool skip reads -- without
+    # that skip this fixture answers for `grep`, and deleting the grep case
+    # above goes unnoticed.
+    ("campaign directory: two tools in one line pin neither",
+     fence('dirname "$(grep -l \'^1 \' "$CAMPAIGN/.campaign")"'), 1),
+    ("campaign directory: a basename taken off one marker",
+     fence('basename "$CAMPAIGN/.campaign"'), 1),
+    ("campaign directory: a field cut out of one marker",
+     fence('cut -d" " -f1 "$CAMPAIGN/.campaign"'), 1),
+    # ...and the same read with the redirect written first, which is the whole
+    # reason the form has a second half: the tool then sits AFTER the marker,
+    # where the leading alternation cannot see it.
+    ("campaign directory: the marker redirected into the tool",
+     fence('< "$CAMPAIGN/.campaign" cut -d" " -f2'), 1),
+    # ...and the ALLOWS, which are what make the form usable. Writing the marker
+    # at scaffold is the one thing that is not a second reading of it, and the
+    # shape diagram in README.md names the file without touching it.
+    ("campaign directory: ALLOW the marker write at scaffold",
+     fence('printf \'%s %s\\n\' 1 demo >| "$CAMPAIGN/.campaign"'), 0),
+    ("campaign directory: ALLOW the shape diagram naming the file",
+     fence("campaign-demo-260910/\n    .campaign     the campaign issue number "
+           "and the slug"), 0),
+    ("campaign directory: ALLOW the reader being called",
+     fence('CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE")'), 0),
+    # ...and a diagram column that names a PATH-ONLY tool after the marker,
+    # which is English and not a reading -- the case that makes the walk's
+    # expect-0 skip load-bearing: without it this fixture answers for `ls`, and
+    # deleting the `ls` refusal above goes unnoticed.
+    ("campaign directory: ALLOW a column naming a tool after the marker",
+     fence("campaign-demo-260910/\n    .campaign     what an ls of the base "
+           "shows is a campaign's"), 0),
+    ("campaign directory: the marker named in prose is a mention",
+     "# t\n\nThe `.campaign` file says which campaign a directory is.\n", 0),
     ("claim refs: a single ref read is not a listing",
      fence('gh api "repos/o/r/git/ref/heads/x/1-y"'), 0),
     ("claim refs: the endpoint named in prose is a mention",
@@ -383,6 +450,43 @@ def main():
               f"{path} is a file")
         if not resolves:
             failures += 1
+    # EVERY TOOL OF THE MARKER FORM IS PINNED BY A CASE OF ITS OWN, walked from
+    # the two lists rather than restated here -- so a tool ADDED to either one
+    # cannot ship the way the ten deleted ones used to, caught by a neighbouring
+    # alternation and answering for nothing. A case counts as pinning a tool
+    # only when its fixture matches that alternation ALONE: a fixture carrying
+    # `*/.campaign`, or a second tool word, is caught by the other branch and
+    # goes on passing when this one is deleted.
+    #
+    # ONLY THIS FORM'S OWN CASES COUNT. `grep`, `sed`, `awk` and `rg` are named
+    # by the `bound:` and `repos:` fixtures too, so a walk over every case found
+    # all four pinned with no campaign-directory fixture naming them at all --
+    # the neighbouring FORM answering for the tool, which is the same defect one
+    # level up.
+    import re as _re
+    alts = (crr.MARKER_STDIN_TOOLS.split("|") + crr.MARKER_PATH_TOOLS.split("|"))
+    unpinned = []
+    for alt in alts:
+        pinned = False
+        for case in FORM_CASES:
+            body = case[1]
+            if not case[0].startswith("campaign directory"):
+                continue
+            if case[2] != 1 or not _re.search(alt, body):
+                continue
+            if _re.search(r"\*/\.campaign", body):
+                continue
+            if any(_re.search(other, body) for other in alts if other != alt):
+                continue
+            pinned = True
+            break
+        if not pinned:
+            unpinned.append(alt)
+    print(f"{'ok  ' if not unpinned else 'FAIL'}  every marker tool has a case "
+          f"matching it alone{'' if not unpinned else ': ' + ', '.join(unpinned)}")
+    if unpinned:
+        failures += 1
+
     # ...and the printed finding names that path, not a prefixed guess.
     #
     # `belongs to ` IS PART OF THE ASSERTION and must stay. The bare path is a
@@ -414,9 +518,9 @@ def main():
         failures += 1
 
     if failures:
-        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 1} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 2} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 1} cases pass.")
+    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 2} cases pass.")
     return 0
 
 

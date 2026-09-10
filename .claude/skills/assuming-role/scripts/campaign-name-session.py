@@ -116,7 +116,13 @@ SLUG_CEILING = 20
 # same words when it classifies a recorded path it cannot stat -- one set, one
 # owner, rather than two copies pointing at each other in prose.
 BASE_DIRS = ("scripts", "spec", "runtime")
-RESERVED = ("campaign", "planner", "worker") + BASE_DIRS
+# `none` IS EVERY WORD-ANSWERING SCRIPT'S "NOTHING HERE", and a slug is read
+# back through several of them -- `campaign-tracker.py slug`, and the skills'
+# `case "$SLUG" in ""|none)` arms that read it. A campaign slugged `none` would
+# be one no directory could be scaffolded for and no close could resolve, with
+# every reader telling it the slug did not read. Barred here, once, rather than
+# separated by a character class in each caller.
+RESERVED = ("campaign", "planner", "worker", "none") + BASE_DIRS
 SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 # THE RETIRED `campaign-<N>` TOKEN IS GONE (#237). It named branches and

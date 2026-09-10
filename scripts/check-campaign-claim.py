@@ -141,9 +141,11 @@ SKILL_SCRIPTS = (HERE.parent / ".claude" / "skills" / "assuming-role"
                  / "scripts")
 BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # THE MARKER THAT MAKES A DIRECTORY A CAMPAIGN'S, relative to the directory.
-# Until #181 it was a `-YYMMDD` suffix on the name; the slug dropped the date,
-# and no name shape can tell an arbitrary slug from `scripts/`. So the directory
-# says so itself, in a file `opening-campaign` writes at scaffold: one line,
+# It was once the `-YYMMDD` suffix on the name, and #181 round 2 put that
+# suffix back for the person reading `ls` -- but the bare `<slug>` form it
+# replaced is still on disk, and no name shape can tell an arbitrary slug from
+# `scripts/` anyway. So the directory says so itself, in a file
+# `opening-campaign` writes at scaffold: one line,
 # `<N> <slug>`, derived from the campaign issue and re-derivable at any time,
 # which is what lets it live in the git-ignored directory at all.
 #
@@ -774,6 +776,37 @@ def known_slugs(base):
     return _KNOWN_SLUGS[key]
 
 
+def campaign_dirs_at(base):
+    """(directory, marker fields) for every campaign directory at the base roots
+    above `base`, nearest root first.
+
+    ONE WALK OVER THE MARKERS FOR THE TOKEN QUESTION -- which directory is the
+    campaign a number or a slug names -- and both of its askers take their answer
+    from here: `campaign_number` below, and `campaign-directory.py`, which is
+    what a skill's shell line calls instead of composing a path out of the slug.
+    Two other walks over the same markers survive and are not this question:
+    `known_slugs` collects every slug, and `guard-precision.py` globs for the
+    logs. `launching.md` held a third that WAS this question, hand-rolled as
+    `dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)"` -- silently the cwd on no
+    match and a mangled path on two -- and it calls the reader now. The name
+    form has moved twice (dated,
+    bare, dated again) and the marker has not; a second walk written beside this
+    one is what would have to be found and changed each time.
+
+    A root that will not enumerate contributes nothing rather than raising: this
+    runs inside a PreToolUse hook, where one unreadable directory at the base
+    root must not deny every write on the machine."""
+    for root in base_roots_for(Path(base)):
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            continue
+        for d in entries:
+            fields = marker_fields(d)
+            if fields and len(fields) >= 2:
+                yield d, fields
+
+
 def campaign_number(token, base):
     """The campaign ISSUE NUMBER a session name's token stands for, or None.
 
@@ -795,17 +828,8 @@ def campaign_number(token, base):
     machine does not hold is not one this carve-out should widen for."""
     if not token or base is None:
         return None
-    found = set()
-    for root in base_roots_for(Path(base)):
-        try:
-            entries = sorted(root.iterdir())
-        except OSError:
-            continue
-        for d in entries:
-            fields = marker_fields(d)
-            if fields and len(fields) >= 2 and fields[1] == token \
-                    and fields[0].isdigit():
-                found.add(fields[0])
+    found = {fields[0] for _d, fields in campaign_dirs_at(base)
+             if fields[1] == token and fields[0].isdigit()}
     # TWO MARKERS NAMING ONE SLUG IS NOT A NUMBER. Sorted order is not a
     # tiebreak, and picking one would widen the carve-out for a campaign issue
     # nobody named. `slugs_in` refuses the same duplication on the GitHub side;

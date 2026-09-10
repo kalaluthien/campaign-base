@@ -26,9 +26,10 @@
  * `current` off this machine's disk and `reach` is the event.
  *
  * A campaign directory holds no fact another machine reads, which is what lets
- * it be optional. Its name is the campaign's slug, and what makes a directory
- * one is a `.campaign` marker inside it naming the campaign -- since #181 the
- * name is a word, and no shape can tell a slug from the base's own `scripts/`.
+ * it be optional. Its name is `campaign-<slug>-<date>`, or the bare `<slug>`
+ * that form replaced for one window, and what makes a directory one is a
+ * `.campaign` marker inside it naming the campaign -- neither name is read,
+ * because no shape can tell a slug from the base's own `scripts/`.
  * The marker is derived from the campaign issue and re-derivable, so it is
  * still no fact another machine reads.
  *

@@ -61,10 +61,15 @@ FORM_CASES = [
      fence('CAMPAIGN=$(dirname "$(grep -l \'^<N> \' "$BASE"/*/.campaign)")'), 1),
     ("campaign directory: the glob-loop, where the `;` cuts before the tool",
      fence('for f in "$BASE"/*/.campaign; do dirname "$f"; done'), 1),
-    ("campaign directory: a bare head over the same glob",
-     fence('head -1 "$BASE"/*/.campaign'), 1),
+    ("campaign directory: a bare head over one marker",
+     fence('head -1 "$CAMPAIGN/.campaign"'), 1),
     ("campaign directory: a field cut out of one marker",
      fence('cut -d" " -f1 "$CAMPAIGN/.campaign"'), 1),
+    # ...and the same read with the redirect written first, which is the whole
+    # reason the form has a second half: the tool then sits AFTER the marker,
+    # where the leading alternation cannot see it.
+    ("campaign directory: the marker redirected into the tool",
+     fence('< "$CAMPAIGN/.campaign" cut -d" " -f2'), 1),
     # ...and the ALLOWS, which are what make the form usable. Writing the marker
     # at scaffold is the one thing that is not a second reading of it, and the
     # shape diagram in README.md names the file without touching it.

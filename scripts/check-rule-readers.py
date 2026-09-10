@@ -227,6 +227,10 @@ FORMS = [
         # same glob. `*/.campaign` is what all of them share and what the
         # legitimate marker WRITE never has: `printf ... >| "$CAMPAIGN/.campaign"`
         # names one directory it already resolved.
+        # The middle half is for the redirect written first, `< "$C/.campaign"
+        # cut -f2`, where the tool sits AFTER the marker and the leading
+        # alternation cannot see it. Each half has its own named case in the
+        # test, because a half nothing pins is a refusal nobody would miss.
         re.compile(r"(\bgrep\b|\bls\b|\bfind\b|\bawk\b|\bsed\b|\bcat\b"
                    r"|\bcut\b|\bhead\b|\brg\b|dirname|basename)"
                    r"[^|;&]*\.campaign"

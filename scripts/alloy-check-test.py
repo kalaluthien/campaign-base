@@ -20,10 +20,11 @@ THE NAMED FAILING CASES, one per refusal branch:
                                         shows Hand can fire
   a witness that comes out UNSAT        DEAD, whether or not its own `expect`
                                         already said so
-  a witness that is not one, 12 ways    MISSING: a trace satisfies it without
+  a witness that is not one, 15 ways    MISSING: a trace satisfies it without
                                         Hand firing
   a check naming Hand through a helper  MISSING, as if it named Hand itself,
-                                        for a pred and for a fun
+                                        for a pred, a fun, and a pred whose
+                                        parameter is a set comprehension
   three readings it could not make      `could not look`, exit 2, never a pass
 
 and the allow cases beside them: the repaired model, a witness with extra
@@ -70,6 +71,7 @@ assert ViaHelper {{ always (handFires implies no Where.machine) }}
 assert ViaFun {{ always (Now.event = handEvent implies no Where.machine) }}
 assert HandNeverOnAMachine {{ always (Now.event = Hand implies no Where.machine) }}
 assert SomeEvent {{ always some Now.event /* not about Hand */ }}
+{more}
 {witness}
 check {check} for 2 expect 0
 {run}
@@ -88,11 +90,12 @@ def check(name, ok, detail=""):
 
 
 def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine",
-        extra="", run_line=None, alloy_says=None, opens="", pred=None):
+        extra="", run_line=None, alloy_says=None, opens="", pred=None, more=""):
     """Write the fixture under <d> and run the script on its checks module.
 
     `witness` is a predicate body for `Cov_Hand`; empty declares no witness.
-    `pred` replaces the whole witness declaration, for its other head forms.
+    `pred` replaces the whole witness declaration, for its other head forms,
+    and `more` adds declarations to the checks module.
     `alloy_says` replaces alloy with a stand-in printing those lines, for the
     two readings real alloy never gives: a verdict line this script cannot
     parse, and a command whose `assert` is not in the text.
@@ -114,7 +117,7 @@ def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine
     if run_line is None:
         run_line = f"run Cov_Hand for 2 expect {expect}" if witness or extra else ""
     (root / "checks.als").write_text(
-        CHECKS.format(witness=pred, check=check_name, run=run_line, opens=opens))
+        CHECKS.format(witness=pred, check=check_name, run=run_line, opens=opens, more=more))
     r = subprocess.run([sys.executable, str(SCRIPT), str(root / "checks.als"),
                         "-o", str(Path(d) / "out")],
                        capture_output=True, text=True, env=env)
@@ -197,12 +200,35 @@ def main() -> int:
                   f"exit {rc}: {out[-6:]}")
 
     # Two witnesses that are about another event than their text says.
+    shadows = {
+        "the event": ("pred Cov_Hand(Hand: Event) { eventually Now.event = Hand }", ""),
+        "`event`": ("pred Cov_Hand[event: univ -> Event] { eventually Now.event = Hand }", ""),
+        "`Now`": ("pred Cov_Hand[Now: Fake] { eventually Now.event = Hand }",
+                  "sig Fake { event: one Event }"),
+    }
+    for name, (decl, extra) in shadows.items():
+        with tempfile.TemporaryDirectory() as d:
+            rc, out, path = run(d, pred=decl, extra=extra,
+                                run_line="run Cov_Hand for 2 expect 1")
+            check(f"not a witness, refused as MISSING: a parameter named like {name}",
+                  rc == 1 and refused(out, "MISSING", "Hand", path)
+                  and "alloy exit 0" in line(out, "RESULT"),
+                  f"exit {rc}: {out[-6:]}")
     with tempfile.TemporaryDirectory() as d:
-        rc, out, path = run(d, pred="pred Cov_Hand(Hand: Event) { eventually Now.event = Hand }",
+        rc, out, path = run(d, pred="fun Cov_Hand: set Event { Stutter }",
+                            extra="pred Cov_Hand { eventually Now.event = Hand }",
                             run_line="run Cov_Hand for 2 expect 1")
-        check("not a witness, refused as MISSING: a parameter named like the event",
+        check("not a witness, refused as MISSING: the root's fun is run, not a pred it opens",
               rc == 1 and refused(out, "MISSING", "Hand", path)
               and "alloy exit 0" in line(out, "RESULT"),
+              f"exit {rc}: {out[-6:]}")
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, check_name="ViaSetParam", more=(
+            "pred hf[m: {x: Machine | some x}] { Now.event = Hand }\n"
+            "assert ViaSetParam { always (hf[Machine] implies no Where.machine) }"))
+        check("a helper whose parameter is a set comprehension is read to its body",
+              rc == 1 and refused(out, "MISSING", "Hand", path)
+              and "ViaSetParam" in line(out, "MISSING"),
               f"exit {rc}: {out[-6:]}")
     with tempfile.TemporaryDirectory() as d:
         rc, out, path = run(

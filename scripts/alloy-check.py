@@ -277,10 +277,15 @@ def composed(path):
 def declaration(text, keyword, name):
     """(head, body) of the first `<keyword> [S.]<name> <head> { <body> }` in
     <text>, or None. The head is whatever stands between the name and the
-    first brace -- parameters in `[...]` or `(...)`, nested or not, and a
-    fun's return type."""
+    first brace outside a bracket -- parameters in `[...]` or `(...)`, a set
+    comprehension among them, and a fun's return type, unless that type is
+    itself a comprehension, which is read as the body."""
     for m in re.finditer(rf"\b{keyword}\s+(?:\w+\.)?{name}(?![\w.])", text):
-        start, depth = text.index("{", m.end()) + 1, 1
+        depth, i = 0, m.end()
+        while depth or text[i] != "{":
+            depth += {"(": 1, "[": 1, ")": -1, "]": -1}.get(text[i], 0)
+            i += 1
+        start, depth = i + 1, 1
         for i in range(start, len(text)):
             depth += {"{": 1, "}": -1}.get(text[i], 0)
             if not depth:
@@ -340,15 +345,21 @@ def reach(path, verdicts):
                                                 declaration(text, "fun", word)) if d]
             for e in hit:
                 named.setdefault(e, []).append(name)
+    root = modules[os.path.abspath(path)]
     shown = {}
     for kind, name in (m.groups() for m in own if m):
-        d = declaration(text, "pred", name) if kind == "run" else None
+        if kind != "run":
+            continue
+        # Alloy runs the root's own declaration of the name, pred or fun, over
+        # a namesake in a module it opens.
+        own_decl = re.search(rf"\b(?:pred|fun)\s+(?:\w+\.)?{name}(?![\w.])", root)
+        d = declaration(root if own_decl else text, "pred", name)
         if d is None:
-            continue                     # a check, or a run of a fun
+            continue                     # a run of a fun
         e = witnessed(d[1])
-        # A parameter named like the event shadows it: `pred W[Hand: Event]`
-        # shows some event firing, not Hand.
-        if e and not re.search(rf"\b{e}\b", d[0]):
+        # A parameter named like the event, `Now` or `event` shadows what the
+        # body reads: `pred W[Hand: Event]` shows some event firing, not Hand.
+        if e and not re.search(rf"\b(?:{e}|Now|event)\b", d[0]):
             shown.setdefault(e, []).append((name, verdicts.get(name)))
     return events, [(e, named[e], shown.get(e, [])) for e in sorted(named)]
 

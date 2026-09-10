@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 # witnesses: S1_FullChain, TreeStaysTied_Bites, S4_RenameBreaksTheTie
 # witnesses: S4a_RenameKeepsItsNamers, S4b_RenameOfTheScenarioBreaksTheTie
-# witnesses: S4c_RenameOfTheTestBreaksTheTie
+# witnesses: S4c_RenameOfTheTestBreaksTheTie, WitnessesResolve_Bites
 """Cases for check-sdlc-tie.py: one named refusal per branch, and the allows
 beside each -- the ordinary shapes a tie check could catch by mistake.
 
 Each fixture is two trees: one committed, one staged on top, and the guard is
 run `--staged` over the second against the first, which is what the pre-commit
-does. The scenarios these fixtures play out are spec/sdlc/scenarios.als's:
+does. The scenarios these fixtures play out are spec/sdlc's:
 `S1_FullChain` is the allow every refusal is a step away from,
 `S4_RenameBreaksTheTie` is T2 at the code path's end,
 `S4c_RenameOfTheTestBreaksTheTie` is T2 at the suite's,
 `S4b_RenameOfTheScenarioBreaksTheTie` is T3, `S4a_RenameKeepsItsNamers` is the
-allow beside them, and `TreeStaysTied_Bites` is T1. The `# witnesses:` line
-above is what ties this suite to them, and is itself the form under test.
+allow beside them, `TreeStaysTied_Bites` is T1, and `WitnessesResolve_Bites`
+in checks.als is T6. The `# witnesses:` lines
+above are what tie this suite to them, and are themselves the form under test.
 
 EVERY CASE PASSES `--legacy`, with an empty list unless it is about the
 allow-list. The built-in `LEGACY` names this repository's own untied paths, and
@@ -145,21 +146,14 @@ CASES = [
     ("allow a scenario renamed with its suite rewritten",
      TIED, {SPEC: "run S1_Other for 3 expect 1\n",
             "scripts/a-test.py": "# witnesses: S1_Other\n"}, None),
-    ("allow a declaration naming two, only one of which spec/ declares",
-     {SPEC: DECL},
-     {"scripts/a.py": CODE,
-      "scripts/a-test.py": "# witnesses: S9_Nowhere, S1_FullChain\n"}, None),
     ("allow a declaration written with slack whitespace around every part",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
       "scripts/a-test.py": "#   witnesses:   S1_FullChain  \n"}, None),
-    # The live name goes FIRST on purpose: with it last, a reader that let the
-    # last line win would pass this case, and the union it is named for would be
-    # pinned by nothing.
-    ("allow a declaration split over two `# witnesses:` lines, the live one first",
-     {SPEC: DECL},
+    ("allow a declaration split over two `# witnesses:` lines, both live",
+     {SPEC: DECL + "run S1_Other for 3 expect 1\n"},
      {"scripts/a.py": CODE,
-      "scripts/a-test.py": "# witnesses: S1_FullChain\n# witnesses: S9_Nowhere\n"}, None),
+      "scripts/a-test.py": "# witnesses: S1_FullChain\n# witnesses: S1_Other\n"}, None),
     ("allow a suite holding a byte that is not UTF-8 beside its declaration",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
@@ -167,6 +161,47 @@ CASES = [
     ("allow a spec module holding a byte that is not UTF-8",
      {}, {SPEC: b"run S1_FullChain for 3 expect 1\n-- \xff\n",
           "scripts/a.py": CODE, "scripts/a-test.py": SUITE}, None),
+]
+
+# ---- T6: a declared name that resolves to no scenario. Each of these must
+# come back with T6 AND NOTHING ELSE, because the gap it closes is one live name
+# covering the rest: the code path is tied throughout, so a T1 or a T3 beside
+# the T6 would mean the reading lost the live name -- a reader keeping one
+# `# witnesses:` line of two, say -- and not that it found the dead one.
+TWO = DECL + "run S1_Other for 3 expect 1\n"
+BOTH = "# witnesses: S1_FullChain, S1_Other\n"
+DEBT = {SPEC: DECL, "scripts/a.py": CODE,
+        "scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"}
+T6_CASES = [
+    ("T6 WitnessesResolve_Bites: a scenario renamed while the suite's other "
+     "name still ties it, bd2143d's shape",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {SPEC: DECL + "run S1_Renamed for 3 expect 1\n"}),
+    ("T6 a scenario's module deleted while another module still declares the "
+     "suite's other name",
+     {SPEC: DECL, "spec/y/checks.als": "check S1_Other for 3 expect 0\n",
+      "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {"spec/y/checks.als": None}),
+    ("T6 a declaration naming two, only one of which spec/ declares",
+     {SPEC: DECL},
+     {"scripts/a.py": CODE,
+      "scripts/a-test.py": "# witnesses: S9_Nowhere, S1_FullChain\n"}),
+    ("T6 a dead name on the second `# witnesses:` line, the live one first",
+     {SPEC: DECL},
+     {"scripts/a.py": CODE,
+      "scripts/a-test.py": "# witnesses: S1_FullChain\n# witnesses: S9_Nowhere\n"}),
+    ("T6 a dead name on the first `# witnesses:` line, the live one second",
+     {SPEC: DECL},
+     {"scripts/a.py": CODE,
+      "scripts/a-test.py": "# witnesses: S9_Nowhere\n# witnesses: S1_FullChain\n"}),
+    ("T6 a suite written before its code path, declaring a dead name",
+     {SPEC: DECL},
+     {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"}),
+    ("T6 a dead name already there, in a suite this change edits",
+     DEBT, {"scripts/a-test.py": DEBT["scripts/a-test.py"] + "x = 1\n"}),
+    ("T6 a dead name already there, in a suite this change renames",
+     DEBT, {"scripts/a-test.py": None, "scripts/a.py": None,
+            "scripts/b.py": CODE, "scripts/b-test.py": DEBT["scripts/a-test.py"]}),
 ]
 
 
@@ -265,6 +300,26 @@ def main():
         r = run_case(before, after)
         ok, want = judge(r, code)
         check(name, ok, want, r)
+
+    for name, before, after in T6_CASES:
+        r = run_case(before, after)
+        ok, want = judge(r, "T6")
+        codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
+        check(name, ok and codes == {"T6"}, want + ", and no other code", r)
+
+    # T6 names the file, the name and the tree it searched, and only the dead one.
+    r = run_case({SPEC: DECL},
+                 {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"})
+    line = next((ln for ln in r.stderr.splitlines() if ln.startswith("T6\t")), "")
+    check("T6's line names the suite, the dead name and the tree it searched, "
+          "and not the live name",
+          line.startswith("T6\tscripts/a-test.py\t") and "`S9_Nowhere`" in line
+          and "the index" in line and "S1_FullChain" not in line,
+          "one T6 line naming scripts/a-test.py, `S9_Nowhere` and the index", r)
+    r = run_case(DEBT, {"README.md": "r\n"})
+    ok, want = judge(r, None)
+    check("a dead name already there, in a suite the change never opened, is not "
+          "this change's debt", ok, want, r)
 
     # --staged reads the index and not the disk, both ways round.
     r = run_case({SPEC: DECL}, {"scripts/a.py": CODE}, on_disk={"scripts/a.py": None})

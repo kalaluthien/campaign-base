@@ -38,6 +38,21 @@ pred TreeStaysTied_Bites {
   eventually not treeTied
 }
 
+/* Under `tieDiscipline`, every declared witness names a scenario at every
+   state, for the same reason. Without its second half the tree can stay tied
+   at every state and still carry a dead name: a test declares two scenarios,
+   one is renamed and the text is not rewritten, and the code path stays tied
+   through the other -- bd2143d's shape, which a check reading `treeTied` alone
+   passed. */
+assert WitnessesResolve {
+  tieDiscipline implies always witnessesResolve
+}
+pred WitnessesResolve_Bites {
+  always treeTied
+  eventually (Now.event = Rename and Now.at = Spec
+              and witnessesResolve and after not witnessesResolve)
+}
+
 /* ---------------- the skip rule ---------------- */
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
@@ -83,6 +98,8 @@ run   OrderedByFeeds_Bites     for 2 Change, 2 Profile, 6 Artifact, 10 steps exp
 -- the tie: the tree stays tied under the commit check, and comes apart without it
 check TreeStaysTied            for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
 run   TreeStaysTied_Bites      for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
+check WitnessesResolve         for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0
+run   WitnessesResolve_Bites   for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 1
 
 -- the skip rule: every absence is licensed under the landing check, and not without it
 check AbsenceLicensed          for 2 Change, 2 Profile, 6 Artifact, 10 steps expect 0

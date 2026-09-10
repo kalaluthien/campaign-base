@@ -212,10 +212,8 @@ jobs:
       # ever naming A. Naming the sha makes the run's verdict about the run's
       # own commit.
       #
-      # TURNING IT GREEN TAKES A RE-RUN. A comment fires no workflow, so posting
-      # the REVIEW does not re-trigger this: `gh run rerun <id>` does, and the
-      # whole job replays including the Alloy step. That is the cost of the gate
-      # and it is on the path of every merge here.
+      # A comment fires no `pull_request` event, so review-rerun.yml re-runs
+      # this job once a REVIEW names the head.
       - name: A REVIEW at the head sha, which is merge condition 1
         if: github.event_name == 'pull_request'
         env:

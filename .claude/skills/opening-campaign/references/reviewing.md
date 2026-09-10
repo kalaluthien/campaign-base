@@ -190,6 +190,6 @@ so two things about the comment are now load-bearing rather than tidy.
   that sha is the pull request's head. A REVIEW at the sha before the last push
   is the round it was; it is not the review the merge needs.
 
-Both cost a red required check rather than a wasted round, and posting the
-comment does not re-run the job -- `gh run rerun <id>` does.
+Both cost a red required check rather than a wasted round. Posting a REVIEW
+that names the head re-runs the job by itself (`review-rerun.yml`).
 

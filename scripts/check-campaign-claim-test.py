@@ -2600,6 +2600,18 @@ def main():
               "read against",
               r.returncode == 0 and "allowed unread" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
+        # THE NAME IS MATCHED WHOLE, which nothing pinned until #281's seventh
+        # review: `!=` widened to a `startswith` or an `in` passed all 430
+        # cases, and either would refuse a skill whose name merely CONTAINS the
+        # bar's. A name is a directory name, so a neighbour like this one is
+        # the ordinary shape, not an edge.
+        r = ask(wt, tool="Skill",
+                tool_input={"skill": "code-review-lite", "args": "high 9"},
+                run_cwd=wt)
+        check("...and a skill whose name only contains `code-review` is "
+              "allowed unread too",
+              r.returncode == 0 and "allowed unread" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
         # THE LOGGED ROW. A `Skill` payload has neither `command` nor
         # `prompt`, so without the third fallback every fan-out refusal lands
         # in `guard-precision.py`'s "nothing to match on" bucket.
@@ -3044,7 +3056,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 430
+    EXPECTED = 431
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

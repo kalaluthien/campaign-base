@@ -2583,12 +2583,17 @@ def skill_call(tool_input, cwd: Path):
     the session's own effort, a level chosen by neither the launcher nor the
     work.
 
-    THE ONE THING THIS CANNOT READ is who asked. A person typing
-    `/code-review high` reaches this file as the same payload a session's own
-    choice does, and the refusal hits both. That is the standing rule rather
-    than a defect of this branch -- a hook is never bypassed, and what the
-    session owes the person is the refusal's text and a question -- but it is
-    the cost, and it is stated here because nothing in the payload could pay it.
+    WHO ASKED, MEASURED RATHER THAN ASSUMED. What this judges is a session's
+    OWN `Skill` call, not a person's typed `/code-review`: of the 215 typed
+    slash commands recorded on this machine exactly one is followed by a
+    `Skill` call for that same skill, and `code-review` was typed none of those
+    215 times against 74 `Skill(code-review)` calls. A `permissions.deny` entry
+    of `Skill(<name>)` shows the same split -- it blocks the model's call while
+    a typed `/<name>` still runs. So the payload cannot say who asked, and the
+    measurement says the refusal below has not been reaching a person; if one
+    ever does arrive this way, the standing rule covers it -- a hook is never
+    bypassed, and what the session owes the person is the refusal's text and a
+    question.
 
     Every other skill is allowed unread and says so: § Review's bar names this
     one, and a guard that judged the rest would be enforcing a rule nobody

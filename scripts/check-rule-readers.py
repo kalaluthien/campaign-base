@@ -128,8 +128,16 @@ from pathlib import Path
 # writes, and admitting it there would refuse an English line that merely puts
 # the word after the marker -- `.campaign   what an ls of the base shows`. The
 # path-only tools stay on the leading side, where a path must follow them.
-# `read` is one of them: the idiomatic two-field read of a one-line marker is
-# `read -r N SLUG < "$C/.campaign"`, which names the tool BEFORE the file.
+#
+# `read` SITS THERE FOR A DIFFERENT REASON, and it is a trade rather than a
+# consequence of the rule above: `read` does take stdin, so
+# `< "$C/.campaign" read -r N SLUG` is real shell and goes unrefused. What
+# rules it off the trailing side is that `read` is an ordinary English word --
+# admitting it after the marker refused `.campaign  the marker, read back by
+# campaign-directory.py`, a diagram column and not a reading. The idiom people
+# actually write, `read -r N SLUG < "$C/.campaign"`, names the tool BEFORE the
+# file and is refused by the leading half; the redirect-first spelling of it is
+# the hole this choice accepts.
 MARKER_STDIN_TOOLS = (r"\bgrep\b|\bawk\b|\bsed\b|\bcat\b"
                       r"|\bcut\b|\bhead\b|\brg\b")
 MARKER_PATH_TOOLS = r"\bls\b|\bfind\b|\bread\b|dirname|basename"

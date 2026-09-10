@@ -86,6 +86,13 @@ FORM_CASES = [
      fence('read -r N SLUG < "$CAMPAIGN/.campaign"'), 1),
     ("campaign directory: a dirname taken off one marker",
      fence('dirname "$CAMPAIGN/.campaign"'), 1),
+    # ...and the retired walk aimed at ONE directory rather than the glob: two
+    # tools in one line, which pins neither of them. It is a refusal in its own
+    # right, and it is the data the walk's second-tool skip reads -- without
+    # that skip this fixture answers for `grep`, and deleting the grep case
+    # above goes unnoticed.
+    ("campaign directory: two tools in one line pin neither",
+     fence('dirname "$(grep -l \'^1 \' "$CAMPAIGN/.campaign")"'), 1),
     ("campaign directory: a basename taken off one marker",
      fence('basename "$CAMPAIGN/.campaign"'), 1),
     ("campaign directory: a field cut out of one marker",
@@ -443,6 +450,12 @@ def main():
     # only when its fixture matches that alternation ALONE: a fixture carrying
     # `*/.campaign`, or a second tool word, is caught by the other branch and
     # goes on passing when this one is deleted.
+    #
+    # ONLY THIS FORM'S OWN CASES COUNT. `grep`, `sed`, `awk` and `rg` are named
+    # by the `bound:` and `repos:` fixtures too, so a walk over every case found
+    # all four pinned with no campaign-directory fixture naming them at all --
+    # the neighbouring FORM answering for the tool, which is the same defect one
+    # level up.
     import re as _re
     alts = (crr.MARKER_STDIN_TOOLS.split("|") + crr.MARKER_PATH_TOOLS.split("|"))
     unpinned = []
@@ -450,6 +463,8 @@ def main():
         pinned = False
         for case in FORM_CASES:
             body = case[1]
+            if not case[0].startswith("campaign directory"):
+                continue
             if case[2] != 1 or not _re.search(alt, body):
                 continue
             if _re.search(r"\*/\.campaign", body):

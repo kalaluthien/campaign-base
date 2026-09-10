@@ -54,6 +54,29 @@ FORM_CASES = [
      fence('gh api "repos/o/r/git/matching-refs/heads/campaign-$N/" --jq ".[].ref"'), 1),
     ("claim refs: the slug-form listing",
      fence('gh api "repos/o/r/git/matching-refs/heads/$SLUG/" --jq ".[].ref"'), 1),
+    # The campaign-directory reading. The REFUSALS first, the retired line this
+    # form exists for at the head of them, then the three rewrites a tool
+    # alternation alone would have missed.
+    ("campaign directory: the retired hand-rolled walk off the markers",
+     fence('CAMPAIGN=$(dirname "$(grep -l \'^<N> \' "$BASE"/*/.campaign)")'), 1),
+    ("campaign directory: the glob-loop, where the `;` cuts before the tool",
+     fence('for f in "$BASE"/*/.campaign; do dirname "$f"; done'), 1),
+    ("campaign directory: a bare head over the same glob",
+     fence('head -1 "$BASE"/*/.campaign'), 1),
+    ("campaign directory: a field cut out of one marker",
+     fence('cut -d" " -f1 "$CAMPAIGN/.campaign"'), 1),
+    # ...and the ALLOWS, which are what make the form usable. Writing the marker
+    # at scaffold is the one thing that is not a second reading of it, and the
+    # shape diagram in README.md names the file without touching it.
+    ("campaign directory: ALLOW the marker write at scaffold",
+     fence('printf \'%s %s\\n\' 1 demo >| "$CAMPAIGN/.campaign"'), 0),
+    ("campaign directory: ALLOW the shape diagram naming the file",
+     fence("campaign-demo-260910/\n    .campaign     the campaign issue number "
+           "and the slug"), 0),
+    ("campaign directory: ALLOW the reader being called",
+     fence('CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE")'), 0),
+    ("campaign directory: the marker named in prose is a mention",
+     "# t\n\nThe `.campaign` file says which campaign a directory is.\n", 0),
     ("claim refs: a single ref read is not a listing",
      fence('gh api "repos/o/r/git/ref/heads/x/1-y"'), 0),
     ("claim refs: the endpoint named in prose is a mention",

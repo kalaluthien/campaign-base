@@ -137,6 +137,10 @@ def main():
             # campaign's whole tree as the base's own.
             ("runtime-worker-6", "a `runtime` segment"),
             ("scripts-worker-6", "a `scripts` segment"),
+            # `none` IS THE WORD every reader here answers with when it found
+            # nothing, so a campaign wearing it could never be scaffolded or
+            # closed -- each caller would read its own slug as a failed reading.
+            ("none-worker-6", "a `none` segment"),
             ("spec-worker-6", "a `spec` segment")]:
         r, calls = run(["w1:p1", name])
         check(f"a slug with {why} is refused",

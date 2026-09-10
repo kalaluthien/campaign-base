@@ -220,9 +220,18 @@ FORMS = [
         # the `printf ... >| "$CAMPAIGN/.campaign"` that WRITES one are both
         # left alone -- writing the marker at scaffold is the one thing that is
         # not a second reading of it.
+        # A GLOB OVER THE MARKERS IS THE FORM WITH NO TOOL IN IT. The tool
+        # alternations miss the shapes people actually write next -- a `for f in
+        # "$BASE"/*/.campaign; do dirname "$f"; done`, where the `;` cuts
+        # `[^|;&]*` before `dirname`, and a bare `head -1` or `cut` over the
+        # same glob. `*/.campaign` is what all of them share and what the
+        # legitimate marker WRITE never has: `printf ... >| "$CAMPAIGN/.campaign"`
+        # names one directory it already resolved.
         re.compile(r"(\bgrep\b|\bls\b|\bfind\b|\bawk\b|\bsed\b|\bcat\b"
-                   r"|\brg\b|dirname|basename)[^|;&]*\.campaign"
-                   r"|\.campaign[^|;&]*(\bgrep\b|\bawk\b|\bsed\b|\bcut\b)"),
+                   r"|\bcut\b|\bhead\b|\brg\b|dirname|basename)"
+                   r"[^|;&]*\.campaign"
+                   r"|\.campaign[^|;&]*(\bgrep\b|\bawk\b|\bsed\b|\bcut\b)"
+                   r"|\*/\.campaign"),
         "the campaign-directory reading",
     ),
     (

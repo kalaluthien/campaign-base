@@ -335,9 +335,12 @@ PUNCT_RUN = re.compile(r"^[();<>|&{}`\n]+$")
 # broke in two and a heredoc went with the half that did not open it -- which
 # made `gh issue comment -F - 2>&1 <<EOF` read as a comment with no body at
 # all, silently (#281's narrowed rounds). LONGEST FIRST, because `split_punct`
-# takes the first entry that matches and `>>&` would otherwise be read as `>>`
-# and a separator. zsh's `>|` and `>>&` are here because this machine's shell
-# has `noclobber` set, which is what makes `>|` the spelling reached for.
+# takes the first entry that matches: read shortest-first, `&&` at the end of a
+# line becomes `&`, `&` and a newline, and the first `&` closes the segment
+# before it -- which since outer-ness began reading the closing separator means
+# a `cd` there stops being credited. zsh's `>|` and `>>&` are here because this
+# machine's shell has `noclobber` set, which is what makes `>|` the spelling
+# reached for.
 PUNCT_UNITS = ("&>>", ">>&", "&&", "||", "|&", ">&", "&>", "<&", ">|", "<<",
                ">>", "\n", "<", ">", "|", "&", ";", "(", ")", "{", "}", "`")
 # A separator that puts a command in a SUBSHELL, so a `cd` there does not move
@@ -1169,15 +1172,31 @@ def paired_segments(command):
     # --no-verify` was credited and the commit was judged at /tmp, which both
     # shells here disagree with (`zsh -c 'cd /tmp | true; echo $PWD'` prints
     # the original directory, and so does bash).
+    #
+    # A BRACE GROUP IS NOT A SUBSHELL, BUT A PIPED ONE IS. `{ cd X; } | true`
+    # and `{ cd X; } &` both leave the shell where it was, in both shells here,
+    # and the separator that says so arrives two tokens after the group's own
+    # segments were emitted. So the group's span is remembered and cleared
+    # when the separator after its `}` turns out to be a pipe or a `&`.
     out, cur, depth, before = [], [], 0, None
+    braces, closed = [], None
     for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
             continue
         if cur:
-            out.append((cur, depth == 0 and before not in PIPES
-                        and t not in PIPES and t != BACKGROUND))
+            out.append([cur, depth == 0 and before not in PIPES
+                        and t not in PIPES and t != BACKGROUND])
             cur = []
+        if closed is not None:
+            if t in PIPES or t == BACKGROUND:
+                for row in out[closed:]:
+                    row[1] = False
+            closed = None
+        if t == "{":
+            braces.append(len(out))
+        elif t == "}" and braces:
+            closed = braces.pop()
         depth += (t in NESTS) - (t in UNNESTS)
         depth = max(depth, 0)
         before = t
@@ -1332,15 +1351,25 @@ def literal_path(token, base):
     # no expansion, so `cd_target` answers it.
     if not token:
         return None
+    # THE TAIL IS READ LIKE ANY OTHER TOKEN. The first cut expanded `~/` and
+    # returned, so `~/$d` came back as a path with a `$` in it -- a directory
+    # the shell never visits, answered about confidently -- and `~//x` came
+    # back as `/x`, because joining an absolute tail REPLACES the home it was
+    # joined to, which walked straight past the very case the `~` branch was
+    # written for (#281's narrowed rounds).
+    home, tail = None, token
     if token == HOME_PREFIX[1] or token.startswith(HOME_PREFIX[0]):
-        token = str(Path.home() / token[2:]) if len(token) > 1 else str(Path.home())
-    elif any(c in token for c in COMPOSED):
+        home, tail = Path.home(), token[2:].lstrip("/")
+    if any(c in tail for c in COMPOSED):
         return None
-    path = Path(token)
-    if not path.is_absolute():
-        if base is None:
-            return None
-        path = base / path
+    if home is not None:
+        path = home / tail if tail else home
+    else:
+        path = Path(tail)
+        if not path.is_absolute():
+            if base is None:
+                return None
+            path = base / path
     try:
         return path.resolve()
     except (OSError, RuntimeError):
@@ -1434,9 +1463,26 @@ def cd_target(rest, where):
     does, and reading it as neither left the guard answering confidently at the
     directory the command had just left."""
     word, _ = head(rest)
+    ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
+    flags = [t for t in rest[1:] if t.startswith("-") and t != "-"]
     if word == "popd":
         return None
-    ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
+    if word == "pushd":
+        # ONLY `pushd <dir>` MOVES ANYWHERE. Every other form works the stack:
+        # `pushd` alone swaps the top two, `pushd +N`/`-N` rotates, and
+        # `pushd -n <dir>` pushes WITHOUT moving at all. Reading any of them as
+        # a `cd` did not make the directory unreadable -- it named the wrong
+        # one confidently, and let a real bypass through.
+        #
+        # `-n` GETS ITS OWN ANSWER, and it is not `None`: the shell stays where
+        # it is, which this knows, so `where` comes back unchanged and the
+        # commit after it is judged where it really runs. The rotations are the
+        # third outcome, since the stack is a thing this never saw.
+        if "-n" in flags:
+            return where
+        if flags or len(ops) != 1 or ops[0].startswith(("+", "-")):
+            return None
+        return literal_path(ops[0], where)
     if not ops:
         return Path.home()
     if ops[0] == "-":

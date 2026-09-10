@@ -2197,6 +2197,30 @@ def main():
         check("...and a quoted `{` does not leave later segments inside it",
               r.returncode == 0 and "holds no hook" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
+        # THE UNITS ARE ORDERED LONGEST-FIRST, and since outer-ness began
+        # reading the separator that CLOSES a segment that ordering decides a
+        # verdict: read shortest-first, the `&&` ending a line becomes `&`,
+        # `&` and a newline, and the first `&` closes the `cd`'s segment, so
+        # the `cd` stops being credited and the bypass after it is refused.
+        r = ask(wt, tool="Bash",
+                command=f"cd {f.d}/nohooks &&\ngit commit --no-verify -m x",
+                run_cwd=wt)
+        check("an `&&` at the end of a line is one operator, so the `cd` "
+              "before it still counts",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...BUT A PIPED OR BACKGROUNDED BRACE GROUP IS A SUBSHELL after all,
+        # and the separator that says so arrives after the group's segments
+        # were already emitted. Probed: `{ cd /tmp; } | true; echo $PWD`
+        # prints the original directory in both shells here.
+        for name, sep in (("piped", "| true"), ("backgrounded", "&")):
+            r = ask(wt, tool="Bash",
+                    command=f"{{ cd {f.d}/nohooks; }} {sep}; "
+                            f"git commit --no-verify -m x", run_cwd=wt)
+            check(f"a {name} brace group is a subshell, so its `cd` is not "
+                  f"credited",
+                  r.returncode == 2 and "skips the hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
         # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
         # unreadable -- and unreadable turns the rule off for the rest.
         r = ask(wt, tool="Bash", command="cd; git commit --no-verify -m x",
@@ -2226,9 +2250,24 @@ def main():
         # path can reach one and an end-to-end case for it would be a body
         # that never runs. Dropping the tail would put `cd ~/anywhere` at
         # home, which is a different repository from the one named.
+        mod = guard_module()
         check("a `~/` path keeps its tail through the expansion",
-              guard_module().literal_path("~/a/b", None) == Path.home() / "a/b",
-              str(guard_module().literal_path("~/a/b", None)))
+              mod.literal_path("~/a/b", None) == Path.home() / "a/b",
+              str(mod.literal_path("~/a/b", None)))
+        # A DOUBLED SLASH DOES NOT REPLACE THE HOME IT IS JOINED TO. Joining
+        # an absolute tail drops the base, so `~//campaign-base` came back as
+        # `/campaign-base` -- walking past the one case this branch exists for.
+        check("...and a doubled slash does not throw the home away",
+              mod.literal_path("~//a", None) == Path.home() / "a",
+              str(mod.literal_path("~//a", None)))
+        # ...AND THE TAIL IS READ LIKE ANY OTHER TOKEN, so one the shell
+        # composes leaves the directory unread rather than fabricating a path
+        # that does not exist and answering about it.
+        check("...and a composed tail leaves the path unread",
+              mod.literal_path("~/$d", None) is None
+              and mod.literal_path("~other", None) is None,
+              f"{mod.literal_path('~/$d', None)} "
+              f"{mod.literal_path('~other', None)}")
         # `pushd` MOVES THE SHELL EXACTLY AS `cd` DOES. Reading it as neither
         # left the previous reading standing, so the guard answered
         # confidently about a directory the shell had left.
@@ -2238,6 +2277,24 @@ def main():
         check("`pushd` moves the shell, so the bypass after it is judged there",
               r.returncode == 0 and "holds no hook" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
+        # ...ONLY IN THE FORM THAT NAMES A DIRECTORY. Reading every `pushd` as
+        # a `cd` named the wrong directory confidently and let a real bypass
+        # through: `-n` pushes without moving, and the rest work the stack.
+        r = ask(wt, tool="Bash",
+                command=f"pushd -n {f.d}/nohooks; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`pushd -n` pushes without moving, so the bypass is still "
+              "refused where the shell really is",
+              r.returncode == 2 and "skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
+        for name, command in (
+                ("a bare `pushd`", "pushd; git commit --no-verify -m x"),
+                ("`pushd +1`", "pushd +1; git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} works the stack, which this never saw, so the "
+                  f"directory is unread",
+                  r.returncode == 0 and "could not be read" in out(r),
+                  f"exit {r.returncode}: {out(r)[:400]}")
         # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
         r = ask(wt, tool="Bash",
                 command=f"git -C {f.d}/nohooks commit --no-verify -m x",
@@ -2736,6 +2793,16 @@ def main():
 
     if not ran:
         print("FAIL  the suite ran no case at all")
+        return 1
+    # A FLOOR ON THE COUNT, because "ran no case at all" is not the only way a
+    # case can go missing: one whose body sits behind an `if` that is false,
+    # or a loop over an empty sequence, runs nothing and reports nothing. One
+    # such case shipped and was found by a mutation that no case failed for.
+    # Raise this with the suite; a DROP is the finding it exists for.
+    FLOOR = 400
+    if len(ran) < FLOOR:
+        print(f"FAIL  the suite ran {len(ran)} cases, under the floor of "
+              f"{FLOOR}: a case whose body did not run reports nothing")
         return 1
     for x in fails:
         print(f"FAIL  {x}")

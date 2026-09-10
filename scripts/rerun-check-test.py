@@ -51,22 +51,23 @@ def pop(key):
     json.dump(state, open(state_path, "w"))
     return now
 
+# Only the fields asked for, as gh answers: a query that forgets one must not
+# be handed it.
+def asked(answer):
+    fields = args[args.index("--json") + 1].split(",")
+    return {k: v for k, v in answer.items() if k in fields}
+
 if args[:2] == ["pr", "view"]:
     head = pop("heads")
-    out({"headRefOid": head, "headRefName": state.get("branch", "")} if head else {})
+    out(asked({"headRefOid": head, "headRefName": state.get("branch", "")}) if head else {})
 if args[:1] == ["api"]:
     body = state.get("comments", []) if "/issues/" in line else []
     out(body, state.get("api_status", 0))
 if args[:2] == ["run", "list"]:
     out(state.get("runs", []), state.get("list_status", 0))
 if args[:2] == ["run", "view"]:
-    # Only the fields asked for, as gh answers: a script that forgets to ask
-    # for `jobs` must not be handed them.
     now = pop("views")
-    if isinstance(now, dict):
-        asked = args[args.index("--json") + 1].split(",")
-        now = {k: v for k, v in now.items() if k in asked}
-    out(now, state.get("view_status", 0))
+    out(asked(now) if isinstance(now, dict) else now, state.get("view_status", 0))
 if args[:2] == ["run", "rerun"]:
     out("", state.get("rerun_status", 0))
 sys.stderr.write("fake gh: no answer for " + line + "\n")

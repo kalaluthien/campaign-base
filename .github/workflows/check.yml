@@ -81,31 +81,6 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           scripts/check-sdlc-tie.py --against origin/main
 
-      # Every suite, found rather than listed: a hand-kept list is one more copy
-      # to forget, and the five suites #111 added were run by nobody here until
-      # a review noticed. A suite that exits non-zero fails the job; a run that
-      # finds no suite at all fails it too, since an empty loop is green.
-      # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
-      # and the extension names its language, so a shell suite is found too
-      # rather than silently skipped by a glob that pins one interpreter.
-      # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
-      # reads a tie through a suite in either, and a tie through a suite this
-      # loop never ran would be a name and nothing else. Two shell globs under
-      # nullglob, not `find`: a glob never spans a slash, so nothing nested is
-      # taken, a root with no suite contributes nothing rather than a literal,
-      # and there is no command substitution whose status the loop drops.
-      - name: Every suite
-        run: |
-          shopt -s nullglob
-          n=0
-          for t in scripts/*-test.* .claude/skills/*/scripts/*-test.*; do
-            echo "== $t"
-            "$t" || exit 1
-            n=$((n + 1))
-          done
-          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/ or .claude/skills/*/scripts/"; exit 1; }
-          echo "$n suite(s) ran"
-
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
         with:
           distribution: temurin
@@ -150,6 +125,35 @@ jobs:
           chmod +x ~/.local/bin/alloy
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # After the Alloy install, not before it: alloy-check-test.py runs the
+      # real solver on its fixtures, and a suite with no alloy fails red here
+      # rather than passing on a stand-in.
+      #
+      # Every suite, found rather than listed: a hand-kept list is one more copy
+      # to forget, and the five suites #111 added were run by nobody here until
+      # a review noticed. A suite that exits non-zero fails the job; a run that
+      # finds no suite at all fails it too, since an empty loop is green.
+      # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
+      # and the extension names its language, so a shell suite is found too
+      # rather than silently skipped by a glob that pins one interpreter.
+      # Both scripts/ roots, the repository's and each skill's: check-sdlc-tie
+      # reads a tie through a suite in either, and a tie through a suite this
+      # loop never ran would be a name and nothing else. Two shell globs under
+      # nullglob, not `find`: a glob never spans a slash, so nothing nested is
+      # taken, a root with no suite contributes nothing rather than a literal,
+      # and there is no command substitution whose status the loop drops.
+      - name: Every suite
+        run: |
+          shopt -s nullglob
+          n=0
+          for t in scripts/*-test.* .claude/skills/*/scripts/*-test.*; do
+            echo "== $t"
+            "$t" || exit 1
+            n=$((n + 1))
+          done
+          [ "$n" -gt 0 ] || { echo "no suite was found under scripts/ or .claude/skills/*/scripts/"; exit 1; }
+          echo "$n suite(s) ran"
+
       # Seconds, and it needs no solver, so it runs before the slow step: a
       # deleted command is the one thing the `expect` clauses below cannot
       # catch, having no clause left to miss.
@@ -163,7 +167,9 @@ jobs:
       # one trivial `Default`. `find`, not a depth-2 glob: the step above
       # inventories to any depth, and a module the inventory sees but this loop
       # misses is one whose commands nothing here runs. A run that finds no
-      # module fails the job, since an empty loop is green.
+      # module fails the job, since an empty loop is green. The same run
+      # refuses a check over an event no witness shows firing, which its
+      # `expect` cannot see (alloy-check.py, THE DEAD EVENT).
       - name: Every command comes out as its `expect` clause says
         run: |
           n=0

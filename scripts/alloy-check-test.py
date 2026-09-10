@@ -20,13 +20,15 @@ THE NAMED FAILING CASES, one per refusal branch:
                                         shows Hand can fire
   a witness that comes out UNSAT        DEAD, whether or not its own `expect`
                                         already said so
-  a witness that is not one, five ways  MISSING: a trace satisfies it without
+  a witness that is not one, ten ways   MISSING: a trace satisfies it without
                                         Hand firing
+  a check naming Hand through a pred    MISSING, as if it named Hand itself
   three readings it could not make      `could not look`, exit 2, never a pass
 
 and the allow cases beside them: the repaired model, a witness with extra
 conjuncts, an `or` inside a quantifier's body, a witness predicate declared in
-the opened module, and a check naming no event over a model whose event is dead.
+the opened module or with parameters or a receiver, a model opening
+`util/ordering`, and a check naming no event over a model whose event is dead.
 
 Usage: scripts/alloy-check-test.py   (needs ~/.local/bin/alloy, as CI installs)
 """
@@ -58,7 +60,10 @@ fact Trace {{ always (no Where.machine and (Now.event = Stutter or hand)) }}
 CHECKS = """module sys/checks
 
 open sys/system
+{opens}
+pred handFires {{ Now.event = Hand }}
 
+assert ViaHelper {{ always (handFires implies no Where.machine) }}
 assert HandNeverOnAMachine {{ always (Now.event = Hand implies no Where.machine) }}
 assert SomeEvent {{ always some Now.event /* not about Hand */ }}
 {witness}
@@ -79,10 +84,11 @@ def check(name, ok, detail=""):
 
 
 def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine",
-        extra="", run_line=None, alloy_says=None):
+        extra="", run_line=None, alloy_says=None, opens="", pred=None):
     """Write the fixture under <d> and run the script on its checks module.
 
     `witness` is a predicate body for `Cov_Hand`; empty declares no witness.
+    `pred` replaces the whole witness declaration, for its other head forms.
     `alloy_says` replaces alloy with a stand-in printing those lines, for the
     two readings real alloy never gives: a verdict line this script cannot
     parse, and a command whose `assert` is not in the text.
@@ -99,11 +105,12 @@ def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine
     root.mkdir(parents=True, exist_ok=True)
     (root / "system.als").write_text(
         SYSTEM.format(condition=condition, extra=extra))
-    pred = f"pred Cov_Hand {{ {witness} }}" if witness else ""
+    if pred is None:
+        pred = f"pred Cov_Hand {{ {witness} }}" if witness else ""
     if run_line is None:
         run_line = f"run Cov_Hand for 2 expect {expect}" if witness or extra else ""
     (root / "checks.als").write_text(
-        CHECKS.format(witness=pred, check=check_name, run=run_line))
+        CHECKS.format(witness=pred, check=check_name, run=run_line, opens=opens))
     r = subprocess.run([sys.executable, str(SCRIPT), str(root / "checks.als"),
                         "-o", str(Path(d) / "out")],
                        capture_output=True, text=True, env=env)
@@ -158,6 +165,16 @@ def main() -> int:
             "always Now.event = Stutter or eventually Now.event = Hand",
         "the event joined to a relation, which is another event":
             "eventually (Now.event = Hand.(Hand->Stutter))",
+        "`||` among the conjuncts":
+            "eventually (Now.event = Hand and some Machine || Now.event = Stutter)",
+        "`implies` among the conjuncts":
+            "eventually (Now.event = Hand and some Machine implies no Machine)",
+        "`=>` among the conjuncts":
+            "eventually (Now.event = Hand and some Machine => no Machine)",
+        "`iff` among the conjuncts":
+            "eventually (Now.event = Hand and some Machine iff some none)",
+        "parentheses closing after a quantifier's bar":
+            "eventually (Now.event = Hand and some m: Machine | m in Machine) or (Now.event = Stutter)",
     }
     for name, body in not_witnesses.items():
         with tempfile.TemporaryDirectory() as d:
@@ -166,6 +183,13 @@ def main() -> int:
                   rc == 1 and refused(out, "MISSING", "Hand", path)
                   and "alloy exit 0" in line(out, "RESULT"),
                   f"exit {rc}: {out[-6:]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, check_name="ViaHelper")
+        check("an event a check names only through a helper pred is refused as MISSING",
+              rc == 1 and refused(out, "MISSING", "Hand", path)
+              and "ViaHelper" in line(out, "MISSING"),
+              f"exit {rc}: {out[-6:]}")
 
     # ------------------------------------------------------------ allows
 
@@ -196,6 +220,27 @@ def main() -> int:
         rc, out, path = run(d, condition="",
                             extra="pred Cov_Hand { eventually Now.event = Hand }")
         check("a witness predicate declared in the opened module, run from the root",
+              rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
+              f"exit {rc}: {out[-6:]}")
+
+    heads = {
+        "parameters in parentheses":
+            "pred Cov_Hand(m: Machine) { eventually (Now.event = Hand and m = m) }",
+        "a receiver":
+            "pred Machine.Cov_Hand { eventually (Now.event = Hand and this = this) }",
+    }
+    for name, decl in heads.items():
+        with tempfile.TemporaryDirectory() as d:
+            rc, out, path = run(d, condition="", pred=decl,
+                                run_line="run Cov_Hand for 2 expect 1")
+            check(f"a witness, allowed: its predicate declared with {name}",
+                  rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
+                  f"exit {rc}: {out[-6:]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out, path = run(d, condition="", witness="eventually Now.event = Hand",
+                            opens="open util/ordering[Machine]")
+        check("a model opening alloy's own util library is read, not `could not look`",
               rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
               f"exit {rc}: {out[-6:]}")
 

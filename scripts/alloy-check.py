@@ -33,11 +33,14 @@ or `eventually (Now.event = E and ...)` whose other conjuncts are joined by
 `and` alone, since a disjunct the witness does not name satisfies it without E
 ever firing. The events are the `one sig ... extends Event` declarations of
 <file> and every module it opens, comments stripped, and a check names one when
-its `assert` body does. The witness's verdict is the one alloy printed for it,
-so this reads a verdict rather than computing one: SAT passes, UNSAT is DEAD
-and no witness is MISSING, each refusal naming the event and the file. A
-witness is read at its own scope and not the check's, which is a ceiling: one
-that fires only past the check's bound passes here.
+its `assert` body does, directly or through the preds and funs it calls. The
+witness's verdict is the one alloy printed for it, so this reads a verdict
+rather than computing one: SAT passes, UNSAT is DEAD and no witness is MISSING,
+each refusal naming the event and the file. Two ceilings. A witness is read at
+its own scope and not the check's, so one that fires only past the check's
+bound passes here. And a witness in a shape this does not read -- an indented,
+labelled or anonymous `run`, a body of two top-level lines -- counts as none,
+which refuses rather than passes.
 
 THE SECOND HOLE is deletion. `expect` is checked per command, so a command someone
 removed misses no expectation: it simply is not there. Nothing generated *from*
@@ -240,14 +243,19 @@ WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
                      r"|\(\s*Now\.event\s*=\s*(\w+)((?:\s+and\b|\s*&&).*)?\s*\))", re.S)
 # What may join a conjunct to the rest of a formula without making it
 # optional. Anything else at the top level lets a trace satisfy the witness
-# without its event: `or`, an implication, an equivalence, an `else`.
-NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b|<=>|\belse\b")
+# without its event: `or`, an implication, an equivalence. `<=>` is caught by
+# its `=>`, and `else` only ever follows an implication.
+NOT_AND = re.compile(r"\bor\b|\|\||\bimplies\b|=>|\biff\b")
+# `pred P`, `pred P[x: S]`, `pred P(x: S)`, `pred S.P`: the name is the last word.
+HEAD = r"\b{keyword}\s+(?:\w+\.)?{name}\s*(?:\[[^\]]*\]|\([^)]*\))?\s*\{{"
 
 
 def composed(path):
     """{module path: its text, comments stripped} for <path> and every module
     it opens, resolved as alloy resolves them: from the directory the root
-    file's own `module` line names, or its own directory when it has none."""
+    file's own `module` line names, or its own directory when it has none. A
+    `util/` module not found there is alloy's own library, which declares no
+    Event, and is not read."""
     path = os.path.abspath(path)
     top = COMMENT.sub(" ", open(path).read())
     m = MODULE.search(top)
@@ -260,13 +268,16 @@ def composed(path):
         if not os.path.exists(p):
             raise LookupError(f"{p} is opened and is not there")
         found[p] = COMMENT.sub(" ", open(p).read())
-        todo += [os.path.join(root, o + ".als") for o in OPEN.findall(found[p])]
+        for o in OPEN.findall(found[p]):
+            q = os.path.join(root, o + ".als")
+            if not (o.startswith("util/") and not os.path.exists(q)):
+                todo.append(q)
     return found
 
 
 def body(text, keyword, name):
-    """The brace-delimited body of `<keyword> <name> [...] {`, or None."""
-    m = re.search(rf"\b{keyword}\s+{name}\s*(?:\[[^\]]*\])?\s*\{{", text)
+    """The brace-delimited body of `<keyword> <name> {`, in any HEAD form, or None."""
+    m = re.search(HEAD.format(keyword=keyword, name=name), text)
     if not m:
         return None
     depth, i = 1, m.end()
@@ -284,26 +295,32 @@ def witnessed(pred_body):
     if m.group(1):
         return m.group(1)
     rest = m.group(3) or ""
-    depth = 0
+    depth, bound = 0, False
     for i, c in enumerate(rest):
         depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(c, 0)
         if depth < 0:
             return None                  # the outer parenthesis closed early
-        if depth == 0 and c == "|":
-            break                        # a quantifier's body: one conjunct
-        if depth == 0 and NOT_AND.match(rest, i):
+        if depth or bound:
+            continue
+        if NOT_AND.match(rest, i):
             return None
+        # A quantifier's or a `let`'s body runs to the outer parenthesis and
+        # is one conjunct, so only an early close is read past its bar.
+        bound = c == "|"
     return m.group(2)
 
 
 def reach(path, verdicts):
     """(declared events, [(event, [checks naming it], [(witness, verdict)])])
-    over the checks declared in <path>. LookupError when a check or a
-    witness's predicate cannot be read, which is not the same as none."""
+    over the checks declared in <path>. A check names an event its `assert`
+    body names, directly or through the preds and funs it calls. LookupError
+    when a check's `assert` cannot be read, which is not the same as none; a
+    run whose predicate cannot be read is not a witness."""
     modules = composed(path)
     text = "\n".join(modules.values())
     events = sorted({e.strip() for m in EVENTS.finditer(text)
                      for e in m.group(1).split(",")})
+    helpers = set(re.findall(r"\b(?:pred|fun)\s+(?:\w+\.)?(\w+)", text))
     own = [DECL.match(l) for l in modules[os.path.abspath(path)].splitlines()]
     named = {}
     for kind, name in (m.groups() for m in own if m):
@@ -311,15 +328,21 @@ def reach(path, verdicts):
             b = body(text, "assert", name)
             if b is None:
                 raise LookupError(f"no `assert {name}` was found for its check")
-            for e in sorted(set(re.findall(r"\w+", b)) & set(events)):
+            todo, seen, hit = [b], set(), set()
+            while todo:
+                for word in set(re.findall(r"\w+", todo.pop())):
+                    if word in events:
+                        hit.add(word)
+                    elif word in helpers and word not in seen:
+                        seen.add(word)
+                        todo += [x for x in (body(text, "pred", word),
+                                             body(text, "fun", word)) if x]
+            for e in hit:
                 named.setdefault(e, []).append(name)
     shown = {}
     for kind, name in (m.groups() for m in own if m):
         if kind == "run":
-            b = body(text, "pred", name)
-            if b is None:
-                raise LookupError(f"no `pred {name}` was found for its run")
-            e = witnessed(b)
+            e = witnessed(body(text, "pred", name) or "")
             if e:
                 shown.setdefault(e, []).append((name, verdicts.get(name)))
     return events, [(e, named[e], shown.get(e, [])) for e in sorted(named)]

@@ -183,7 +183,9 @@ editing from here can silently revert work that landed. Carry it in and read
 zero again before editing:
 
 ```sh
-CAMPAIGN=$(dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)")   # the marker, not the name, says whose directory it is
+CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :   # a path | none | unknown
+case "$CAMPAIGN" in /*) ;;
+  *) echo "the directory of #<N> read as $CAMPAIGN; carry nothing in"; exit 1 ;; esac
 "$BASE/scripts/campaign-installed.py" reach "$CAMPAIGN/README.md" kalaluthien/campaign-base "$(git -C "$BASE" rev-parse origin/main)"
 ```
 

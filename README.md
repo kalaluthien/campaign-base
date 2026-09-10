@@ -20,7 +20,7 @@ campaign-base/
   .claude/skills/closing-campaign
   spec/  scripts/
   campaign-auth-refactor-260901/ a campaign, git-ignored; the bare `auth-refactor/`
-                                 is the accepted older form and neither is read
+                                 is the accepted older form; neither NAME is read
     .campaign                    the campaign issue number and the slug; what
                                  makes this directory a campaign's
     AGENTS.md CLAUDE.md          engineering principles for this campaign

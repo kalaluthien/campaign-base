@@ -42,8 +42,10 @@ pass. Bind `$CAMPAIGN_DIR` absolute and never rebuild it: steps 1 and 5 fail
 silently on a relative value.
 
 ```sh
-SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") && [ -n "$SLUG" ] ||
-  { echo "REFUSE: the slug of #$N did not read; step 5 needs it for the claim refs"; exit 1; }
+SLUG=$("$BASE/scripts/campaign-tracker.py" slug "$N") || :   # a slug | none
+case "$SLUG" in ""|none)
+  echo "REFUSE: the slug of #$N read as '$SLUG'; step 5 needs it for the claim refs"
+  exit 1 ;; esac
 CAMPAIGN_DIR=$("$BASE/scripts/campaign-directory.py" "$N" "$BASE") || :  # a path | none | unknown
 case "$CAMPAIGN_DIR" in /*) ;;
   *) echo "REFUSE: the directory of #$N read as $CAMPAIGN_DIR"; exit 1 ;; esac

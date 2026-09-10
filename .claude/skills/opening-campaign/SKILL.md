@@ -182,12 +182,15 @@ it reaches a path — a slug comes from a person and lands in a `cp` destination
 so one containing `../` writes outside the base.
 
 ```sh
-SLUG=$("$BASE/scripts/campaign-tracker.py" slug <N>) && [ -n "$SLUG" ] ||
-  { echo "the slug of #<N> did not read; nothing to name a directory after"; exit 1; }
+SLUG=$("$BASE/scripts/campaign-tracker.py" slug <N>) || :   # a slug | none
+case "$SLUG" in ""|none)
+  echo "the slug of #<N> read as '$SLUG'; nothing to name a directory after"; exit 1 ;; esac
 HELD=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :  # a path | none | unknown
 case "$HELD" in
   none) CAMPAIGN="$BASE/campaign-$SLUG-$(date +%y%m%d)" ;;
-  /*)   CAMPAIGN="$HELD" ;;
+  /*)   [ "$(dirname "$HELD")" = "$BASE" ] ||
+          { echo "$HELD is not a direct child of $BASE; scaffold nothing"; exit 1; }
+        CAMPAIGN="$HELD" ;;
   *)    echo "the directory of #<N> read as $HELD; scaffold nothing"; exit 1 ;;
 esac
 if [ "$CAMPAIGN" != "$HELD" ] && mkdir "$CAMPAIGN" 2>/dev/null; then
@@ -198,7 +201,15 @@ else
 fi
 ```
 
-**The slug is read from the LABEL, never typed again**: the
+**Both captures read the WORD**: `campaign-tracker.py slug` prints the literal
+`none` when the campaign issue carries no `campaign:` label, so `[ -n "$SLUG" ]`
+is satisfied by it and only the exit status would have refused — the shape this
+step just removed from the directory read. The arm tests for `none` and nothing
+else: what a slug may *be* is `campaign-name-session.py`'s rule, the tracker's
+reader already refuses one it will not admit, and a character class written here
+would be a second reader of it — one that a shell's locale-dependent `[a-z]`
+gets wrong, admitting `Up`. **The slug is read from the LABEL,
+never typed again**: the
 label is what `campaign-claim take` builds a branch from, and a directory spelt
 by hand beside it is the copy that drifts. The tracker's reader also refuses a
 slug the name rule will not admit, which is what keeps a `../` out of a path.

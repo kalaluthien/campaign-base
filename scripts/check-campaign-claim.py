@@ -573,9 +573,11 @@ def campaign_dirs_at(base):
     campaign a number or a slug names -- and both of its askers take their answer
     from here: `campaign_number` below, and `campaign-directory.py`, which is
     what a skill's shell line calls instead of composing a path out of the slug.
-    Three other walks over the same markers survive and are not this question:
-    `known_slugs` collects every slug, `guard-precision.py` globs for the logs,
-    and `launching.md` prints them for a person. The name form has moved twice (dated,
+    Two other walks over the same markers survive and are not this question:
+    `known_slugs` collects every slug, and `guard-precision.py` globs for the
+    logs. `launching.md` held a third that WAS this question, hand-rolled as
+    `dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)"` -- silently the cwd on no
+    match and a mangled path on two -- and it calls the reader now. The name form has moved twice (dated,
     bare, dated again) and the marker has not; a second walk written beside this
     one is what would have to be found and changed each time.
 

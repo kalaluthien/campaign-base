@@ -209,6 +209,23 @@ FORMS = [
         "the session-name shape",
     ),
     (
+        "campaign-directory",
+        "scripts/campaign-directory.py",
+        # WHICH DIRECTORY IS THIS CAMPAIGN'S, hand-rolled off the markers. The
+        # copy this row exists for sat in a reference and read
+        # `dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)"`: silently the
+        # working directory on no match, a mangled path on two, and it survived
+        # the directory name changing twice because nothing named it. A TOOL
+        # must be named beside the marker, so the shape diagram in README.md and
+        # the `printf ... >| "$CAMPAIGN/.campaign"` that WRITES one are both
+        # left alone -- writing the marker at scaffold is the one thing that is
+        # not a second reading of it.
+        re.compile(r"(\bgrep\b|\bls\b|\bfind\b|\bawk\b|\bsed\b|\bcat\b"
+                   r"|\brg\b|dirname|basename)[^|;&]*\.campaign"
+                   r"|\.campaign[^|;&]*(\bgrep\b|\bawk\b|\bsed\b|\bcut\b)"),
+        "the campaign-directory reading",
+    ),
+    (
         "campaign-claim",
         "scripts/campaign-claim.py",
         # The claim-ref listing: `git/matching-refs/heads/<prefix>` with the

@@ -257,8 +257,9 @@ EVALS = {"eval"}
 # which is all this reads: `pkill` and `killall` take a pattern and reach every
 # process matching it, and `kill` takes pids. The operands are NOT read, so
 # `kill $(pgrep -f alloy)` and `kill -9 -1` pass -- the rule is narrowed to the
-# half a verb decides and the other half stays prose. Re-measured after the
-# narrowing: 22 findings over 17 distinct commands, the incident among them.
+# half a verb decides and the other half stays prose. Re-measured over the same
+# dated calls after the narrowing: 22 findings over 17 distinct commands, the
+# incident among them.
 KILLS = {"pkill", "killall"}
 # THE RULE A FINDING BROKE, carried beside its sentence so the refusal's first
 # line -- which is what `log_verdict` stores and `guard-precision.py` groups
@@ -277,6 +278,11 @@ HERDR_KILL = ("agent", "kill")
 # `herdr --session main agent kill <pane>` shifts the two words this reads and
 # the verb hides behind a flag.
 HERDR_PRE_VALUED = {"--session", "--remote"}
+# What moves the shell the next command runs in. `pushd` and `popd` are here
+# because leaving them out did not make the directory UNREADABLE -- it left the
+# previous reading standing, and the guard then answered confidently about a
+# directory the shell had left (#281's narrowed rounds).
+MOVES = {"cd", "pushd", "popd"}
 
 # A HOOK BYPASS IS A FLAG, AND MOVING THE HOOKS IS THE SAME BYPASS SHAPED LIKE
 # CONFIGURATION. `AGENTS.md` § Execution mode says a hook is never bypassed;
@@ -303,6 +309,12 @@ SETTERS = {"export", "setenv", "declare", "typeset"}
 # composes. A token holding any of these reaches git as something this guard
 # never sees, so the directory is unreadable and says so.
 COMPOSED = ("$", "`", "*", "?", "[", "~")
+# ...except a leading `~` or `~/`, which names this account's home and nothing
+# else. `~other` is a different account's and stays composed. Without this,
+# `cd ~` was unreadable while a bare `cd` was home -- the same directory, two
+# answers -- and `cd ~/campaign-base && git commit --no-verify` was allowed
+# over the hooked base itself.
+HOME_PREFIX = ("~/", "~")
 HOOKS_PATH = "core.hooksPath"
 # git's own options BEFORE the subcommand that take a separate word, so the
 # subcommand is found past them. Only the separate-word spellings are here:
@@ -318,17 +330,26 @@ GIT_PRE_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
 # it. Only such a token is split; a quoted string that happens to hold a
 # newline or a semicolon has other characters in it and is left alone.
 PUNCT_RUN = re.compile(r"^[();<>|&{}`\n]+$")
-# `>&`, `&>` and `<&` are here for the same reason `<<` is: they are one
-# operator, and splitting `2>&1` into `>` and `&` put an `&` -- a separator --
-# in the middle of a segment, which detached a heredoc from the command that
-# opened it and made its body read as no body at all (#281's narrowed review).
-PUNCT_UNITS = ("&&", "||", "|&", ">&", "&>", "<&", "<<", ">>", "\n", "<", ">",
-               "|", "&", ";", "(", ")", "{", "}", "`")
-# A separator that puts what follows it in a SUBSHELL, so a `cd` there does not
-# move the shell the next command runs in.
+# THE REDIRECTIONS ARE ONE OPERATOR EACH, for the same reason `<<` is: split
+# apart, the `|` of `>|` and the `&` of `2>&1` are SEPARATORS, so the segment
+# broke in two and a heredoc went with the half that did not open it -- which
+# made `gh issue comment -F - 2>&1 <<EOF` read as a comment with no body at
+# all, silently (#281's narrowed rounds). LONGEST FIRST, because `split_punct`
+# takes the first entry that matches and `>>&` would otherwise be read as `>>`
+# and a separator. zsh's `>|` and `>>&` are here because this machine's shell
+# has `noclobber` set, which is what makes `>|` the spelling reached for.
+PUNCT_UNITS = ("&>>", ">>&", "&&", "||", "|&", ">&", "&>", "<&", ">|", "<<",
+               ">>", "\n", "<", ">", "|", "&", ";", "(", ")", "{", "}", "`")
+# A separator that puts a command in a SUBSHELL, so a `cd` there does not move
+# the shell the next command runs in: either side of a pipe, and a `&` that
+# backgrounds it. `{ }` IS NOT ONE -- a brace group runs in the current shell
+# (`bash -c '{ cd /tmp; }; echo $PWD'` prints /tmp), and counting it cost twice
+# over: the group's own `cd` went uncredited, and an unbalanced `{` in a quoted
+# token left the depth raised for every segment after it.
 PIPES = {"|", "|&"}
-NESTS = {"(", "{"}
-UNNESTS = {")", "}"}
+BACKGROUND = "&"
+NESTS = {"("}
+UNNESTS = {")"}
 
 
 def split_punct(token):
@@ -1140,17 +1161,22 @@ def paired_segments(command):
         else:
             flat.append(t)
     # OUTER-NESS IS RECORDED HERE and nowhere else, because this loop is the
-    # only place that still has the separators (#281's narrowed review, F1).
-    # A segment is outer when it runs in the shell the command started in: not
-    # inside `( )` or `{ }`, and not a stage after a `|`, both of which are
-    # subshells whose `cd` the next command never sees.
+    # only place that still has the separators (#281's narrowed rounds). A
+    # segment is outer when it runs in the shell the command started in: not
+    # inside `( )`, and on NEITHER side of a pipe, and not backgrounded. Both
+    # separators are read, the one before it and the one that closes it -- the
+    # first cut read only the one before, so `cd /tmp | true; git commit
+    # --no-verify` was credited and the commit was judged at /tmp, which both
+    # shells here disagree with (`zsh -c 'cd /tmp | true; echo $PWD'` prints
+    # the original directory, and so does bash).
     out, cur, depth, before = [], [], 0, None
     for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
             continue
         if cur:
-            out.append((cur, depth == 0 and before not in PIPES))
+            out.append((cur, depth == 0 and before not in PIPES
+                        and t not in PIPES and t != BACKGROUND))
             cur = []
         depth += (t in NESTS) - (t in UNNESTS)
         depth = max(depth, 0)
@@ -1304,7 +1330,11 @@ def literal_path(token, base):
     # nothing: a `cd ~` is a place it did not look, which is the third outcome.
     # `cd` with NO operand is different -- that is cd's own default and needs
     # no expansion, so `cd_target` answers it.
-    if not token or any(c in token for c in COMPOSED):
+    if not token:
+        return None
+    if token == HOME_PREFIX[1] or token.startswith(HOME_PREFIX[0]):
+        token = str(Path.home() / token[2:]) if len(token) > 1 else str(Path.home())
+    elif any(c in token for c in COMPOSED):
         return None
     path = Path(token)
     if not path.is_absolute():
@@ -1393,13 +1423,19 @@ def git_bypass(rest):
 
 
 def cd_target(rest, where):
-    """Where a `cd` leaves the shell, or None when that cannot be read.
+    """Where a `cd` or a `pushd` leaves the shell, or None when that cannot be
+    read.
 
     No operand at all is HOME, which is decidable and used to read as
     unreadable -- and unreadable turns the hook-bypass rule OFF for the rest of
     the command, so `cd; git commit --no-verify` walked straight through
-    (#281's narrowed review, F1). `cd -` is the previous directory, which this
-    never saw, and stays the third outcome."""
+    (#281's narrowed rounds). `cd -` and `popd` are a directory this never saw,
+    and stay the third outcome; `pushd <dir>` moves the shell exactly as `cd`
+    does, and reading it as neither left the guard answering confidently at the
+    directory the command had just left."""
+    word, _ = head(rest)
+    if word == "popd":
+        return None
     ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
     if not ops:
         return Path.home()
@@ -1429,9 +1465,11 @@ def shell_findings(pairs, cwd=None):
     bypassed; unreadable is the third outcome and is said as one, because a
     shell that composes its own path (`cd "$d"`) is a place this cannot look.
 
-    ITS CEILING: `pushd` is not read at all, and neither is a `cd` whose
-    operand the shell composes -- both leave the directory unreadable, which is
-    the third outcome and not a no.
+    ITS CEILING: a `cd` whose operand the shell composes leaves the directory
+    unreadable, which is the third outcome and not a no; and a `cd` inside a
+    subshell that also holds the `git` call (`(cd /tmp && git commit -n)`) is
+    not tracked, so that call is judged where the outer shell stands -- an
+    over-refusal, which is the direction to fail in.
     """
     out, notes, where = [], [], cwd
     for seg, _heredocs, outer in pairs:
@@ -1440,11 +1478,12 @@ def shell_findings(pairs, cwd=None):
         # subshell, a pipeline stage, a `bash -c` string or a heredoc script
         # moves that shell and exits; crediting it turned the rule off for the
         # rest of the command, which six ordinary shapes reached.
-        if word == "cd" and outer:
+        if word in MOVES and outer:
             where = cd_target(rest, where)
         if word in KILLS:
             out.append((KILL_RULE,
-                f"`{word}` takes a pattern and stops every process matching "
+                f"`{word}` takes a name or a pattern and stops every process "
+                f"matching "
                 f"it -- which is how a review finder killed three alloy runs "
                 f"belonging to two other sessions. Name what you are stopping: "
                 f"`kill <pid>` is allowed, in every form, and only the verb is "

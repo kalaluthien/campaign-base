@@ -1890,12 +1890,14 @@ def main():
         # (#281's narrowed review, F3). Split apart, the `&` broke the segment
         # in two and the heredoc went with the second half -- so a comment
         # whose body is a heredoc read as no body at all, silently.
-        r = ask(wt, tool="Bash",
-                command="gh issue comment 7 -F - 2>&1 <<'EOF'\nno kind here\nEOF",
-                run_cwd=wt)
-        check("a `2>&1` before a heredoc keeps the body with its command",
-              r.returncode == 2 and "not `KIND" in out(r),
-              f"exit {r.returncode}: {out(r)[:300]}")
+        for name, redirect in (("`2>&1`", "2>&1"), ("`>|`", ">| out"),
+                               ("`>>&`", ">>& out")):
+            r = ask(wt, tool="Bash",
+                    command=f"gh issue comment 7 -F - {redirect} <<'EOF'\n"
+                            f"no kind here\nEOF", run_cwd=wt)
+            check(f"a {name} before a heredoc keeps the body with its command",
+                  r.returncode == 2 and "not `KIND" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
         # ...AND A NEWLINE INSIDE QUOTES IS DATA, not a separator: a comment
         # body spans lines and must stay one token.
         r = ask(wt, tool="Bash",
@@ -1920,7 +1922,7 @@ def main():
             check(f"`{verb}` is refused, naming the processes nobody "
                   f"identified",
                   r.returncode == 2
-                  and f"`{verb}` takes a pattern" in out(r)
+                  and f"`{verb}` takes a name or a pattern" in out(r)
                   and "stops every process matching it" in out(r),
                   f"exit {r.returncode}: {out(r)[:300]}")
         # `kill <pid>` IS ALLOWED IN EVERY FORM, which is the whole of the
@@ -2158,9 +2160,19 @@ def main():
         # (#281's narrowed review, F1). A subshell, a pipeline stage, a
         # `bash -c` string and a heredoc script each move a shell that exits;
         # crediting one turned the rule off for the rest of the command.
+        # BOTH SEPARATORS ARE READ, the one before a segment and the one
+        # closing it: the first cut read only the one before, so a `cd` in the
+        # FIRST stage of a pipe was credited. Probed against both shells here:
+        # `cd /tmp | true; echo $PWD` prints the original directory in zsh and
+        # in bash.
         for name, command in (
                 ("a subshell", "(cd /tmp && ls); git commit --no-verify -m x"),
-                ("a pipeline stage", "true | cd /tmp; git commit --no-verify -m x"),
+                ("the last stage of a pipe",
+                 "true | cd /tmp; git commit --no-verify -m x"),
+                ("the first stage of a pipe",
+                 "cd /tmp | true; git commit --no-verify -m x"),
+                ("a backgrounded command",
+                 "cd /tmp & git commit --no-verify -m x"),
                 ("a `bash -c` string",
                  "bash -c 'cd /tmp'; git commit --no-verify -m x")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
@@ -2168,6 +2180,23 @@ def main():
                   f"after it is still refused",
                   r.returncode == 2 and "skips the hook" in out(r),
                   f"exit {r.returncode}: {out(r)[:300]}")
+        # A BRACE GROUP IS NOT A SUBSHELL -- `bash -c '{ cd /tmp; }; echo
+        # $PWD'` prints /tmp -- so counting it refused a commit the shell
+        # really had moved away from, on a false premise.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }}; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("...while a brace group DOES move it, being no subshell",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND AN UNBALANCED BRACE IN A QUOTED TOKEN NO LONGER CORRUPTS the
+        # reading of every segment after it, which counting braces did.
+        r = ask(wt, tool="Bash",
+                command=f"echo '{{'; cd {f.d}/nohooks; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...and a quoted `{` does not leave later segments inside it",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
         # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
         # unreadable -- and unreadable turns the rule off for the rest.
         r = ask(wt, tool="Bash", command="cd; git commit --no-verify -m x",
@@ -2175,15 +2204,40 @@ def main():
         check("a bare `cd` is read as home, not as a directory this could not "
               "read",
               "could not be read" not in out(r), out(r)[:400])
-        # ...WHILE `cd -` AND `cd ~` ARE PLACES THIS DID NOT LOOK: one is the
-        # previous directory, which it never saw, and the other is an
-        # expansion the shell does and this guard does not.
+        # ...WHILE `cd -` AND `popd` ARE PLACES THIS DID NOT LOOK, each being
+        # a directory the shell remembers and this guard never saw.
         for name, command in (("`cd -`", "cd -; git commit --no-verify -m x"),
-                              ("`cd ~`", "cd ~; git commit --no-verify -m x")):
+                              ("`popd`", "popd; git commit --no-verify -m x")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"{name} leaves the directory unread, and the allow says so",
                   r.returncode == 0 and "could not be read" in out(r),
                   f"exit {r.returncode}: {out(r)[:400]}")
+        # A LEADING `~` NAMES THIS ACCOUNT'S HOME and nothing else, so it is
+        # read rather than left composed -- `cd ~` and a bare `cd` name the
+        # same directory and used to get two different answers, and
+        # `cd ~/<the base> && git commit --no-verify` was allowed over the
+        # hooked base itself.
+        r = ask(wt, tool="Bash", command="cd ~; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`cd ~` is read as home, like a bare `cd`",
+              "could not be read" not in out(r), out(r)[:400])
+        # THE TAIL SURVIVES THE EXPANSION, and this half is asked in process:
+        # every fixture here lives under a temporary directory, so no `~/`
+        # path can reach one and an end-to-end case for it would be a body
+        # that never runs. Dropping the tail would put `cd ~/anywhere` at
+        # home, which is a different repository from the one named.
+        check("a `~/` path keeps its tail through the expansion",
+              guard_module().literal_path("~/a/b", None) == Path.home() / "a/b",
+              str(guard_module().literal_path("~/a/b", None)))
+        # `pushd` MOVES THE SHELL EXACTLY AS `cd` DOES. Reading it as neither
+        # left the previous reading standing, so the guard answered
+        # confidently about a directory the shell had left.
+        r = ask(wt, tool="Bash",
+                command=f"pushd {f.d}/nohooks; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("`pushd` moves the shell, so the bypass after it is judged there",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:400]}")
         # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
         r = ask(wt, tool="Bash",
                 command=f"git -C {f.d}/nohooks commit --no-verify -m x",

@@ -436,6 +436,35 @@ def main():
               f"{path} is a file")
         if not resolves:
             failures += 1
+    # EVERY TOOL OF THE MARKER FORM IS PINNED BY A CASE OF ITS OWN, walked from
+    # the two lists rather than restated here -- so a tool ADDED to either one
+    # cannot ship the way the ten deleted ones used to, caught by a neighbouring
+    # alternation and answering for nothing. A case counts as pinning a tool
+    # only when its fixture matches that alternation ALONE: a fixture carrying
+    # `*/.campaign`, or a second tool word, is caught by the other branch and
+    # goes on passing when this one is deleted.
+    import re as _re
+    alts = (crr.MARKER_STDIN_TOOLS.split("|") + crr.MARKER_PATH_TOOLS.split("|"))
+    unpinned = []
+    for alt in alts:
+        pinned = False
+        for case in FORM_CASES:
+            body = case[1]
+            if case[2] != 1 or not _re.search(alt, body):
+                continue
+            if _re.search(r"\*/\.campaign", body):
+                continue
+            if any(_re.search(other, body) for other in alts if other != alt):
+                continue
+            pinned = True
+            break
+        if not pinned:
+            unpinned.append(alt)
+    print(f"{'ok  ' if not unpinned else 'FAIL'}  every marker tool has a case "
+          f"matching it alone{'' if not unpinned else ': ' + ', '.join(unpinned)}")
+    if unpinned:
+        failures += 1
+
     # ...and the printed finding names that path, not a prefixed guess.
     #
     # `belongs to ` IS PART OF THE ASSERTION and must stay. The bare path is a
@@ -467,9 +496,9 @@ def main():
         failures += 1
 
     if failures:
-        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 1} cases failed.", file=sys.stderr)
+        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 2} cases failed.", file=sys.stderr)
         return 1
-    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 1} cases pass.")
+    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 2} cases pass.")
     return 0
 
 

@@ -2213,14 +2213,48 @@ def main():
         # and the separator that says so arrives after the group's segments
         # were already emitted. Probed: `{ cd /tmp; } | true; echo $PWD`
         # prints the original directory in both shells here.
-        for name, sep in (("piped", "| true"), ("backgrounded", "&")):
+        for name, sep in (("piped", "| true;"), ("backgrounded", "&")):
             r = ask(wt, tool="Bash",
-                    command=f"{{ cd {f.d}/nohooks; }} {sep}; "
+                    command=f"{{ cd {f.d}/nohooks; }} {sep} "
                             f"git commit --no-verify -m x", run_cwd=wt)
             check(f"a {name} brace group is a subshell, so its `cd` is not "
                   f"credited",
                   r.returncode == 2 and "skips the hook" in out(r),
                   f"exit {r.returncode}: {out(r)[:300]}")
+        # THE SPAN STARTS WHERE THE GROUP DID, so a piped group does not
+        # un-credit an earlier one that was never piped.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }} ; {{ cd /var; }} | true; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("a piped brace group does not un-credit an earlier one",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # ...AND THE SPAN IS SPENT AT THE FIRST SEPARATOR AFTER `}`, so a pipe
+        # arbitrarily later in the command does not reach back for it.
+        r = ask(wt, tool="Bash",
+                command=f"{{ cd {f.d}/nohooks; }}; echo x | cat; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("...and a pipe later in the command does not reach back for it",
+              r.returncode == 0 and "holds no hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A `}` WITH NO `{` IS REACHABLE -- shlex strips the quotes off
+        # `git commit -m '}'` and hands back the bare separator -- and popping
+        # an empty stack there is an IndexError, which the last-resort handler
+        # turns into an unjudged ALLOW.
+        r = ask(wt, tool="Bash", command="echo '}'; git commit --no-verify -m x",
+                run_cwd=wt)
+        check("an unmatched `}` does not crash the guard",
+              r.returncode == 2 and "skips the hook" in out(r)
+              and "FAILED" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # A GROUP ON THE RIGHT OF THE PIPE is the other half: a `{` must not
+        # become the `before` a later segment reads and erase the pipe.
+        r = ask(wt, tool="Bash",
+                command=f"true | {{ cd {f.d}/nohooks; }}; "
+                        f"git commit --no-verify -m x", run_cwd=wt)
+        check("a brace group on the right of a pipe is a subshell too",
+              r.returncode == 2 and "skips the hook" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
         # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
         # unreadable -- and unreadable turns the rule off for the rest.
         r = ask(wt, tool="Bash", command="cd; git commit --no-verify -m x",
@@ -2287,12 +2321,27 @@ def main():
               "refused where the shell really is",
               r.returncode == 2 and "skips the hook" in out(r),
               f"exit {r.returncode}: {out(r)[:400]}")
+        # ...WHILE `--` AND `-P` DO NOT STOP THE MOVE, so reading every
+        # option-shaped word as a stack flag gave two spellings of the same
+        # move opposite verdicts.
+        for name, command in (
+                ("`pushd --`", f"pushd -- {f.d}/nohooks; "
+                               f"git commit --no-verify -m x"),
+                ("`pushd -P`", f"pushd -P {f.d}/nohooks; "
+                               f"git commit --no-verify -m x")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} still moves the shell, so the bypass is judged "
+                  f"where it lands",
+                  r.returncode == 0 and "holds no hook" in out(r),
+                  f"exit {r.returncode}: {out(r)[:400]}")
         for name, command in (
                 ("a bare `pushd`", "pushd; git commit --no-verify -m x"),
-                ("`pushd +1`", "pushd +1; git commit --no-verify -m x")):
+                ("`pushd +1`", "pushd +1; git commit --no-verify -m x"),
+                ("`pushd` with two operands",
+                 "pushd /a /b; git commit --no-verify -m x")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
-            check(f"{name} works the stack, which this never saw, so the "
-                  f"directory is unread",
+            check(f"{name} works the stack, whose state this never saw, so "
+                  f"the directory is unread",
                   r.returncode == 0 and "could not be read" in out(r),
                   f"exit {r.returncode}: {out(r)[:400]}")
         # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
@@ -2794,16 +2843,25 @@ def main():
     if not ran:
         print("FAIL  the suite ran no case at all")
         return 1
-    # A FLOOR ON THE COUNT, because "ran no case at all" is not the only way a
-    # case can go missing: one whose body sits behind an `if` that is false,
-    # or a loop over an empty sequence, runs nothing and reports nothing. One
-    # such case shipped and was found by a mutation that no case failed for.
-    # Raise this with the suite; a DROP is the finding it exists for.
-    FLOOR = 400
-    if len(ran) < FLOOR:
-        print(f"FAIL  the suite ran {len(ran)} cases, under the floor of "
-              f"{FLOOR}: a case whose body did not run reports nothing")
-        return 1
+    # THE EXACT COUNT, because "ran no case at all" is not the only way a case
+    # can go missing: one whose body sits behind an `if` that is false, or a
+    # loop over an empty sequence, runs nothing and reports nothing. One such
+    # case shipped and was found by a mutation that no case failed for.
+    #
+    # EXACT AND NOT A FLOOR. The first cut was `>= 400` against 403, which is
+    # three cases of slack -- and emptying one two-case loop cost nothing,
+    # which is the whole shape it was written for. Raise this in the commit
+    # that adds a case; the corpus replay twelve hundred lines up asserts its
+    # own count the same way.
+    #
+    # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
+    # and swallowed every named failure and the summary line, so a run that
+    # both lost a case and broke one reported only the count.
+    EXPECTED = 410
+    if len(ran) != EXPECTED:
+        fails.append(f"the suite ran {len(ran)} cases, not {EXPECTED}\n"
+                     f"      a case whose body did not run reports nothing; "
+                     f"raise this number in the commit that adds one")
     for x in fails:
         print(f"FAIL  {x}")
     print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")

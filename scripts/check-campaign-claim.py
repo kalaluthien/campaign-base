@@ -353,6 +353,7 @@ PIPES = {"|", "|&"}
 BACKGROUND = "&"
 NESTS = {"("}
 UNNESTS = {")"}
+BRACES = {"{", "}"}
 
 
 def split_punct(token):
@@ -1199,7 +1200,15 @@ def paired_segments(command):
             closed = braces.pop()
         depth += (t in NESTS) - (t in UNNESTS)
         depth = max(depth, 0)
-        before = t
+        # A BRACE IS GROUPING, NOT A COMMAND SEPARATOR, so it must not become
+        # the `before` a later segment reads: `true | { cd X; }` put a `{`
+        # there and erased the pipe, which is the group on the RIGHT of the
+        # pipe -- the other half of the case the span-clearing above covers.
+        # bash makes both sides a subshell; zsh runs the last stage in the
+        # current shell, so this reads for bash and over-refuses under zsh,
+        # which is the direction to fail in.
+        if t not in BRACES:
+            before = t
     # A string another command runs is that string's segments too: a shell's
     # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
     # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
@@ -1464,25 +1473,35 @@ def cd_target(rest, where):
     directory the command had just left."""
     word, _ = head(rest)
     ops = [t for t in rest[1:] if t == "-" or not t.startswith("-")]
-    flags = [t for t in rest[1:] if t.startswith("-") and t != "-"]
     if word == "popd":
         return None
     if word == "pushd":
-        # ONLY `pushd <dir>` MOVES ANYWHERE. Every other form works the stack:
-        # `pushd` alone swaps the top two, `pushd +N`/`-N` rotates, and
-        # `pushd -n <dir>` pushes WITHOUT moving at all. Reading any of them as
-        # a `cd` did not make the directory unreadable -- it named the wrong
-        # one confidently, and let a real bypass through.
+        # WHAT STOPS THE MOVE, AND ONLY THAT. `pushd -n <dir>` pushes WITHOUT
+        # moving, and `pushd` alone, `pushd +N` and `pushd -N` work the stack
+        # rather than naming a place. Everything else moves: `--` ends the
+        # options and `-L`/`-P` only choose how a symlink resolves, and reading
+        # every option-shaped word as a stack flag made `pushd -- .` and
+        # `pushd -P .` unreadable -- which is an ALLOW, so two spellings of the
+        # same move got opposite verdicts (#281's narrowed rounds).
         #
         # `-n` GETS ITS OWN ANSWER, and it is not `None`: the shell stays where
         # it is, which this knows, so `where` comes back unchanged and the
         # commit after it is judged where it really runs. The rotations are the
-        # third outcome, since the stack is a thing this never saw.
-        if "-n" in flags:
+        # third outcome, since the stack is a thing this never saw -- including
+        # a bare `pushd`, whose destination depends on what is on that stack.
+        # `--` NEEDS NO BRANCH OF ITS OWN. It is option-shaped, so it lands in
+        # `opts` and out of `args`, and every answer below is the same one it
+        # would give if `--` were consumed as the end of the options. A branch
+        # no mutation could make a named case fail for is a branch nothing
+        # tests, so it went out before it shipped.
+        args = rest[1:]
+        opts = [t for t in args if t.startswith("-") and t != "-"]
+        args = [t for t in args if not t.startswith("-") or t == "-"]
+        if "-n" in opts:
             return where
-        if flags or len(ops) != 1 or ops[0].startswith(("+", "-")):
+        if len(args) != 1 or args[0].startswith(("+", "-")):
             return None
-        return literal_path(ops[0], where)
+        return literal_path(args[0], where)
     if not ops:
         return Path.home()
     if ops[0] == "-":

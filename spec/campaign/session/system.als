@@ -212,8 +212,9 @@ pred sessionFrame {
   and Briefed' = Briefed and bound' = bound
 }
 
-/* A FRESH SESSION TAKES OVER ANOTHER'S ROLE AND WORK: a slug rename, a
-   context too large to compact, a harness upgrade. The session half: the
+/* A FRESH SESSION TAKES OVER ANOTHER'S ROLE AND WORK: a context too large to
+   compact, a harness upgrade, and for a planner, which holds no claim, a slug
+   rename. The session half: the
    performer is the successor, it holds the predecessor's role on the same
    machine, it is named for the predecessor's campaign, and every claim the
    predecessor held becomes its own. A claim is a ref, so nothing on GitHub is
@@ -229,7 +230,7 @@ pred sessionFrame {
 pred sessionHandoff[t, p: Session] {
   Now.event = Handoff and no Now.issue
   Who.session = t and Who.predecessor = p
-  t != p and p not in Exited
+  t != p
   t.machine = p.machine
   some p.role and t.role = p.role
   some p.worksOn and t.campaignNamed = p.worksOn

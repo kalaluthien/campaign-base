@@ -54,6 +54,7 @@
     ["campaign/orchestration/checks.als", "check", "HandoffClosedBySuccessor"],
     ["campaign/orchestration/checks.als", "check", "HandoffLeavesOneHolder"],
     ["campaign/orchestration/checks.als", "check", "HandoffLosesNoClaim"],
+    ["campaign/orchestration/checks.als", "check", "HandoffTakesNoStoppedWork"],
     ["campaign/orchestration/checks.als", "check", "NoLostWork"],
     ["campaign/orchestration/checks.als", "check", "NoOrphan"],
     ["campaign/orchestration/checks.als", "check", "NoOrphanIfGuarded"],

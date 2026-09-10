@@ -184,6 +184,12 @@ assert HandoffLosesNoClaim {
              and (all a: heldBy[p] & Waiting   | after some (heldBy[t] & Waiting   & task.(a.task))))
 }
 
+/* A stood-down or limit-stopped agent is never handed off. It restates
+   `handoff`'s guard, so deleting that guard is loud: nothing else reads it. */
+assert HandoffTakesNoStoppedWork {
+  always (Now.event = Handoff implies no heldBy[Who.predecessor] & (StandDownTaken + Stopped))
+}
+
 /* A successor named for another campaign, or for none, never takes the work
    over. Dropping `t.campaignNamed = p.worksOn` reddens it. It restates that
    guard, and is here so deleting the guard is loud. */
@@ -324,6 +330,7 @@ run P8_TwoSubIssuesOneSession        for 3 Issue, 1 PullRequest, 1 Campaign, 2 S
 check HandoffLeavesOneHolder          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 check HandoffClosedBySuccessor        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 check HandoffLosesNoClaim             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check HandoffTakesNoStoppedWork       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 3 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 check SuccessorNamedForAnotherRefused for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
 -- and each is about a handoff that moved work, which the heir then works
 run Cov_Handoff                       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1

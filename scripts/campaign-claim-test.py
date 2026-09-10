@@ -736,7 +736,7 @@ def take_cases(m):
                  "is refused at the claim, where the plan is due"),
                 ("521", "no `## Definition of done` section", "a sub-issue with no "
                  "`## Definition of done` is refused"),
-                ("522", "the title is 107 characters, over 80", "a title over "
+                ("522", "the title is 107 characters, over 40", "a title over "
                  "the ceiling is refused, printing both numbers"),
                 ("523", "characters, over 2000", "a body over the ceiling is "
                  "refused, printing both numbers")):

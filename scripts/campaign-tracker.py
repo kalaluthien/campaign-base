@@ -689,7 +689,13 @@ def cmd_bind(args):
 # stops being read. A second number per kind was rejected for the same reason a
 # second reader is: it needs an explanation beside it.
 BODY_CEILING = 2000
-TITLE_CEILING = 80
+# THE TITLE IS READ IN A LIST, never on its own: `campaign-tracker index`, `gh
+# issue list` and a terminal tab all put it beside its neighbours, and at 80 a
+# title had room for a clause of reason or a second item and used it -- "..., the
+# review fan-out cost first". 40 is the width at which only the mission fits, so
+# the reason goes in `## Intent` where a reader can ask for it. The owner set it
+# on 2026-09-10; closed issues keep the titles they were filed with.
+TITLE_CEILING = 40
 BACKLOG_LABEL = "backlog"
 
 # THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two

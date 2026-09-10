@@ -38,13 +38,42 @@ elif args[:2] == ["agent", "prompt"]:
     if os.environ.get("FAKE_PROMPT_FAILS"):
         print("prompt broke", file=sys.stderr); sys.exit(1)
     print(json.dumps({"result": {"type": "agent_prompted"}}))
+elif args[:2] == ["agent", "read"]:
+    # TEXT, NOT JSON, which is what herdr actually returns here, and it
+    # refuses a working pane. THE SCREEN HAS TWO STATES because the subject
+    # reads it twice, once before the prompt and once after: a fake with one
+    # state cannot tell an echo this rename produced from one already there.
+    # PER PANE because real herdr is. No case separates this from a shared
+    # screen, and none can through this subject: it matches the echo by NAME,
+    # so another pane's line on a shared screen carries the wrong name and
+    # counts for nothing. Kept for fidelity, not as a pin.
+    sent = [json.loads(l) for l in open(os.environ["FAKE_LOG"])]
+    prompted = [c[3] for c in sent
+                if c[:2] == ["agent", "prompt"] and c[2] == args[2]]
+    if os.environ.get("FAKE_READ_FAILS"):
+        print("agent_busy", file=sys.stderr); sys.exit(1)
+    if not prompted and os.environ.get("FAKE_BASELINE_FAILS_ONCE") and not any(
+            c[:2] == ["agent", "read"] and c[2] == args[2] for c in sent[:-1]):
+        print("agent_busy", file=sys.stderr); sys.exit(1)
+    if prompted and os.environ.get("FAKE_READ_FAILS_AFTER"):
+        print("agent_busy", file=sys.stderr); sys.exit(1)
+    if prompted:
+        screen = os.environ.get(
+            "FAKE_SCREEN_AFTER",
+            # what a real session prints one turn later, inside its own
+            # decoration -- the line is never alone on the screen
+            "  \u23bf  Session renamed to: " + prompted[-1].split()[-1])
+    else:
+        screen = os.environ.get("FAKE_SCREEN", "nothing here yet")
+    print(screen)
 else:
     sys.exit(1)
 '''
 
 
 def run(argv, agents=None, list_fails=False, rename_fails=False,
-        prompt_fails=False):
+        prompt_fails=False, read_fails=False, read_fails_after=False,
+        baseline_fails_once=False, screen=None, screen_after=None):
     """(completed process, list of recorded herdr calls)."""
     with tempfile.TemporaryDirectory() as d:
         bin_dir = Path(d) / "bin"
@@ -61,6 +90,16 @@ def run(argv, agents=None, list_fails=False, rename_fails=False,
             env["FAKE_RENAME_FAILS"] = "1"
         if prompt_fails:
             env["FAKE_PROMPT_FAILS"] = "1"
+        if read_fails:
+            env["FAKE_READ_FAILS"] = "1"
+        if read_fails_after:
+            env["FAKE_READ_FAILS_AFTER"] = "1"
+        if baseline_fails_once:
+            env["FAKE_BASELINE_FAILS_ONCE"] = "1"
+        if screen is not None:
+            env["FAKE_SCREEN"] = screen
+        if screen_after is not None:
+            env["FAKE_SCREEN_AFTER"] = screen_after
         r = subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
                            capture_output=True, text=True)
         calls = ([json.loads(l) for l in log.read_text().splitlines()]
@@ -127,8 +166,11 @@ def main():
     # from `slug_ok` turns exactly one of these green.
     for name, why in [
             ("Machinery-worker-6", "not kebab-case: a capital"),
-            ("a-slug-that-is-far-too-long-worker-6",
-             "over the ceiling: 28 characters of slug"),
+            # ONE CHARACTER OVER, not far over: a 28-character slug was
+            # refused at 20 and at 10 alike, so it named no number. This one
+            # goes green the moment the ceiling moves back up.
+            ("abcdefghijk-worker-6",
+             "over the ceiling: 11 characters of slug"),
             ("campaign-machinery-worker-6", "a `campaign` segment"),
             ("machinery-planner-worker-6", "a `planner` segment"),
             # THE BASE'S OWN DIRECTORY NAMES. A campaign slugged `spec` would
@@ -146,6 +188,16 @@ def main():
         check(f"a slug with {why} is refused",
               r.returncode == 1 and not calls and name in r.stderr,
               f"exit {r.returncode} calls {calls} err {r.stderr[:200]}")
+
+    # ...AND THE OTHER SIDE OF THE SAME NUMBER. Together with the 11-character
+    # refusal above this pins SLUG_CEILING at 10 exactly: one of the two goes
+    # red for any other value.
+    r, calls = run(["w1:p1", "abcdefghij-worker-6"],
+                   agents=[{"pane_id": "w1:p1", "agent_status": "idle"}])
+    check("a slug at the ceiling exactly is admitted",
+          r.returncode == 0 and len(prompts(calls)) == 1
+          and prompts(calls)[0][3] == "/rename abcdefghij-worker-6",
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     # A NAME WITH TWO ROLE WORDS parses one way or not at all. Barring the role
     # words from the slug is what makes that true; admit them and `foo-worker-3`
@@ -165,21 +217,141 @@ def main():
 
     idle = [{"pane_id": "w1:p1", "agent_status": "idle"}]
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle)
-    check("an idle pane's rename is reported as sent",
-          r.returncode == 0 and "/rename sent (confirm" in r.stdout
+    check("an idle pane's rename is waited on and reported as applied",
+          r.returncode == 0
+          and "/rename applied: the pane printed" in r.stdout
+          and "Session renamed to: machinery-worker-3" in r.stdout
           and len(prompts(calls)) == 1
           and prompts(calls)[0][3] == "/rename machinery-worker-3",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
-    check("...and both names were set: herdr rename, then list, then prompt",
+    check("...and the pane was read BEFORE the prompt as well as after",
           [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"],
-                                     ["agent", "prompt"]]
+                                     ["agent", "read"], ["agent", "prompt"],
+                                     ["agent", "read"]]
           and calls[0][2:] == ["w1:p1", "machinery-worker-3"],
           f"calls {calls}")
 
+    # THE ECHO ALREADY ON THE SCREEN. Renaming a pane to the name it already
+    # carries is the ordinary case -- every session sets its name at start --
+    # and that pane still holds the line from last time. Counted rather than
+    # looked for, so the old one confirms nothing.
+    stale = "  x  Session renamed to: machinery-worker-3"
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen=stale, screen_after=stale)
+    check("an echo that was on the screen before the prompt confirms nothing",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "no more than the 1 there before the prompt" in r.stdout
+          and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # A LONGER NAME WITH THIS ONE AS ITS PREFIX. `<n>` is an unbounded digit
+    # run, so `machinery-worker-1` sits inside `machinery-worker-12`'s echo and
+    # a substring test would read the wrong pane's confirmation.
+    r, calls = run(["w1:p1", "machinery-worker-1"], agents=idle,
+                   screen_after="  x  Session renamed to: machinery-worker-12")
+    check("a longer name holding this one as a prefix is not the echo",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # AND THE ECHO MUST NAME THIS NAME AT ALL. Without this, a wanted literal
+    # of just `Session renamed to:` passes every case above.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen_after="  x  Session renamed to: upkeep-planner-9")
+    check("another session's echo on this pane is not this rename's",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE LINE IS READ OFF THE PANE, not rebuilt from the name. The CLI has a
+    # second form of it -- `... ("<other>" is held by another live session on
+    # this machine)` -- and a report synthesised from the name deletes the half
+    # a person naming panes has to act on.
+    held = ('  x  Session renamed to: machinery-worker-3 ("upkeep-worker-3" '
+            'is held by another live session on this machine)')
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen="nothing here yet", screen_after=held)
+    check("the applied line is quoted off the pane, warning and all",
+          r.returncode == 0 and "/rename applied" in r.stdout
+          and "is held by another live session" in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE NEWEST LINE, EXACTLY. A pane renamed to this name before holds that
+    # rename's line above this one's; quoting the first match would hand the
+    # caller last time's "held by another live session" as this rename's.
+    # Asserted as the whole quotation, so the decoration being stripped is
+    # pinned by the same case.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen=held,
+                   screen_after=held
+                   + "\n  x  Session renamed to: machinery-worker-3   ")
+    check("the newest matching line is quoted, whole and undecorated",
+          r.returncode == 0
+          and "the pane printed `Session renamed to: machinery-worker-3`\n"
+              in r.stdout
+          and "is held by another live session" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # ONE REFUSED BASELINE IS NOT A LOST CONFIRMATION. The status came from a
+    # separate `agent list`, so idle -> working in between is the ordinary
+    # race, and `agent read` refuses a working pane. Reading once here and
+    # eight times after the prompt would spend the budget on the half that
+    # cannot fail.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   baseline_fails_once=True)
+    check("a baseline herdr refused once is retried, not given up on",
+          r.returncode == 0 and "/rename applied" in r.stdout
+          and "could not be read before the prompt" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE BASELINE ITSELF CAN FAIL, and then there is no verdict to give: a
+    # missing baseline is not a baseline of zero.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle, read_fails=True)
+    check("a pane unreadable before the prompt gets no verdict, not a false one",
+          r.returncode == 0
+          and "could not be read before the prompt" in r.stdout
+          and "agent_busy" in r.stdout and "applied:" not in r.stdout
+          and "not applied yet" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE TWO WAYS THE ECHO DOES NOT COME, kept apart because the caller acts
+    # on them the same way and the person debugging does not: a pane that
+    # printed something else, and a read herdr refused. Each asserts the reason
+    # it prints, not just the wording they share -- a case asserting only
+    # "not applied yet" would pass with either branch gone.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen="nothing like it here",
+                   screen_after="nothing like it here")
+    check("a pane that never echoes is reported as sent and not applied",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "the pane never printed it" in r.stdout
+          and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+    # THE BUDGET IS A NUMBER A READER TIMES AGAINST, so the message states it
+    # and a case reads it: the first read does not sleep, so 8 tries are 7
+    # sleeps, and `ECHO_TRIES * ECHO_SLEEP` would say 4s for a 3.5s wait.
+    check("...and the message states the reads and the seconds they take",
+          "8 reads over 3.5s" in r.stdout, f"out {r.stdout!r}")
+    # AFTER THE PROMPT, not in the whole call: the baseline read is one more
+    # `agent read` in the log, and a total-count assertion was satisfied by it
+    # alone with the loop cut to a single try.
+    after = calls[[c[:2] for c in calls].index(["agent", "prompt"]) + 1:]
+    check("...and the read after the prompt was retried, not asked once",
+          len([c for c in after if c[:2] == ["agent", "read"]]) > 1,
+          f"after {after}")
+
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   read_fails_after=True)
+    check("a read herdr refused after the prompt is a not-yet, naming what "
+          "herdr said",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "agent_busy" in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
     done = [{"pane_id": "w1:p1", "agent_status": "done"}]
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=done)
-    check("a done pane is idle by herdr's own definition, so it reads as sent",
-          r.returncode == 0 and "/rename sent (confirm" in r.stdout
+    check("a done pane is idle by herdr's own definition, so it is waited on",
+          r.returncode == 0 and "/rename applied" in r.stdout
           and "queued" not in r.stdout and len(prompts(calls)) == 1,
           f"exit {r.returncode} out {r.stdout!r}")
 
@@ -227,9 +399,31 @@ def main():
                    agents=two)
     check("two different panes in one call each get one prompt and their own wording",
           r.returncode == 0 and len(prompts(calls)) == 2
-          and "w1:p1  harness     /rename sent" in r.stdout
+          and "w1:p1  harness     /rename applied" in r.stdout
           and "w1:p2  harness     /rename queued" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
+    # A WORKING PANE IS NOT READ AT ALL. herdr refuses `agent read` on one, and
+    # the wait is scoped to the two statuses that can answer; without this case
+    # the scoping could go and only a timing change would show it.
+    check("...and the working pane was never read, only the idle one",
+          set(c[2] for c in calls if c[:2] == ["agent", "read"]) == {"w1:p1"},
+          f"calls {calls}")
+
+    # TWO IDLE PANES EACH GET THEIR OWN BASELINE AND THEIR OWN ECHO: two reads
+    # per pane, in pane order, and each line quoting its own name.
+    both = [{"pane_id": "w1:p1", "agent_status": "idle"},
+            {"pane_id": "w1:p2", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-planner-4"],
+                   agents=both)
+    check("two idle panes each get their own baseline and their own echo",
+          r.returncode == 0
+          and "w1:p1  harness     /rename applied" in r.stdout
+          and "Session renamed to: machinery-worker-3" in r.stdout
+          and "w1:p2  harness     /rename applied" in r.stdout
+          and "Session renamed to: machinery-planner-4" in r.stdout
+          and [c[2] for c in calls if c[:2] == ["agent", "read"]]
+              == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
+          f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     for f in fails:
         print(f"FAIL  {f}")

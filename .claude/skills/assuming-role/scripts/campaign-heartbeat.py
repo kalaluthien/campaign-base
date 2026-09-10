@@ -13,8 +13,8 @@ verdict first, then what it read and from where:
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
     retire   a worker, idle, whose last release was followed by a compaction,
-             with no prompt since the release and no tool call since the
-             compaction, so it holds nothing: `/exit`
+             with no prompt and no claim cut since the release and no tool
+             call since the compaction, so it holds nothing: `/exit`
     keep     anything else -- working, blocked, small, and every reading that
              could not be made. It never acts.
 
@@ -49,11 +49,13 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
-WHAT `retire` CANNOT SEE: a worker that takes new work in its release turn
-unprompted, then idles past COMPACT_AT and is compacted by this, reads as
-done. The worker's lifecycle forbids that -- the next sub-issue arrives as a
-prompt -- and the model's `sessionExit` requires no claim, which no reading
-here can attribute to a session.
+WHAT `retire` CANNOT SEE, both ways. A worker that, in its release turn and
+unprompted, starts work on a claim somebody else cut -- no `claimed` line of
+its own -- reads as done once the release's compaction runs. And a done
+worker that answers a peer's message with a tool call after its compaction
+reads as working for good: `keep`, which errs the safe way. The model's
+`sessionExit` requires no claim, which no reading here attributes to a
+session.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
@@ -84,7 +86,8 @@ RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
 # transcripts 2026-09-10, where the bare one sat after 19 of 22 releases;
 # everything else a user record carries as text counts as a prompt, which errs
 # toward `keep`.
-COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")
+COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")
+QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is a person's prompt
 
 
 def load(path, name):
@@ -134,7 +137,7 @@ def result_lines(content):
             yield from text.splitlines()
 
 
-def transcript_reading(lines, anchor, pane):
+def transcript_reading(lines, anchor, pane, took=None):
     """What one session's transcript says. Pure, over its lines. Returns a
     dict of timestamps and the context size:
 
@@ -143,6 +146,8 @@ def transcript_reading(lines, anchor, pane):
                  DISPLAYED -- another pane's, read with `herdr pane read` --
                  names that other pane. Only a tool result counts, so a
                  summary or a prompt quoting the line does not.
+      took       the last tool result line opening with `took`, the line
+                 `campaign-claim.py take` prints when it cuts a claim.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
       prompted   the last user record carrying text that is not the
@@ -161,7 +166,8 @@ def transcript_reading(lines, anchor, pane):
     "last" is the latest time. Records of a subagent (`isSidechain`) are its
     own context, not this session's."""
     out = {"released": None, "compacted": None, "prompted": None,
-           "acted": None, "context": None, "context_at": None, "records": 0}
+           "acted": None, "took": None, "context": None, "context_at": None,
+           "records": 0}
     tail = f" in {pane}"
 
     def later(key, ts):
@@ -202,25 +208,29 @@ def transcript_reading(lines, anchor, pane):
                 "cache_read_input_tokens")))
         elif kind == "user":
             content = msg.get("content")
-            if any(ln.startswith(anchor) and ln.endswith(tail)
-                   for ln in result_lines(content)):
-                later("released", ts)
+            for ln in result_lines(content):
+                if ln.startswith(anchor) and ln.endswith(tail):
+                    later("released", ts)
+                if took and ln.startswith(took + " "):
+                    later("took", ts)
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
             said = "".join(texts(content)).strip()
-            if said and not said.startswith(COMPACTION_ECHOES):
+            if said and said != QUEUED_COMPACT and not said.startswith(
+                    COMPACTION_ECHOES):
                 later("prompted", ts)
     return out
 
 
-def read_transcript(session_id, anchor, pane):
+def read_transcript(session_id, anchor, pane, took=None):
     """(reading, where, None), or (None, where, why)."""
     path, why = transcript_path(session_id)
     if path is None:
         return None, "no transcript", why
     try:
         with open(path, encoding="utf-8") as fh:
-            return transcript_reading(fh, anchor, pane), str(path), None
+            return (transcript_reading(fh, anchor, pane, took), str(path),
+                    None)
     except OSError as e:
         return None, str(path), f"could not read it: {e}"
 
@@ -280,9 +290,10 @@ def verdict(role, own, idle, banner, reading):
     rel, comp = reading["released"], reading["compacted"]
     if (role == "worker" and not own and since == "compacted"
             and not (reading["prompted"] and reading["prompted"] > rel)
+            and not (reading["took"] and reading["took"] > rel)
             and not (reading["acted"] and reading["acted"] > comp)):
-        return "retire", (f"{why}, no prompt since the release and no tool "
-                          f"call since the compaction{passed}")
+        return "retire", (f"{why}, no prompt and no claim since the release, "
+                          f"no tool call since the compaction{passed}")
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
@@ -357,7 +368,8 @@ def main(argv=None):
         if not is_own:
             r = limit_reset(pane)
             banner = (r.stdout.strip().splitlines() or ["(no answer)"])[0]
-        reading, where, why = read_transcript(sid, claim.RELEASED, pane)
+        reading, where, why = read_transcript(sid, claim.RELEASED, pane,
+                                              claim.CLAIMED)
         word, reason = verdict(role, is_own, assign.idle_verdict(row),
                                banner, reading if reading else why)
         print(f"{word} {pane} {row['name']}: {reason}")

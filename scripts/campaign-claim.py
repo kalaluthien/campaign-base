@@ -1038,7 +1038,7 @@ def cmd_take(args):
               f"free.")
         return 3
 
-    print(f"claimed {branch}")
+    print(f"{CLAIMED} {branch}")
     print(f"  The ref IS the claim: nothing else was written, and "
           f"`{sys.argv[0]} live {args.campaign_issue}` reads it back.")
     return 0
@@ -1117,6 +1117,11 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 # pane that never released, which allows. Found by review and reproduced end to
 # end before this was written.
 RELEASED = "campaign-claim: released"
+
+# The line `take` prints when it cut a claim. `campaign-heartbeat.py` reads it
+# in a session's transcript: a claim cut after a release is work the session
+# holds, so the heartbeat does not retire it.
+CLAIMED = "claimed"
 
 
 def own_pane(sessions, session_id):

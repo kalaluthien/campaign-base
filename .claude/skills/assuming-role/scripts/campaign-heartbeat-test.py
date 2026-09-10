@@ -86,8 +86,17 @@ def lines(*records):
     return [json.dumps(r) for r in records]
 
 
+TOOK = "claimed"
+
+
+def claimed(minute):
+    """The tool result `campaign-claim.py take` prints when it cuts a claim."""
+    return {"type": "user", "timestamp": ts(minute), "message": {"content": [
+        {"type": "tool_result", "content": f"...\n{TOOK} tk/9-next\n  The ref IS the claim"}]}}
+
+
 def reading(m, *records, pane=PANE):
-    return m.transcript_reading(lines(*records), ANCHOR, pane)
+    return m.transcript_reading(lines(*records), ANCHOR, pane, TOOK)
 
 
 # ------------------------------------------------------------- cases
@@ -205,6 +214,35 @@ def _(m):
     return r["context"] == 351_805, r
 
 
+@case("a person's `/compact <focus>` is a prompt")
+def _(m):
+    r = reading(m, prompt(4, "/compact keep the review findings"))
+    return r["prompted"] == ts(4), r
+
+
+@case("a claim cut in a tool result is read")
+def _(m):
+    r = reading(m, release(1), claimed(2))
+    return r["took"] == ts(2), r
+
+
+@case("an assistant turn with text and no tool call is not acting")
+def _(m):
+    r = reading(m, release(1), {"type": "assistant", "timestamp": ts(2),
+        "message": {"content": [{"type": "text", "text": "done"}]}})
+    return r["acted"] is None, r
+
+
+@case("an assistant record without usage leaves the context as it was")
+def _(m):
+    try:
+        r = reading(m, usage(1, 70_000), {"type": "assistant",
+                    "timestamp": ts(2), "message": {"content": []}})
+    except Exception as e:  # noqa: BLE001 -- raising is not reading
+        return False, f"raised {e.__class__.__name__}"
+    return r["context"] == 70_000, r
+
+
 @case("a tool call is read as the session acting")
 def _(m):
     r = reading(m, release(1), call(2))
@@ -224,7 +262,8 @@ IDLE = (True, None)
 BUSY = (False, "status is working, not idle")
 NONE = "no limit (herdr lists w1:p2 idle)"
 DONE = {"released": ts(1), "compacted": ts(2), "prompted": None,
-        "acted": None, "context": 9000, "context_at": ts(2), "records": 2}
+        "acted": None, "took": None, "context": 9000, "context_at": ts(2),
+        "records": 2}
 
 
 def big(tokens):
@@ -277,6 +316,13 @@ def _(m):
 @case("a tool call after the compaction is not retired")
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)))
+    return v[0] == "keep", v
+
+
+@case("a worker that cut a claim since its release is not retired")
+def _(m):
+    between = "2026-09-10T10:01:30.000Z"
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, took=between))
     return v[0] == "keep", v
 
 
@@ -374,6 +420,9 @@ FLEET = [  # (sid, name, pane, status, records, screen)
     ("S8", None, "w1:p8", "idle", [usage(1, 900_000)], ""),
     # A planner that is not this one also releases and compacts: never retired.
     ("S9", "tk-planner-9", "w1:p9", "idle", [release(1, "w1:p9"), boundary(2)], ""),
+    # Cut a claim in its release turn, before the compaction: holds work.
+    ("SB", "tk-worker-11", "w1:pB", "idle",
+     [release(1, "w1:pB"), claimed(2), boundary(3)], ""),
     # Two transcripts carry this id: unread, so keep, never compact.
     ("SA", "tk-worker-10", "w1:pA", "idle", [usage(1, 900_000)], ""),
 ]
@@ -451,7 +500,7 @@ def _(m):
         code, out, _ = heartbeat(m, fleet(d), "7")
     want = {"w1:p1": "compact", "w1:p2": "retire", "w1:p3": "compact",
             "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep",
-            "w1:p9": "keep", "w1:pA": "keep"}
+            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep"}
     return code == 0 and verdicts(out) == want, out
 
 
@@ -459,7 +508,7 @@ def _(m):
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d), "7")
-    return ("8 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
+    return ("9 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
             and "own pane, banner not read" in out and "herdr idle" in out), out
 
 
@@ -564,8 +613,8 @@ MUTATIONS = [
      "keep: an unread transcript"),
     ("the release names this pane", "ln.startswith(anchor) and ln.endswith(tail)",
      "ln.startswith(anchor)", "another pane's release, read into this transcript, is not this one's"),
-    ("the release is a tool result", "for ln in result_lines(content)):",
-     "for ln in texts(content) + list(result_lines(content))):",
+    ("the release is a tool result", "for ln in result_lines(content):",
+     "for ln in texts(content) + list(result_lines(content)):",
      "a release quoted in a prompt or a summary is not a release"),
     ("the release opens its line", "ln.startswith(anchor) and ln.endswith(tail)",
      "anchor in ln and ln.endswith(tail)", "a release line quoted mid-line in a tool result is not a release"),
@@ -587,7 +636,7 @@ MUTATIONS = [
      "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
     ("a prompt is text", 'later("prompted", ts)', "pass",
      "a prompt is a user record carrying text"),
-    ("the compaction's echo", 'COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")',
+    ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
      'COMPACTION_ECHOES = ("\\x00",)', "the compaction's own echoes are not a prompt"),
     ("a harness note", 'if r.get("isMeta") or r.get("isCompactSummary"):',
      'if r.get("isCompactSummary"):', "a harness note and a summary are not a prompt"),
@@ -601,10 +650,22 @@ MUTATIONS = [
      "--apply sends each action, guarded, to the pane it names"),
     ("one wake per run", "if fired:", "if False:",
      "two banners schedule one wake, into the own pane"),
-    ("the bare /compact is an echo",
-     'COMPACTION_ECHOES = ("/compact", "<command-name>/compact<", "<local-command-")',
-     'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
-     "the bare /compact that release queues is not a prompt"),
+    ("the bare /compact is an echo", "if said and said != QUEUED_COMPACT and not",
+     "if said and not", "the bare /compact that release queues is not a prompt"),
+    ("only the bare /compact", "said != QUEUED_COMPACT and not",
+     "not said.startswith(QUEUED_COMPACT) and not",
+     "a person's `/compact <focus>` is a prompt"),
+    ("read a claim cut", 'if took and ln.startswith(took + " "):', "if False:",
+     "a claim cut in a tool result is read"),
+    ("no claim since the release", 'and not (reading["took"] and reading["took"] > rel)',
+     "and True", "a worker that cut a claim since its release is not retired"),
+    ("the run reads claims", "claim.CLAIMED)", "None)",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("only a tool call is acting", 'b.get("type") == "tool_use"',
+     'b.get("type") in ("tool_use", "text")',
+     "an assistant turn with text and no tool call is not acting"),
+    ("a record without usage", "            if not isinstance(u, dict):\n                continue\n", "",
+     "an assistant record without usage leaves the context as it was"),
     ("skip a synthetic record", 'elif kind == "assistant" and msg.get("model") != "<synthetic>":',
      'elif kind == "assistant":', "a synthetic record, a limit banner, does not zero the context"),
     ("read a tool call", 'later("acted", ts)', "pass",

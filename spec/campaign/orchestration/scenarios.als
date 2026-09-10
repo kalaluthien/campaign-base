@@ -466,7 +466,7 @@ pred L1b_PromptAfterTheResetIsAnswered {
 /* THE HEARTBEAT RETIRES A DONE WORKER (#296). A worker that released its
    sub-issue, compacted with the release, and took nothing since is sent
    `/exit`; one holding a claim or a live agent, one that launched since its
-   release, and a planner are not. The first is reachable; the second is
+   release, one that never released, and a planner are not. The first is reachable; the second is
    UNSAT, and dropping any one guard of `sessionExit` or `exitSession` makes it
    SAT. */
 pred H1_HeartbeatRetiresADoneWorker {
@@ -476,7 +476,8 @@ pred H1_HeartbeatRetiresADoneWorker {
 pred H1b_HeartbeatRetiresNoHolder {
   some s: Session | eventually (Now.event = SessionExit and Who.session = s
     and (some s.claimedIssues or some heldBy[s] or s not in Compacted
-         or s.role = Planner))
+         or s.role = Planner
+         or not once (Now.event = Release and Who.session = s)))
 }
 
 /* Completion is a GitHub fact, so it survives the death and never undoes. */

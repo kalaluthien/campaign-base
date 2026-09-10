@@ -137,7 +137,15 @@ from pathlib import Path
 # campaign-directory.py`, a diagram column and not a reading. The idiom people
 # actually write, `read -r N SLUG < "$C/.campaign"`, names the tool BEFORE the
 # file and is refused by the leading half; the redirect-first spelling of it is
-# the hole this choice accepts.
+# one of the holes this choice accepts.
+#
+# IT IS A FAMILY AND NOT ONE HOLE: every marker reading written with NO TOOL
+# WORD escapes the same way -- `x=$(< "$C/.campaign")`, `mapfile -t x <
+# "$C/.campaign"`, `source "$C/.campaign"`, and a `while read ... done <
+# "$C/.campaign"` whose `;` cuts the leading half short. The form refuses the
+# spellings a person reaches for first and does not claim to be exhaustive; a
+# second reader that gets past it is caught where every hand-rolled one is,
+# by somebody reading the diff.
 MARKER_STDIN_TOOLS = (r"\bgrep\b|\bawk\b|\bsed\b|\bcat\b"
                       r"|\bcut\b|\bhead\b|\brg\b")
 MARKER_PATH_TOOLS = r"\bls\b|\bfind\b|\bread\b|dirname|basename"

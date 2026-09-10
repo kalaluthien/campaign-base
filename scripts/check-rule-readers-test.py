@@ -112,6 +112,13 @@ FORM_CASES = [
            "and the slug"), 0),
     ("campaign directory: ALLOW the reader being called",
      fence('CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE")'), 0),
+    # ...and a diagram column that names a PATH-ONLY tool after the marker,
+    # which is English and not a reading -- the case that makes the walk's
+    # expect-0 skip load-bearing: without it this fixture answers for `ls`, and
+    # deleting the `ls` refusal above goes unnoticed.
+    ("campaign directory: ALLOW a column naming a tool after the marker",
+     fence("campaign-demo-260910/\n    .campaign     what an ls of the base "
+           "shows is a campaign's"), 0),
     ("campaign directory: the marker named in prose is a mention",
      "# t\n\nThe `.campaign` file says which campaign a directory is.\n", 0),
     ("claim refs: a single ref read is not a listing",

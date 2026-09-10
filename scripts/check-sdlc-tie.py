@@ -200,7 +200,6 @@ LEGACY = (
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
     ".claude/skills/opening-campaign/scripts/acquire-repo.sh",
     "scripts/alloy-check.py",
-    "scripts/campaign-assign.py",
     "scripts/campaign-installed.py",
     "scripts/campaign-local-work.py",
     "scripts/campaign-primitives.py",

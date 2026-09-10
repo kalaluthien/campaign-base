@@ -169,7 +169,7 @@ var sig Stopped in Agent {}
    (`orchestrationInit`), because a fresh process carries nothing. `launch`
    takes it away from the launching session -- taking a sub-issue is what grows
    a context -- and requires it first. `scripts/campaign-assign.py` enforces
-   that on a session ALREADY RUNNING, by reading its pane; a delegate's launch
+   that on a session ALREADY RUNNING, by reading its transcript; a delegate's launch
    satisfies it by construction, since the process does not exist yet and so
    carries nothing. Two ways of meeting one precondition, which is why this
    names neither as its reader. `agentRelease` gives it

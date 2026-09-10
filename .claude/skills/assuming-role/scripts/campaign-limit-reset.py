@@ -66,7 +66,7 @@ sent all paint one.
 
 RESOLVING A CLOCK TIME, because the banner carries no date and the reader
 does not know when it was painted. A session window is five hours
-(planner.md § The planner's clock), so a session reset is never more than
+(the status line's reset time), so a session reset is never more than
 five hours after the stop -- `WINDOW`. Of the clock time's three nearest
 days, the one within five hours ahead of now is the reset; when none is, the
 most recent one behind now is, and the reading is `passed`. So `1:30am` read

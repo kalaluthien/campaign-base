@@ -23,43 +23,30 @@ through a subagent, which carries the planner's session id and so its role.
    prompt is the session's own user turn, so its hooks run.
 7. **Answer a `BLOCKED`** with the decision, or carry it to the owner. A relay
    is never the authority; point at the durable artifact instead.
-8. **Retire agents as the campaign runs.** A listed peer is asked which claim
-   it holds, never killed.
+8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
+   transcript shows released, compacted and unprompted since; any other listed
+   peer is asked which claim it holds, never killed.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.
 
 ## The planner's clock
 
-A planner that has handed work out waits on a cron it sets itself
-(§ Watching and retiring in `AGENTS.md`). Three horizons decide the cadence,
-each a different cost:
+On every wake, run the **heartbeat**, then re-subscribe to each worker it
+kept:
 
-| horizon | length | crossing it costs | the cron that answers it |
-| --- | --- | --- | --- |
-| prompt cache | 1 hour of silence | the next wake-up re-bills the whole context | recurring, under the hour, while workers run and no banner stands |
-| usage window | 5 hours (status line's reset time) | the window's limit stops a planner that looks like one still thinking, and it kills in batches — several workers going quiet together is an outage to schedule around, not a retry | none while a banner stands: `.claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane> --fire <own pane>` fires the one prompt after the reset it read |
-| weekly limit | 1 week (`/usage`'s "Current week" reset) | stops everything until its own reset | stop; the same `--fire`, which reads the weekly banner too |
+1. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --apply`.
+   It reads every session of the campaign, this planner included, and gives
+   each one verdict: `fire` on a limit banner, `compact` at the context
+   threshold, `retire` for a worker done and holding nothing, `keep` for the
+   rest. Its header says what each reads and sends.
+2. `SendMessage` to each worker it kept, with `notify_when_idle: true` and no
+   content. That notice is what wakes the planner next.
 
-**A limit banner on any pane is the moment to fire, never to poll.**
-`.claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane>` reads
-the banner off the pane and prints the reset as a word its header lists;
-`--fire <own pane>` spawns a detached sleeper that prompts this pane one
-minute after the reset, and it lands even when this session stops on the
-same limit a turn later. A cron in this session does not: it fires into the
-banner, which is what #244's 65 firings did, ~11 per window. So on a banner:
-fire, delete the recurring cron, and stop; re-arm the recurring cron on the
-wake. `--log <campaign>/runtime/limit-wake.log` keeps herdr's answer to the
-prompt where a log belongs; each run writes its own marker line there first,
-so read under the last marker and never the file's first success line.
-
-Two harness facts, from `CronCreate`'s own description:
-
-- A cron is session-only: it lives only in this session and is gone when the
-  session ends, so it is re-set after every restart.
-- A recurring cron auto-expires after 7 days, firing once more first — a
-  campaign running longer than a week re-arms the recurring cron then, or the
-  cache heartbeat lapses silently.
+No cron. The only timer is the one `fire` schedules: a detached sleeper that
+prompts this pane a minute after the reset, and it lands even when this
+session stops on the same limit. A cron lives in the session and fires into
+the banner, which is what #244's 65 firings did, ~11 per window.
 
 ## Handing off
 

@@ -38,13 +38,26 @@ elif args[:2] == ["agent", "prompt"]:
     if os.environ.get("FAKE_PROMPT_FAILS"):
         print("prompt broke", file=sys.stderr); sys.exit(1)
     print(json.dumps({"result": {"type": "agent_prompted"}}))
+elif args[:2] == ["agent", "read"]:
+    # TEXT, NOT JSON, which is what herdr actually returns here, and it
+    # refuses a working pane -- the two cases below are those two answers.
+    if os.environ.get("FAKE_READ_FAILS"):
+        print("agent_busy", file=sys.stderr); sys.exit(1)
+    screen = os.environ.get("FAKE_SCREEN")
+    if screen is None:
+        # the pane echoes whatever /rename it was last given, which is what a
+        # real session does one turn later
+        sent = [json.loads(l) for l in open(os.environ["FAKE_LOG"])]
+        last = [c[3] for c in sent if c[:2] == ["agent", "prompt"]]
+        screen = "Session renamed to: " + (last[-1].split()[-1] if last else "")
+    print(screen)
 else:
     sys.exit(1)
 '''
 
 
 def run(argv, agents=None, list_fails=False, rename_fails=False,
-        prompt_fails=False):
+        prompt_fails=False, read_fails=False, screen=None):
     """(completed process, list of recorded herdr calls)."""
     with tempfile.TemporaryDirectory() as d:
         bin_dir = Path(d) / "bin"
@@ -61,6 +74,10 @@ def run(argv, agents=None, list_fails=False, rename_fails=False,
             env["FAKE_RENAME_FAILS"] = "1"
         if prompt_fails:
             env["FAKE_PROMPT_FAILS"] = "1"
+        if read_fails:
+            env["FAKE_READ_FAILS"] = "1"
+        if screen is not None:
+            env["FAKE_SCREEN"] = screen
         r = subprocess.run([sys.executable, str(SCRIPT), *argv], env=env,
                            capture_output=True, text=True)
         calls = ([json.loads(l) for l in log.read_text().splitlines()]
@@ -178,21 +195,45 @@ def main():
 
     idle = [{"pane_id": "w1:p1", "agent_status": "idle"}]
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle)
-    check("an idle pane's rename is reported as sent",
-          r.returncode == 0 and "/rename sent (confirm" in r.stdout
+    check("an idle pane's rename is waited on and reported as applied",
+          r.returncode == 0
+          and "/rename applied: the pane printed" in r.stdout
+          and "Session renamed to: machinery-worker-3" in r.stdout
           and len(prompts(calls)) == 1
           and prompts(calls)[0][3] == "/rename machinery-worker-3",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
-    check("...and both names were set: herdr rename, then list, then prompt",
+    check("...and both names were set: rename, list, prompt, then the read",
           [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"],
-                                     ["agent", "prompt"]]
+                                     ["agent", "prompt"], ["agent", "read"]]
           and calls[0][2:] == ["w1:p1", "machinery-worker-3"],
           f"calls {calls}")
 
+    # THE TWO WAYS THE ECHO DOES NOT COME, kept apart because the caller acts
+    # on them the same way and the person debugging does not: a pane that
+    # printed something else, and a read herdr refused. Each asserts the reason
+    # it prints, not just the wording they share -- a case asserting only
+    # "not applied yet" would pass with either branch gone.
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle,
+                   screen="nothing like it here")
+    check("a pane that never echoes is reported as sent and not applied",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "the pane never printed it" in r.stdout
+          and "applied:" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+    check("...and the read was retried, not asked once",
+          len([c for c in calls if c[:2] == ["agent", "read"]]) > 1,
+          f"calls {calls}")
+
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle, read_fails=True)
+    check("a read herdr refused is reported as sent, naming what herdr said",
+          r.returncode == 0 and "/rename sent, not applied yet" in r.stdout
+          and "agent_busy" in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r}")
+
     done = [{"pane_id": "w1:p1", "agent_status": "done"}]
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=done)
-    check("a done pane is idle by herdr's own definition, so it reads as sent",
-          r.returncode == 0 and "/rename sent (confirm" in r.stdout
+    check("a done pane is idle by herdr's own definition, so it is waited on",
+          r.returncode == 0 and "/rename applied" in r.stdout
           and "queued" not in r.stdout and len(prompts(calls)) == 1,
           f"exit {r.returncode} out {r.stdout!r}")
 
@@ -240,9 +281,15 @@ def main():
                    agents=two)
     check("two different panes in one call each get one prompt and their own wording",
           r.returncode == 0 and len(prompts(calls)) == 2
-          and "w1:p1  harness     /rename sent" in r.stdout
+          and "w1:p1  harness     /rename applied" in r.stdout
           and "w1:p2  harness     /rename queued" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
+    # A WORKING PANE IS NOT READ AT ALL. herdr refuses `agent read` on one, and
+    # the wait is scoped to the two statuses that can answer; without this case
+    # the scoping could go and only a timing change would show it.
+    check("...and the working pane was never read, only the idle one",
+          [c[2] for c in calls if c[:2] == ["agent", "read"]] == ["w1:p1"],
+          f"calls {calls}")
 
     for f in fails:
         print(f"FAIL  {f}")

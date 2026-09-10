@@ -52,8 +52,10 @@ mid-turn, so refusing a working pane would refuse the ordinary case. Instead
 this sends at most one prompt per pane per call -- a pane named twice is
 refused before anything is applied -- and reads the pane's `agent_status` from
 `herdr agent list` before sending. `idle` and `done` (herdr's own help calls
-`done` the same underlying idle state) are reported as `sent`; `working` and
-any other status as `queued`, so the caller knows not to send that pane
+`done` the same underlying idle state) are waited on and reported as `applied`
+once the pane prints the CLI's `Session renamed to: <name>`, and as `sent, not
+applied yet` when the budget runs out; `working` and any other status as
+`queued`, so the caller knows not to send that pane
 anything else until `ListAgents` shows the name; a status this could not read
 is said as such, and the prompt is still sent. A BLOCKED pane -- one sitting
 at a dialog -- gets no prompt at all: herdr would reject it with
@@ -67,6 +69,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path as _Path
 
 
@@ -188,6 +191,50 @@ def herdr(*args):
         return {}, None
 
 
+# THE ECHO IS THE ONLY CONFIRMATION A SCRIPT CAN GET. The harness name is in no
+# file on disk and `ListAgents` is a tool rather than a command, so nothing
+# outside a session can read that name back. What IS readable is the CLI's own
+# line, `Session renamed to: <name>`, printed when the session runs the
+# `/rename` -- the literal is in the shipped binary
+# (`grep -ao "Session renamed to" "$(which claude)"`, probed 2026-09-10).
+#
+# WHY IT IS WORTH WAITING FOR: `herdr agent prompt` returns as soon as the
+# prompt is delivered, and the session applies it on its next turn. A caller
+# that read "sent" and prompted the pane immediately had both land on one input
+# line and the name became the rename plus the brief -- `sdlc-alloy-planner-7`
+# carried one on 2026-09-10 (#285). So the caller needs a word that separates
+# delivered from applied, and this is the reading that gives it one.
+#
+# A REFUSED READ IS A NOT-YET, NOT A NO. `herdr agent read` refuses a pane that
+# is `working`, which is exactly what a pane is for the moment it spends
+# applying the rename, so the loop retries rather than concluding. It returns
+# text and not JSON, so it does not go through `herdr()`.
+ECHO_TRIES = 8
+ECHO_SLEEP = 0.5
+
+
+def rename_echoed(pane, name):
+    """(True, None) once the pane has printed `Session renamed to: <name>`,
+    or (False, why) when the budget ran out -- `why` naming the last thing the
+    read said, so an unconfirmed rename and an unreadable pane are two
+    different reports."""
+    want = f"Session renamed to: {name}"
+    why = "the pane never printed it"
+    for attempt in range(ECHO_TRIES):
+        if attempt:
+            time.sleep(ECHO_SLEEP)
+        out = subprocess.run(["herdr", "agent", "read", pane],
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            why = (out.stderr.strip() or out.stdout.strip()
+                   or "herdr agent read failed with no message")
+            continue
+        if want in out.stdout:
+            return True, None
+        why = "the pane never printed it"
+    return False, why
+
+
 def pane_status(pane):
     """(agent_status, None) from `herdr agent list`, or (None, why) when the
     list could not be read or does not hold the pane."""
@@ -254,7 +301,15 @@ def main():
         # next turn. Report it as sent or queued rather than as done, because
         # the only honest confirmation is ListAgents afterwards.
         if status in ("idle", "done"):
-            print(f"  {pane}  harness     /rename sent (confirm with ListAgents)")
+            echoed, why = rename_echoed(pane, name)
+            if echoed:
+                print(f"  {pane}  harness     /rename applied: the pane printed "
+                      f"`Session renamed to: {name}`")
+            else:
+                print(f"  {pane}  harness     /rename sent, not applied yet "
+                      f"after {ECHO_TRIES * ECHO_SLEEP:g}s ({why}); do not "
+                      f"prompt this pane until ListAgents shows the name, or "
+                      f"the two inputs merge into one")
         elif status is None:
             print(f"  {pane}  harness     /rename sent; the pane's status could "
                   f"not be read ({why}), so whether it queued is unknown "

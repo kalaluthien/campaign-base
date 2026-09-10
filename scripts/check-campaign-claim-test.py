@@ -56,7 +56,8 @@ class Fixture:
     campaign branches in worktrees whose ref exists nowhere on the remote;
     `feature` is a worktree on a plain branch."""
 
-    def __init__(self, d, claims=("demo/7-x",), unpushed=(), feature=None):
+    def __init__(self, d, claims=("demo/7-x",), unpushed=(), feature=None,
+                 camp_name="demo"):
         self.d = Path(d)
         self.remote = self.d / "r.git"
         self.base = self.d / "base"
@@ -70,10 +71,13 @@ class Fixture:
         git(self.base, "symbolic-ref", "HEAD", "refs/heads/main")
         (self.base / "scripts").mkdir()
         (self.base / "scripts" / "campaign-claim.py").write_text(CLAIM.read_text())
-        self.camp = self.base / "demo"
-        # THE MARKER, not the name: since #181 a campaign directory is one
-        # carrying `.campaign`, because the slug dropped the date and no
-        # name shape can tell an arbitrary slug from `scripts/`.
+        self.camp = self.base / camp_name
+        # THE MARKER, not the name: a campaign directory is one carrying
+        # `.campaign`, whichever of the two name forms it wears --
+        # `campaign-<slug>-<date>` or the bare `<slug>` -- because no name shape
+        # can tell an arbitrary slug from `scripts/`. `camp_name` is a parameter
+        # so a case can drive both forms; the default is the older one, which
+        # every other case here is written against.
         self.camp.mkdir()
         (self.camp / ".campaign").write_text("1 demo\n")
         # The allowlist shape check-tree-shape requires, which also ignores
@@ -1789,6 +1793,44 @@ def main():
               "own_claim's #192 reach covers both name forms",
               mod.claim_match("demo/888-x", sandbox) == ("demo", "888")
               and (mod.own_claim(sandbox) or (None, None))[1] == "demo/888-x")
+
+    # ---------------------------------------------------------------- #181
+    # ONE CASE PER NAME FORM, and the marker is what both are read by. The form
+    # moved from `campaign-<slug>-<date>` to the bare `<slug>` and back, so a
+    # reading that admitted only the form of the day would have been correct
+    # twice and wrong twice, silently: a directory nothing recognises reads to
+    # every reader here as a machine holding no campaign.
+    for name, what in (("campaign-demo-260910", "a dated directory"),
+                       ("demo", "a bare slug directory")):
+        with tempfile.TemporaryDirectory() as d:
+            f = Fixture(d, claims=("demo/12-x",), camp_name=name)
+            mod = guard_module()
+            check(f"{what} carrying the marker is a campaign directory",
+                  mod.is_campaign_dir(f.camp)
+                  and mod.campaign_dir_of(f.camp / "README.md", f.base)
+                  == f.camp,
+                  f"{name}: {mod.campaign_dir_of(f.camp / 'README.md', f.base)}")
+            # ASSERTED END TO END TOO, because `is_campaign_dir` alone would
+            # stay green under a caller that read the name instead of calling it.
+            r = ask(f.base, path=str(f.camp / "README.md"))
+            check(f"...and the guard classifies a target inside {what} into it",
+                  r.returncode == 0
+                  # RESOLVED: the guard prints the resolved path and a macOS
+                  # temporary directory is a symlink.
+                  and f"inside the campaign directory {f.camp.resolve()}" in out(r),
+                  out(r)[:400])
+
+    # A DIRECTORY WITH NO MARKER IS NONE, whatever it is called: the dated name
+    # used to be the reading, so a dated directory whose marker was swept is
+    # exactly the shape that must NOT be recognised.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/12-x",), camp_name="campaign-demo-260910")
+        (f.camp / ".campaign").unlink()
+        mod = guard_module()
+        check("a directory with no marker is no campaign directory, dated name "
+              "and all",
+              not mod.is_campaign_dir(f.camp)
+              and mod.campaign_dir_of(f.camp / "README.md", f.base) is None)
 
     # ...AND A BASE THAT HOLDS NO CAMPAIGN DIRECTORY IS THE OTHER ANSWER: this
     # machine holds no campaign of any slug, so it narrows. The pair is what

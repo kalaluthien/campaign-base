@@ -15,7 +15,7 @@ Finished when all of these hold:
 - The campaign issue carries exactly one `bound:` label, and it names this machine.
 - The campaign issue carries exactly one `campaign:<slug>` label, and
   `scripts/campaign-tracker.py slug <N>` prints that slug.
-- `<slug>/` exists at the base root and holds `.campaign`, `AGENTS.md`,
+- `campaign-<slug>-<date>/` exists at the base root and holds `.campaign`, `AGENTS.md`,
   `CLAUDE.md`, `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
   each hold the campaign issue body as `gh issue view --json body` returns it --
   the read-back is the canonical form, because the round trip through `gh` is
@@ -50,12 +50,17 @@ Then find out whether this machine has a directory. "Already scaffolded" is a
 fact about a directory, not about the campaign.
 
 ```sh
-ls -d "$BASE"/*-[0-9][0-9][0-9][0-9][0-9][0-9]/ 2>/dev/null
-CAMPAIGN=$(cd "$BASE/<the directory that matched>" && pwd -P)
+CAMPAIGN=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :  # a path | none | unknown
 ```
 
-A directory whose `README.md` names this campaign is the one to work in, peers
-working in it too being the normal state.
+**Read the word, never the status** — which is what the `|| :` is for, so a
+`none` under `set -e` does not end the turn: a path is the directory to work in, `none`
+is this machine having no directory for the campaign, and `unknown` stops you —
+the reading failed, or two directories name the campaign, and neither is a
+directory to scaffold beside. The reader answers by the `.campaign` marker, so
+it finds `campaign-<slug>-<date>/` and the older bare `<slug>/` alike and never
+composes the path out of the slug. Peers working in the directory too is the
+normal state.
 
 **No directory at all** — name this session first (the last block of step 3,
 with the ID the campaign issue already has), then run steps 2, 4 and 5 with the ID and
@@ -177,30 +182,58 @@ it reaches a path — a slug comes from a person and lands in a `cp` destination
 so one containing `../` writes outside the base.
 
 ```sh
-CAMPAIGN="$BASE/$("$BASE/scripts/campaign-tracker.py" slug <N>)"
-if mkdir "$CAMPAIGN" 2>/dev/null; then
+SLUG=$("$BASE/scripts/campaign-tracker.py" slug <N>) || :   # a slug | none
+case "$SLUG" in ""|none)
+  echo "the slug of #<N> read as '$SLUG'; nothing to name a directory after"; exit 1 ;; esac
+HELD=$("$BASE/scripts/campaign-directory.py" <N> "$BASE") || :  # a path | none | unknown
+case "$HELD" in
+  none) CAMPAIGN="$BASE/campaign-$SLUG-$(date +%y%m%d)" ;;
+  /*)   [ "$(dirname "$HELD")" = "$BASE" ] ||
+          { echo "$HELD is not a direct child of $BASE; scaffold nothing"; exit 1; }
+        CAMPAIGN="$HELD" ;;
+  *)    echo "the directory of #<N> read as $HELD; scaffold nothing"; exit 1 ;;
+esac
+if [ "$CAMPAIGN" != "$HELD" ] && mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
-  printf '%s %s\n' <N> "${CAMPAIGN##*/}" >| "$CAMPAIGN/.campaign"
+  printf '%s %s\n' <N> "$SLUG" >| "$CAMPAIGN/.campaign"
 else
   echo "exists: read $CAMPAIGN/README.md before writing anything in it"
 fi
 ```
 
-**The directory is named from the LABEL, never from a slug typed again**: the
+**Both captures read the WORD**: `campaign-tracker.py slug` prints the literal
+`none` when the campaign issue carries no `campaign:` label, so `[ -n "$SLUG" ]`
+is satisfied by it and only the exit status would have refused — the shape this
+step just removed from the directory read. The arm tests for `none` and nothing
+else: what a slug may *be* is `campaign-name-session.py`'s rule, the tracker's
+reader already refuses one it will not admit, and a character class written here
+would be a second reader of it — one that a shell's locale-dependent `[a-z]`
+gets wrong, admitting `Up`. **The slug is read from the LABEL,
+never typed again**: the
 label is what `campaign-claim take` builds a branch from, and a directory spelt
 by hand beside it is the copy that drifts. The tracker's reader also refuses a
 slug the name rule will not admit, which is what keeps a `../` out of a path.
+The `-$(date +%y%m%d)` is local time and belongs to the name alone — nothing
+reads it back, so a directory scaffolded either side of midnight is still found.
 
-**`.campaign` is what makes it a campaign directory** — `<N> <slug>`, one line.
+**`.campaign` is what makes it a campaign directory** — `<N> <slug>`, one line,
+and the SLUG rather than the directory's name, which now carries a date the
+marker must not.
 Without it `campaign-claim`, the claim guard and `guard-precision` all read the
 base as holding no campaign at all. It sits beside `runtime/` and not inside it,
 because `runtime/` is scratch sessions sweep.
 
-**The `mkdir` without `-p` is the gate**, and the only atomic one here: two
-sessions arriving with the same slug cannot both create the tree.
-A `[ -e ]` test before the copy is a read and a write with a gap between, and
-`cp -R` over a live campaign exits 0 while replacing a filled-in `README.md`
-with placeholders.
+**Two gates, because one name is no longer one path.** The `mkdir` without
+`-p` is the atomic one and stays: two sessions arriving on the same day compose
+the same name, and only one of them creates the tree. It does not cover the
+second day — `$(date +%y%m%d)` mints a fresh name, so a re-run across midnight
+would have made a SECOND marker-bearing directory for one campaign, which every
+reader here then answers `unknown` about, permanently. The `campaign-directory.py`
+read above is what covers that: it asks the markers rather than a name, so it
+finds the directory whatever day and whatever form it wears. A `[ -e ]` test
+before the copy is not the same thing and is still wrong — it is a read and a
+write with a gap between, and `cp -R` over a live campaign exits 0 while
+replacing a filled-in `README.md` with placeholders.
 
 Being told is not an error. Read `$CAMPAIGN/README.md`: the same campaign — work
 in that directory and skip to step 5, which is safe to re-run; a different

@@ -262,17 +262,22 @@ for the other, and a missing slug refuses rather than being guessed at.
   one at open** from `slugs`, which lists every slug ever spent; the owner
   vetoes by renaming the label before any session is named. Two campaigns cannot
   share one, because GitHub keeps label names unique.
-- **Directory** — `<slug>/` at the base root, git-ignored, optional
-  off the bound machine. A campaign *is* its campaign issue; the directory is one
-  machine's cache and holds nothing that is not derivable from GitHub. **What
-  makes a directory a campaign's is the `.campaign` file inside it**, naming the
-  campaign — a slug is a word, and no name shape separates one from `scripts/`.
+- **Directory** — `campaign-<slug>-<date>` at the base root, `<date>` the local
+  `YYMMDD` it was scaffolded, git-ignored, optional off the bound machine. The
+  bare `<slug>/` is the accepted older form and nothing renames a directory that
+  wears it. The date is for the person reading `ls`, since a bare slug beside
+  `scripts/` and `spec/` says nothing about what it is. A campaign *is* its
+  campaign issue; the directory is one machine's cache and holds nothing that is
+  not derivable from GitHub. **What makes a directory a campaign's is the
+  `.campaign` file inside it**, naming the campaign — neither form's name is
+  read, because no name shape separates an arbitrary slug from `scripts/`.
   It sits beside `runtime/` and not inside it, because `runtime/` is scratch
-  sessions sweep. `check-campaign-claim.py` owns that reading and every other
-  script asks it. **A campaign directory with no marker is a campaign nothing on
-  this machine can see** — not a claim, not a guard log, not a close — so
-  `opening-campaign` writes it at scaffold and a directory that predates it gets
-  one by hand.
+  sessions sweep. `check-campaign-claim.py` owns that reading,
+  `scripts/campaign-directory.py` is the one word other scripts and skills ask
+  it for, and **nothing composes the path out of the slug**. **A campaign
+  directory with no marker is a campaign nothing on this machine can see** — not
+  a claim, not a guard log, not a close — so `opening-campaign` writes it at
+  scaffold and a directory that predates it gets one by hand.
 - **Branch** — `<slug>/<issue>-<topic>`, **the sub-issue's whole claim** as
   well as its workspace. `campaign-claim take` cuts it from the remote and writes
   nothing else; create-ref refuses an existing ref server-side, so the claim is

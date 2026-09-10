@@ -274,9 +274,11 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 NAMES = _name_rule_module()
 
 # THE MARKER THAT MAKES A DIRECTORY A CAMPAIGN'S, relative to the directory.
-# Until #181 a campaign directory was recognised by a `-YYMMDD` suffix and
-# nothing on disk said WHICH campaign it was; the slug dropped the date, and no
-# shape can tell an arbitrary slug from `scripts/`. So the directory says so
+# A campaign directory was once recognised by a `-YYMMDD` suffix, and nothing
+# on disk said WHICH campaign it was. #181 round 2 put the suffix back on the
+# name for a person reading `ls`, but the bare `<slug>` form it replaced is
+# still on disk and no shape can tell an arbitrary slug from `scripts/`, so
+# neither form is read. The directory says so
 # itself, in a file `opening-campaign` writes at scaffold: one line, `<N>
 # <slug>`, derived from the campaign issue and re-derivable at any time. It sits
 # at the directory root rather than under `runtime/`, which is scratch sessions

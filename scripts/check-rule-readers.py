@@ -116,6 +116,40 @@ from pathlib import Path
 # grep: every `<!-- unguarded: ... -->` already written in the tree, and in a
 # tree this check does not see. Changing one silently turns those exemptions
 # into non-matches, and a non-matching exemption is reported, not honoured.
+# THE TOOLS THAT READ A MARKER, split by WHERE THE MARKER CAN SIT, because the
+# campaign-directory form below asks for them on both sides of it: `cat
+# "$C/.campaign"` and `< "$C/.campaign" cut -f2` are the same hand-rolled
+# reading written two ways, and a tool admitted by one spelling and not the
+# other is a refusal with a hole in it. Each tool is named ONCE, so there is
+# one place to delete and the test's one case per tool is what proves it live.
+#
+# Only a tool that reads STDIN can be written after the marker, so only those
+# go in the trailing half. `< "$C/.campaign" dirname` is not shell anybody
+# writes, and admitting it there would refuse an English line that merely puts
+# the word after the marker -- `.campaign   what an ls of the base shows`. The
+# path-only tools stay on the leading side, where a path must follow them.
+#
+# `read` SITS THERE FOR A DIFFERENT REASON, and it is a trade rather than a
+# consequence of the rule above: `read` does take stdin, so
+# `< "$C/.campaign" read -r N SLUG` is real shell and goes unrefused. What
+# rules it off the trailing side is that `read` is an ordinary English word --
+# admitting it after the marker refused `.campaign  the marker, read back by
+# campaign-directory.py`, a diagram column and not a reading. The idiom people
+# actually write, `read -r N SLUG < "$C/.campaign"`, names the tool BEFORE the
+# file and is refused by the leading half; the redirect-first spelling of it is
+# one of the holes this choice accepts.
+#
+# IT IS A FAMILY AND NOT ONE HOLE: every marker reading written with NO TOOL
+# WORD escapes the same way -- `x=$(< "$C/.campaign")`, `mapfile -t x <
+# "$C/.campaign"`, `source "$C/.campaign"`, and a `while read ... done <
+# "$C/.campaign"` whose `;` cuts the leading half short. The form refuses the
+# spellings a person reaches for first and does not claim to be exhaustive; a
+# second reader that gets past it is caught where every hand-rolled one is,
+# by somebody reading the diff.
+MARKER_STDIN_TOOLS = (r"\bgrep\b|\bawk\b|\bsed\b|\bcat\b"
+                      r"|\bcut\b|\bhead\b|\brg\b")
+MARKER_PATH_TOOLS = r"\bls\b|\bfind\b|\bread\b|dirname|basename"
+
 FORMS = [
     (
         "campaign-anchors",
@@ -207,6 +241,41 @@ FORMS = [
         ".claude/skills/assuming-role/scripts/campaign-name-session.py",
         re.compile(r"herdr\s+agent\s+rename\b|agent\s+prompt\b[^|;&]*/rename"),
         "the session-name shape",
+    ),
+    (
+        "campaign-directory",
+        "scripts/campaign-directory.py",
+        # WHICH DIRECTORY IS THIS CAMPAIGN'S, hand-rolled off the markers. The
+        # copy this row exists for sat in a reference and read
+        # `dirname "$(grep -l '^<N> ' "$BASE"/*/.campaign)"`: silently the
+        # working directory on no match, a mangled path on two, and it survived
+        # the directory name changing twice because nothing named it. A TOOL
+        # must be named beside the marker, so the shape diagram in README.md and
+        # the `printf ... >| "$CAMPAIGN/.campaign"` that WRITES one are both
+        # left alone -- writing the marker at scaffold is the one thing that is
+        # not a second reading of it. THAT HOLDS WHILE NO TOOL WORD SHARES THE
+        # LINE: a diagram column or a trailing comment naming a tool beside the
+        # marker is refused -- one of the stdin-capable words after it, any of
+        # them before it -- and takes the `<!-- unguarded: -->` header the way
+        # any other honest exception does.
+        # A GLOB OVER THE MARKERS IS THE FORM WITH NO TOOL IN IT. The tool
+        # alternations miss the shapes people actually write next -- a `for f in
+        # "$BASE"/*/.campaign; do dirname "$f"; done`, where the `;` cuts
+        # `[^|;&]*` before `dirname`, and a bare `head -1` or `cut` over the
+        # same glob. `*/.campaign` is what all of them share and what the
+        # legitimate marker WRITE never has: `printf ... >| "$CAMPAIGN/.campaign"`
+        # names one directory it already resolved.
+        # The middle half is for the redirect written first, `< "$C/.campaign"
+        # cut -f2`, where the tool sits AFTER the marker and the leading
+        # alternation cannot see it; it takes the stdin-capable tools, which is
+        # every tool that CAN be written there. Each half has its own named
+        # case in the test and so does each tool, because a branch nothing pins
+        # is a refusal nobody would miss losing -- and one case walks the two
+        # lists, so a tool added later cannot ship unpinned either.
+        re.compile(rf"({MARKER_STDIN_TOOLS}|{MARKER_PATH_TOOLS})[^|;&]*\.campaign"
+                   rf"|\.campaign[^|;&]*({MARKER_STDIN_TOOLS})"
+                   r"|\*/\.campaign"),
+        "the campaign-directory reading",
     ),
     (
         "campaign-claim",

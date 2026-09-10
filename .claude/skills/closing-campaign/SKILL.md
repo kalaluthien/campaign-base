@@ -1,6 +1,6 @@
 ---
 name: closing-campaign
-description: Closes a campaign in the campaign-base repository and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the campaign issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
+description: Closes a campaign in the campaign-base repository and deletes its directory. Use when a person says a campaign is finished, done, over, or wrapped up, or asks to close, retire, archive, or clean up a campaign or its directory — gating the close on the binding, on a `standing` label a person keeps on it, on live agents, on work that exists only on this machine, and on every open sub-issue having a disposition, then syncing the README into the campaign issue. Not for closing a single sub-issue or retiring one repository agent; not for opening or scaffolding a campaign, which is opening-campaign.
 ---
 
 # Closing a campaign
@@ -58,10 +58,24 @@ Holds when: the campaign issue carries one `bound:` label naming this machine, a
 `$CAMPAIGN_DIR` is absolute, a direct child of the base, and named
 `<slug>`, carrying a `.campaign` marker.
 
-### 1. Refuse while a claim is occupied or a session is still running
+### 1. Refuse while a person holds it open, a claim is occupied, or a session runs
 
-**If `TOOK_IT_HERE` is set, this step and step 2 are not applicable — report
-that, not a pass**; run them anyway, they cost one command. **A peer leaves the
+**The person's hold first**, because it is one label read and it refuses
+whatever the rest say:
+
+```sh
+"$BASE/scripts/campaign-tracker.py" standing "$N"   # standing | not-standing
+```
+
+`standing` — refuse, naming the label: a person keeps this campaign open, and
+only they take it off. A failed read refuses too; labels that did not read are
+not a campaign nobody is holding. **This reading is applicable even when
+`TOOK_IT_HERE` is set**: the hold is a GitHub fact about the campaign, not a
+fact about this machine's directory.
+
+**For the rest of this step, if `TOOK_IT_HERE` is set, this step and step 2 are
+not applicable — report that, not a pass**; run them anyway, they cost one
+command. **A peer leaves the
 campaign by fact**: it stops its pane, or leaves the base tree. A rename alone
 does not, unless the new name is another campaign's; a name that says nothing
 still counts while the session sits under the base root.
@@ -101,9 +115,10 @@ worktree it works in — so the sessions it lists are exactly who to ask
 (`references/rationale.md`). This skill never kills an agent. No rows still
 leaves two cases step 2 is what catches.
 
-Holds when: `campaign-claim live` exited 0 and printed no row of the three
-refusing kinds — or `TOOK_IT_HERE` is set and this step reported not applicable
-rather than passed.
+Holds when: `campaign-tracker standing` printed `not-standing`, and
+`campaign-claim live` exited 0 and printed no row of the three refusing kinds —
+or `TOOK_IT_HERE` is set and the `live` half reported not applicable rather than
+passed.
 
 ### 2. Refuse while work exists only on this machine
 

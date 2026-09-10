@@ -16,8 +16,10 @@ closes it.
 
 Usage: scripts/campaign-tracker-test.py
 """
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -744,6 +746,101 @@ def main():
                                           PATH=f"{d2}:{os.environ['PATH']}"))
         check("bind reports a shape it could not read as unread, and still binds",
               r.returncode == 0 and "the shape was NOT read" in r.stdout)
+
+    # ------------------------------------------------ standing: the person's hold
+    # A LABEL READING, so on and off are both cases with no network in them.
+    check("the hold is read off the label list",
+          m.is_standing(["campaign", "standing"]) is True)
+    check("...and its absence is the other reading, not a failure",
+          m.is_standing(["campaign", "backlog"]) is False)
+    # The prefix readers must not claim it: `standing` has no colon, and a
+    # `startswith` here would make `campaign:standing` a hold.
+    check("a slug label is not a hold", m.is_standing(["campaign:standing"]) is False)
+    check("label_names drops a label with no name rather than raising",
+          m.label_names({"labels": [{"name": "a"}, {}, {"name": 2}]}) == ["a"])
+
+    def printed(fn, *a):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            fn(*a)
+        return buf.getvalue()
+
+    held = {"number": 272, "title": "keep me", "labels": [{"name": "standing"}]}
+    free = {"number": 1, "title": "close me", "labels": [{"name": "campaign"}]}
+    out = printed(m.rows, "open campaign issues", [held, free])
+    check("the survey prints the hold beside the row that carries it",
+          "#272" in out and "[standing]" in out.split("#272")[1].split("\n")[0])
+    # THE CONTROL. Printed on every row, the marker says nothing; this is the
+    # case that separates "read the label" from "printed the word".
+    check("...and not beside the row that does not",
+          "[standing]" not in out.split("#1")[1].split("\n")[0])
+
+    # ------------------------------------------------ the `<slug>#N` reference form
+    check("a bare number is a reference nothing qualifies",
+          m.bare_references("see #185 for the role reading") == ["#185"])
+    check("a slug-qualified reference is not bare",
+          m.bare_references("machinery#1 and sdlc-alloy#246") == [])
+    check("a pull request reference is not bare", m.bare_references("pr#255") == [])
+    # THE FORM THE `Closes` KEYWORD NEEDS. A refusal here would refuse the one
+    # spelling AGENTS.md prescribes for closing a sub-issue.
+    check("the full owner/repo#N name is not bare",
+          m.bare_references("Closes kalaluthien/campaign-base#217") == [])
+    check("one number twice is one finding, in the order it first appears",
+          m.bare_references("#9 then #4 then #9") == ["#9", "#4"])
+    check("a markdown heading is not a reference", m.bare_references("## Intent") == [])
+    check("a body with nothing bare in it warns about nothing",
+          m.bare_reference_warning(m.bare_references("machinery#1")) == "")
+    check("the warning names every reference and says it is not a refusal",
+          "#185" in m.bare_reference_warning(["#185"])
+          and "not a refusal" in m.bare_reference_warning(["#185"]))
+
+    # `tmp` IS REBOUND ON PURPOSE. `shim` above is a closure over `main`'s
+    # `tmp`, and the directory it named is gone; binding the fresh one to the
+    # same name is what lets the two `check` cases below reuse it rather than
+    # carry a second copy of the same three lines.
+    with tempfile.TemporaryDirectory() as tmp:
+        def labels_shim(name, payload):
+            d = Path(tmp) / name
+            d.mkdir()
+            (d / "gh").write_text("#!/usr/bin/env python3\n"
+                                  "import sys\n"
+                                  f"sys.stdout.write({payload!r})\n")
+            (d / "gh").chmod(0o755)
+            return dict(os.environ, PATH=f"{d}:{os.environ['PATH']}")
+
+        r = tracker("standing", "272", env=labels_shim("held", '["campaign", "standing"]'))
+        check("the standing verb answers with a word on stdout",
+              r.returncode == 0 and r.stdout.strip() == "standing")
+        r = tracker("standing", "1", env=labels_shim("free", '["campaign"]'))
+        check("...and `not-standing` is the other word, not an empty line",
+              r.returncode == 0 and r.stdout.strip() == "not-standing")
+        # THE NAMED FAILING CASE FOR THE REFUSAL. Labels that did not read must
+        # never come back as `not-standing`: that absence is what a close would
+        # take for consent. Asserted on the word being absent, not only on the
+        # status, since a crash shares exit 2 with a refusal.
+        d = Path(tmp) / "unreadable"
+        d.mkdir()
+        (d / "gh").write_text("#!/bin/sh\necho 'gh: no' >&2\nexit 1\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("standing", "1", env=dict(os.environ,
+                                              PATH=f"{d}:{os.environ['PATH']}"))
+        check("labels that did not read exit 2 and print no verdict",
+              r.returncode == 2 and "standing" not in r.stdout)
+        # The refusal names the verb a person typed, not the verb this reading
+        # path was written for.
+        check("...and the refusal names `standing`, not `bound`",
+              "campaign-tracker standing:" in r.stderr)
+
+        # THE WARNING RIDES WITH THE READING AND MOVES NO EXIT STATUS.
+        good_ref = good_sub.replace("## Intent\n- x\n", "## Intent\n- see #185\n")
+        r = tracker("check", "5", "--plan", env=shim(good_ref))
+        check("check warns about a bare reference and still holds",
+              r.returncode == 0 and "WARNING" in r.stdout
+              and "#185" in r.stdout and "RESULT   the shape holds" in r.stdout)
+        # THE CONTROL: printed unconditionally, the warning says nothing.
+        r = tracker("check", "5", "--plan", env=shim(good_sub))
+        check("...and says nothing about a body with no bare reference",
+              r.returncode == 0 and "WARNING" not in r.stdout)
 
     if not ran:
         print("FAIL  the suite ran no case at all")

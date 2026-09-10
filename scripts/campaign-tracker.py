@@ -6,12 +6,13 @@
     campaign-tracker.py issue <slug> [owner/repo]
     campaign-tracker.py slugs [owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
+    campaign-tracker.py standing <N> [owner/repo]
     campaign-tracker.py bind <N> [owner/repo]
     campaign-tracker.py check <N> [owner/repo] [--plan]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo]
 
-Eight readings of one plane -- GitHub issues and their labels, plus `hostname -s`
+Nine readings of one plane -- GitHub issues and their labels, plus `hostname -s`
 for `bound`, and the one write that changes what `bound` answers.
 They were four scripts, and every one of them carried the same lesson in its own
 words: a listing that stopped early reads exactly like a complete one, and a
@@ -71,6 +72,14 @@ bound       The one reader of the `bound:<machine>` LABEL. A label set is read
             folded in, because every caller ran `hostname -s` on its next line
             and compared by eye.
 
+standing    The one reader of the `standing` LABEL: a campaign a person keeps
+            open. Read like `bound` and for the same reason -- a label has no
+            history to page through and no latest to pick -- and answered as a
+            WORD, because a close acts on the word and must not read a failed
+            request as consent. Only a person removes the label; nothing here
+            can observe that they changed their mind, which is why this reads
+            and never writes.
+
 bind        The write `bound` reads. It adds `bound:<this machine>` and removes
             every other `bound:` label in the same edit, so the refusal above is
             a state this command cannot leave behind. Gated by the person's word
@@ -99,6 +108,12 @@ check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
             the definition of done, and gains its plan before anybody is
             prompted onto it, so a worker reads one issue and nobody plans in a
             pane. `take` passes the flag; a bare `check` does not.
+
+            A BARE `#N` IS A WARNING, not a finding: it is printed with the
+            reading and moves no exit status, because every body on this
+            tracker predates the rule and a refusal would wall the history the
+            first time anybody edited one. `check-campaign-claim.py` prints the
+            same sentence over a comment's text, from `bare_references` here.
 
             WHAT IT DOES NOT CHECK, printed on every run: whether a title is
             verb-first, whether a body is bullets rather than prose, whether a
@@ -153,6 +168,7 @@ slugs                       0 when the label listing was read, 2 when it was not
 bound                       0 for any verdict, 2 when the reading itself failed
                             -- two `bound:` labels included, since that is a
                             question this refuses to answer, not a verdict.
+standing                    0 for either word, 2 when the labels did not read.
 bind                        0 when the label was set, 1 when it was not.
 check                       0 when the shape holds (a third-kind issue included,
                             which is asked for no SECTION -- both ceilings still
@@ -176,6 +192,13 @@ BOUND_LABEL_PREFIX = "bound:"
 # `campaign` and `campaign:` do not collide -- the plain label has no colon --
 # and `startswith` is not how the kind is decided, `==` is.
 SLUG_LABEL_PREFIX = "campaign:"
+# THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
+# open, and only a person takes it off -- nothing here can observe that they
+# changed their mind, which is the same reason `backlog` is the owner's alone.
+# `closing-campaign` step 1 reads it and refuses the close naming it; the
+# survey prints it beside the row, so a campaign that will not close says so
+# before anybody spends a step trying.
+STANDING_LABEL = "standing"
 
 NOT_EMPTY = "An index that did not read is not an empty campaign."
 
@@ -226,6 +249,22 @@ def classify(issues):
     return campaign_issues, stray, bare
 
 
+def label_names(issue):
+    """Every label name on one listing row, as strings."""
+    return [l.get("name") for l in issue.get("labels") or []
+            if isinstance(l.get("name"), str)]
+
+
+def is_standing(names):
+    """Whether this label list holds the person's hold on the close.
+
+    THE ONE READER of `standing`, asked by the survey's row and by the `standing`
+    verb alike, so the word a close acts on and the word a survey prints can
+    never disagree. A calculation over labels already fetched, so on and off are
+    both cases with no network in them."""
+    return STANDING_LABEL in names
+
+
 def slugs_in(campaign_issues):
     """({number: slug}, {number: why}) over one listing's campaign issues.
 
@@ -239,9 +278,7 @@ def slugs_in(campaign_issues):
     the issues' side. `issue <slug>` is the same state read from the label's."""
     read, bad = {}, {}
     for i in campaign_issues:
-        names = [l.get("name") for l in i.get("labels") or []
-                 if isinstance(l.get("name"), str)]
-        slug, why = slug_of(names)
+        slug, why = slug_of(label_names(i))
         if why:
             bad[i["number"]] = why
         elif slug is None:
@@ -264,7 +301,8 @@ def slugs_in(campaign_issues):
 def rows(title, items, note=""):
     print(f"\n{title} ({len(items)})" + (f" -- {note}" if note else ""))
     for i in sorted(items, key=lambda x: x["number"]):
-        print(f"  #{i['number']:<5} {i['title'][:88]}")
+        hold = f"  [{STANDING_LABEL}]" if is_standing(label_names(i)) else ""
+        print(f"  #{i['number']:<5} {i['title'][:88]}{hold}")
 
 
 def cmd_campaign_issues(args):
@@ -317,8 +355,20 @@ def cmd_campaign_issues(args):
 # ----------------------------------------------------------------------- bound
 
 
-def refuse_bound(message):
-    print(f"campaign-tracker bound: {message}", file=sys.stderr)
+# The subcommand whose reading is being refused, so the refusal names the verb
+# a person actually typed. `main` sets it; `bound` is the default because it is
+# the reading this path was written for and the one `campaign_issue_number`
+# refuses under before any subcommand is dispatched.
+READING = "bound"
+
+
+def refuse_label_reading(message):
+    """Refuse a reading made off the campaign issue's LABELS, exit 2.
+
+    Every caller here answers a question a person acts on by reading a printed
+    word, so "I could not look" must not come back as one of the words: exit 2
+    is the status that says the reading was never made."""
+    print(f"campaign-tracker {READING}: {message}", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -326,9 +376,9 @@ def run_or_refuse(*args):
     try:
         out = subprocess.run(args, capture_output=True, text=True, check=False)
     except OSError as exc:
-        refuse_bound(f"cannot run {args[0]}: {exc}")
+        refuse_label_reading(f"cannot run {args[0]}: {exc}")
     if out.returncode != 0:
-        refuse_bound(f"{' '.join(args)} exited {out.returncode}: "
+        refuse_label_reading(f"{' '.join(args)} exited {out.returncode}: "
                      f"{out.stderr.strip() or out.stdout.strip() or 'no message'}")
     return out.stdout
 
@@ -341,9 +391,9 @@ def labels_of(repo, number):
     try:
         names = json.loads(raw or "[]")
     except json.JSONDecodeError as exc:
-        refuse_bound(f"gh returned something that is not JSON: {exc}")
+        refuse_label_reading(f"gh returned something that is not JSON: {exc}")
     if not isinstance(names, list):
-        refuse_bound("gh returned a shape this script does not know")
+        refuse_label_reading("gh returned a shape this script does not know")
     return [n for n in names if isinstance(n, str)]
 
 
@@ -376,14 +426,26 @@ def binding_of(names):
 def this_machine():
     name = run_or_refuse("hostname", "-s").strip()
     if not name:
-        refuse_bound("hostname -s printed nothing")
+        refuse_label_reading("hostname -s printed nothing")
     return name
+
+
+def cmd_standing(args):
+    """`standing` or `not-standing` on stdout, and the caller reads the WORD.
+
+    THE STATUS SAYS WHETHER THE READING HAPPENED, never what it found:
+    `labels_of` refuses with exit 2 when `gh` would not answer, because a
+    campaign whose labels did not read is not a campaign nobody is holding open,
+    and that absence is exactly what a close would take for consent."""
+    print(STANDING_LABEL if is_standing(labels_of(args.repo, args.campaign_issue))
+          else f"not-{STANDING_LABEL}")
+    return 0
 
 
 def cmd_bound(args):
     machine, why = binding_of(labels_of(args.repo, args.campaign_issue))
     if why:
-        refuse_bound(why)
+        refuse_label_reading(why)
     if machine is None:
         print("unbound")
     elif machine == this_machine():
@@ -643,6 +705,50 @@ PLAN_SECTION = "Plan"
 
 SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 
+# HOW AN ISSUE OR A PULL REQUEST IS NAMED (kalaluthien/campaign-base#217, the
+# owner's word on 2026-09-10). An issue is `<slug>#N` -- `machinery#1`,
+# `sdlc-alloy#246` -- and a pull request is `pr#N`. Five campaigns file onto one
+# tracker, so a bare `#1` and a bare `#272` are the same shape and neither says
+# which campaign it belongs to; the slug is the only thing that does.
+# `kalaluthien/campaign-base#217`, the full name the `Closes` keyword needs, is
+# already qualified and is not bare -- which is why the lookbehind bars a word
+# character, a dot, a slash and a hyphen before the `#`.
+#
+# A WARNING AND NOT A REFUSAL, and that is measured rather than lenient: every
+# issue and every comment on this tracker predates the rule and carries bare
+# references, so refusing would wall the tracker's own history the first time
+# anybody edited one of them. `check` prints the finding and still exits on the
+# shape alone.
+BARE_REFERENCE = re.compile(r"(?<![A-Za-z0-9._/#-])#(\d+)")
+
+
+def bare_references(text):
+    """Every unqualified `#N` in the text, first appearance first, deduped.
+
+    THE ONE READER of the reference form, and `check-campaign-claim.py` imports
+    it for the comment half rather than restating the pattern: an issue body and
+    a comment are the same rule read at two moments, and two patterns would
+    drift on the first edit to either."""
+    seen, out = set(), []
+    for m in BARE_REFERENCE.finditer(text or ""):
+        if m.group(1) not in seen:
+            seen.add(m.group(1))
+            out.append("#" + m.group(1))
+    return out
+
+
+def bare_reference_warning(bare):
+    """The one sentence both readers print, or "" when there is nothing to say.
+
+    Here so the guard prints the same words on a comment that `check` prints on
+    a body -- one fact, one form, wherever a reader meets it."""
+    if not bare:
+        return ""
+    return (f"{len(bare)} bare reference(s): {', '.join(bare)}. An issue is "
+            f"`<slug>#N` and a pull request `pr#N`; five campaigns file onto "
+            f"one tracker, so a bare number names no campaign. A warning and "
+            f"not a refusal: every body written before the rule carries them.")
+
 
 def repos_module():
     """`campaign-repos.py`, imported for `lands_in`.
@@ -776,6 +882,13 @@ def cmd_check(args):
     print("  NOT checked: whether the title is verb-first, whether the body is "
           "bullets rather than prose, whether `## Definition of done` is "
           "checkable. Those are judgement.")
+    # A WARNING, PRINTED WITH THE READING AND NOT WITH THE VERDICT. It is on
+    # stdout beside everything else this read, and it moves no exit status: the
+    # corpus predates the rule, so a body carrying nothing but bare references
+    # still has a shape that holds.
+    warning = bare_reference_warning(bare_references(body))
+    if warning:
+        print(f"  WARNING {warning}")
     findings = shape_findings(kind, title, body, args.plan)
     if not findings:
         print("RESULT   the shape holds" if want else
@@ -1062,7 +1175,7 @@ def campaign_issue_number(text):
     a usage error as a verdict."""
     n = text.lstrip("#")
     if not n.isascii() or not n.isdigit() or int(n) <= 0:
-        refuse_bound(f"not an issue number: {text!r}")
+        refuse_label_reading(f"not an issue number: {text!r}")
     return n
 
 
@@ -1093,6 +1206,8 @@ def main():
     for name, fn, help_text in (
             ("slug", cmd_slug, "the campaign's slug, or `none`"),
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
+            ("standing", cmd_standing, "standing | not-standing: the person's "
+                                       "hold on the close"),
             ("bind", cmd_bind, "set this machine's `bound:` label, dropping any other"),
             ("check", cmd_check, "an issue's title, body length and sections"),
             ("index", cmd_index, "the sub-issue index"),
@@ -1115,7 +1230,9 @@ def main():
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()
-    if args.cmd in ("slug", "bound", "bind", "check"):
+    global READING
+    READING = args.cmd
+    if args.cmd in ("slug", "bound", "standing", "bind", "check"):
         args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 

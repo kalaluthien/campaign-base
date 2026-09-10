@@ -209,6 +209,27 @@ pred S20a_ControlANonBaseRepoIsListed {
   some r: Repo | r != Base and eventually r in Campaign.reposInBody
 }
 
+/* THE PERSON'S HOLD, and the close event it refuses. S21 asks for the trace
+   `closeDiscipline` must not have: the campaign issue closed at a moment when
+   the campaign is `Standing`. It reddens -- goes SAT -- the instant
+   `c not in Standing` leaves `closable`, which is what tells the conjunct from
+   a comment about the conjunct.
+
+   S21a beside it is the control, and it is not optional: `expect 0` alone is
+   satisfied by a `closable` that admits nothing at all, so a second command
+   must show that the ORDINARY close -- the same event with the hold off -- is
+   still reachable. Same shape as S20/S20a. */
+pred S21_StandingBlocksTheClose {
+  one c: Campaign |
+    closeDiscipline[c] and eventually (Now.event = CloseIssue
+      and Now.issue = c.campaignIssue and c in Standing)
+}
+pred S21a_ControlTheCloseHappensWithTheHoldOff {
+  one c: Campaign |
+    closeDiscipline[c] and eventually (Now.event = CloseIssue
+      and Now.issue = c.campaignIssue and c not in Standing)
+}
+
 /* ---------------- commands ---------------- */
 
 -- control: settlement is weaker
@@ -238,3 +259,6 @@ run S18a_PlainBaseIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exac
 -- #205: the base is never in `## Repos`, and the list is not thereby empty
 run S20_TheBaseIsNeverListed          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
 run S20a_ControlANonBaseRepoIsListed  for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
+
+run S21_StandingBlocksTheClose        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
+run S21a_ControlTheCloseHappensWithTheHoldOff for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1

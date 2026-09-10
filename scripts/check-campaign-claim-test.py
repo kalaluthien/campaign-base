@@ -854,6 +854,35 @@ def main():
         check("an issue body is not judged by the comment rule",
               r.returncode == 0 and "shape does not hold" not in r.stderr,
               out(r)[:300])
+
+        # ------ #217 reopened: `<slug>#N`, WARNED ABOUT AND NEVER REFUSED ------
+        # The whole corpus predates the rule, so the verdict must not move; the
+        # warning rides on the line every exit prints instead.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue comment 7 --body '{ok}, see #185'")
+        check("a bare reference in a comment is warned about and still allowed",
+              r.returncode == 0 and "WARNING" in r.stdout
+              and "#185" in r.stdout, out(r)[:400])
+        # THE CONTROL. Printed on every comment, the warning says nothing --
+        # this is the case that separates reading the text from printing a line.
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue comment 7 --body '{ok}, see machinery#185'")
+        check("...and a slug-qualified one draws no warning",
+              r.returncode == 0 and "WARNING" not in r.stdout, out(r)[:400])
+        # BOTH THINGS WRONG, ONE READING. A comment refused for its first line
+        # still carries the reference finding, so its author makes one edit.
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 7 --body 'a review of #185'")
+        check("a refused comment carries the reference warning beside the refusal",
+              r.returncode == 2 and "WARNING" in r.stderr
+              and "#185" in r.stderr, out(r)[:400])
+        # AN ISSUE BODY IS `campaign-tracker check`'s TO WARN ABOUT, not this
+        # guard's: this reads what a COMMENT posts and nothing else.
+        r = ask(f.base, tool="Bash",
+                command="gh issue edit 7 --body 'a new brief for #185'")
+        check("an issue body draws no comment warning here",
+              r.returncode == 0 and "WARNING" not in r.stdout, out(r)[:400])
+
         # ------ the fix round on e73ec4b's review ------
         # `--comment` IS THE REVIEW'S KIND ON `gh pr review`, not its body.
         # gh's own example is `gh pr review --comment -b "..."`; reading

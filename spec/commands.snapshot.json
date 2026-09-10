@@ -40,6 +40,8 @@
     ["campaign/github/scenarios.als", "run", "S1_HappyPath"],
     ["campaign/github/scenarios.als", "run", "S20_TheBaseIsNeverListed"],
     ["campaign/github/scenarios.als", "run", "S20a_ControlANonBaseRepoIsListed"],
+    ["campaign/github/scenarios.als", "run", "S21_StandingBlocksTheClose"],
+    ["campaign/github/scenarios.als", "run", "S21a_ControlTheCloseHappensWithTheHoldOff"],
     ["campaign/github/scenarios.als", "run", "S2_SubIssueDropped"],
     ["campaign/github/scenarios.als", "run", "S5_FollowUpAfterSettled"],
     ["campaign/github/scenarios.als", "run", "S6_RepoJoinsMidFlight"],

@@ -31,7 +31,18 @@ tree gone. Nothing local can see that, and step 5's announcement on the campaign
 is what covers it. Step 1 reports "not applicable" on this path rather than
 "passed", so a reader is never told a vacuous gate held.
 
-## Step 1 — the agents
+## Step 1 — the person's hold, then the agents
+
+The `standing` label is the one gate here that is not a fact about the work. A
+campaign whose sub-issues are all settled and whose panes are all gone is still
+one a person may want kept open — for follow-ups they know are coming, or
+because the campaign is a standing duty rather than a finished job — and nothing
+mechanical can observe that. So it is a label they put on and only they take
+off, read first because it is one request and it refuses whatever the readings
+below say. `spec/campaign/github/system.als` carries it as `Standing` inside
+`closable`; `S21_StandingBlocksTheClose` is the command that reddens when the
+conjunct goes, and `S21a` beside it is the control showing an ordinary close is
+still reachable.
 
 There is no holder to read. The holding session is retired (`AGENTS.md`
 § The binding), so this step asks what is live under the tree and whether it

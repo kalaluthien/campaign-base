@@ -87,6 +87,13 @@ BEFORE the role and the claim, since it is a different question and its
 diagnosis names one edit where the claim's names a claim. `gh api ... -f body=`
 posts a comment and is NOT read; that ceiling is stated in the refusal itself.
 
+A BARE `#N` IS WARNED ABOUT AND NEVER REFUSED. An issue is `<slug>#N` and a
+pull request `pr#N`, since five campaigns file onto one tracker and a bare
+number names no campaign. The form and its sentence are
+`campaign-tracker.py`'s -- imported, so a comment and an issue body are judged
+by one rule -- and the warning is folded into the line EVERY exit prints, allows
+included, because the whole corpus predates the rule.
+
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
 it. A `gh` write from a cwd under no base is allowed as not in a campaign.
 """
@@ -1166,6 +1173,46 @@ def comment_first_line():
     return _FIRST_LINE
 
 
+_TRACKER = None
+# Set when the reference rule would not load, and carried into the verdict
+# beside the comment that could not be judged for it.
+REFERENCE_RULE_UNREADABLE = None
+
+
+def bare_references(text):
+    """(the warning sentence for this comment's bare `#N` references, why the
+    rule would not load). Both are "" / None when there is nothing to say.
+
+    IMPORTED, NEVER RESTATED. `campaign-tracker.py` owns the reference form and
+    prints this same sentence over an issue BODY; a pattern copied here would
+    judge a comment by a rule the body's reader had already moved past. It is
+    one rule read at two moments, which is the shape this file already gives the
+    session-name regex and the role table.
+
+    COULD-NOT-LOAD IS A RETURN AND NEVER A RAISE, for the reason
+    `comment_first_line` gives: a PreToolUse hook that raises exits 1, which the
+    harness reads as the HOOK's error and lets the call proceed -- a hole, not a
+    refusal."""
+    global _TRACKER, REFERENCE_RULE_UNREADABLE
+    if _TRACKER is None and REFERENCE_RULE_UNREADABLE is None:
+        src = HERE / "campaign-tracker.py"
+        try:
+            spec = importlib.util.spec_from_loader(
+                "ctracker", importlib.machinery.SourceFileLoader(
+                    "ctracker", str(src)))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+        except Exception as e:          # noqa: BLE001 -- reported, not raised
+            REFERENCE_RULE_UNREADABLE = (
+                f"campaign-tracker.py, which owns the `<slug>#N` reference "
+                f"form, would not load ({e.__class__.__name__})")
+            return "", REFERENCE_RULE_UNREADABLE
+        _TRACKER = m
+    if _TRACKER is None:
+        return "", REFERENCE_RULE_UNREADABLE
+    return _TRACKER.bare_reference_warning(_TRACKER.bare_references(text)), None
+
+
 # THE BODY FLAGS, and `--comment` IS NOT AMONG THEM. `gh`'s own example is
 # `gh pr review --comment -b "interesting"`, where `--comment` is the review's
 # KIND and takes no value; reading it as valued swallowed the `-b` and judged
@@ -1622,7 +1669,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # write whose CONTENT this guard can read. Refused here so the diagnosis is
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
-    shape, unread, unjudged = [], [], []
+    shape, unread, unjudged, warnings = [], [], [], []
     for tokens, heredocs in pairs:
         word, rest = head(tokens)
         if word != "gh":
@@ -1637,6 +1684,17 @@ def bash_call(command, cwd: Path, session_id=""):
             shape += found
             if why_shape:
                 unjudged.append(why_shape)
+            # THE REFERENCE FORM, WARNED AND NEVER REFUSED. Folded into `what`
+            # before the shape verdict below, so a comment that is refused for
+            # its first line still carries the second thing wrong with it and
+            # its author makes one edit instead of two.
+            warning, why_ref = bare_references(text)
+            if warning:
+                warnings.append(warning)
+            elif why_ref:
+                unjudged.append(why_ref)
+    if warnings:
+        what += " [" + "; ".join(f"WARNING {w}" for w in warnings) + "]"
     if shape or unread:
         return refuse([f"{what}: a comment whose shape does not hold.",
                        *[f"  {f}" for f in shape + unread],

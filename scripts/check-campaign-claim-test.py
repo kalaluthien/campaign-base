@@ -3148,7 +3148,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 436
+    EXPECTED = 441
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

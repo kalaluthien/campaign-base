@@ -15,7 +15,10 @@
 #      `gh pr comment` is an `issue_comment`, one posted with
 #      `gh pr review --comment` is a `pull_request_review`. An `issue_comment`
 #      run uses this file and the scripts as they are on `main`; a
-#      `pull_request_review` run uses the pull request's own.
+#      `pull_request_review` run uses the pull request's own. So on a pull
+#      request that edits check-merge-review.py, a comment asks `main`'s gate
+#      while the `check` it re-runs asks the pull request's, and the two can
+#      disagree: a re-run that goes red again, or no re-run where one was due.
 #   3. Every `uses:` names a 40-character commit sha, as in check.yml.
 
 name: review-rerun

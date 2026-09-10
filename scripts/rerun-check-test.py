@@ -15,6 +15,8 @@ gate's verdict is the input this script is about.
 
 Usage: scripts/rerun-check-test.py
 """
+import importlib.machinery
+import importlib.util
 import json
 import os
 import subprocess
@@ -23,8 +25,10 @@ import tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "rerun-check.py"
+CHECK_YML = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "check.yml"
 HEAD = "8ca2609f3b1d4e7a9c0b25d8e6f41a3b7c9d0e2f"
 OTHER = "fb1bd4f2a7c3e59018d4b6f0a2c8e1d7b3f9a0c5e"
+BRANCH = "rule-check/274-review-rerun"
 RUN_ID = 34464501480
 RAN, FAILED = [], []
 
@@ -41,23 +45,35 @@ def out(value, status=0):
     print(value if isinstance(value, str) else json.dumps(value))
     sys.exit(status)
 
+def pop(key):
+    seq = state[key]
+    now = seq.pop(0) if len(seq) > 1 else seq[0]
+    json.dump(state, open(state_path, "w"))
+    return now
+
 if args[:2] == ["pr", "view"]:
-    out({"headRefOid": state["head"]} if state.get("head") else {})
+    head = pop("heads")
+    out({"headRefOid": head, "headRefName": state.get("branch", "")} if head else {})
 if args[:1] == ["api"]:
     body = state.get("comments", []) if "/issues/" in line else []
     out(body, state.get("api_status", 0))
 if args[:2] == ["run", "list"]:
     out(state.get("runs", []), state.get("list_status", 0))
 if args[:2] == ["run", "view"]:
-    views = state["views"]
-    now = views.pop(0) if len(views) > 1 else views[0]
-    json.dump(state, open(state_path, "w"))
-    out(now)
+    out(pop("views"), state.get("view_status", 0))
 if args[:2] == ["run", "rerun"]:
     out("", state.get("rerun_status", 0))
 sys.stderr.write("fake gh: no answer for " + line + "\n")
 sys.exit(99)
 '''
+
+
+def gate_step():
+    spec = importlib.util.spec_from_loader(
+        "rerun_check", importlib.machinery.SourceFileLoader("rerun_check", str(SCRIPT)))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.GATE_STEP
 
 
 def check(name, ok, detail=""):
@@ -71,20 +87,33 @@ def review(sha):
             "body": f"REVIEW rule-check-worker-9: narrowed round at {sha[:7]}, no findings"}
 
 
-def run_row(status, conclusion=""):
-    return {"databaseId": RUN_ID, "status": status, "conclusion": conclusion}
+def view(status, conclusion="", failed=()):
+    """A `gh run view --json status,conclusion,jobs` answer."""
+    steps = [{"name": "Every suite", "conclusion": "success"}]
+    steps += [{"name": n, "conclusion": "failure"} for n in failed]
+    return {"status": status, "conclusion": conclusion,
+            "jobs": [{"name": "check", "steps": steps}]}
 
 
-def call(root, state):
+def state(heads=(HEAD,), reviewed=True, views=None, **extra):
+    s = {"heads": list(heads), "branch": BRANCH,
+         "comments": [review(HEAD if reviewed else OTHER)],
+         "runs": [{"databaseId": RUN_ID}],
+         "views": views or [view("completed", "failure", [gate_step()])]}
+    s.update(extra)
+    return s
+
+
+def call(root, st, *args):
     """(word, returncode, everything printed, the gh calls made)."""
-    (root / "state.json").write_text(json.dumps(state))
+    (root / "state.json").write_text(json.dumps(st))
     log = root / "gh.log"
     log.write_text("")
     env = dict(os.environ, PATH=f"{root / 'bin'}:{os.environ['PATH']}",
                FAKE_GH_STATE=str(root / "state.json"), FAKE_GH_LOG=str(log))
+    argv = list(args) or ["274", "--repo", "o/r", "--poll", "0", "--polls", "3"]
     try:
-        p = subprocess.run([str(SCRIPT), "274", "--repo", "o/r", "--poll", "0",
-                            "--polls", "3"], capture_output=True, text=True,
+        p = subprocess.run([str(SCRIPT), *argv], capture_output=True, text=True,
                            env=env, timeout=30)
     except subprocess.TimeoutExpired:
         return "timeout", None, "", log.read_text().splitlines()
@@ -97,7 +126,19 @@ def reran(calls):
     return [c for c in calls if c.startswith("run rerun")]
 
 
+def expect(name, got, word, code, rerun):
+    w, c, text, calls = got
+    want = [f"run rerun {RUN_ID} -R o/r"] if rerun else []
+    check(name, (w, c, reran(calls)) == (word, code, want),
+          f"{w} {c} {reran(calls)} :: {text[:200]}")
+
+
 def main() -> int:
+    # The step name this script waits on is the one check.yml gives the gate.
+    # Renamed there alone, every red run would read `red` and none re-run.
+    check("GATE_STEP names a step in check.yml",
+          f"- name: {gate_step()}\n" in CHECK_YML.read_text(), gate_step())
+
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / "bin").mkdir()
@@ -105,103 +146,99 @@ def main() -> int:
         gh.write_text(FAKE_GH)
         gh.chmod(0o755)
 
-        # The ordinary comment: a NOTE or a REPORT on a pull request nobody
-        # has reviewed at its head. Nothing to re-run, and not a failure.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(OTHER)],
-            "runs": [run_row("completed", "failure")], "views": [{}]})
-        check("no REVIEW at the head is unreviewed, and nothing is re-run",
-              (word, code, reran(calls)) == ("unreviewed", 0, []),
-              f"{word} {code} {reran(calls)}")
+        # The ordinary comment on a pull request nobody has reviewed at its
+        # head. Nothing to re-run, and not a failure.
+        got = call(root, state(reviewed=False))
+        expect("no REVIEW at the head is unreviewed, and nothing is re-run",
+               got, "unreviewed", 0, False)
         check("...and it never looked for a run to re-run",
-              not [c for c in calls if c.startswith("run list")], str(calls))
+              not [c for c in got[3] if c.startswith("run list")], str(got[3]))
 
-        # The gate could not read the comments: no verdict, so no re-run,
-        # and a status that says the reading was not made.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)], "api_status": 1,
-            "runs": [run_row("completed", "failure")], "views": [{}]})
-        check("a gate that could not look is unknown, and nothing is re-run",
-              (word, code, reran(calls)) == ("unknown", 2, []),
-              f"{word} {code} {reran(calls)}")
+        got = call(root, state(api_status=1))
+        expect("a gate that could not look is unknown, and nothing is re-run",
+               got, "unknown", 2, False)
 
-        # No head: there is no sha to find a run for.
-        word, code, text, calls = call(root, {"head": None, "views": [{}]})
-        check("a pull request with no readable head is unknown",
-              (word, code, reran(calls)) == ("unknown", 2, []),
-              f"{word} {code} {reran(calls)}")
+        got = call(root, state(heads=[None]))
+        expect("a pull request with no readable head is unknown", got, "unknown", 2, False)
         check("...and says it was the head, not a crash",
-              "headRefOid" in text and "crashed" not in text, text)
+              "headRefOid" in got[2] and "crashed" not in got[2], got[2])
+
+        got = call(root, state(), "274", "--polls", "many")
+        expect("a bad argument is unknown, the word still first", got, "unknown", 2, False)
+        check("...and says it was the arguments, not a crash",
+              "arguments:" in got[2] and "crashed" not in got[2], got[2])
 
         # THE BRANCH THIS EXISTS FOR: reviewed at the head, and the run for
-        # that head finished red because it read the comments before the
-        # REVIEW was posted.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)],
-            "runs": [run_row("completed", "failure")], "views": [{}]})
-        check("a REVIEW at the head re-runs the red run for that head",
-              (word, code, reran(calls)) == ("rerun", 0, [f"run rerun {RUN_ID} -R o/r"]),
-              f"{word} {code} {reran(calls)}")
-        check("...and the run it looked for is the head's",
-              any(c.startswith("run list") and f"--commit {HEAD}" in c
-                  for c in calls), str(calls))
+        # that head failed at the gate alone because it read the comments
+        # before the REVIEW was posted.
+        got = call(root, state())
+        expect("a REVIEW at the head re-runs a run red at the gate alone",
+               got, "rerun", 0, True)
+        lists = [c for c in got[3] if c.startswith("run list")]
+        check("...and the run it looked for is this pull request's, at the head",
+              len(lists) == 1 and all(f in lists[0] for f in
+                                      (f"--commit {HEAD}", f"--branch {BRANCH}",
+                                       "--event pull_request")), str(lists))
 
-        # Already green: the run read the REVIEW itself. Re-running would
-        # replay the whole job for nothing.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)],
-            "runs": [run_row("completed", "success")], "views": [{}]})
-        check("a green run at the head is left alone",
-              (word, code, reran(calls)) == ("green", 0, []),
-              f"{word} {code} {reran(calls)}")
+        # Red somewhere else too: a re-run replays the whole job to the same
+        # red, on every later comment.
+        got = call(root, state(views=[view("completed", "failure",
+                                           ["Every command comes out as its `expect` clause says",
+                                            gate_step()])]))
+        expect("a run red at another step as well is red, and not re-run",
+               got, "red", 0, False)
+        got = call(root, state(views=[view("completed", "cancelled")]))
+        expect("a run that ended with no failed step is red, and not re-run",
+               got, "red", 0, False)
 
-        # No run for the head yet: the one about to start reads the REVIEW.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)], "runs": [], "views": [{}]})
-        check("no run for the head is no-run, and nothing is re-run",
-              (word, code, reran(calls)) == ("no-run", 0, []),
-              f"{word} {code} {reran(calls)}")
+        got = call(root, state(views=[view("completed", "success")]))
+        expect("a green run at the head is left alone", got, "green", 0, False)
+
+        got = call(root, state(runs=[]))
+        expect("no run for the head is no-run, and nothing is re-run", got, "no-run", 0, False)
 
         # Still running when the REVIEW arrives: its gate step may already
         # have read the comments, so wait for it to finish and then judge.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)],
-            "runs": [run_row("in_progress")],
-            "views": [run_row("in_progress"), run_row("completed", "failure")]})
-        check("a run in progress is waited for, then re-run when it ends red",
-              (word, code, reran(calls)) == ("rerun", 0, [f"run rerun {RUN_ID} -R o/r"]),
-              f"{word} {code} {reran(calls)}")
+        got = call(root, state(views=[view("in_progress"),
+                                      view("completed", "failure", [gate_step()])]))
+        expect("a run in progress is waited for, then re-run when it ends red",
+               got, "rerun", 0, True)
         check("...having polled it rather than re-running at once",
-              len([c for c in calls if c.startswith("run view")]) >= 2, str(calls))
+              len([c for c in got[3] if c.startswith("run view")]) >= 2, str(got[3]))
 
-        # A wait with no end: the polls run out, and that is said, not passed.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)],
-            "runs": [run_row("in_progress")], "views": [run_row("in_progress")]})
-        check("a run still going after the last poll is unknown, not re-run",
-              (word, code, reran(calls)) == ("unknown", 2, []),
-              f"{word} {code} {reran(calls)}")
-        check("...and it says how many polls it made",
-              "3 poll(s)" in text, text)
+        # A push during the wait: the run waited for is no longer the head's.
+        got = call(root, state(heads=[HEAD, HEAD, OTHER],
+                               views=[view("in_progress"),
+                                      view("completed", "failure", [gate_step()])]))
+        expect("a branch that moved during the wait is moved, and not re-run",
+               got, "moved", 0, False)
 
-        # The run list itself failed.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)], "list_status": 1,
-            "views": [{}]})
-        check("a run list that failed is unknown",
-              (word, code, reran(calls)) == ("unknown", 2, []),
-              f"{word} {code} {reran(calls)}")
+        got = call(root, state(views=[view("in_progress")]))
+        expect("a run still going after the last poll is unknown, not re-run",
+               got, "unknown", 2, False)
+        check("...and it says how many polls it made", "3 poll(s)" in got[2], got[2])
+
+        got = call(root, state(list_status=1))
+        expect("a run list that failed is unknown", got, "unknown", 2, False)
         check("...and names the call that failed",
-              "gh run list" in text and "exited 1" in text, text)
+              "gh run list" in got[2] and "exited 1" in got[2], got[2])
 
-        # The re-run was asked for and refused: the job is still red.
-        word, code, text, calls = call(root, {
-            "head": HEAD, "comments": [review(HEAD)], "rerun_status": 1,
-            "runs": [run_row("completed", "failure")], "views": [{}]})
-        check("a re-run GitHub refused is unknown",
-              (word, code) == ("unknown", 2), f"{word} {code}")
-        check("...and names the re-run as what was refused",
-              "gh run rerun" in text, text)
+        got = call(root, state(runs={"databaseId": RUN_ID}))
+        expect("a run list that is not a list is unknown", got, "unknown", 2, False)
+        check("...and says so", "not a list" in got[2], got[2])
+
+        got = call(root, state(view_status=1))
+        expect("a run view that failed is unknown", got, "unknown", 2, False)
+        check("...and names the call that failed",
+              "gh run view" in got[2] and "exited 1" in got[2], got[2])
+
+        got = call(root, state(views=[[1, 2]]))
+        expect("a run view that is not an object is unknown", got, "unknown", 2, False)
+        check("...and says what it answered", "answered [1, 2]" in got[2], got[2])
+
+        got = call(root, state(rerun_status=1))
+        expect("a re-run GitHub refused is unknown", got, "unknown", 2, True)
+        check("...and names the re-run as what was refused", "gh run rerun" in got[2], got[2])
 
     for name in FAILED:
         print(f"FAIL {name}")

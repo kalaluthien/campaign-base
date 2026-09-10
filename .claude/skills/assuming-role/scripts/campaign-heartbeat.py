@@ -13,8 +13,8 @@ verdict first, then what it read and from where:
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
     retire   a worker, idle, whose last release was followed by a compaction,
-             with no prompt and no claim cut since the release and no tool
-             call since the compaction, so it holds nothing: `/exit`
+             holding no claim it cut, with no prompt since the release and no
+             tool call since the compaction, so it holds nothing: `/exit`
     keep     anything else -- working, blocked, small, and every reading that
              could not be made. It never acts.
 
@@ -49,13 +49,13 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
-WHAT `retire` CANNOT SEE, both ways. A worker that, in its release turn and
-unprompted, starts work on a claim somebody else cut -- no `claimed` line of
-its own -- reads as done once the release's compaction runs. And a done
-worker that answers a peer's message with a tool call after its compaction
-reads as working for good: `keep`, which errs the safe way. The model's
-`sessionExit` requires no claim, which no reading here attributes to a
-session.
+WHAT `retire` CANNOT SEE, both ways. `take` and `release` both name the
+branch, so a claim is paired with its release; a claim whose `claimed` line
+this transcript does not hold -- cut by somebody else, or by a `take` whose
+output was filtered -- reads as not held, and a worker holding only such a
+claim reads as done once its release's compaction runs. And a done worker
+that answers a peer's message with a tool call after its compaction reads as
+working for good: `keep`, which errs the safe way.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
@@ -146,8 +146,11 @@ def transcript_reading(lines, anchor, pane, took=None):
                  DISPLAYED -- another pane's, read with `herdr pane read` --
                  names that other pane. Only a tool result counts, so a
                  summary or a prompt quoting the line does not.
-      took       the last tool result line opening with `took`, the line
-                 `campaign-claim.py take` prints when it cuts a claim.
+      held       the claims this session holds: every branch a tool result
+                 line opening with `took` names (`campaign-claim.py take`
+                 prints `claimed <branch>` when it cuts one) with no later
+                 release of that branch in this pane. The caller passes
+                 `claimed <slug>/`, so prose opening "claimed " is no claim.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
       prompted   the last user record carrying text that is not the
@@ -166,8 +169,9 @@ def transcript_reading(lines, anchor, pane, took=None):
     "last" is the latest time. Records of a subagent (`isSidechain`) are its
     own context, not this session's."""
     out = {"released": None, "compacted": None, "prompted": None,
-           "acted": None, "took": None, "context": None, "context_at": None,
+           "acted": None, "held": [], "context": None, "context_at": None,
            "records": 0}
+    cut, freed = {}, {}
     tail = f" in {pane}"
 
     def later(key, ts):
@@ -211,14 +215,19 @@ def transcript_reading(lines, anchor, pane, took=None):
             for ln in result_lines(content):
                 if ln.startswith(anchor) and ln.endswith(tail):
                     later("released", ts)
-                if took and ln.startswith(took + " "):
-                    later("took", ts)
+                    branch = ln[len(anchor):-len(tail)].strip()
+                    freed[branch] = max(freed.get(branch, ts), ts)
+                if took and ln.startswith(took):
+                    branch = ln.split()[1]
+                    cut[branch] = max(cut.get(branch, ts), ts)
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
             said = "".join(texts(content)).strip()
             if said and said != QUEUED_COMPACT and not said.startswith(
                     COMPACTION_ECHOES):
                 later("prompted", ts)
+    out["held"] = sorted(b for b, t in cut.items()
+                         if b not in freed or freed[b] < t)
     return out
 
 
@@ -290,10 +299,10 @@ def verdict(role, own, idle, banner, reading):
     rel, comp = reading["released"], reading["compacted"]
     if (role == "worker" and not own and since == "compacted"
             and not (reading["prompted"] and reading["prompted"] > rel)
-            and not (reading["took"] and reading["took"] > rel)
+            and not reading["held"]
             and not (reading["acted"] and reading["acted"] > comp)):
-        return "retire", (f"{why}, no prompt and no claim since the release, "
-                          f"no tool call since the compaction{passed}")
+        return "retire", (f"{why}, no claim held, no prompt since the "
+                          f"release, no tool call since the compaction{passed}")
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
@@ -369,7 +378,7 @@ def main(argv=None):
             r = limit_reset(pane)
             banner = (r.stdout.strip().splitlines() or ["(no answer)"])[0]
         reading, where, why = read_transcript(sid, claim.RELEASED, pane,
-                                              claim.CLAIMED)
+                                              f"{claim.CLAIMED} {slug}/")
         word, reason = verdict(role, is_own, assign.idle_verdict(row),
                                banner, reading if reading else why)
         print(f"{word} {pane} {row['name']}: {reason}")

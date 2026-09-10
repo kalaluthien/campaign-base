@@ -51,10 +51,8 @@ def ts(minute):
     return f"2026-09-10T10:{minute:02d}:00.000Z"
 
 
-def release(minute, pane=PANE):
-    return {"type": "user", "timestamp": ts(minute), "message": {"content": [
-        {"type": "tool_result",
-         "content": f"sent /compact\n{ANCHOR} rc/1-x in {pane}"}]}}
+def release(minute, pane=PANE, branch="rc/1-x"):
+    return result(minute, f"sent /compact\n{ANCHOR} {branch} in {pane}")
 
 
 def boundary(minute, post=9000):
@@ -86,13 +84,17 @@ def lines(*records):
     return [json.dumps(r) for r in records]
 
 
-TOOK = "claimed"
+TOOK = "claimed tk/"
 
 
-def claimed(minute):
-    """The tool result `campaign-claim.py take` prints when it cuts a claim."""
+def result(minute, text):
     return {"type": "user", "timestamp": ts(minute), "message": {"content": [
-        {"type": "tool_result", "content": f"...\n{TOOK} tk/9-next\n  The ref IS the claim"}]}}
+        {"type": "tool_result", "content": text}]}}
+
+
+def claimed(minute, branch="tk/9-next"):
+    """The tool result `campaign-claim.py take` prints when it cuts a claim."""
+    return result(minute, f"...\nclaimed {branch}\n  The ref IS the claim")
 
 
 def reading(m, *records, pane=PANE):
@@ -220,10 +222,28 @@ def _(m):
     return r["prompted"] == ts(4), r
 
 
-@case("a claim cut in a tool result is read")
+@case("a claim cut in a tool result is held")
 def _(m):
     r = reading(m, release(1), claimed(2))
-    return r["took"] == ts(2), r
+    return r["held"] == ["tk/9-next"], r
+
+
+@case("a claim cut BEFORE an unrelated release is still held")
+def _(m):
+    r = reading(m, claimed(1), release(2), boundary(3))
+    return r["held"] == ["tk/9-next"], r
+
+
+@case("a claim released later in this pane is not held")
+def _(m):
+    r = reading(m, claimed(1), release(2, branch="tk/9-next"), boundary(3))
+    return r["held"] == [], r
+
+
+@case("prose opening with 'claimed' is not a claim")
+def _(m):
+    r = reading(m, release(1), result(2, "claimed the same way."))
+    return r["held"] == [], r
 
 
 @case("an assistant turn with text and no tool call is not acting")
@@ -262,7 +282,7 @@ IDLE = (True, None)
 BUSY = (False, "status is working, not idle")
 NONE = "no limit (herdr lists w1:p2 idle)"
 DONE = {"released": ts(1), "compacted": ts(2), "prompted": None,
-        "acted": None, "took": None, "context": 9000, "context_at": ts(2),
+        "acted": None, "held": [], "context": 9000, "context_at": ts(2),
         "records": 2}
 
 
@@ -319,10 +339,9 @@ def _(m):
     return v[0] == "keep", v
 
 
-@case("a worker that cut a claim since its release is not retired")
+@case("a worker holding a claim is not retired")
 def _(m):
-    between = "2026-09-10T10:01:30.000Z"
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, took=between))
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, held=["tk/9-next"]))
     return v[0] == "keep", v
 
 
@@ -411,7 +430,8 @@ def row(sid, name, pane, status="idle"):
 FLEET = [  # (sid, name, pane, status, records, screen)
     ("S1", "tk-planner-1", "w1:p1", "working", [usage(1, 250_000)], None),
     ("S2", "tk-worker-2", "w1:p2", "idle",
-     [release(1, "w1:p2"), call(2), prompt(3, "/compact"), boundary(4)], ""),
+     [release(1, "w1:p2"), call(2), result(2, "claimed the same way."),
+      prompt(3, "/compact"), boundary(4)], ""),
     ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 210_000)], ""),
     ("S4", "tk-worker-4", "w1:p4", "idle", [usage(1, 10)], banner(2)),
     ("S5", "tk-worker-5", "w1:p5", "idle", [usage(1, 10)], banner(2)),
@@ -655,11 +675,18 @@ MUTATIONS = [
     ("only the bare /compact", "said != QUEUED_COMPACT and not",
      "not said.startswith(QUEUED_COMPACT) and not",
      "a person's `/compact <focus>` is a prompt"),
-    ("read a claim cut", 'if took and ln.startswith(took + " "):', "if False:",
-     "a claim cut in a tool result is read"),
-    ("no claim since the release", 'and not (reading["took"] and reading["took"] > rel)',
-     "and True", "a worker that cut a claim since its release is not retired"),
-    ("the run reads claims", "claim.CLAIMED)", "None)",
+    ("read a claim cut", "if took and ln.startswith(took):", "if False:",
+     "a claim cut in a tool result is held"),
+    ("a release frees its claim", "if b not in freed or freed[b] < t)", "if True)",
+     "a claim released later in this pane is not held"),
+    ("a claim before the release counts", "if b not in freed or freed[b] < t)",
+     'if (b not in freed or freed[b] < t) and t > (out["released"] or ""))',
+     "a claim cut BEFORE an unrelated release is still held"),
+    ("no claim held", 'and not reading["held"]', "and True",
+     "a worker holding a claim is not retired"),
+    ("the run reads this campaign's claims", 'f"{claim.CLAIMED} {slug}/")', "None)",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("the claim prefix names the slug", 'f"{claim.CLAIMED} {slug}/")', 'f"{claim.CLAIMED} ")',
      "the run gives one verdict per session of the campaign, and no other"),
     ("only a tool call is acting", 'b.get("type") == "tool_use"',
      'b.get("type") in ("tool_use", "text")',

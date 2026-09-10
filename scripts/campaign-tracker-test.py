@@ -788,6 +788,21 @@ def main():
     check("one number twice is one finding, in the order it first appears",
           m.bare_references("#9 then #4 then #9") == ["#9", "#4"])
     check("a markdown heading is not a reference", m.bare_references("## Intent") == [])
+    # THE LOOKBEHIND, MEMBER BY MEMBER. What qualifies a reference is the WORD
+    # CHARACTER before the `#`, and a wider class was measured to cost real
+    # misses across the 162 issues on this tracker while protecting nothing:
+    # each of these forms is already saved by its own last letter or digit.
+    check("a letter before the hash qualifies it", m.bare_references("pr#255") == [])
+    check("a digit before the hash qualifies it", m.bare_references("v2#255") == [])
+    check("an underscore before the hash qualifies it",
+          m.bare_references("a_b#255") == [])
+    # THE THREE THAT WERE IN THE CLASS AND COST MISSES, one case each. Every
+    # one of these is a bare reference a reader cannot resolve.
+    check("a hyphen does not qualify a reference", m.bare_references("pre-#181") == ["#181"])
+    check("a slash does not qualify one either",
+          m.bare_references("#116/#160") == ["#116", "#160"])
+    check("nor does a sentence's full stop",
+          m.bare_references("that is the note.#41 says why") == ["#41"])
     check("a body with nothing bare in it warns about nothing",
           m.bare_reference_warning(m.bare_references("machinery#1")) == "")
     check("the warning names every reference and says it is not a refusal",
@@ -833,6 +848,13 @@ def main():
 
         # THE WARNING RIDES WITH THE READING AND MOVES NO EXIT STATUS.
         good_ref = good_sub.replace("## Intent\n- x\n", "## Intent\n- see #185\n")
+        # THE TITLE IS READ BESIDE THE BODY. The rule exempts no field, and a
+        # title-only case is the one that separates the two arguments; with the
+        # body alone this passes with no warning at all.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, title="Fix the thing broken by #185"))
+        check("a bare reference in the TITLE is warned about too",
+              r.returncode == 0 and "WARNING" in r.stdout and "#185" in r.stdout)
         r = tracker("check", "5", "--plan", env=shim(good_ref))
         check("check warns about a bare reference and still holds",
               r.returncode == 0 and "WARNING" in r.stdout

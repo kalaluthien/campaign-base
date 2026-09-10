@@ -109,7 +109,8 @@ check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
             prompted onto it, so a worker reads one issue and nobody plans in a
             pane. `take` passes the flag; a bare `check` does not.
 
-            A BARE `#N` IS A WARNING, not a finding: it is printed with the
+            A BARE `#N` IS A WARNING, not a finding, and the TITLE is read
+            beside the body: the rule exempts no field. It is printed with the
             reading and moves no exit status, because every body on this
             tracker predates the rule and a refusal would wall the history the
             first time anybody edited one. `check-campaign-claim.py` prints the
@@ -711,15 +712,20 @@ SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 # tracker, so a bare `#1` and a bare `#272` are the same shape and neither says
 # which campaign it belongs to; the slug is the only thing that does.
 # `kalaluthien/campaign-base#217`, the full name the `Closes` keyword needs, is
-# already qualified and is not bare -- which is why the lookbehind bars a word
-# character, a dot, a slash and a hyphen before the `#`.
+# already qualified and is not bare: what qualifies every one of these forms is
+# the WORD CHARACTER immediately before the `#` -- the `y` of `sdlc-alloy`, the
+# `r` of `pr`, the `e` of `campaign-base` -- so the lookbehind bars that and
+# nothing else. A wider class was measured and cost real misses: barring `-`,
+# `/` and `.` suppressed `pre-#181`, `#116/#160` and four more bare references
+# across the 162 issues on this tracker, and protected no qualified form, since
+# each of those was already saved by its own last letter.
 #
 # A WARNING AND NOT A REFUSAL, and that is measured rather than lenient: every
 # issue and every comment on this tracker predates the rule and carries bare
 # references, so refusing would wall the tracker's own history the first time
 # anybody edited one of them. `check` prints the finding and still exits on the
 # shape alone.
-BARE_REFERENCE = re.compile(r"(?<![A-Za-z0-9._/#-])#(\d+)")
+BARE_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])#(\d+)")
 
 
 def bare_references(text):
@@ -886,7 +892,7 @@ def cmd_check(args):
     # stdout beside everything else this read, and it moves no exit status: the
     # corpus predates the rule, so a body carrying nothing but bare references
     # still has a shape that holds.
-    warning = bare_reference_warning(bare_references(body))
+    warning = bare_reference_warning(bare_references(title + "\n" + body))
     if warning:
         print(f"  WARNING {warning}")
     findings = shape_findings(kind, title, body, args.plan)

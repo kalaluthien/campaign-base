@@ -91,8 +91,10 @@ A BARE `#N` IS WARNED ABOUT AND NEVER REFUSED. An issue is `<slug>#N` and a
 pull request `pr#N`, since five campaigns file onto one tracker and a bare
 number names no campaign. The form and its sentence are
 `campaign-tracker.py`'s -- imported, so a comment and an issue body are judged
-by one rule -- and the warning is folded into the line EVERY exit prints, allows
-included, because the whole corpus predates the rule.
+by one rule -- and it is printed BESIDE every verdict, allows included, because
+the whole corpus predates the rule. Beside and not inside: the verdict's own
+first line is what the log stores as `reason` and what `guard-precision.py`
+groups on.
 
 EXIT. 0 allows; 2 refuses with the reading on stderr, where the model reads
 it. A `gh` write from a cwd under no base is allowed as not in a campaign.
@@ -1453,6 +1455,15 @@ def issue_target(tokens):
 # returns, so a log write can never change a verdict.
 LAST = {}
 
+# WARNINGS RIDE BESIDE THE VERDICT, NEVER INSIDE ITS SENTENCE. Every exit runs
+# through `refuse` or `allow`, so appending here keeps the "printed on every
+# exit" guarantee that folding into `what` was for -- and keeps it OUT of
+# `lines[0]`, which is stored as the log's `reason` and is what
+# `guard-precision.py` groups its false-positive table on. Folded in, one
+# refusal split into a bucket per reference count, because `normalize` maps a
+# `#N` to `N` but not the number of them (review of 7c0d175).
+NOTES = []
+
 
 def refuse(lines):
     # `status` IS SET HERE, with the verdict, and not at some later line in
@@ -1463,13 +1474,14 @@ def refuse(lines):
     # that decide leaves no window at all -- including on `main`'s early
     # return, which no assignment in the tail can reach.
     LAST.update(verdict="REFUSED", reason=lines[0] if lines else "", status=2)
-    print("check-campaign-claim: REFUSED.\n  " + "\n  ".join(lines), file=sys.stderr)
+    print("check-campaign-claim: REFUSED.\n  " + "\n  ".join(lines + NOTES),
+          file=sys.stderr)
     return 2
 
 
 def allow(lines):
     LAST.update(verdict="allowed", reason=lines[0] if lines else "", status=0)
-    print("check-campaign-claim: allowed. " + " ".join(lines))
+    print("check-campaign-claim: allowed. " + " ".join(lines + NOTES))
     return 0
 
 
@@ -1693,8 +1705,7 @@ def bash_call(command, cwd: Path, session_id=""):
                 warnings.append(warning)
             elif why_ref:
                 unjudged.append(why_ref)
-    if warnings:
-        what += " [" + "; ".join(f"WARNING {w}" for w in warnings) + "]"
+    NOTES.extend(f"WARNING {w}" for w in warnings)
     if shape or unread:
         return refuse([f"{what}: a comment whose shape does not hold.",
                        *[f"  {f}" for f in shape + unread],
@@ -1913,6 +1924,10 @@ def bash_call(command, cwd: Path, session_id=""):
 
 
 def pre(payload):
+    # CLEARED ON THE CLAIM, not on release: one process judges one call in
+    # production, but a caller that judges two -- a suite, a replay -- would
+    # otherwise print the first call's warning beside the second's verdict.
+    NOTES.clear()
     session_id = payload.get("session_id") or ""
     tool = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}

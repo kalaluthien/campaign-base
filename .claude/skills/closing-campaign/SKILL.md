@@ -115,10 +115,10 @@ worktree it works in — so the sessions it lists are exactly who to ask
 (`references/rationale.md`). This skill never kills an agent. No rows still
 leaves two cases step 2 is what catches.
 
-Holds when: `campaign-tracker standing` printed `not-standing`, and
-`campaign-claim live` exited 0 and printed no row of the three refusing kinds —
-or `TOOK_IT_HERE` is set and the `live` half reported not applicable rather than
-passed.
+Holds when: `campaign-tracker standing` printed `not-standing` — always, this
+half has no not-applicable branch. And: `campaign-claim live` exited 0 and
+printed no row of the three refusing kinds, or `TOOK_IT_HERE` is set and that
+half reported not applicable rather than passed.
 
 ### 2. Refuse while work exists only on this machine
 

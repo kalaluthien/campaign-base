@@ -1538,9 +1538,9 @@ pred N3_ForeignNameDoesNotExemptOwnSubIssue {
 
 /* =================== the refs a close leaves behind =================== */
 
-/* github's `closable` reads `settled` and nothing else, so a campaign whose
-   sub-issues are all closed is closable with claim refs still standing on the
-   remote. Most are harmless -- a merged pull request's head outlives it here,
+/* github's `closable` reads `settled` and the person's hold, and nothing about
+   the refs, so a campaign whose sub-issues are all closed is closable with
+   claim refs still standing on the remote. Most are harmless -- a merged pull request's head outlives it here,
    `delete_branch_on_merge` being off -- and the rest are a claim nobody
    retired, which the next `take` on that sub-issue then refuses forever. */
 pred noStrayClaims[c: Campaign] {

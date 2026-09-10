@@ -353,7 +353,6 @@ PIPES = {"|", "|&"}
 BACKGROUND = "&"
 NESTS = {"("}
 UNNESTS = {")"}
-BRACES = {"{", "}"}
 
 
 def split_punct(token):
@@ -1174,11 +1173,19 @@ def paired_segments(command):
     # shells here disagree with (`zsh -c 'cd /tmp | true; echo $PWD'` prints
     # the original directory, and so does bash).
     #
-    # A BRACE GROUP IS NOT A SUBSHELL, BUT A PIPED ONE IS. `{ cd X; } | true`
-    # and `{ cd X; } &` both leave the shell where it was, in both shells here,
-    # and the separator that says so arrives two tokens after the group's own
-    # segments were emitted. So the group's span is remembered and cleared
-    # when the separator after its `}` turns out to be a pipe or a `&`.
+    # A BRACE GROUP IS NOT A SUBSHELL, BUT ONE ON THE LEFT OF A PIPE IS.
+    # `{ cd X; } | true` and `{ cd X; } &` both leave the shell where it was,
+    # in both shells here, and the separator that says so arrives two tokens
+    # after the group's own segments were emitted. So the group's span is
+    # remembered and cleared when the separator after its `}` turns out to be
+    # a pipe or a `&`.
+    #
+    # THE RIGHT OF A PIPE IS NOT THE SAME QUESTION, and the two shells answer
+    # it differently: `true | { cd X; }` leaves bash where it was and moves
+    # zsh, which runs a pipeline's last stage in the current shell. The Bash
+    # tool here runs zsh, so that `cd` IS credited -- a brace makes no
+    # difference to it, and a version of this that skipped `before` for a brace
+    # turned a real `--no-verify` over a hooked repository into an allow.
     out, cur, depth, before = [], [], 0, None
     braces, closed = [], None
     for t in flat + [";"]:
@@ -1200,15 +1207,7 @@ def paired_segments(command):
             closed = braces.pop()
         depth += (t in NESTS) - (t in UNNESTS)
         depth = max(depth, 0)
-        # A BRACE IS GROUPING, NOT A COMMAND SEPARATOR, so it must not become
-        # the `before` a later segment reads: `true | { cd X; }` put a `{`
-        # there and erased the pipe, which is the group on the RIGHT of the
-        # pipe -- the other half of the case the span-clearing above covers.
-        # bash makes both sides a subshell; zsh runs the last stage in the
-        # current shell, so this reads for bash and over-refuses under zsh,
-        # which is the direction to fail in.
-        if t not in BRACES:
-            before = t
+        before = t
     # A string another command runs is that string's segments too: a shell's
     # -c, spelled alone or last in a cluster (`bash -lc`), eval's operands, and
     # a heredoc a SHELL is reading -- `bash <<EOF`, where the body is the
@@ -1478,11 +1477,12 @@ def cd_target(rest, where):
     if word == "pushd":
         # WHAT STOPS THE MOVE, AND ONLY THAT. `pushd -n <dir>` pushes WITHOUT
         # moving, and `pushd` alone, `pushd +N` and `pushd -N` work the stack
-        # rather than naming a place. Everything else moves: `--` ends the
-        # options and `-L`/`-P` only choose how a symlink resolves, and reading
-        # every option-shaped word as a stack flag made `pushd -- .` and
-        # `pushd -P .` unreadable -- which is an ALLOW, so two spellings of the
-        # same move got opposite verdicts (#281's narrowed rounds).
+        # rather than naming a place. Everything else moves under THE SHELL
+        # THAT RUNS HERE, which is zsh: it takes `--`, `-L` and `-P` and moves;
+        # bash 3.2 rejects `-L`/`-P` outright and stays put. Reading every
+        # option-shaped word as a stack flag made `pushd -- .` and `pushd -P .`
+        # unreadable -- which is an ALLOW, so two spellings of the same move
+        # got opposite verdicts (#281's narrowed rounds).
         #
         # `-n` GETS ITS OWN ANSWER, and it is not `None`: the shell stays where
         # it is, which this knows, so `where` comes back unchanged and the
@@ -1490,18 +1490,18 @@ def cd_target(rest, where):
         # third outcome, since the stack is a thing this never saw -- including
         # a bare `pushd`, whose destination depends on what is on that stack.
         # `--` NEEDS NO BRANCH OF ITS OWN. It is option-shaped, so it lands in
-        # `opts` and out of `args`, and every answer below is the same one it
-        # would give if `--` were consumed as the end of the options. A branch
-        # no mutation could make a named case fail for is a branch nothing
-        # tests, so it went out before it shipped.
-        args = rest[1:]
-        opts = [t for t in args if t.startswith("-") and t != "-"]
-        args = [t for t in args if not t.startswith("-") or t == "-"]
+        # `opts` and out of `ops`, and no answer below is worse for it than a
+        # branch consuming it would give -- for `pushd -- -n` it is better,
+        # since both shells error there and stay put, which is what `where`
+        # says and what a consuming branch would have called unreadable. A
+        # branch no mutation could make a named case fail for is a branch
+        # nothing tests, so it went out before it shipped.
+        opts = [t for t in rest[1:] if t.startswith("-") and t != "-"]
         if "-n" in opts:
             return where
-        if len(args) != 1 or args[0].startswith(("+", "-")):
+        if len(ops) != 1 or ops[0].startswith(("+", "-")):
             return None
-        return literal_path(args[0], where)
+        return literal_path(ops[0], where)
     if not ops:
         return Path.home()
     if ops[0] == "-":
@@ -1533,8 +1533,10 @@ def shell_findings(pairs, cwd=None):
     ITS CEILING: a `cd` whose operand the shell composes leaves the directory
     unreadable, which is the third outcome and not a no; and a `cd` inside a
     subshell that also holds the `git` call (`(cd /tmp && git commit -n)`) is
-    not tracked, so that call is judged where the outer shell stands -- an
-    over-refusal, which is the direction to fail in.
+    not tracked, so that call is judged where the outer shell stands. That one
+    is an over-refusal. NOT EVERY MISREADING HERE IS: which way one falls
+    depends on where the hook sits, since reading the wrong directory can put
+    the call in a repository that has none, and unreadable is an allow.
     """
     out, notes, where = [], [], cwd
     for seg, _heredocs, outer in pairs:

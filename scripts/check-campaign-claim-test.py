@@ -2247,13 +2247,17 @@ def main():
               r.returncode == 2 and "skips the hook" in out(r)
               and "FAILED" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
-        # A GROUP ON THE RIGHT OF THE PIPE is the other half: a `{` must not
-        # become the `before` a later segment reads and erase the pipe.
+        # A GROUP ON THE RIGHT OF THE PIPE IS THE OTHER SIDE, and the shells
+        # disagree: bash makes it a subshell, zsh runs a pipeline's last stage
+        # in the current shell and really moves. The Bash tool here runs zsh,
+        # so the `cd` counts -- and a version that read it the other way turned
+        # a real `--no-verify` over a hooked repository into an allow.
         r = ask(wt, tool="Bash",
                 command=f"true | {{ cd {f.d}/nohooks; }}; "
                         f"git commit --no-verify -m x", run_cwd=wt)
-        check("a brace group on the right of a pipe is a subshell too",
-              r.returncode == 2 and "skips the hook" in out(r),
+        check("a `cd` on the right of a pipe counts, which is what the shell "
+              "that runs here does",
+              r.returncode == 0 and "holds no hook" in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
         # `cd` WITH NO OPERAND IS HOME, which is decidable and used to read as
         # unreadable -- and unreadable turns the rule off for the rest.
@@ -2340,8 +2344,8 @@ def main():
                 ("`pushd` with two operands",
                  "pushd /a /b; git commit --no-verify -m x")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
-            check(f"{name} works the stack, whose state this never saw, so "
-                  f"the directory is unread",
+            check(f"{name} names no directory this can read, so the "
+                  f"directory is unread",
                   r.returncode == 0 and "could not be read" in out(r),
                   f"exit {r.returncode}: {out(r)[:400]}")
         # AND THE `-C` FORM IS THE CALL'S OWN ANSWER, so it beats the walk.
@@ -2858,14 +2862,19 @@ def main():
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
     EXPECTED = 410
+    counted = []
     if len(ran) != EXPECTED:
-        fails.append(f"the suite ran {len(ran)} cases, not {EXPECTED}\n"
-                     f"      a case whose body did not run reports nothing; "
-                     f"raise this number in the commit that adds one")
-    for x in fails:
+        counted.append(
+            f"the suite ran {len(ran)} cases, not {EXPECTED}\n"
+            f"      FEWER means a case whose body did not run, which reports "
+            f"nothing; MORE means this number was not raised in the commit "
+            f"that added one")
+    for x in fails + counted:
         print(f"FAIL  {x}")
+    # `counted` IS NOT A CASE, so it stays out of the tally: folding it in
+    # printed `407/408 cases pass` on a run where all 408 named cases passed.
     print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return 1 if fails or counted else 0
 
 
 if __name__ == "__main__":

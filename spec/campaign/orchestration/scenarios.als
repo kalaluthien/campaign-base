@@ -480,6 +480,23 @@ pred H1b_HeartbeatRetiresNoHolder {
          or not once (Now.event = Release and Who.session = s)))
 }
 
+/* THE WATCH READS A LEVEL (#296). An open sub-issue nobody claimed is an
+   `unclaimed` drift until a claim, and a claim on a closed sub-issue is a
+   `settled` drift until its release; each stands on every state between, so
+   the watch reprints what still stands rather than catching one edge. */
+pred W1_UnclaimedDriftClearsOnClaim {
+  some c: Campaign, i: Issue | eventually (i in unclaimedDrift[c]
+    and eventually (Now.event = Claim and Now.issue = i
+                    and after i not in unclaimedDrift[c]))
+}
+pred W1b_SettledDriftClearsOnRelease {
+  some c: Campaign, i: Issue | eventually (Now.event = CloseIssue and Now.issue = i
+    and i in c.memberIssues & Claimed
+    and after (i in settledDrift[c]
+               and eventually (Now.event = Release and Now.issue = i
+                               and after i not in settledDrift[c])))
+}
+
 /* Completion is a GitHub fact, so it survives the death and never undoes. */
 pred S3_DelegateDiesAfterPushing {
   one c: Campaign | one a: Agent {
@@ -1908,6 +1925,8 @@ run L1_PollIntoTheBannerGetsNoAnswer         for exactly 2 Issue, 1 PullRequest,
 run L1b_PromptAfterTheResetIsAnswered         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 run H1_HeartbeatRetiresADoneWorker      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 run H1b_HeartbeatRetiresNoHolder         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run W1_UnclaimedDriftClearsOnClaim       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 8 steps expect 1
+run W1b_SettledDriftClearsOnRelease      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 8 steps expect 1
 
 run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S4_ReportWithoutPush        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1

@@ -734,6 +734,27 @@ pred exitSession[s: Session] {
   agentFrame and no Target.agent
 }
 
+/* THE WATCH'S DRIFT (#296), what `campaign-heartbeat.py --watch` prints as
+   `drift <rule> <subject>` on every poll. The watch is a reader and no event:
+   it changes nothing, and the planner acts on what it prints by running the
+   heartbeat with `--apply`. Two of its rules are state this model holds, and
+   they are the shape every other rule shares -- a desired state read as a
+   level, so a drift stands from the event that opens it until the event that
+   repairs it, and a watch that missed the edge still sees it next poll:
+
+     unclaimed  an open sub-issue with no claim; `claim` repairs it
+     settled    a claim whose sub-issue is closed; `release` repairs it
+
+   `backlog` is not modelled, so `unclaimed` here is the script's rule before
+   it leaves a backlog sub-issue out. The rest are outside the model's reach:
+   `unworked` and `idle-worker` compare a count of claims with a count of
+   workers and never pair one with the other, because that pairing is not
+   derivable -- AGENTS.md § Completion, liveness, and local-only work. And
+   `stuck` is a clock, `context` a size, and `install` is `unreached` in
+   directory/system.als read for the base. */
+fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }
+fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
+
 pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote
   no Reported and no Asked and no Answered

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: H1_HeartbeatRetiresADoneWorker, H1b_HeartbeatRetiresNoHolder, L1b_PromptAfterTheResetIsAnswered, SessionCompactsBetweenSubIssues
+# witnesses: H1_HeartbeatRetiresADoneWorker, H1b_HeartbeatRetiresNoHolder, W1_UnclaimedDriftClearsOnClaim, W1b_SettledDriftClearsOnRelease, L1b_PromptAfterTheResetIsAnswered, SessionCompactsBetweenSubIssues
 """Prove campaign-heartbeat reads each session's transcript and banner and
 gives one verdict per session -- and that each branch is pinned by a case.
 
@@ -9,7 +9,9 @@ tool result, a compaction a `compact_boundary` record, a prompt a user
 record carrying text. The run cases call `main` in-process over a fake
 `herdr`, `gh` and `sleep` on a PATH holding nothing else, and a fake HOME
 holding the transcripts, so nothing here reads or drives a real pane; every
-action is asserted on what the fake herdr was ASKED.
+action is asserted on what the fake herdr was ASKED. The watch cases drive
+`Watch.poll` over readings built here and a clock in minutes, and its reader
+once over the same fake.
 
 Then EVERY BRANCH IS BROKEN IN TURN: the source is mutated in memory, loaded
 as the same file, and the case named for that branch must go red by its own
@@ -239,11 +241,24 @@ def _(m):
     return r["prompted"] is None, r
 
 
-@case("a queued task notification is not a prompt")
+@case("a queued command in any mode but prompt is not a prompt")
 def _(m):
-    r = reading(m, queued(2, "<task-notification> <task-id>b1</task-id>",
+    r = reading(m, queued(2, "Work sub-issue kalaluthien/campaign-base#9 now",
                           mode="task-notification"))
     return r["prompted"] is None, r
+
+
+@case("a task notification reaching an idle pane is not a prompt")
+def _(m):
+    r = reading(m, release(1), boundary(2),
+                prompt(3, "<task-notification>\n<task-id>b1</task-id>"))
+    return r["prompted"] is None, r
+
+
+@case("a compaction whose boundary carries no size leaves no context, not the stale one")
+def _(m):
+    r = reading(m, usage(1, 396_000), boundary(2, post=None))
+    return r["context"] is None, r
 
 
 @case("the release's /compact, queued while busy, is not a prompt")
@@ -459,6 +474,8 @@ GH = r'''#!%(py)s
 import sys
 if sys.argv[1:3] == ["api", "repos/kalaluthien/campaign-base/issues/7"]:
     print('["campaign", "campaign:tk"]'); sys.exit(0)
+if sys.argv[1:3] == ["pr", "list"]:
+    print("not json"); sys.exit(0)
 sys.exit(1)
 '''
 
@@ -654,6 +671,230 @@ def _(m):
             and not verdicts(out) and sent == []), out
 
 
+# the watch
+
+def sess(status="idle", pane="w1:p2", context=None, banner=None):
+    return {"pane": pane, "status": status, "context": context, "banner": banner}
+
+
+def readings(sessions=None, claims=None, issues=None, prs=None, installs=None,
+             fail=()):
+    r = {"sessions": (sessions or {}, None), "claims": (claims or {}, None),
+         "issues": (issues or {}, None), "prs": (prs or {}, None),
+         "installs": (installs or [], None)}
+    for source in fail:
+        r[source] = (None, "unreachable")
+    return r
+
+
+def polls(m, *steps, own="w1:p1"):
+    """The lines each poll printed, one Watch over (minute, readings)."""
+    w = m.Watch("tk", own)
+    return [w.poll(r, minute * 60) for minute, r in steps]
+
+
+def drifts(out, rule):
+    return [ln for ln in out if ln.split()[1:2] == ["drift"]
+            and ln.split()[2] == rule]
+
+
+LIMIT = "session limit, resets 4pm (in 2h)"
+
+
+@case("watch: the first poll names the watch and prints every drift and limit, nothing else")
+def _(m):
+    [out] = polls(m, (0, readings(
+        sessions={"tk-worker-2": sess(banner=LIMIT)},
+        claims={"tk/5-a": 5}, issues={5: ("open", False), 6: ("open", False)})))
+    return (out[0].startswith("watching tk:")
+            and "+ drift unclaimed tk#6" in out
+            and f"+ limit w1:p2 {LIMIT}" in out
+            and not [ln for ln in out if ln.startswith(("+ session", "+ claim", "+ issue"))]), out
+
+
+@case("watch: a later poll prints only what changed, as + and -")
+def _(m):
+    a = readings(claims={"tk/5-a": 5})
+    b = readings(claims={"tk/5-a": 5, "tk/6-b": 6})
+    c = readings(claims={"tk/6-b": 6})
+    _, same, grew, shrank = polls(m, (0, a), (1, a), (2, b), (3, c))
+    return (same == [] and "+ claim tk/6-b" in grew and "- claim tk/5-a" in shrank
+            and "+ claim tk/5-a" not in grew), (same, grew, shrank)
+
+
+@case("watch: a pull request is a line only while its branch is claimed")
+def _(m):
+    w = m.Watch("tk")
+    w.poll(readings(claims={"tk/5-a": 5}, prs={
+        "tk/5-a": (9, "open", "abc1234", 2), "tk/4-z": (8, "merged", "def5678", 7)}), 0)
+    return (sorted(ln for ln in w.shown if ln.startswith("pr "))
+            == ["pr 9 tk/5-a open abc1234 comments=2"]), w.shown
+
+
+@case("watch: unclaimed is an open sub-issue without backlog and no claim")
+def _(m):
+    [out] = polls(m, (0, readings(
+        claims={"tk/5-a": 5},
+        issues={5: ("open", False), 6: ("open", False), 7: ("open", True),
+                8: ("closed", False)})))
+    return drifts(out, "unclaimed") == ["+ drift unclaimed tk#6"], out
+
+
+@case("watch: unworked is more claims than workers, and a planner is no worker")
+def _(m):
+    two = {"tk/5-a": 5, "tk/6-b": 6}
+    staff = {"tk-planner-1": sess(pane="w1:p9"), "tk-worker-2": sess()}
+    [out] = polls(m, (0, readings(sessions=staff, claims=two)))
+    [even] = polls(m, (0, readings(sessions=staff, claims={"tk/5-a": 5})))
+    return (drifts(out, "unworked") == ["+ drift unworked 2 claim(s), 1 worker(s)"]
+            and drifts(even, "unworked") == []), (out, even)
+
+
+@case("watch: stuck is a claim unchanged for 30m while no worker works")
+def _(m):
+    idle = {"tk-worker-2": sess()}
+    r = readings(sessions=idle, claims={"tk/5-a": 5})
+    outs = polls(m, (0, r), (29, r), (30, r))
+    return (drifts(outs[1], "stuck") == []
+            and drifts(outs[2], "stuck") == ["+ drift stuck tk/5-a"]), outs
+
+
+@case("watch: a working worker or a moving pull request is not stuck")
+def _(m):
+    busy = readings(sessions={"tk-worker-2": sess("working")}, claims={"tk/5-a": 5})
+    worked = polls(m, (0, busy), (30, busy))
+    idle = {"tk-worker-2": sess()}
+    pr = lambda k: readings(sessions=idle, claims={"tk/5-a": 5},
+                            prs={"tk/5-a": (9, "open", "abc1234", k)})
+    moved = polls(m, (0, pr(1)), (20, pr(2)), (30, pr(2)))
+    return (not drifts(worked[1], "stuck") and not drifts(moved[2], "stuck")), (worked, moved)
+
+
+@case("watch: settled is a claim whose sub-issue is closed")
+def _(m):
+    [out] = polls(m, (0, readings(claims={"tk/5-a": 5, "tk/6-b": 6},
+                                  issues={5: ("closed", False), 6: ("open", False)})))
+    return drifts(out, "settled") == ["+ drift settled tk/5-a"], out
+
+
+@case("watch: idle-worker is more workers than claims, and one idle for 10m")
+def _(m):
+    staff = {"tk-worker-2": sess(), "tk-worker-3": sess("working", pane="w1:p3")}
+    r = readings(sessions=staff, claims={"tk/5-a": 5})
+    outs = polls(m, (0, r), (9, r), (10, r))
+    even = polls(m, (0, readings(sessions=staff, claims={"tk/5-a": 5, "tk/6-b": 6})),
+                 (10, readings(sessions=staff, claims={"tk/5-a": 5, "tk/6-b": 6})))
+    return (drifts(outs[1], "idle-worker") == []
+            and drifts(outs[2], "idle-worker") == ["+ drift idle-worker tk-worker-2"]
+            and not drifts(even[1], "idle-worker")), (outs, even)
+
+
+@case("watch: context is a non-working session at or over the ceiling")
+def _(m):
+    [out] = polls(m, (0, readings(sessions={
+        "tk-worker-2": sess(context=m.COMPACT_AT),
+        "tk-worker-3": sess("working", pane="w1:p3", context=900_000),
+        "tk-worker-4": sess(pane="w1:p4", context=None),
+        "tk-worker-5": sess(pane="w1:p5", context=m.COMPACT_AT - 1)})))
+    return drifts(out, "context") == [
+        f"+ drift context tk-worker-2 {m.COMPACT_AT // 1000}k"], out
+
+
+@case("watch: install is an install that is not current")
+def _(m):
+    [out] = polls(m, (0, readings(installs=[("o/base", "behind 2"),
+                                            ("o/member", "current")])))
+    return drifts(out, "install") == ["+ drift install o/base behind 2"], out
+
+
+@case("watch: a session status counts after two equal polls")
+def _(m):
+    s = lambda st: readings(sessions={"tk-worker-2": sess(st)},
+                            claims={"tk/5-a": 5})
+    outs = polls(m, (0, s("working")), (1, s("idle")), (2, s("idle")))
+    return (outs[1] == []
+            and "+ session tk-worker-2 idle" in outs[2]), outs
+
+
+@case("watch: the own pane has no session line, and its context is still read")
+def _(m):
+    s = lambda st: readings(sessions={"tk-planner-1": sess(st, pane="w1:p1",
+                                                           context=300_000)})
+    outs = polls(m, (0, s("idle")), (1, s("working")), (2, s("working")))
+    return (not [ln for ln in outs[2] if "session" in ln]
+            and drifts(outs[0], "context") == ["+ drift context tk-planner-1 300k"]), outs
+
+
+@case("watch: no limit on a pane is no line")
+def _(m):
+    [out] = polls(m, (0, readings(sessions={"tk-worker-2": sess(banner="no limit on w1:p2")})))
+    return not [ln for ln in out if "limit" in ln], out
+
+
+@case("watch: a drift still standing reprints as = every 30m")
+def _(m):
+    r = readings(issues={6: ("open", False)})
+    outs = polls(m, (0, r), (29, r), (30, r), (45, r), (60, r))
+    eq = "= drift unclaimed tk#6"
+    return ([o.count(eq) for o in outs[1:]] == [0, 1, 0, 1]), outs
+
+
+@case("watch: a source failing 3 polls running prints error once, and its last reading stands")
+def _(m):
+    ok = readings(claims={"tk/5-a": 5})
+    bad = readings(fail=("claims",))
+    outs = polls(m, (0, ok), (1, bad), (2, bad), (3, bad), (4, bad))
+    back = polls(m, (0, ok), (1, bad), (2, bad), (3, ok), (4, bad))
+    errors = [[ln for ln in o if ln.startswith("error claims")] for o in outs]
+    return ([len(e) for e in errors] == [0, 0, 0, 1, 0]
+            and not [ln for o in outs for ln in o if ln == "- claim tk/5-a"]
+            and not [ln for o in back for ln in o if ln.startswith("error")]), (outs, back)
+
+
+@case("watch: a poll past the ceiling prints error watchdog and exits 1")
+def _(m):
+    m.POLL_CEILING = 1
+    w = m.Watch("tk")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        hung = m.run_watch(w, lambda: time.sleep(3) or readings(), 60, polls=1)
+        fine = m.run_watch(m.Watch("tk"), readings, 60, polls=2,
+                           clock=lambda: 0, sleep=lambda s: None)
+    return (hung == 1 and fine == 0
+            and "error watchdog" in out.getvalue()), out.getvalue()
+
+
+@case("watch reader: sessions come from herdr with context and banner; an unreadable source is a why")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        env = {"PATH": str(d / "bin"), "HOME": str(d / "home"), "TMPDIR": str(d)}
+        saved, cwd = dict(os.environ), os.getcwd()
+        os.environ.update(env)
+        os.chdir(d)
+        try:
+            claim = m.load(m.RELEASE_SCRIPT, "campaign_claim")
+            names = m.load(m.HERE / "campaign-name-session.py", "cns")
+            got = m.watch_reader("7", "tk", "w1:p1", claim, names, {})()
+        except Exception as e:  # noqa: BLE001 -- a reader that raised is the defect
+            return False, f"the reader raised {e.__class__.__name__}: {e}"
+        finally:
+            os.chdir(cwd)
+            os.environ.clear()
+            os.environ.update(saved)
+    ss, why = got["sessions"]
+    others = [got[k][1] for k in ("claims", "issues", "prs", "installs")]
+    return (why is None and set(ss) == {
+                "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
+                "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
+                "tk-worker-10"}
+            and ss["tk-worker-3"]["context"] == 210_000
+            and ss["tk-worker-6"]["context"] is None
+            and ss["tk-worker-4"]["banner"].startswith("session")
+            and ss["tk-planner-1"]["banner"] is None
+            and all(isinstance(w, str) and w for w in others)), got
+
+
 # ------------------------------------------------------------- mutations
 
 # (the branch broken, old text, new text, the case that must go red)
@@ -714,7 +955,7 @@ MUTATIONS = [
     ("a queued peer message", 'and not a.get("isMeta") and is_prompt', "and is_prompt",
      "a peer's message queued into the pane is not a prompt"),
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
-     "a queued task notification is not a prompt"),
+     "a queued command in any mode but prompt is not a prompt"),
     ("a queued echo", ' and is_prompt(a.get("prompt"))', "",
      "the release's /compact, queued while busy, is not a prompt"),
     ("a prompt before the compaction blocks", 'reading["prompted"] > rel)',
@@ -778,6 +1019,76 @@ MUTATIONS = [
      "            pass\n", "a wake that could not be scheduled exits 1"),
     ("a failed send is exit 1", "            failed = True\n        else:",
      "            pass\n        else:", "an action that could not be sent says so and exits 1"),
+    ("a task notice is no prompt", "COMPACTION_ECHOES + (TASK_NOTICE,))", "COMPACTION_ECHOES)",
+     "a task notification reaching an idle pane is not a prompt"),
+    ("a sizeless boundary clears the context", 'out["context"], out["context_at"] = tokens, ts',
+     'out["context"], out["context_at"] = (out["context"] if tokens is None else tokens), ts',
+     "a compaction whose boundary carries no size leaves no context, not the stale one"),
+    ("the first poll prints drifts and limits only", 'if ln.startswith(("drift ", "limit ")))',
+     "if True)", "watch: the first poll names the watch and prints every drift and limit, nothing else"),
+    ("a later poll prints the change", "added, removed = sorted(lines - self.shown), sorted(self.shown - lines)",
+     "added, removed = sorted(lines), []", "watch: a later poll prints only what changed, as + and -"),
+    ("a pull request of a claim only", "for b, p in prs.items() if b in claims}", "for b, p in prs.items()}",
+     "watch: a pull request is a line only while its branch is claimed"),
+    ("unclaimed", 'if state == "open" and not backlog and n not in claimed:', "if False:",
+     "watch: unclaimed is an open sub-issue without backlog and no claim"),
+    ("unclaimed skips backlog", "and not backlog and n not in claimed", "and n not in claimed",
+     "watch: unclaimed is an open sub-issue without backlog and no claim"),
+    ("unclaimed skips a claimed one", "and not backlog and n not in claimed", "and not backlog",
+     "watch: unclaimed is an open sub-issue without backlog and no claim"),
+    ("unworked", "if len(claims) > len(workers):", "if False:",
+     "watch: unworked is more claims than workers, and a planner is no worker"),
+    ("unworked is strictly more", "if len(claims) > len(workers):", "if len(claims) >= len(workers):",
+     "watch: unworked is more claims than workers, and a planner is no worker"),
+    ("a worker by its role word", 'if name.split("-")[-2] == "worker":', "if True:",
+     "watch: unworked is more claims than workers, and a planner is no worker"),
+    ("stuck", "if now - self.moved[b][1] >= STUCK_AFTER:", "if False:",
+     "watch: stuck is a claim unchanged for 30m while no worker works"),
+    ("a working worker resets stuck", "if working or b not in self.moved", "if b not in self.moved",
+     "watch: a working worker or a moving pull request is not stuck"),
+    ("a moving pull request resets stuck", "or self.moved[b][0] != prs.get(b):", ":",
+     "watch: a working worker or a moving pull request is not stuck"),
+    ("settled", 'if issues.get(n, ("open",))[0] == "closed":', "if False:",
+     "watch: settled is a claim whose sub-issue is closed"),
+    ("idle-worker needs more workers", "if len(workers) > len(claims):", "if True:",
+     "watch: idle-worker is more workers than claims, and one idle for 10m"),
+    ("idle-worker waits 10m", "now - self.idle_since[w] >= IDLE_AFTER", "True",
+     "watch: idle-worker is more workers than claims, and one idle for 10m"),
+    ("context skips a working session", 'if (st != "working" and s.get("context") is not None',
+     'if (s.get("context") is not None', "watch: context is a non-working session at or over the ceiling"),
+    ("context is inclusive", 'and s["context"] >= COMPACT_AT):', 'and s["context"] > COMPACT_AT):',
+     "watch: context is a non-working session at or over the ceiling"),
+    ("install", 'if word != "current"}', "if False}",
+     "watch: install is an install that is not current"),
+    ("two equal polls", 'if self.raw.get(name, s["status"]) == s["status"]:', "if True:",
+     "watch: a session status counts after two equal polls"),
+    ("the own pane has no session line", 'if s["pane"] != self.own:', "if True:",
+     "watch: the own pane has no session line, and its context is still read"),
+    ("no limit is no line", 'banner_word(s["banner"]) != "none"', "True",
+     "watch: no limit on a pane is no line"),
+    ("reprint after 30m", "and now - self.printed.get(ln, now) >= REPRINT_AFTER)", ")",
+     "watch: a drift still standing reprints as = every 30m"),
+    ("a reprint restarts the 30m", "self.printed = {ln: (now if ln in added or ln in reprint else t)",
+     "self.printed = {ln: t", "watch: a drift still standing reprints as = every 30m"),
+    ("error after 3 polls", "if self.fails[source] == UNREAD_POLLS:", "if False:",
+     "watch: a source failing 3 polls running prints error once, and its last reading stands"),
+    ("a reading resets the count", "            self.fails[source] = 0\n", "",
+     "watch: a source failing 3 polls running prints error once, and its last reading stands"),
+    ("the last reading stands", "self.fails[source] = self.fails.get(source, 0) + 1",
+     "self.fails[source] = self.fails.get(source, 0) + 1; self.last.pop(source, None)",
+     "watch: a source failing 3 polls running prints error once, and its last reading stands"),
+    ("the watchdog is armed", "signal.alarm(POLL_CEILING)", "signal.alarm(0)",
+     "watch: a poll past the ceiling prints error watchdog and exits 1"),
+    ("an overrun exits 1", 'exiting",\n              flush=True)\n        return 1', 'exiting",\n              flush=True)\n        return 0',
+     "watch: a poll past the ceiling prints error watchdog and exits 1"),
+    ("the reader reads this campaign's sessions", 'if names.campaign_of(row["name"]) != slug:\n                continue',
+     "if False:\n                continue",
+     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
+    ("the reader reads a working session's size", '            if st != "working":\n                s["context"]',
+     '            if True:\n                s["context"]',
+     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
+    ("a reader's crash is a why", 'out[source] = (None, f"{e.__class__.__name__}: {e}")', "raise",
+     "watch reader: sessions come from herdr with context and banner; an unreadable source is a why"),
 ]
 
 

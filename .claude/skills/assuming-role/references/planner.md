@@ -33,21 +33,26 @@ session of its own on this machine, or a delegate on a claim.
 
 ## The planner's clock
 
-On every wake, run the **heartbeat**, then re-subscribe to each worker it
-kept:
+The wake is **one persistent Monitor** on
+`.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch`,
+started once and left running. It prints only what changed and what is not as
+it should be (`drift <rule>`), so each line is an event. On one, run the
+**heartbeat**:
 
 1. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --apply`.
    It reads every session of the campaign, this planner included, and gives
    each one verdict: `fire` on a limit banner, `compact` at the context
    threshold, `retire` for a worker done and holding nothing, `keep` for the
    rest. Its header says what each reads and sends.
-2. `SendMessage` to each worker it did not retire, with `notify_when_idle: true` and no
-   content. That notice is what wakes the planner next.
+2. Act on the drift the heartbeat does not: assign an `unclaimed` sub-issue,
+   ask about a `stuck` claim, release a `settled` one.
 
-No cron. The only timer is the one `fire` schedules: a detached sleeper that
-prompts this pane a minute after the reset, and it lands even when this
+No cron and no idle subscription: a subscription on a session already idle
+fires at once. The only timer is the one `fire` schedules: a detached sleeper
+that prompts this pane a minute after the reset, and it lands even when this
 session stops on the same limit. A cron lives in the session and fires into
 the banner, which is what #244's 65 firings did, ~11 per window.
+A watch that prints `error watchdog` has exited: start it again.
 
 ## Handing off
 

@@ -12,17 +12,17 @@ open sdlc/system
 
 /* THE TWO KINDS THE WITNESSES RUN UNDER. `development` is this campaign's
    own kind: the model before the code, a test that failed first, and a view
-   only when the model grew a shape. None of those is a stage the KIND forbids
+   only when the model added a shape. None of those is a stage the KIND forbids
    skipping, because each is already refused by its own criterion wherever
    there is anything to refuse -- a change that wrote a code path may skip
-   neither Spec nor Test, and one whose scenario grew a shape may not skip
+   neither Spec nor Test, and one whose scenario added a shape may not skip
    Docs. So its profile is every skippable stage, each still gated by its own
    criterion: Test and Code go for every change that writes neither, whatever
-   its scenario grew (`S6b_TheWaiverSurvivesAShape`), and Spec for one that
+   its scenario added (`S6b_TestWaiverWithAShape`), and Spec for one that
    also wrote no view. `maySkip` is a conjunction, so the profile has no say
    in a criterion, and the Docs criterion refuses that skip wherever the
-   scenario grew a shape (`S3a_DocsDemanded`). A scenario and a view alone
-   land (`S6a_TheSameWaiverTheKindAllows`), and `S2a_ProseOnlyChange` is the
+   scenario added a shape (`S3a_DocsWaiverOverAShape`). A scenario and a
+   view alone land (`S6a_DevelopmentTestWaiver`), and `S2a_ProseOnlyChange` is the
    narrowest. `research` states the same profile and differs only in what its
    changes write, which no command here separates, so it has no witness of
    its own.
@@ -30,11 +30,11 @@ open sdlc/system
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and development
    narrows nothing -- so it does not witness that half of `maySkip`, and
    `prototyping` is here to. It keeps the running thing, and
-   `S6_ProfileRefusesWhatTheCriterionAllows` is the profile half on its own.
+   `S6_PrototypingTestWaiver` is the profile half on its own.
    Its `Spec` is dead as a waiver rather than narrow: a change that could skip
    Spec by criterion wrote nothing in Docs, Test or Code, and this kind lets
    neither Test nor Code go, so no landing change of it ever skips its scenario
-   (`S7_PrototypingNeverWaivesItsScenario`, against `S7a_TheKindThatDoes` at
+   (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at
    the same scope). What the profile leaves live is the Docs waiver. The other
    kinds' profile lines are the procedure's to state, one line each in
    assets/agents/*.md, in this vocabulary. */
@@ -48,11 +48,11 @@ pred prototypingProfile[c: Change] { c.optional = Spec + Docs }
    order, and `OrderedByFeeds_Bites` in checks.als is what its absence admits.
    It bounds when a stage may be reached and never whether the absence it
    leaves is licensed at the end: that reading is `landDiscipline`'s, and
-   `S5b_LandsWithoutTheLanding` is the chain the order lets through. */
+   `S5b_WithoutTheLandingCheck` is the chain the order lets through. */
 pred orderDiscipline {
-  always (Now.event = Write implies
-    (let c = Now.artifact.change |
-       all p: feeds.(Now.artifact.stage) | p in writtenStages[c] or maySkip[c, p]))
+  always (Step.event = Write implies
+    (let c = Step.artifact.change |
+       all p: feeds.(Step.artifact.stage) | p in writtenStages[c] or maySkip[c, p]))
 }
 
 /* THE CHECK AT THE COMMIT: the tree a commit leaves is tied, and every
@@ -61,7 +61,7 @@ pred orderDiscipline {
    still ties the code path (`WitnessesResolve_Bites`). This is the pre-commit
    check the campaign's Scope names. */
 pred tieDiscipline {
-  always ((Now.event in Write + Rename) implies after (treeTied and witnessesResolve))
+  always ((Step.event in Write + Rename) implies after (everyCodeHasScenario and everyWitnessExists))
 }
 
 /* THE CHECK AT THE LANDING: every stage the change has no artifact for is
@@ -71,7 +71,7 @@ pred tieDiscipline {
    where a test written before its code path would read as an unlicensed
    absence of Code. */
 pred landDiscipline {
-  always (Now.event = Land implies all s: absentStages[Now.subject] | maySkip[Now.subject, s])
+  always (Step.event = Land implies all s: absentStages[Step.subject] | maySkip[Step.subject, s])
 }
 
 pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline }
@@ -101,15 +101,15 @@ pred S2a_ProseOnlyChange {
   one c: Change {
     developmentProfile[c]
     change.c.stage = Intent + Plan
-    eventually (c in Landed and absentStages[c] = skippable and treeTied)
+    eventually (c in Landed and absentStages[c] = skippable and everyCodeHasScenario)
   }
 }
 
-/* A development change whose scenario grows no shape skips its view and
+/* A development change whose scenario adds no shape skips its view and
    lands with the rest of the chain written. */
-pred S3_DocsWaived {
+pred S3_DocsWaiver {
   allDisciplines
-  no GrowsShape
+  no AddsShape
   one c: Change {
     developmentProfile[c]
     change.c.stage = Stage - Docs
@@ -117,27 +117,27 @@ pred S3_DocsWaived {
   }
 }
 
-/* The same absence when the scenario DID grow a shape: no trace lands it. */
-pred S3a_DocsDemanded {
+/* The same absence when the scenario DID add a shape: no trace lands it. */
+pred S3a_DocsWaiverOverAShape {
   allDisciplines
   one c: Change {
     developmentProfile[c]
-    eventually (c in Landed and Docs in absentStages[c] and some writtenOf[c] & GrowsShape)
+    eventually (c in Landed and Docs in absentStages[c] and some writtenOf[c] & AddsShape)
   }
 }
 
 /* The remedy the landing check leaves: the code path went in while the view
-   could be skipped, a scenario then grew a shape, and the change writes the
+   could be skipped, a scenario then added a shape, and the change writes the
    view after all and lands. The finding in checks.als is this chain without
    the view. */
-pred S3b_DocsWrittenAfterAll {
+pred S3b_LateDocs {
   allDisciplines
   one c: Change {
     developmentProfile[c]
-    eventually (Now.event = Write and Now.artifact in change.c & stage.Docs
+    eventually (Step.event = Write and Step.artifact in change.c & stage.Docs
                 and Docs in absentStages[c]
                 and some writtenOf[c] & stage.Code
-                and some writtenOf[c] & GrowsShape)
+                and some writtenOf[c] & AddsShape)
     eventually c in Landed
   }
 }
@@ -146,13 +146,13 @@ pred S3b_DocsWrittenAfterAll {
    the new name: the tree is untied. Every discipline but the commit check
    holds, which is the point -- nothing else reads a tie. The scope holds a
    seventh artifact for the new name. */
-pred S4_RenameBreaksTheTie {
+pred S4_CodeRenameBreak {
   orderDiscipline and landDiscipline
   one c: Change {
     developmentProfile[c]
-    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and treeTied
-                and eventually (Now.event = Rename and Now.artifact.stage = Code
-                                and treeTied and after not treeTied))
+    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and everyCodeHasScenario
+                and eventually (Step.event = Rename and Step.artifact.stage = Code
+                                and everyCodeHasScenario and after not everyCodeHasScenario))
   }
 }
 
@@ -161,25 +161,25 @@ pred S4_RenameBreaksTheTie {
    untied. This is the one command that pins which text carries which name
    -- with the scenario naming the test (`s -> t`) the rename would carry the
    arrow along and this is UNSAT -- and it is the T3 the check refuses. */
-pred S4b_RenameOfTheScenarioBreaksTheTie {
+pred S4b_ScenarioRenameBreak {
   orderDiscipline and landDiscipline
   one c: Change {
     developmentProfile[c]
-    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and treeTied
-                and eventually (Now.event = Rename and Now.artifact.stage = Spec
-                                and treeTied and after not treeTied))
+    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and everyCodeHasScenario
+                and eventually (Step.event = Rename and Step.artifact.stage = Spec
+                                and everyCodeHasScenario and after not everyCodeHasScenario))
   }
 }
 
 /* The rename the check admits: the code path's new name still answers to
    the test paired with it, and the tree stays tied through it. */
-pred S4a_RenameKeepsItsNamers {
+pred S4a_TiedCodeRename {
   allDisciplines
   one c: Change {
     developmentProfile[c]
     change.c.stage = Stage
-    eventually (Now.event = Rename and Now.artifact.stage = Code and some drives.(Now.artifact))
-    always treeTied
+    eventually (Step.event = Rename and Step.artifact.stage = Code and some drives.(Step.artifact))
+    always everyCodeHasScenario
   }
 }
 
@@ -191,18 +191,18 @@ pred S4a_RenameKeepsItsNamers {
    `witnesses` are a declaration in its own text, which survives the file
    being moved. The pair pins the asymmetry -- make `rename` copy `drives`
    too and `S4c` goes UNSAT; stop it copying `witnesses` and `S4d` goes SAT. */
-pred S4c_RenameOfTheTestBreaksTheTie {
+pred S4c_TestRenameBreak {
   orderDiscipline and landDiscipline
   one c: Change {
     developmentProfile[c]
-    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and treeTied
-                and eventually (Now.event = Rename and Now.artifact.stage = Test
-                                and treeTied and after not treeTied))
+    eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and everyCodeHasScenario
+                and eventually (Step.event = Rename and Step.artifact.stage = Test
+                                and everyCodeHasScenario and after not everyCodeHasScenario))
   }
 }
-pred S4d_RenameOfTheTestKeepsItsWitness {
+pred S4d_TestRenameWitnessLoss {
   orderDiscipline and landDiscipline
-  eventually (Now.event = Rename and Now.artifact.stage = Test and some Now.artifact.witnesses
+  eventually (Step.event = Rename and Step.artifact.stage = Test and some Step.artifact.witnesses
               and some b: Written' - Written | no b.witnesses)
 }
 
@@ -224,9 +224,10 @@ pred codeWithoutSpec[c: Change] {
               and some writtenOf[c] & stage.Code
               and no writtenOf[c] & stage.Spec)
 }
-pred S5_CodeWithoutSpecRefused   { allDisciplines and some c: Change | codeWithoutSpec[c] }
-pred S5a_RefusedWithoutTheTie    { orderDiscipline and landDiscipline and some c: Change | codeWithoutSpec[c] }
-pred S5b_LandsWithoutTheLanding  { orderDiscipline and some c: Change | codeWithoutSpec[c] }
+pred S5_CodeWithoutSpec         { allDisciplines and some c: Change | codeWithoutSpec[c] }
+pred S5a_WithoutTheCommitCheck  { orderDiscipline and landDiscipline
+                                  some c: Change | codeWithoutSpec[c] }
+pred S5b_WithoutTheLandingCheck { orderDiscipline and some c: Change | codeWithoutSpec[c] }
 
 /* THE PROFILE HALF OF `maySkip`, ON ITS OWN. A `prototyping` change that wrote
    its scenario and its view and neither a test nor a code path: `criterion`
@@ -235,7 +236,7 @@ pred S5b_LandsWithoutTheLanding  { orderDiscipline and some c: Change | codeWith
    goes without. No trace lands it. `S6a` is the same chain under a kind that
    allows it, so neither the shape nor the scope is what refuses it here, and
    the pair is what catches `s in c.optional` going missing from `maySkip`. */
-pred S6_ProfileRefusesWhatTheCriterionAllows {
+pred S6_PrototypingTestWaiver {
   allDisciplines
   one c: Change {
     prototypingProfile[c]
@@ -243,7 +244,7 @@ pred S6_ProfileRefusesWhatTheCriterionAllows {
     eventually (c in Landed and absentStages[c] = Test + Code)
   }
 }
-pred S6a_TheSameWaiverTheKindAllows {
+pred S6a_DevelopmentTestWaiver {
   allDisciplines
   one c: Change {
     developmentProfile[c]
@@ -252,15 +253,15 @@ pred S6a_TheSameWaiverTheKindAllows {
   }
 }
 
-/* THE SAME ABSENCE WHEN THE SCENARIO DID GROW A SHAPE: it is licensed still,
+/* THE SAME ABSENCE WHEN THE SCENARIO DID ADD A SHAPE: it is licensed still,
    because the Test and Code criteria read what the change wrote below them
    and nothing else. The change owes its view and writes it. */
-pred S6b_TheWaiverSurvivesAShape {
+pred S6b_TestWaiverWithAShape {
   allDisciplines
   one c: Change {
     developmentProfile[c]
     change.c.stage = Intent + Plan + Spec + Docs
-    eventually (c in Landed and absentStages[c] = Test + Code and some writtenOf[c] & GrowsShape)
+    eventually (c in Landed and absentStages[c] = Test + Code and some writtenOf[c] & AddsShape)
   }
 }
 
@@ -269,34 +270,34 @@ pred S6b_TheWaiverSurvivesAShape {
    skip Spec only when it wrote nothing in Docs, Test or Code; this kind lets
    neither Test nor Code go, so such a change cannot land, and one that does
    land wrote a code path and is refused Spec by the criterion
-   (`S5_CodeWithoutSpecRefused`). `S7a` is the same question under a kind that
+   (`S5_CodeWithoutSpec`). `S7a` is the same question under a kind that
    narrows nothing, so neither the shape nor the scope is what refuses `S7`. */
-pred S7_PrototypingNeverWaivesItsScenario {
+pred S7_PrototypingSpecWaiver {
   allDisciplines
   one c: Change { prototypingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
 }
-pred S7a_TheKindThatDoes {
+pred S7a_DevelopmentSpecWaiver {
   allDisciplines
   one c: Change { developmentProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
 }
 
 /* ---------------- commands ---------------- */
 
-run S1_FullChain              for exactly 1 Change, exactly 6 Artifact, 10 steps expect 1
-run S2a_ProseOnlyChange       for exactly 1 Change, exactly 2 Artifact, 10 steps expect 1
-run S3_DocsWaived             for exactly 1 Change, exactly 5 Artifact, 10 steps expect 1
-run S3a_DocsDemanded          for exactly 1 Change, 6 Artifact, 10 steps expect 0
-run S3b_DocsWrittenAfterAll   for exactly 1 Change, 7 Artifact, 12 steps expect 1
-run S4_RenameBreaksTheTie     for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
-run S4b_RenameOfTheScenarioBreaksTheTie for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
-run S4a_RenameKeepsItsNamers  for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
-run S4c_RenameOfTheTestBreaksTheTie     for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
-run S4d_RenameOfTheTestKeepsItsWitness  for exactly 1 Change, exactly 7 Artifact, 10 steps expect 0
-run S5_CodeWithoutSpecRefused for 2 Change, 6 Artifact, 10 steps expect 0
-run S5a_RefusedWithoutTheTie  for 2 Change, 6 Artifact, 10 steps expect 0
-run S5b_LandsWithoutTheLanding for 2 Change, 6 Artifact, 10 steps expect 1
-run S6_ProfileRefusesWhatTheCriterionAllows for exactly 1 Change, exactly 4 Artifact, 10 steps expect 0
-run S6a_TheSameWaiverTheKindAllows          for exactly 1 Change, exactly 4 Artifact, 10 steps expect 1
-run S6b_TheWaiverSurvivesAShape             for exactly 1 Change, exactly 4 Artifact, 10 steps expect 1
-run S7_PrototypingNeverWaivesItsScenario    for exactly 1 Change, 6 Artifact, 12 steps expect 0
-run S7a_TheKindThatDoes                    for exactly 1 Change, 6 Artifact, 12 steps expect 1
+run S1_FullChain               for exactly 1 Change, exactly 6 Artifact, 10 steps expect 1
+run S2a_ProseOnlyChange        for exactly 1 Change, exactly 2 Artifact, 10 steps expect 1
+run S3_DocsWaiver              for exactly 1 Change, exactly 5 Artifact, 10 steps expect 1
+run S3a_DocsWaiverOverAShape   for exactly 1 Change, 6 Artifact, 10 steps expect 0
+run S3b_LateDocs               for exactly 1 Change, 7 Artifact, 12 steps expect 1
+run S4_CodeRenameBreak         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4b_ScenarioRenameBreak    for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4a_TiedCodeRename         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4c_TestRenameBreak        for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 7 Artifact, 10 steps expect 0
+run S5_CodeWithoutSpec         for 2 Change, 6 Artifact, 10 steps expect 0
+run S5a_WithoutTheCommitCheck  for 2 Change, 6 Artifact, 10 steps expect 0
+run S5b_WithoutTheLandingCheck for 2 Change, 6 Artifact, 10 steps expect 1
+run S6_PrototypingTestWaiver   for exactly 1 Change, exactly 4 Artifact, 10 steps expect 0
+run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 4 Artifact, 10 steps expect 1
+run S6b_TestWaiverWithAShape   for exactly 1 Change, exactly 4 Artifact, 10 steps expect 1
+run S7_PrototypingSpecWaiver   for exactly 1 Change, 6 Artifact, 12 steps expect 0
+run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect 1

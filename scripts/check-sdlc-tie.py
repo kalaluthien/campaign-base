@@ -2,10 +2,10 @@
 """Refuse a commit whose scenario, test and code path stop tying by name.
 
 The reader of `tieDiscipline` in spec/sdlc/scenarios.als: after a commit that
-writes or renames an artifact the tree is tied (`treeTied` in
+writes or renames an artifact the tree is tied (`everyCodeHasScenario` in
 spec/sdlc/system.als), which is to say every code path walks back to a
 scenario through the test that drives it, and every name a test declares is a
-scenario (`witnessesResolve`). The model says what a tie is; this
+scenario (`everyWitnessExists`). The model says what a tie is; this
 says how one is read off this tree, and judges the commit by what it CHANGES
 about the reading rather than by the tree's whole debt.
 
@@ -62,14 +62,14 @@ together, the first saying what the code path lost and T6 which name did it:
       exhibits.
   T2  a code path that was tied has no suite after the commit: the suite was
       deleted or renamed, or the code path was renamed and the suite was not.
-      `S4_RenameBreaksTheTie` at the code path's end and
-      `S4c_RenameOfTheTestBreaksTheTie` at the suite's -- one relation,
+      `S4_CodeRenameBreak` at the code path's end and
+      `S4c_TestRenameBreak` at the suite's -- one relation,
       `drives`, broken by renaming either end; the rename that passes is
-      `S4a_RenameKeepsItsNamers`, whose suite moves in the same commit.
+      `S4a_TiedCodeRename`, whose suite moves in the same commit.
   T3  a code path that was tied still has its suite, and the suite declares no
       scenario any more: the scenario was renamed or deleted, or the
       `# witnesses:` line was dropped. The same rename read at the scenario's
-      end (`S4b_RenameOfTheScenarioBreaksTheTie`).
+      end (`S4b_ScenarioRenameBreak`).
   T4  a code path THIS CHANGE TOUCHED that is untied both before and after it
       and that the allow-list below does not name: the debt grew where nothing
       here could see it, by a bypassed hook or a merge this never ran over. The

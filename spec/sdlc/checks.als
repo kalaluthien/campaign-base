@@ -21,13 +21,13 @@ assert OrderedByFeeds {
   orderDiscipline implies always
     all c: Change, s: writtenStages[c], p: feeds.s |
       p in writtenStages[c]
-      or once (Now.event = Write and Now.artifact in change.c & stage.s and maySkip[c, p])
+      or once (Step.event = Write and Step.artifact in change.c & stage.s and maySkip[c, p])
 }
 pred OrderedByFeeds_Bites {
   not orderDiscipline
   eventually some c: Change, s: writtenStages[c], p: feeds.s |
     p not in writtenStages[c]
-    and historically not (Now.event = Write and Now.artifact in change.c & stage.s and maySkip[c, p])
+    and historically not (Step.event = Write and Step.artifact in change.c & stage.s and maySkip[c, p])
 }
 
 /* ---------------- the tie ---------------- */
@@ -36,11 +36,11 @@ pred OrderedByFeeds_Bites {
    each commit, since nothing but a commit moves Written. Without it: a code
    path no test drives, or a rename that left a declaration dangling. */
 assert TreeStaysTied {
-  tieDiscipline implies always treeTied
+  tieDiscipline implies always everyCodeHasScenario
 }
 pred TreeStaysTied_Bites {
   not tieDiscipline
-  eventually not treeTied
+  eventually not everyCodeHasScenario
 }
 
 /* Under `tieDiscipline`, every declared witness names a written scenario at
@@ -48,16 +48,16 @@ pred TreeStaysTied_Bites {
    tied at every state and still carry a dead name: a test declares two
    scenarios, one is renamed and the text is not rewritten, and the code path
    stays tied through the other -- bd2143d's shape, which a check reading
-   `treeTied` alone passed. The last conjunct pins that shape: the test the
-   rename left declaring a dead name still ties a written code path, so it
-   declared two. */
+   `everyCodeHasScenario` alone passed. The last conjunct pins that shape:
+   the test the rename left declaring a dead name still ties a written code
+   path, so it declared two. */
 assert WitnessesResolve {
-  tieDiscipline implies always witnessesResolve
+  tieDiscipline implies always everyWitnessExists
 }
 pred WitnessesResolve_Bites {
-  always treeTied
-  eventually (Now.event = Rename and Now.artifact.stage = Spec
-              and witnessesResolve and after not witnessesResolve
+  always everyCodeHasScenario
+  eventually (Step.event = Rename and Step.artifact.stage = Spec
+              and everyWitnessExists and after not everyWitnessExists
               and after some witnesses.(Artifact - Written) & (Artifact.tie).Written)
 }
 
@@ -65,7 +65,7 @@ pred WitnessesResolve_Bites {
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
    was licensed, and stays so: a landed change writes nothing more, a rename
-   keeps its stages and which of its scenarios grew a shape, and its profile
+   keeps its stages and which of its scenarios added a shape, and its profile
    is static. Without it: a change lands with an absence its kind or its
    criterion refuses. */
 assert AbsenceLicensed {
@@ -79,8 +79,8 @@ pred AbsenceLicensed_Bites {
 /* THE FINDING. A chain that keeps the order -- which reads every absent
    stage as licensed at the write that passes it -- and the commit check, and
    still lands with a view it was not licensed to skip: the code path went in
-   while no scenario grew a shape, and a later scenario of the same change
-   grew one. The criterion is a function of the change's final shape, so the
+   while no scenario added a shape, and a later scenario of the same change
+   added one. The criterion is a function of the change's final shape, so the
    reading that decides is the landing's, and `landDiscipline` is a mechanism
    of its own rather than the order's reading restated. */
 pred SkipReadAtTheTimeIsNotEnough {
@@ -93,9 +93,9 @@ pred SkipReadAtTheTimeIsNotEnough {
  * commands above, and an over-tight frame is the cheapest way to cause it
  * without any command turning red.
  */
-pred Cov_Write  { eventually Now.event = Write }
-pred Cov_Rename { eventually Now.event = Rename }
-pred Cov_Land   { eventually Now.event = Land }
+pred Cov_Write  { eventually Step.event = Write }
+pred Cov_Rename { eventually Step.event = Rename }
+pred Cov_Land   { eventually Step.event = Land }
 
 /* ---------------- commands ---------------- */
 

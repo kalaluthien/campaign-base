@@ -30,9 +30,9 @@ THE NAMED FAILING CASES, one per refusal branch:
 
 and the allow cases beside them: the repaired model, a witness with extra
 conjuncts, an `or` inside a quantifier's body, a witness predicate declared in
-the opened module or with parameters or a receiver, a model opening
-`util/ordering`, a run of a fun, and a check naming no event over a model
-whose event is dead.
+the opened module or with parameters or a receiver, a model whose observer
+is sdlc's `Step`, a model opening `util/ordering`, a run of a fun, and a check
+naming no event over a model whose event is dead.
 
 Usage: scripts/alloy-check-test.py   (needs ~/.local/bin/alloy, as CI installs)
 """
@@ -91,12 +91,14 @@ def check(name, ok, detail=""):
 
 
 def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine",
-        extra="", run_line=None, alloy_says=None, opens="", pred=None, more=""):
+        extra="", run_line=None, alloy_says=None, opens="", pred=None, more="",
+        observer="Now"):
     """Write the fixture under <d> and run the script on its checks module.
 
     `witness` is a predicate body for `Cov_Hand`; empty declares no witness.
     `pred` replaces the whole witness declaration, for its other head forms,
     and `more` adds declarations to the checks module.
+    `observer` renames the `Now` sig throughout, as sdlc names its `Step`.
     `alloy_says` replaces alloy with a stand-in printing those lines, for the
     two readings real alloy never gives: a verdict line this script cannot
     parse, and a command whose `assert` is not in the text.
@@ -112,13 +114,14 @@ def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine
     root = Path(d) / "sys"
     root.mkdir(parents=True, exist_ok=True)
     (root / "system.als").write_text(
-        SYSTEM.format(condition=condition, extra=extra))
+        SYSTEM.format(condition=condition, extra=extra).replace("Now", observer))
     if pred is None:
         pred = f"pred Cov_Hand {{ {witness} }}" if witness else ""
     if run_line is None:
         run_line = f"run Cov_Hand for 2 expect {expect}" if witness or extra else ""
     (root / "checks.als").write_text(
-        CHECKS.format(witness=pred, check=check_name, run=run_line, opens=opens, more=more))
+        CHECKS.format(witness=pred, check=check_name, run=run_line, opens=opens,
+                      more=more).replace("Now", observer))
     r = subprocess.run([sys.executable, str(SCRIPT), str(root / "checks.als"),
                         "-o", str(Path(d) / "out")],
                        capture_output=True, text=True, env=env)
@@ -207,6 +210,8 @@ def main() -> int:
         "`event`": ("pred Cov_Hand[event: univ -> Event] { eventually Now.event = Hand }", ""),
         "`Now`": ("pred Cov_Hand[Now: Fake] { eventually Now.event = Hand }",
                   "sig Fake { event: one Event }"),
+        "`Step`": ("pred Cov_Hand[Step: Fake] { eventually Step.event = Hand }",
+                   "sig Fake { event: one Event }"),
     }
     for name, (decl, extra) in shadows.items():
         with tempfile.TemporaryDirectory() as d:
@@ -269,6 +274,14 @@ def main() -> int:
         check("the events are read from declarations, not from a comment",
               "Hand" in events and "Stutter" in events and "Ghost" not in events,
               events)
+
+    for form in ("eventually Now.event = Hand",
+                 "eventually (Now.event = Hand and some Machine)"):
+        with tempfile.TemporaryDirectory() as d:
+            rc, out, path = run(d, condition="", witness=form, observer="Step")
+            check(f"a model whose observer is sdlc's `Step` passes: {form.replace('Now', 'Step')}",
+                  rc == 0 and line(out, "witness").split()[1:4] == ["Hand", "Cov_Hand", "SAT"],
+                  f"exit {rc}: {out[-6:]}")
 
     allowed = {
         "a witness with conjuncts after the event":

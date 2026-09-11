@@ -15,9 +15,9 @@
  *               campaign's kind lets it skip
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
- *   GrowsShape  the spec artifacts that add a shape a person has to understand
+ *   AddsShape   the spec artifacts that add a shape a person has to understand
  *   Written     the artifacts that exist; Landed, the changes that merged
- *   Now         the observer: which event, on which artifact or change
+ *   Step        the observer: which event, on which artifact or change
  *
  * ORIENTATION
  *
@@ -105,7 +105,7 @@ sig Change { optional: set Stage }
    atom stay on it, outside Written. So renaming a scenario leaves every text
    declaring it pointing at nothing, while renaming a test carries its text
    along -- `rename` copies `witnesses` and leaves `drives` to the new name --
-   which is the asymmetry `S4c_RenameOfTheTestBreaksTheTie` and `S4d` pin.
+   which is the asymmetry `S4c_TestRenameBreak` and `S4d` pin.
 
    Neither arrow is a fact about its target being written: a test declares
    the code path it will drive before that path exists, which is the order
@@ -116,19 +116,19 @@ sig Artifact {
   witnesses: set Artifact,
   drives:    set Artifact
 }
-/* THE SPEC ARTIFACTS THAT GROW A SHAPE: a signature, a relation or an event
+/* THE SPEC ARTIFACTS THAT ADD A SHAPE: a signature, a relation or an event
    a person has to understand. Static, because a scenario either declares one
    or does not, and readable off a diff -- a `sig`, a `var` or a `one sig ...
    extends Event` added under spec/ -- which is what makes the docs criterion
    the check's to decide rather than a worker's. */
-sig GrowsShape in Artifact {}
+sig AddsShape in Artifact {}
 
 var sig Written in Artifact {}
 var sig Landed  in Change {}
 
 fact SdlcWellFormed {
   all c: Change | c.optional in skippable
-  GrowsShape in stage.Spec
+  AddsShape in stage.Spec
   /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
@@ -157,13 +157,14 @@ fun tie: Artifact -> Artifact -> Artifact {
 pred tied[k: Artifact] { some tie.k }
 /* EVERY CODE PATH IN THE TREE WALKS BACK TO A SCENARIO. The invariant
    `tieDiscipline` keeps and `TreeStaysTied_Bites` breaks. */
-pred treeTied { all k: Written & stage.Code | tied[k] }
+pred everyCodeHasScenario { all k: Written & stage.Code | tied[k] }
 /* EVERY DECLARED WITNESS NAMES A WRITTEN SCENARIO: no test in the tree
-   declares an atom a rename took out of it. Not implied by `treeTied`, which
-   asks for SOME scenario per code path: a suite declaring two, one of them
-   renamed away, stays tied through the other and still names nothing with the
-   first. `WitnessesResolve_Bites` in checks.als is that trace. */
-pred witnessesResolve { all t: Written | t.witnesses in Written }
+   declares an atom a rename took out of it. Not implied by
+   `everyCodeHasScenario`, which asks for SOME scenario per code path: a
+   suite declaring two, one of them renamed away, stays tied through the
+   other and still names nothing with the first. `WitnessesResolve_Bites` in
+   checks.als is that trace. */
+pred everyWitnessExists { all t: Written | t.witnesses in Written }
 
 /* THE SKIP RULE. A stage may be skipped when the kind's profile lets it be
    AND the stage's own criterion holds of the change -- one criterion per
@@ -173,8 +174,8 @@ pred witnessesResolve { all t: Written | t.witnesses in Written }
      Spec   nothing below it exists: the change has written no view, no
             test and no code path, so there is nothing to formalise and
             nothing drawn for a model that is not there.
-     Docs   the model grew no shape: no spec artifact of the change is in
-            GrowsShape, so there is nothing a person has to be shown.
+     Docs   the model added no shape: no spec artifact of the change is in
+            AddsShape, so there is nothing a person has to be shown.
      Test   nothing runs: the change has written no test and no code path.
      Code   nothing runs. Test and Code share a criterion on purpose: a test
             with no code path witnesses nothing, and a code path with no test
@@ -187,7 +188,7 @@ pred witnessesResolve { all t: Written | t.witnesses in Written }
    moment that decides is `land`, under `landDiscipline`. */
 pred criterion[c: Change, s: Stage] {
   s = Spec          implies no writtenOf[c] & stage.(Docs + Test + Code)
-  s = Docs          implies no writtenOf[c] & GrowsShape
+  s = Docs          implies no writtenOf[c] & AddsShape
   s in Test + Code  implies no writtenOf[c] & stage.(Test + Code)
 }
 pred maySkip[c: Change, s: Stage] { s in c.optional and criterion[c, s] }
@@ -199,7 +200,7 @@ one sig Stutter, Write, Rename, Land extends Event {}
 
 /* The artifact a write or a rename is about, and the change a landing is
    about; the stage is the artifact's. */
-one sig Now {
+one sig Step {
   var event:    one Event,
   var artifact: lone Artifact,
   var subject:  lone Change
@@ -214,7 +215,7 @@ pred write[a: Artifact] {
   a.change not in Landed
   a not in Written
   Written' = Written + a and Landed' = Landed
-  Now.event = Write and Now.artifact = a and no Now.subject
+  Step.event = Write and Step.artifact = a and no Step.subject
 }
 
 /* ONE ATOM PUT IN ANOTHER'S PLACE: the same change, the same stage. The
@@ -232,17 +233,17 @@ pred replace[a, b: Artifact] {
 pred rewrite[a, b: Artifact] {
   a.change not in Landed
   replace[a, b]
-  Now.event = Write and Now.artifact = b and no Now.subject
+  Step.event = Write and Step.artifact = b and no Step.subject
 }
 
 /* A COMMIT THAT RENAMES AN ARTIFACT. The text moves: `b` declares what `a`
-   declared, and grows a shape exactly when `a` did. The name does not: what
+   declared, and adds a shape exactly when `a` did. The name does not: what
    `b` drives, and what drives `b`, is whatever answers to the new name. So a
    test's `witnesses` survive its rename, a scenario's inbound `witnesses` do
    not survive its own, and `drives` may break at either end.
 
    It is the one event that removes a tie, and the one a check must refuse
-   when what it drops was load-bearing: `S4_RenameBreaksTheTie` at the code
+   when what it drops was load-bearing: `S4_CodeRenameBreak` at the code
    path's end, `S4b` at the scenario's, `S4c` at the test's. After landing a
    change writes nothing more, but what it wrote can still be renamed: a
    rename is a later commit on the tree, and the check that reads it is the
@@ -250,8 +251,8 @@ pred rewrite[a, b: Artifact] {
 pred rename[a, b: Artifact] {
   replace[a, b]
   b.witnesses = a.witnesses
-  b in GrowsShape iff a in GrowsShape
-  Now.event = Rename and Now.artifact = a and no Now.subject
+  b in AddsShape iff a in AddsShape
+  Step.event = Rename and Step.artifact = a and no Step.subject
 }
 
 /* THE CHANGE MERGES. Structurally it waits on nothing: whether each absent
@@ -260,12 +261,12 @@ pred rename[a, b: Artifact] {
 pred land[c: Change] {
   c not in Landed
   Landed' = Landed + c and Written' = Written
-  Now.event = Land and no Now.artifact and Now.subject = c
+  Step.event = Land and no Step.artifact and Step.subject = c
 }
 
 pred stutter {
   sdlcFrame
-  Now.event = Stutter and no Now.artifact and no Now.subject
+  Step.event = Stutter and no Step.artifact and no Step.subject
 }
 
 pred sdlcInit { no Written and no Landed }

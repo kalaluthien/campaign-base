@@ -8,15 +8,16 @@ own, so a disagreement is settled by reading the model, never this page.
 ## The six stages
 
 `feeds` is the order and `orderDiscipline` reads it: intent, plan, spec, then
-docs and test in either order, then code. A stage is written or skipped before
-anything it feeds is either written or skipped.
+docs and test in either order, then code. A stage is written only once every
+stage feeding it is written or may be skipped. A skipped stage is one with no
+artifact; nothing records the skip.
 
 | stage | its artifact here | it owes the next | its own skip criterion | in `spec/sdlc` |
 | --- | --- | --- | --- | --- |
 | intent | the sub-issue's `## Intent` | the problem the plan answers | never skippable | `Intent`, absent from `skippable` |
 | plan | the sub-issue's `## Plan` | the shape the model formalises | never skippable | `Plan`, absent from `skippable` |
 | spec | a scenario or check under `spec/` | the behaviour the view draws and the test witnesses | nothing below it exists | `Spec`, `criterion` |
-| docs | the view under `spec/`, beside its model | the shape a person reads, before code | the model grew no shape | `Docs`, `criterion`, `GrowsShape` |
+| docs | a view beside its model; this base keeps none | the shape a person reads, before code | the model grew no shape | `Docs`, `criterion`, `GrowsShape` |
 | test | a case in a `scripts/*-test.*` suite | the name the code path answers to | nothing runs | `Test`, `criterion` |
 | code | a path under `scripts/` or `.claude/` that a test drives | the merge | nothing runs | `Code`, `criterion` |
 
@@ -31,13 +32,13 @@ neither alone licenses a skip. The profile is one line in the campaign's
 says what the kind never goes without. The criterion decides the rest, per
 change.
 
-You read `maySkip` when you reach the stage (`skipDiscipline`), and the merge
-reads it again against the change as it finally stands (`landDiscipline`). The
-second is not the first restated: `criterion` reads `writtenOf`, which grows, so
-a skip licensed when you reached the stage can be stale by the merge —
-`SkipReadAtTheTimeIsNotEnough` is a chain that keeps the first reading and still
-lands wrong. The remedy is to write the stage after all, which retracts the skip
-(`write`, `S3b_DocsWrittenAfterAll`).
+The order reads `maySkip` for each absent stage when you write past it
+(`orderDiscipline`), and the merge reads it again against the change as it
+finally stands (`landDiscipline`). The second is not the first restated:
+`criterion` reads `writtenOf`, which grows, so a skip licensed when you wrote
+past the stage can be stale by the merge — `SkipReadAtTheTimeIsNotEnough` is a
+chain that keeps the first reading and still lands wrong. The remedy is to
+write the stage after all (`S3b_DocsWrittenAfterAll`).
 
 So a profile is permission and not a plan, and two readings narrow it further.
 `criterion` for `Spec` is that nothing below it exists, so a change that writes

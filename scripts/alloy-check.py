@@ -379,14 +379,11 @@ VARYING = [
     ("Target<:agent", "agentArg"),
     ("Where<:machine", "on"),
     ("Where<:repo", "repoArg"),
-    # sdlc: the observer's three arguments, then what a commit moves
-    ("Now<:subject", "change"),
+    # sdlc: the observer's two arguments, then what a commit moves
     ("Now<:artifact", "artifact"),
-    ("Now<:at", "at"),
+    ("Now<:subject", "change"),
     ("Written", "written"),
     ("Landed", "landed"),
-    ("Change<:skipped", "skipped"),
-    ("Artifact<:names", "names"),
     # github
     ("Open", "open"),
     ("Merged", "merged"),
@@ -428,11 +425,11 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
           "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
           "Agent<:branch",
-          # sdlc: which change an artifact is of and at which stage, the
-          # change's kind, what the kind lets it skip, and which spec
-          # artifacts grew a shape
-          "Artifact<:change", "Artifact<:stage", "Change<:profile",
-          "Profile<:optional", "GrowsShape"]
+          # sdlc: which change an artifact is of and at which stage, what
+          # it witnesses and drives, what the change's kind lets it skip,
+          # and which spec artifacts grew a shape
+          "Artifact<:change", "Artifact<:stage", "Artifact<:witnesses",
+          "Artifact<:drives", "Change<:optional", "GrowsShape"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
@@ -453,7 +450,7 @@ QUALIFIER = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*/")
 LETTER = {"Issue": "I", "PullRequest": "P", "Campaign": "C", "Machine": "M",
           "Repo": "R", "Agent": "A", "Session": "S", "Branch": "B",
           "CampaignDir": "D",
-          "Change": "Ch", "Artifact": "Ar", "Profile": "Pf"}
+          "Change": "Ch", "Artifact": "Ar"}
 
 
 def unqualify(text):

@@ -621,11 +621,12 @@ def main(argv):
         # markdown-only sweep could not see. Three `§` citations, across two of
         # these files, are read as well, and those resolve too.
         #
-        # `.html` IS ONE TOO (NOTE on #250): a `spec/*/diagram.html` view
-        # carries `.src` citations of the model lines it draws, e.g.
+        # `.html` IS ONE TOO (NOTE on #250): an HTML view of a model carries
+        # `.src` citations of the lines it draws, e.g.
         # `<span class="src">spec/campaign/github/system.als:60-77 @ sha</span>`,
-        # and a sweep that skips `.html` reads neither diagram -- which is how
-        # a `.src` pin went stale in two files unnoticed instead of one.
+        # and a sweep that skipped `.html` let such a pin go stale in two
+        # files unnoticed instead of one. R1 of check-tree-shape keeps HTML
+        # out of spec/ since #246, not out of the tree, so the sweep stays.
         paths = [p for p in tracked(root)
                  if p.endswith((".md", ".markdown", ".als", ".html"))]
 

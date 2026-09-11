@@ -244,7 +244,7 @@ pred rewrite[a, b: Artifact] {
    test's `witnesses` survive its rename, a scenario's inbound `witnesses` do
    not survive its own, and `drives` may break at either end.
 
-   It removes a tie without any text changing, as a rewrite removes one by
+   It can remove a tie by moving a name alone, where a rewrite removes one by
    changing a text, and a check must refuse either when what it drops was
    load-bearing. The rename's breaks: `S4_CodeRenameBreak` at the code
    path's end, `S4b` at the scenario's, `S4c` at the test's. After landing a
@@ -254,7 +254,9 @@ pred rewrite[a, b: Artifact] {
 
    The same commit may replace the tests that declare `a`: any of them may
    leave the tree and fresh tests may enter it, so a scenario and the texts
-   naming it move together (`S4e`). Nothing else moves, and the tests that
+   naming it move together (`S4e`). A test that enters is a new text, so it
+   may tie otherwise than the one it replaced, and the commit check reads it
+   as it reads a rewrite. Nothing else moves, and the tests that
    enter belong to the changes whose tests left, so a rename adds no stage to
    a change, takes none away, and turns no criterion: what `AbsenceLicensed`
    and `OrderedByFeeds` rest on, since neither discipline reads a rename. */

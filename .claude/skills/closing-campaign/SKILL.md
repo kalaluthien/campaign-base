@@ -91,9 +91,9 @@ fact about this machine's directory.
 **For the rest of this step, if `TOOK_IT_HERE` is set, this step and step 2 are
 not applicable — report that, not a pass**; run them anyway, they cost one
 command. **A peer leaves the
-campaign by fact**: it stops its pane, or leaves the base tree. A rename alone
-does not, unless the new name is another campaign's; a name that says nothing
-still counts while the session sits under the base root.
+campaign by fact**: it stops its pane. A session named for no campaign is
+listed under **sessions named for no campaign** and refuses nothing; a claim it
+stands in still refuses, as a checked-out claim.
 There is nothing to say and nothing to post, and a peer still listed is asked,
 not killed. One reader makes all three readings — the remote's claim refs, where
 each is checked out, and herdr's liveness:

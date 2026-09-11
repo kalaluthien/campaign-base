@@ -66,10 +66,12 @@ one sig Planner extends Role {}
 one sig Worker  extends Role {}
 
 /* WHETHER A SESSION SITS UNDER THE BASE TREE, and nothing more. Added by #187
-   question 6 for the same reason `campaignNamed` was: a close gate reads
-   herdr's `cwd` column, and this is the one bit a reader acts on. The PATH is
-   not modelled -- `under(cwd, root)` in `campaign-claim.py` owns that, whole
-   segments and both sides resolved.
+   question 6, when a close gate counted an unnamed session by herdr's `cwd`
+   column. Since rule-check#267 no gate reads it: `campaign-claim live` only
+   lists an unnamed session under the tree as not counted, and N2 is the
+   witness that such a session does not block. The PATH is not modelled --
+   `under(cwd, root)` in `campaign-claim.py` owns that, whole segments and
+   both sides resolved.
 
    NOT a fact about any campaign: a session under the tree is under EVERY
    campaign's tree here, which is exactly why the cwd cannot attribute a

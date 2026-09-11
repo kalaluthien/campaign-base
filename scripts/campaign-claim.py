@@ -1461,26 +1461,28 @@ def checkouts(roots):
 
 def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
              caller=None):
-    """(occupied, vacant, ours) -- the join, on the branch name and on nothing
-    else.
+    """(occupied, vacant, ours, nameless) -- the join, on the branch name and
+    on nothing else.
 
     Pure, so it can be tested against recorded inputs.
 
-    `ours` is the set a close sweeps, and it is NOT just "sessions named for
-    this campaign". Nothing enforces that name any more -- the record whose
-    `name` field `take` used to check is gone -- so a peer that never named
-    itself, or renamed away, would be invisible to a gate keyed on the prefix
-    alone. Three cases, and the middle one is the whole point:
+    `ours` is the set a close sweeps: the sessions NAMED for this campaign.
+    Three cases, and only the first is counted:
 
       named for THIS campaign          counted
       named for ANOTHER campaign       NOT counted, wherever it sits
-      named for no campaign at all     counted when it sits under the base root
+      named for no campaign at all     NOT counted; listed in `nameless` when
+                                       it sits under the base root
 
-    The second line is what a first cut of this got wrong by counting every
-    session under the base root: `ours` then returned an identical set for
-    campaigns 1, 116 and 999, so closing one campaign asked another's planner to
-    stand down. A name that clearly says "some other campaign" is evidence and
-    is believed; a name that says nothing is not, and the cwd decides instead.
+    THE THIRD LINE IS rule-check#267 (owner, 2026-09-12). It used to be counted
+    under the base root, and the base root is under every campaign here at
+    once, so one unnamed pane blocked every close on the machine -- closing
+    baseline#1 refused on exactly that, judged a false positive. What such a
+    session could hold is read without its name: a claim it stands in is
+    `occupied`, work only on this machine is `campaign-local-work`, and the
+    guard refuses a session of no name every campaign write. `nameless` is
+    printed and not counted, so it stays findable. The model is
+    `liveUnderLocally` and N2 in spec/campaign/orchestration.
 
     THE CALLER IS EXCLUDED, by session id. A close runs *from* a session of the
     campaign it is closing, so a gate that refuses on any live session of the
@@ -1491,17 +1493,15 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
     # window, which closed when the last such pull request merged.
     #
     # AN UNREADABLE SLUG EMPTIES THIS SET, and that is `could not look`. No
-    # name can then be matched, so every peer reaching `ours` does so by
-    # sitting under the base root -- a narrower reading, and the reason
-    # `cmd_live` prints the slug note beside the count rather than the count
-    # alone.
+    # name can then be matched and `ours` is empty -- the reason `cmd_live`
+    # prints the slug note beside the count rather than the count alone.
     del campaign_issue
     mine = {slug} if slug else set()
     occupied, vacant = [], []
     for b in branches:
         paths = where.get(b, [])
         (occupied if paths else vacant).append((b, paths))
-    ours = []
+    ours, nameless = [], []
     for sid, row in sorted(sessions.items()):
         if sid == caller:
             continue
@@ -1514,15 +1514,14 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
         elif name == REMOTE_CONTROL_NAME:
             continue                      # herdr's own listener, not a peer
         elif root and under(row.get("cwd", ""), root):
-            ours.append((sid, row))
-    return occupied, vacant, ours
+            nameless.append((sid, row))
+    return occupied, vacant, ours, nameless
 
 
 # herdr's reserved pane for the owner's remote-control daemon: named nothing a
-# campaign could match and sits at the base root, so the base-root fallback
-# above claimed it for whichever campaign asked -- a close then refused on a
+# campaign could match and sits at the base root. It once blocked a close on a
 # pane holding no work and unable to answer `STATUS` (measured live, #245's
-# close).
+# close); it is kept out of the `nameless` listing too, being no one's session.
 REMOTE_CONTROL_NAME = "remote-control"
 
 
@@ -1617,7 +1616,7 @@ def cmd_live(args):
     caller = os.environ.get("CLAUDE_CODE_SESSION_ID") or None
     print(f"           this session is "
           f"{caller or '<$CLAUDE_CODE_SESSION_ID unset: not excluded below>'}")
-    occupied, vacant, ours = classify(
+    occupied, vacant, ours, nameless = classify(
         branches, where, sessions, args.campaign_issue, slug, root=root,
         caller=caller)
 
@@ -1654,6 +1653,12 @@ def cmd_live(args):
               "herdr reports where a\n  session started, not the worktree it "
               "is working in. Ask them; the four messages\n  are the address, "
               "and this list is who to ask.")
+
+    print(f"\nsessions named for no campaign under the base root "
+          f"({len(nameless)}) -- not counted: no campaign's")
+    for sid, row in nameless:
+        print(f"  {row['name']:<24} {row['status']:<8} {row['pane']:<10} "
+              f"{row['cwd']}")
 
     # ON STDOUT, and only one of the two ever prints. AGENTS.md tells a caller
     # to read the word and never the exit status, so a completed-verdict line

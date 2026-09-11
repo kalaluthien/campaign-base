@@ -166,7 +166,8 @@ pred S4_CodeRenameBreak {
    renamed and the test still declares the old one, so the code path is
    untied. This is the one command that pins which text carries which name
    -- with the scenario naming the test (`s -> t`) the rename would carry the
-   arrow along and this is UNSAT -- and it is the T3 the check refuses. */
+   arrow along and this is UNSAT -- and it is the T3 the check refuses: the
+   rename that moves no test with it. */
 pred S4b_ScenarioRenameBreak {
   orderDiscipline and landDiscipline
   one c: Change {
@@ -174,6 +175,18 @@ pred S4b_ScenarioRenameBreak {
     eventually (c in Landed and (all s: Stage | one writtenOf[c] & stage.s) and everyCodeHasScenario
                 and eventually (Step.event = Rename and Step.artifact.stage = Spec
                                 and everyCodeHasScenario and after not everyCodeHasScenario))
+  }
+}
+
+/* The scenario rename the check admits, its T3 allow case: the scenario is
+   renamed and, in the same commit, the tests declaring it leave for fresh
+   ones, so the tree is tied on both sides of the step. */
+pred S4e_ScenarioRenameWithItsTests {
+  allDisciplines
+  one c: Change {
+    developmentProfile[c]
+    eventually (Step.event = Rename and Step.artifact.stage = Spec
+                and some witnesses.(Step.artifact) & Written and some Written & stage.Code)
   }
 }
 
@@ -209,7 +222,7 @@ pred S4c_TestRenameBreak {
 pred S4d_TestRenameWitnessLoss {
   orderDiscipline and landDiscipline
   eventually (Step.event = Rename and Step.artifact.stage = Test and some Step.artifact.witnesses
-              and some b: Written' - Written | no b.witnesses)
+              and no b: Written' - Written | b.witnesses = Step.artifact.witnesses)
 }
 
 /* A CODE PATH WITH NO SCENARIO: no trace lands a change that wrote one, and
@@ -296,6 +309,7 @@ run S3a_DocsWaiverOverAShape   for exactly 1 Change, 6 Artifact, 10 steps expect
 run S3b_LateDocs               for exactly 1 Change, 7 Artifact, 12 steps expect 1
 run S4_CodeRenameBreak         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4b_ScenarioRenameBreak    for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4e_ScenarioRenameWithItsTests for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4a_TiedCodeRename         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4c_TestRenameBreak        for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 7 Artifact, 10 steps expect 0

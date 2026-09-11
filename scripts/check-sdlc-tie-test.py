@@ -2,6 +2,7 @@
 # witnesses: S1_FullChain, TreeStaysTied_Bites, S4_CodeRenameBreak
 # witnesses: S4a_TiedCodeRename, S4b_ScenarioRenameBreak
 # witnesses: S4c_TestRenameBreak, WitnessesResolve_Bites
+# witnesses: S4e_ScenarioRenameWithItsTests
 """Cases for check-sdlc-tie.py: one named refusal per branch, and the allows
 beside each -- the ordinary shapes a tie check could catch by mistake.
 
@@ -12,7 +13,8 @@ does. The scenarios these fixtures play out are spec/sdlc's:
 `S4_CodeRenameBreak` is T2 at the code path's end,
 `S4c_TestRenameBreak` is T2 at the suite's,
 `S4b_ScenarioRenameBreak` is T3, `S4a_TiedCodeRename` is the
-allow beside them, `TreeStaysTied_Bites` is T1, and `WitnessesResolve_Bites`
+allow beside them, `S4e_ScenarioRenameWithItsTests` is the allow beside T3,
+`TreeStaysTied_Bites` is T1, and `WitnessesResolve_Bites`
 in checks.als is T6. The `# witnesses:` lines
 above are what tie this suite to them, and are themselves the form under test.
 

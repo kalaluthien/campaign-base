@@ -103,7 +103,8 @@ sig Change { optional: set Stage }
    text under one name: a commit that changes a name or a text puts a new atom
    in the old one's place (`rename`, `rewrite`), and the arrows into the old
    atom stay on it, outside Written. So renaming a scenario leaves every text
-   declaring it pointing at nothing, while renaming a test carries its text
+   declaring it pointing at nothing unless the same commit replaces those
+   texts, while renaming a test carries its text
    along -- `rename` copies `witnesses` and leaves `drives` to the new name --
    which is the asymmetry `S4c_TestRenameBreak` and `S4d` pin.
 
@@ -229,7 +230,8 @@ pred replace[a, b: Artifact] {
 
 /* A COMMIT THAT REWRITES A TEXT UNDER ITS NAME: a write, so it is read as
    one, and what the new text witnesses and drives is its own. It is how a
-   test takes a renamed scenario's new name. */
+   test takes a renamed scenario's new name in a later commit; `rename` is how
+   it takes it in the same one. */
 pred rewrite[a, b: Artifact] {
   a.change not in Landed
   replace[a, b]
@@ -248,9 +250,22 @@ pred rewrite[a, b: Artifact] {
    path's end, `S4b` at the scenario's, `S4c` at the test's. After landing a
    change writes nothing more, but what it wrote can still be renamed: a
    rename is a later commit on the tree, and the check that reads it is the
-   commit's, not the landing's. */
+   commit's, not the landing's.
+
+   The same commit may replace the tests that declare `a`: any of them may
+   leave the tree and fresh tests may enter it, so a scenario and the texts
+   naming it move together (`S4e`). Nothing else moves, and the tests that
+   enter belong to the changes whose tests left, so a rename adds no stage to
+   a change, takes none away, and turns no criterion: what `AbsenceLicensed`
+   and `OrderedByFeeds` rest on, since neither discipline reads a rename. */
 pred rename[a, b: Artifact] {
-  replace[a, b]
+  a in Written and b not in Written
+  b.change = a.change and b.stage = a.stage
+  Landed' = Landed
+  a not in Written' and b in Written'
+  Written - Written' - a in witnesses.a & stage.Test
+  Written' - Written - b in stage.Test
+  (Written - Written' - a).change = (Written' - Written - b).change
   b.witnesses = a.witnesses
   b in AddsShape iff a in AddsShape
   Step.event = Rename and Step.artifact = a and no Step.subject

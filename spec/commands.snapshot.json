@@ -283,6 +283,7 @@
     ["sdlc/scenarios.als", "run", "S4b_ScenarioRenameBreak"],
     ["sdlc/scenarios.als", "run", "S4c_TestRenameBreak"],
     ["sdlc/scenarios.als", "run", "S4d_TestRenameWitnessLoss"],
+    ["sdlc/scenarios.als", "run", "S4e_ScenarioRenameWithItsTests"],
     ["sdlc/scenarios.als", "run", "S5_CodeWithoutSpec"],
     ["sdlc/scenarios.als", "run", "S5a_WithoutTheCommitCheck"],
     ["sdlc/scenarios.als", "run", "S5b_WithoutTheLandingCheck"],

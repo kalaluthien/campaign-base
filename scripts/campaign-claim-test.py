@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: R14d_ScopeAdmitsTheBaseWhateverTheListHolds
+# witnesses: R14d_ScopeAdmitsTheBaseWhateverTheListHolds, N2_UnnamedSessionDoesNotBlock
 """Prove campaign-claim reads a claim off the remote and a checkout, and refuses
 to conclude from a reading that did not happen.
 
@@ -380,7 +380,7 @@ def pure_cases(m):
         "s2": {"name": "other-worker-1", "cwd": "/y", "pane": "p2",
                "status": "idle"},
     }
-    occupied, vacant, ours = m.classify(
+    occupied, vacant, ours, _ = m.classify(
         ["machinery/7-a", "machinery/8-b"], stood, sessions, "1", "machinery")
     check("a claim with a checkout is occupied",
           occupied == [("machinery/7-a", ["/w/7"])])
@@ -1732,10 +1732,10 @@ def verdict_cases(m, capsys=None):
               and "NOT all readings" not in out)
 
         # THE BASE ROOT REACHES `classify`, end to end. The printing loop over
-        # the swept roots once rebound the same name, so the cwd rule the peer
-        # set turns on was compared against the last repository swept -- and
-        # every unit case passed, because they call `classify` with the right
-        # root directly. This one runs the command.
+        # the swept roots once rebound the same name, so the cwd rule the
+        # nameless listing turns on was compared against the last repository
+        # swept -- and every unit case passed, because they call `classify`
+        # with the right root directly. This one runs the command.
         m.base_root = lambda: ("/BASE", None)
         m.sweep_roots = lambda s, only=None: (["/some/other/repo"], [], None)
         m.herdr_sessions = lambda: ({"s1": {"name": "<unnamed>",
@@ -1746,9 +1746,13 @@ def verdict_cases(m, capsys=None):
         with contextlib.redirect_stdout(buf):
             m.cmd_live(Args())
         out = buf.getvalue()
-        check("an unnamed session under the base root reaches the peer list",
-              "live sessions of nine (1)" in out
-              and "/BASE/anywhere" in out, out[:500])
+        # rule-check#267: LISTED, NOT COUNTED. The count a close refuses on
+        # stays at zero, and the session is still printed where a person looks.
+        check("an unnamed session under the base root is listed, not counted",
+              "live sessions of nine (0)" in out
+              and "named for no campaign under the base root (1)" in out
+              and "/BASE/anywhere" in out
+              and "0 live session(s) of this campaign" in out, out[:700])
         # A row silently missing from a count is the shape nobody questions, so
         # `live` says which session it left out -- and says plainly when there
         # is no session id to leave out, because then the closer's own row makes
@@ -1861,17 +1865,20 @@ def peer_cases(m):
         "other": {"name": "third-worker-1", "cwd": "/elsewhere",
                   "pane": "p", "status": "idle"},
     }
-    _, _, ours = m.classify([], {}, sessions, "9", "demo", root="/base",
-                            caller="me")
+    _, _, ours, nameless = m.classify([], {}, sessions, "9", "demo",
+                                      root="/base", caller="me")
     names = sorted(sid for sid, _ in ours)
     # THE CLOSER IS NOT ITS OWN BLOCKER: a close runs from a session of the
     # campaign, so a gate refusing on any live session of it can never pass.
     check("the caller is excluded from the peers a close must ask",
           "me" not in names)
-    # AND A SESSION THAT NEVER NAMED ITSELF IS STILL A PEER. Nothing enforces
-    # the naming rule since the record went, so a prefix-only set misses it.
-    check("an unnamed session under the base root is still a peer",
-          "unnamed" in names)
+    # A SESSION THAT NEVER NAMED ITSELF IS NO CAMPAIGN'S (rule-check#267).
+    # The base root is under every campaign here, so counting it there blocked
+    # every close on the machine; it is listed apart instead.
+    check("an unnamed session under the base root is not counted as a peer",
+          "unnamed" not in names, str(names))
+    check("...and is listed as named for no campaign",
+          [sid for sid, _ in nameless] == ["unnamed"], str(nameless))
     check("a named peer of this campaign is a peer", "peer" in names)
     check("a session of another campaign, elsewhere, is not",
           "other" not in names)
@@ -1916,21 +1923,22 @@ def peer_cases(m):
     check("with no slug read, no session elsewhere is named as ours",
           got == [], str(got))
 
-    # THE REMOTE-CONTROL LISTENER IS NOT A PEER. It sits under the base root
-    # and names itself nothing a campaign could match, so the base-root
-    # fallback used to claim it for whichever campaign asked -- and a close
-    # then refused on a pane holding no work and unable to answer `STATUS`
-    # (measured live, #245's close). It is herdr's own reserved name, not this
-    # campaign's, so it is excluded like a name that says "elsewhere" is.
+    # THE REMOTE-CONTROL LISTENER IS NOT A PEER, NOR NAMELESS. It sits under
+    # the base root and names itself nothing a campaign could match; it once
+    # blocked a close on a pane holding no work and unable to answer `STATUS`
+    # (measured live, #245's close). Since rule-check#267 no unnamed session is
+    # counted, so what this pins is that herdr's own reserved name is kept out
+    # of the `nameless` listing too.
     with_daemon = {"rc": {"name": "remote-control", "cwd": "/base",
                           "pane": "p", "status": "idle"},
                    "worker": {"name": "machinery-worker-9", "cwd": "/base",
                              "pane": "p", "status": "idle"}}
-    got = sorted(sid for sid, _ in
-                 m.classify([], {}, with_daemon, "1", "machinery", root="/base",
-                            caller=None)[2])
+    _, _, ours, nameless = m.classify([], {}, with_daemon, "1", "machinery",
+                                      root="/base", caller=None)
     check("the remote-control listener is not counted as a live peer",
-          got == ["worker"], str(got))
+          [sid for sid, _ in ours] == ["worker"], str(ours))
+    check("...and is not listed as a session named for no campaign",
+          nameless == [], str(nameless))
 
     # `under` answers about absolute paths only: `Path.resolve()` resolves a
     # relative one against the PROCESS cwd, so herdr's `"?"` placeholder counted

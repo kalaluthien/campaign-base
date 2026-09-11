@@ -575,10 +575,11 @@ mechanically; a `BLOCKED`, a `DECISION` and a `NOTE` on the sub-issue.
 pane, by the two-channel criterion below, and there is nothing durable in
 either.
 **A finished peer leaves the campaign by fact, not by saying so**: it stops its
-pane, or leaves the base tree. **A rename alone does not**, unless the new name
-is another campaign's — `campaign-claim live` believes a name that says whose
-work it is, and counts a name that says nothing whenever the session sits under
-the base root. There is no `STOOD DOWN` comment,
+pane. `campaign-claim live` counts a session by its name alone — named for this
+campaign, wherever it sits — and **a name that says nothing is no campaign's**:
+it is listed apart when it sits under the base root and never counted, since
+the base root is under every campaign at once; a claim such a session stands
+in still counts, as an occupied checkout. There is no `STOOD DOWN` comment,
 because a close reads `herdr agent list` and a peer still listed is asked, never
 killed.
 

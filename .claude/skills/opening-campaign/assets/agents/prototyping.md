@@ -47,11 +47,11 @@ claim. The `Spec` half is dead rather than narrow, and not by the tie.
 scenario in the tree even on a branch that never lands, and one already there
 will do -- but that does not license the waiver: `criterion` reads what the
 CHANGE wrote, so a change of this kind that lands a code path cannot skip its
-scenario however that path ties (`S5_CodeWithoutSpecRefused`), and one that
+scenario however that path ties (`S5_CodeWithoutSpec`), and one that
 could skip it by criterion wrote nothing in Docs, Test or Code and so cannot
 land under a kind that lets neither Test nor Code go
-(`S7_PrototypingNeverWaivesItsScenario`). What the profile leaves live is the
-Docs waiver, and only where the scenario grew no shape.
+(`S7_PrototypingSpecWaiver`). What the profile leaves live is the
+Docs waiver, and only where the scenario added no shape.
 
 ## Every session
 

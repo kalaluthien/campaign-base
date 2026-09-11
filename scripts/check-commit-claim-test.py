@@ -99,11 +99,11 @@ def build(d, **kw):
 
 
 def commit(f, tree, env=None):
-    """A clean commit attempt in `tree`: one HTML page under spec/, which no
+    """A clean commit attempt in `tree`: one Alloy file under spec/, which no
     other guard refuses, so the verdict is the claim gate's alone."""
     (tree / "spec").mkdir(exist_ok=True)
-    p = tree / "spec" / "x.html"
-    p.write_text("<p>x</p>\n")
+    p = tree / "spec" / "x.als"
+    p.write_text("sig X {}\n")
     f.git(tree, "add", str(p))
     before = f.git(tree, "rev-parse", "HEAD").stdout.strip()
     e = dict(os.environ, HOME=str(f.home))
@@ -263,8 +263,8 @@ def main():
                        cwd=root, capture_output=True, text=True,
                        env=dict(os.environ, HOME=str(home)), check=True)
         (root / "spec").mkdir()
-        (root / "spec" / "x.html").write_text("<p>x</p>\n")
-        subprocess.run(["git", "-C", str(root), "add", "spec/x.html"], check=True)
+        (root / "spec" / "x.als").write_text("sig X {}\n")
+        subprocess.run(["git", "-C", str(root), "add", "spec/x.als"], check=True)
         r = subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c",
                             "user.name=t", "commit", "-qm", "c"],
                            capture_output=True, text=True,
@@ -281,7 +281,7 @@ def main():
         f = build(d)
         home = f.home
         (f.base / "scripts" / "check-campaign-claim.py").unlink()
-        (f.base / "spec" / "y.html").write_text("<p>y</p>\n")
+        (f.base / "spec" / "y.als").write_text("sig Y {}\n")
         m = load_fixture()
         m.git(f.base, "add", "-A")
         before = m.git(f.base, "rev-parse", "HEAD").stdout.strip()
@@ -305,7 +305,7 @@ def main():
         home = f.home
         wt = f.trees["feature"]
         (wt / "spec").mkdir(exist_ok=True)
-        (wt / "spec" / "z.html").write_text("<p>z</p>\n")
+        (wt / "spec" / "z.als").write_text("sig Z {}\n")
         m = load_fixture()
         m.git(wt, "add", "-A")
         r = subprocess.run(["git", "-C", str(wt), "-c", "user.email=t@t", "-c",
@@ -389,8 +389,8 @@ def main():
             # second round had nothing to commit and every branch looked the
             # same as the last.
             (tree / "spec").mkdir(exist_ok=True)
-            (tree / "spec" / f"{word}.html").write_text(f"<p>{word}</p>\n")
-            f.git(tree, "add", str(tree / "spec" / f"{word}.html"))
+            (tree / "spec" / f"{word}.als").write_text("sig W {}\n")
+            f.git(tree, "add", str(tree / "spec" / f"{word}.als"))
             r, moved = commit(f, tree)
             after = f.git(tree, "ls-remote", "origin",
                           "demo/9-topic").stdout.split()

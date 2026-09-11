@@ -31,7 +31,7 @@ every step above session pins empty. So a run also reads, for every event a
 whose commands alloy runs -- of a predicate shaped `eventually Now.event = E`,
 or `eventually (Now.event = E and ...)` whose other conjuncts are joined by
 `and` alone, since a disjunct the witness does not name satisfies it without E
-ever firing. The events are the `one sig ... extends Event` declarations of
+ever firing; sdlc's observer is `Step`, read the same as `Now`. The events are the `one sig ... extends Event` declarations of
 <file> and every module it opens, comments stripped, and a check names one when
 its `assert` body does, directly or through the preds and funs it calls. The
 witness's verdict is the one alloy printed for it, so this reads a verdict
@@ -240,8 +240,8 @@ OPEN = re.compile(r"^\s*open\s+([\w/]+)", re.M)
 EVENTS = re.compile(r"\bone\s+sig\s+([\w\s,]+?)\s+extends\s+Event\b")
 # The event stands alone or is followed by `and`: `Now.event = E.r` is some
 # other event.
-WITNESS = re.compile(r"eventually\s+(?:Now\.event\s*=\s*(\w+)"
-                     r"|\(\s*Now\.event\s*=\s*(\w+)((?:\s+and\b|\s*&&).*)?\s*\))", re.S)
+WITNESS = re.compile(r"eventually\s+(?:(?:Now|Step)\.event\s*=\s*(\w+)"
+                     r"|\(\s*(?:Now|Step)\.event\s*=\s*(\w+)((?:\s+and\b|\s*&&).*)?\s*\))", re.S)
 # What may join a conjunct to the rest of a formula without making it
 # optional. Anything else at the top level lets a trace satisfy the witness
 # without its event: `or`, an implication, an equivalence. `<=>` is caught by
@@ -361,9 +361,9 @@ def reach(path, verdicts):
         if d is None:
             continue                     # a run of a fun
         e = witnessed(d[1])
-        # A parameter named like the event, `Now` or `event` shadows what the
+        # A parameter named like the event, the observer or `event` shadows what the
         # body reads: `pred W[Hand: Event]` shows some event firing, not Hand.
-        if e and not re.search(rf"\b(?:{e}|Now|event)\b", d[0]):
+        if e and not re.search(rf"\b(?:{e}|Now|Step|event)\b", d[0]):
             shown.setdefault(e, []).append((name, verdicts.get(name)))
     return events, [(e, named[e], shown.get(e, [])) for e in sorted(named)]
 
@@ -374,19 +374,17 @@ def reach(path, verdicts):
 VARYING = [
     # the observers: the event and its arguments, one per layer that adds one
     ("Now<:event", "ev"),
+    ("Step<:event", "ev"),
     ("Who<:session", "by"),
     ("Now<:issue", "arg"),
     ("Target<:agent", "agentArg"),
     ("Where<:machine", "on"),
     ("Where<:repo", "repoArg"),
-    # sdlc: the observer's three arguments, then what a commit moves
-    ("Now<:subject", "change"),
-    ("Now<:artifact", "artifact"),
-    ("Now<:at", "at"),
+    # sdlc: the observer's two arguments, then what a commit moves
+    ("Step<:artifact", "artifact"),
+    ("Step<:subject", "change"),
     ("Written", "written"),
     ("Landed", "landed"),
-    ("Change<:skipped", "skipped"),
-    ("Artifact<:names", "names"),
     # github
     ("Open", "open"),
     ("Merged", "merged"),
@@ -428,17 +426,17 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
           "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
           "Agent<:branch",
-          # sdlc: which change an artifact is of and at which stage, the
-          # change's kind, what the kind lets it skip, and which spec
-          # artifacts grew a shape
-          "Artifact<:change", "Artifact<:stage", "Change<:profile",
-          "Profile<:optional", "GrowsShape"]
+          # sdlc: which change an artifact is of and at which stage, what
+          # it witnesses and drives, what the change's kind lets it skip,
+          # and which spec artifacts add a shape
+          "Artifact<:change", "Artifact<:stage", "Artifact<:witnesses",
+          "Artifact<:drives", "Change<:optional", "AddsShape"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
-# `Now->OpenPR` and `Target->A0`: the observer atom adds nothing to a cell whose
-# column already names it.
-OBSERVER = re.compile(r"\b(?:Now|Where|Who|Target)->")
+# `Now->OpenPR`, `Step->Write` and `Target->A0`: the observer atom adds nothing
+# to a cell whose column already names it.
+OBSERVER = re.compile(r"\b(?:Now|Step|Where|Who|Target)->")
 
 ATOM = re.compile(r"(\w+)\$(\d+)")
 # `system/system/system/system/Issue$0` -> `Issue$0`: a layered model qualifies
@@ -453,7 +451,7 @@ QUALIFIER = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*/")
 LETTER = {"Issue": "I", "PullRequest": "P", "Campaign": "C", "Machine": "M",
           "Repo": "R", "Agent": "A", "Session": "S", "Branch": "B",
           "CampaignDir": "D",
-          "Change": "Ch", "Artifact": "Ar", "Profile": "Pf"}
+          "Change": "Ch", "Artifact": "Ar"}
 
 
 def unqualify(text):
@@ -573,7 +571,7 @@ def main(argv):
             print(f"witness   {event:<16} {sat[0]:<28} SAT    {by}")
         elif not witnesses:
             dead.append(event)
-            print(f"MISSING   {event:<16} no `run` of `eventually (Now.event = "
+            print(f"MISSING   {event:<16} no `run` of `eventually (Now|Step.event = "
                   f"{event} ...)`  {by}  in {model}")
         elif all(v == "UNSAT" for _, v in witnesses):
             dead.append(event)

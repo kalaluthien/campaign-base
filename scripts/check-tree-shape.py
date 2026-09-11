@@ -9,12 +9,10 @@ alone, and each has already been broken once or is one careless commit from it.
 
 WHAT IT CHECKS
 
-  R1  spec/ holds no markdown.
-      spec/ is Alloy whose comments are the spec, and an HTML diagram may sit
-      beside a model. What this refuses is markdown under it, which is what
-      "temporary" always turns out to be. Nothing here counts the diagrams or
-      checks where one sits: that would be a rule with no reader, and this is
-      the reader.
+  R1  spec/ holds no markdown and no HTML.
+      spec/ is Alloy whose comments are the spec. Markdown under it is what
+      "temporary" always turns out to be, and an HTML view beside a model is
+      a second statement of it that no check reads against the model.
 
   R2  every tracked top-level entry is named in .gitignore's allowlist.
       The root is `/*` plus `!` lines. A directory that gets tracked without
@@ -64,8 +62,8 @@ WHAT IT CHECKS
 WHAT IT DOES NOT CATCH
 
 R3 is a path check, not a concept check: reintroducing the holder role under a
-different word, or in a file that exists, passes. R1 does not read a file's contents, so HTML named .md is
-caught and markdown named .html is not. R6 reads no contents either, so a
+different word, or in a file that exists, passes. R1 does not read a file's contents, so markdown or HTML
+named `.als` passes. R6 reads no contents either, so a
 shell script named `.py` passes. All are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
@@ -450,10 +448,11 @@ def main():
 
     # R1
     misfiled = [p for p in paths
-                if p.endswith(".md") and p.split("/")[0] == "spec"]
+                if p.endswith((".md", ".html")) and p.split("/")[0] == "spec"]
     for p in misfiled:
-        note("R1", p, "markdown under spec/ -- spec/ is Alloy whose comments "
-                      "are the spec, and an HTML diagram may sit beside a model")
+        kind = "markdown" if p.endswith(".md") else "HTML"
+        note("R1", p, f"{kind} under spec/ -- spec/ is Alloy whose comments "
+                      "are the spec")
 
     # R2
     ignore = Path(".gitignore")

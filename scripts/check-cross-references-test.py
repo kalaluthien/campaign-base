@@ -233,10 +233,11 @@ CASES = [
      {"spec/campaign/session/system.als": "/* `scripts/gone.py` owns it. */\n"},
      ("DANGLING", "scripts/gone.py")),
     # A `.html` view carries `.src` pins on the model lines it draws (NOTE on
-    # #250); a sweep of only .md/.markdown/.als reads neither diagram and this
-    # class of pin goes stale unnoticed.
+    # #250); a sweep of only .md/.markdown/.als reads no view and this class
+    # of pin goes stale unnoticed. R1 keeps HTML out of spec/, so the view
+    # sits in a skill's assets/.
     ("S3 fires inside a .html diagram too, where a .src span pins a model line",
-     {"spec/campaign/diagram.html":
+     {".claude/skills/s/assets/diagram.html":
       '<span class="src">spec/campaign/gone.als:1-2</span>\n'},
      ("DANGLING", "S3: nothing at this path")),
     # A `.src` PIN WITH NO LINE RANGE has no `:` to break RUN's match before
@@ -244,7 +245,7 @@ CASES = [
     # way `>` glues onto its near end. Caught first, this read as `template`
     # ("names a form, not a file") and the citation went unverified.
     ("S3 a .src pin with no line range still fires, not swallowed by </span>",
-     {"spec/campaign/diagram.html":
+     {".claude/skills/s/assets/diagram.html":
       '<span class="src">spec/campaign/gone.als</span>\n'},
      ("DANGLING", "S3: nothing at this path")),
 

@@ -18,7 +18,7 @@ test that exercises it, and the test names the code path it drives.
   is coherent.
 - A test that failed before the change and passes after it, named after the
   scenario it witnesses.
-- A view a person can read, when the model grew a shape a person has to
+- A view a person can read, when the model added a shape a person has to
   understand; a change the model already describes needs none.
 
 ## What to optimise for
@@ -39,10 +39,10 @@ skipped by judgement is the tie broken silently.
 `optional = skippable` -- the kind narrows nothing below the criterion, which
 already refuses each skip wherever there is anything to refuse: a change that
 wrote a code path skips neither its scenario nor its test, and one whose
-scenario grew a shape does not skip its view. What the widening adds is the
+scenario added a shape does not skip its view. What the widening adds is the
 scenario, the test and the code path as waivers, each still gated by its own
 criterion: test and code go to every change that writes neither, whatever its
-scenario grew, and the scenario to one that also wrote no view. What that
+scenario added, and the scenario to one that also wrote no view. What that
 leaves is a scenario and a view alone, and, at its narrowest, nothing below the
 plan at all: a procedure reference, a README, a comment, which lands with every
 stage below Plan waived.

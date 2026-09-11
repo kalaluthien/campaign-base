@@ -299,9 +299,9 @@ scripts/alloy-check.py --commands spec</pre>
         <li><code>one sig Binding { var bound: Campaign -&gt; Machine }</code></li>
       </ul></dd>
       <dt>var</dt>
-      <dd><code>Surveyed in Session</code> <code>UnderBase in Session</code> <code>Briefed in Session</code></dd>
+      <dd><code>Surveyed in Session</code> <code>UnderBase in Session</code> <code>Briefed in Session</code> <code>Stamped in Session</code> — 패널 기록이 자기 세션 id 를 가진다. 역할을 읽는 모든 곳이 이것으로 조인한다.</dd>
       <dt>events</dt>
-      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code> <code>Brief</code> <code>ContextReset</code> <code>Handoff</code> — 새 세션이 같은 역할과 청구를 넘겨받는다. <code>orchestration</code> 의 <code>handoff</code> 가 에이전트를 옮긴다.</dd>
+      <dd><code>Survey</code> <code>Adopt</code> <code>ReadBody</code> <code>EditReadme</code> <code>Brief</code> <code>ContextReset</code> <code>Stamp</code> <code>Unstamp</code> <code>Handoff</code> — 새 세션이 같은 역할과 청구를 넘겨받는다. <code>orchestration</code> 의 <code>handoff</code> 가 에이전트를 옮긴다.</dd>
     </dl>
   </div>
   <div class="rec">

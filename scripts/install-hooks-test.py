@@ -707,6 +707,15 @@ def main():
                   for ev in ("SessionStart", "UserPromptSubmit")
                   for e in settings.get("hooks", {}).get(ev, [])),
               str(settings.get("hooks", {}).get("SessionStart"))[:200])
+        # The pane stamp every role and liveness reading keys on. Its readers
+        # are all here, so a registration that missed an event would leave a
+        # pane unstamped exactly when that event was its only chance.
+        LINK = ".claude/skills/herdr/scripts/herdr-session-link.py"
+        for event in ("SessionStart", "UserPromptSubmit"):
+            check(f"the session-link hook is registered on {event} by its "
+                  f"whole path",
+                  any(LINK in c for c in commands(event)),
+                  str(commands(event))[:200])
         # The registered command must fail CLOSED when its script is gone. Run
         # each one the way the harness does -- through a shell -- after
         # deleting the guard: a bare path exits 127, which the harness reads as
@@ -733,6 +742,14 @@ def main():
         settings["hooks"].setdefault("PostToolUse", []).append(
             {"matcher": "Bash", "hooks": [{"type": "command",
              "command": 'python3 "/old/check-campaign-claim.py" --released'}]})
+        # An entry is a group, and a person's own hook may share one with an
+        # earlier registration of ours -- as a hand-written `echo` shared one
+        # with the old herdr-session-link.py. Only our command may go.
+        MINE = "echo 'a person wrote this'"
+        settings["hooks"].setdefault("UserPromptSubmit", []).append(
+            {"hooks": [{"type": "command", "command": MINE},
+                       {"type": "command", "command":
+                        '/usr/bin/python3 "$HOME/.claude/hooks/herdr-session-link.py"'}]})
         (r.root.parent / "home" / ".claude" / "settings.json").write_text(
             json.dumps(settings))
         out = installer(r.root)
@@ -749,6 +766,15 @@ def main():
               len([c for c in commands("PreToolUse")
                    if "check-campaign-claim.py" in c]) == 1,
               str(commands("PreToolUse"))[:200])
+        check("a person's hook sharing an entry with an earlier registration "
+              "survives the re-install",
+              MINE in commands("UserPromptSubmit"),
+              str(commands("UserPromptSubmit"))[:300])
+        linked = [c for c in commands("UserPromptSubmit")
+                  if "herdr-session-link.py" in c]
+        check("...while the earlier registration beside it is replaced",
+              len(linked) == 1 and linked[0].endswith(f'/{LINK}"'),
+              str(commands("UserPromptSubmit"))[:300])
 
     # 11. Registering a command that cannot run reads to every session like a
     # rule being enforced, so it refuses instead.

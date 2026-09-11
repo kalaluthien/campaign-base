@@ -21,6 +21,7 @@
  *             campaign's sub-issues, and only the ones it has claimed.
  *   Surveyed  the sessions that have run the new-versus-follow-up survey.
  *   Briefed   the sessions whose CURRENT CONTEXT holds their role's brief.
+ *   Stamped   the sessions whose herdr pane record carries their own id.
  *   Binding   the campaign issue's `bound:<machine>` label.
  *   Who       the observer: which session performed the current event, and on
  *             a handoff which session it took over from.
@@ -96,6 +97,31 @@ var sig UnderBase in Session {}
    naming it is what the bit is for. */
 var sig Briefed in Session {}
 
+/* WHETHER THIS SESSION'S PANE RECORD CARRIES ITS OWN SESSION ID, which is what
+   every reader of the role joins on: `herdr agent list`'s `agent_session`
+   field, matched against the caller's session id. A session whose pane does
+   not carry it has no role any reader can find, so unlike `Briefed` this bit
+   IS a guard's: `check-campaign-claim.py` refuses both planes to a session it
+   cannot name.
+
+   `.claude/skills/herdr/scripts/herdr-session-link.py` sets it, on
+   SessionStart and again on UserPromptSubmit when the record lost it, and only
+   for the pane's own session -- a subagent fires the same hook and writes
+   nothing. So nothing but herdr clears it, by losing the record (a restart,
+   an authority cleared):
+   `Unstamp`, whose subject is `Who.session` the way `ContextReset`'s is.
+
+   One fact rather than a frame clause in every event, as `Exited` is. */
+var sig Stamped in Session {}
+
+fact StampedByTheHook {
+  /* A session at time zero has just started, and startup is a SessionStart,
+     for the reason `sessionInit` gives `Briefed`. */
+  Stamped = Session
+  always (Stamped' = Stamped + (Now.event = Stamp implies Who.session else none)
+                             - (Now.event = Unstamp implies Who.session else none))
+}
+
 sig Session {
   machine:          one Machine,
   role:             lone Role,
@@ -168,9 +194,9 @@ fun working: set Session { { s: Session | some s.worksOn and s.machine in machin
 /* `Handoff` is declared here and not in orchestration/system.als, where the
    agents it moves live, for the reason `Launch` sits in synchronization: this
    is the lowest entity holding a field it moves -- the claims. */
-one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit extends Event {}
+one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit, Stamp, Unstamp extends Event {}
 
-fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit }
+fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit + Stamp + Unstamp }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
    is somebody's act, and naming whose is what lets orchestration/scenarios.als's
@@ -207,6 +233,18 @@ pred contextReset[s: Session] {
   and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
   bound' = bound
   Now.event = ContextReset and no Now.issue and Who.session = s
+}
+
+/* THE PANE STAMP AND ITS LOSS. What moves is `Stamped`, which
+   `StampedByTheHook` governs; everything this entity frames stays. */
+pred stamp[s: Session] {
+  Now.event = Stamp and no Now.issue and Who.session = s
+  sessionFrame
+}
+
+pred unstamp[s: Session] {
+  Now.event = Unstamp and no Now.issue and Who.session = s
+  sessionFrame
 }
 
 pred sessionFrame {
@@ -473,7 +511,7 @@ pred sessionStep {
         or sessionFileCampaignIssue[s] or sessionAddMember[s] or sessionCloseIssue[s]
         or sessionCreateDir[s] or sessionDeleteDir[s] or sessionAcquire[s]
         or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s]
-        or brief[s] or contextReset[s] or sessionExit[s])
+        or brief[s] or contextReset[s] or sessionExit[s] or stamp[s] or unstamp[s])
   or (some t, p: Session | sessionHandoff[t, p])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])

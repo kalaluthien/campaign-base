@@ -46,8 +46,14 @@ pred prototypingProfile[c: Change] { c.optional = Spec + Docs }
 /* A STAGE IS WRITTEN ONLY AFTER EACH STAGE THAT FEEDS IT IS WRITTEN OR MAY
    BE SKIPPED, read against the change at the write. The procedure's own
    order, and `OrderedByFeeds_Bites` in checks.als is what its absence admits.
-   It bounds when a stage may be reached and never whether the absence it
-   leaves is licensed at the end: that reading is `landDiscipline`'s, and
+   It reads the stages that feed the one written and no further back, so it
+   does not walk the chain: while nothing below Plan exists every stage the
+   kind lets a change skip may be skipped, so its first artifact may be a test
+   with no plan written, and, where the kind lets it skip Test, a code path.
+   The order is the worker's reading; the landing decides, and refuses both,
+   since Intent and Plan are never skippable. It
+   bounds when a stage may be reached and never whether the absence it leaves
+   is licensed at the end: that reading is `landDiscipline`'s, and
    `S5b_WithoutTheLandingCheck` is the chain the order lets through. */
 pred orderDiscipline {
   always (Step.event = Write implies

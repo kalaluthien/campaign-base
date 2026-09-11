@@ -11,8 +11,8 @@ open sdlc/scenarios
 /* ---------------- the order ---------------- */
 
 /* Under `orderDiscipline`, every stage a change has written stands on each
-   stage that feeds it: written, or skippable when the stage was first
-   written. The second half is read with `once` because a licence is read at
+   stage that feeds it: written, or skippable at some earlier write of the
+   stage. The second half is read with `once` because a licence is read at
    the write -- a later artifact of the same change can turn it false, and the
    order still held (`SkipReadAtTheTimeIsNotEnough`). Without the discipline
    the same shape has a counterexample, and `OrderedByFeeds_Bites` demands it:
@@ -82,10 +82,12 @@ pred AbsenceLicensed_Bites {
    while no scenario added a shape, and a later scenario of the same change
    added one. The criterion is a function of the change's final shape, so the
    reading that decides is the landing's, and `landDiscipline` is a mechanism
-   of its own rather than the order's reading restated. */
+   of its own rather than the order's reading restated. The code path is
+   what makes the order read Docs at all: Docs feeds Code and nothing else. */
 pred SkipReadAtTheTimeIsNotEnough {
   orderDiscipline and tieDiscipline
   eventually some c: Landed | developmentProfile[c] and Docs in absentStages[c] and not maySkip[c, Docs]
+                              and some writtenOf[c] & stage.Code
 }
 
 /* ---------------- reachability floor ----------------

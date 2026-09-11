@@ -242,8 +242,9 @@ pred rewrite[a, b: Artifact] {
    test's `witnesses` survive its rename, a scenario's inbound `witnesses` do
    not survive its own, and `drives` may break at either end.
 
-   It is the one event that removes a tie, and the one a check must refuse
-   when what it drops was load-bearing: `S4_CodeRenameBreak` at the code
+   It removes a tie without any text changing, as a rewrite removes one by
+   changing a text, and a check must refuse either when what it drops was
+   load-bearing. The rename's breaks: `S4_CodeRenameBreak` at the code
    path's end, `S4b` at the scenario's, `S4c` at the test's. After landing a
    change writes nothing more, but what it wrote can still be renamed: a
    rename is a later commit on the tree, and the check that reads it is the

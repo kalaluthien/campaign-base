@@ -9,8 +9,9 @@ own, so a disagreement is settled by reading the model, never this page.
 
 `feeds` is the order and `orderDiscipline` reads it: intent, plan, spec, then
 docs and test in either order, then code. A stage is written only once every
-stage feeding it is written or may be skipped. A skipped stage is one with no
-artifact; nothing records the skip.
+stage feeding it is written or may be skipped. The order reads those feeding
+stages and no further back, so it lets a test be the first thing a change
+writes; the merge refuses that, since intent and plan are never skippable. A skipped stage is one with no artifact; nothing records the skip.
 
 | stage | its artifact here | it owes the next | its own skip criterion | in `spec/sdlc` |
 | --- | --- | --- | --- | --- |

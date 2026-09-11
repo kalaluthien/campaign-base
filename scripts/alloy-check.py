@@ -428,7 +428,7 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "Agent<:branch",
           # sdlc: which change an artifact is of and at which stage, what
           # it witnesses and drives, what the change's kind lets it skip,
-          # and which spec artifacts grew a shape
+          # and which spec artifacts add a shape
           "Artifact<:change", "Artifact<:stage", "Artifact<:witnesses",
           "Artifact<:drives", "Change<:optional", "AddsShape"]
 

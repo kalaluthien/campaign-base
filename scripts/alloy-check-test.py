@@ -337,6 +337,47 @@ def main() -> int:
               rc == 0 and not line(out, "MISSING") and not line(out, "DEAD"),
               f"exit {rc}: {out[-6:]}")
 
+    # ------------------------------------------------------------ the digest
+
+    # An sdlc trace as alloy writes it: every name qualified by its module path.
+    q = "scenarios/system/"
+    trace = "\n".join([
+        "------State 0-------",
+        f"{q}Change<:optional={{{q}Change$0->{q}Docs$0}}",
+        f"{q}Artifact<:witnesses={{{q}Artifact$1->{q}Artifact$0}}",
+        f"{q}Artifact<:drives={{{q}Artifact$1->{q}Artifact$2}}",
+        f"{q}AddsShape={{{q}Artifact$0}}",
+        f"{q}Step<:event={{{q}Step$0->{q}Write$0}}",
+        f"{q}Step<:artifact={{{q}Step$0->{q}Artifact$0}}",
+        f"{q}Step<:subject={{}}",
+        f"{q}Written={{}}",
+        "------State 1 (loop)-------",
+        f"{q}Step<:event={{{q}Step$0->{q}Land$0}}",
+        f"{q}Step<:subject={{{q}Step$0->{q}Change$0}}",
+        f"{q}Written={{{q}Artifact$0}}", ""])
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "S_solution-0.txt"
+        path.write_text(trace)
+        r = subprocess.run([sys.executable, str(SCRIPT), "--digest", str(path)],
+                           capture_output=True, text=True)
+        out = r.stdout.splitlines()
+        static, s0, s1 = line(out, "static:"), line(out, "        S0"), line(out, " S1 (loop)")
+        # A cell is `label=value`; the first case asks for the column whatever
+        # its value, so the observer strip is the second case's alone.
+        for name, head, tail, where in [
+                ("sdlc's `Step.event` is the event column", "ev=", "Write", s0),
+                ("sdlc's observer atom is stripped from a cell", "ev=Land", "", s1),
+                ("sdlc's `Step.artifact` is shown", "artifact=Ar0", "", s0),
+                ("sdlc's `Step.subject` is shown", "change=Ch0", "", s1),
+                ("sdlc's `Change.optional` is static", "Change<:optional=Ch0->Docs", "", static),
+                ("sdlc's `witnesses` is static", "Artifact<:witnesses=Ar1->Ar0", "", static),
+                ("sdlc's `drives` is static", "Artifact<:drives=Ar1->Ar2", "", static),
+                ("sdlc's `AddsShape` is static", "AddsShape=Ar0", "", static)]:
+            cells = where.replace(";", " ").split()
+            check(f"--digest: {name}", r.returncode == 0 and any(
+                      c.startswith(head) and c.endswith(tail) and (tail or c == head) for c in cells),
+                  f"exit {r.returncode}: {out}")
+
     # ------------------------------------------------------------ could not look
 
     with tempfile.TemporaryDirectory() as d:

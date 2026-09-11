@@ -281,7 +281,7 @@ fi
 # Each entry is `<repo-relative path>:<Event>[,<Event>]`. The events are here
 # and not in the python below because this line is the one list, and a hook
 # whose event lived elsewhere would be registered on a slot nothing names.
-# installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit
+# installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this
@@ -375,13 +375,23 @@ hooks = settings.setdefault("hooks", {})
 for event in SWEEP:
     commands = WANT.get(event, [])
     existing = hooks.setdefault(event, [])
-    # Every entry mentioning this script goes, whatever matcher or flags it
-    # carried: an old registration left beside a new one runs the guard twice
-    # and, if its event moved, enforces nothing from the slot it kept.
-    kept = [e for e in existing
-            if not any(any(n in (h.get("command") or "") for n in NAMES)
-                       for h in (e.get("hooks") or []))]
-    dropped = len(existing) - len(kept)
+    # Every command mentioning one of these scripts goes, whatever matcher or
+    # flags it carried: an old registration left beside a new one runs the hook
+    # twice and, if its event moved, enforces nothing from the slot it kept.
+    # THE COMMAND GOES, NOT ITS ENTRY: an entry is a group, and a person's own
+    # hook may share one with ours -- herdr-session-link.py sat in one with a
+    # hand-written `echo` -- so dropping the group deleted theirs unannounced.
+    # An entry left holding no command is dropped with it.
+    kept, dropped = [], 0
+    for e in existing:
+        hs = e.get("hooks") or []
+        mine = [h for h in hs
+                if any(n in (h.get("command") or "") for n in NAMES)]
+        dropped += len(mine)
+        if not mine:
+            kept.append(e)
+        elif len(mine) < len(hs):
+            kept.append({**e, "hooks": [h for h in hs if h not in mine]})
     if commands:
         slot = {"hooks": [{"type": "command", "command": c} for c in commands]}
         if event in MATCHER:
@@ -390,9 +400,9 @@ for event in SWEEP:
         shown = ", ".join(os.path.basename(c.rsplit('"', 2)[-2]) for c in commands)
         print(f"installed: {path} {event} {MATCHER.get(event, '(no matcher)')} "
               f"-> {shown}"
-              + (f" (replaced {dropped} earlier entry/entries)" if dropped else ""))
+              + (f" (replaced {dropped} earlier command(s))" if dropped else ""))
     elif dropped:
-        print(f"removed: {path} {event} ({dropped} retired entry/entries)")
+        print(f"removed: {path} {event} ({dropped} retired command(s))")
     elif not existing:
         del hooks[event]                # nothing to say about this event
         continue

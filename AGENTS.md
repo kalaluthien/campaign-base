@@ -896,6 +896,8 @@ re-attached body, so a rule that must survive a long session sits near the top.
 An unused skill still costs its description every turn: a fact belongs in this
 file, and only a procedure earns a skill.
 
-**`.claude/skills/herdr/` is vendored**, and the first line of its body, under
-the frontmatter, names the upstream and the tag. An upgrade replaces the whole
-file; any edit breaks the identity that makes that replacement safe.
+**`.claude/skills/herdr/SKILL.md` is vendored**, and the first line of its
+body, under the frontmatter, names the upstream and the tag. An upgrade
+replaces the whole file; any edit breaks the identity that makes that
+replacement safe. `.claude/skills/herdr/scripts/` and
+`.claude/skills/herdr/references/` are ours, and an upgrade leaves them alone.

@@ -8,7 +8,7 @@ module session/checks
 open session/scenarios
 
 /* ---------------- reachability floor ----------------
- * The six events this entity introduces, and every refinement it adds to a
+ * The events this entity introduces, and every refinement it adds to a
  * lower entity's event. A refinement that cannot be satisfied would make its
  * event unreachable from here upward while the lower entity's own floor stayed
  * green. `Cov_Bound` pins `FileCampaignIssue` rather than reading `some
@@ -20,6 +20,9 @@ pred Cov_ReadBody          { eventually Now.event = ReadBody }
 pred Cov_EditReadme        { eventually Now.event = EditReadme }
 pred Cov_Brief             { eventually Now.event = Brief }
 pred Cov_ContextReset      { eventually (Now.event = ContextReset and Who.session not in Briefed') }
+/* Both pinned on the post-state, so each fails when its update is dropped. */
+pred Cov_Stamp             { eventually (Now.event = Stamp and Who.session not in Stamped and Who.session in Stamped') }
+pred Cov_Unstamp           { eventually (Now.event = Unstamp and Who.session in Stamped and Who.session not in Stamped') }
 pred Cov_WriteBodyBySession              { eventually (Now.event = WriteBody and some Who.session) }
 pred Cov_CloseCampaignIssue       { eventually (Now.event = CloseIssue and Now.issue in Campaign.campaignIssue) }
 pred Cov_FiledBySession    { eventually (Now.event = FileCampaignIssue and some Who.session) }
@@ -42,6 +45,8 @@ run Cov_ReadBody          for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 M
 run Cov_EditReadme        for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_Brief             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_ContextReset      for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
+run Cov_Stamp             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
+run Cov_Unstamp           for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_WriteBodyBySession              for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_CloseCampaignIssue       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_FiledBySession    for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1

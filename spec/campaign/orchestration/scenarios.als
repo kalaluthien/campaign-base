@@ -332,10 +332,22 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    reason `campaign-role-brief.py` runs on SessionStart. NO SCRIPT ENFORCES
    THIS ROW -- the guard reads the name, not the brief -- so Q12 measures a rule
    the hook is the only reader of, and says so rather than implying a refusal
-   nobody makes. */
+   nobody makes.
+
+   THE STAMP IS THE THIRD, and NO SCRIPT REFUSES ITS ROW EITHER. A role is
+   found by joining the caller's session id to `herdr agent list`'s
+   `agent_session`, so a pane that lost its stamp names no session -- and the
+   guard reads that as could-not-look, not as a session with no name: `role_of`
+   returns no role, and check-campaign-claim.py falls back to the claim reading
+   alone on purpose, so an unstamped worker holding a claim still writes. What
+   the stamp buys is that the role is read at all; `herdr-session-link.py` is
+   the only thing that keeps it, restoring it on the next prompt, which Q13b
+   pins. Q13 measures that discipline, and says so rather than implying a
+   refusal nobody makes. */
 pred mayAct[s: Session, e: Event, i: lone Issue] {
   some s.role
   s in Briefed
+  s in Stamped
   s.role = Planner implies (planeOf[e] = CampaignPlane
                             and (e = Release implies no claimedIssues.i))
   s.role = Worker implies (
@@ -1390,6 +1402,37 @@ pred Q12b_RebriefedSessionActs {
                                                             and Who.session = s)))
 }
 
+/* Q13. A session acting while its pane record has lost its id. UNSAT: the
+   `s in Stamped` conjunct is the only thing in the model that refuses it, and
+   dropping that line reddens this one alone. No guard refuses it -- see
+   `mayAct` -- so this is the hook's discipline, not a refusal. */
+pred Q13_UnstampedSessionRefused {
+  permissionByRole
+  some s: Session |
+    eventually (Now.event = Unstamp and Who.session = s)
+    and eventually (Who.session = s and some planeOf[Now.event] and s not in Stamped)
+}
+
+/* Q13c. CONTROL for Q13, and SAT: without the discipline the same session
+   reaches the same write after the same loss. */
+pred Q13c_UnstampedSessionReachesTheEventUnguarded {
+  some s: Session |
+    eventually (Now.event = Unstamp and Who.session = s)
+    and eventually (Who.session = s and some planeOf[Now.event] and s not in Stamped)
+}
+
+/* Q13b. The positive side, with the order pinned: the loss, then the hook's
+   re-stamp, then the write. SAT, which is what says the UserPromptSubmit
+   re-assert is a repair and not a formality. */
+pred Q13b_RestampedSessionActs {
+  permissionByRole
+  some s: Session |
+    eventually (Now.event = Unstamp and Who.session = s
+                and after eventually (Now.event = Stamp and Who.session = s
+                                      and after eventually (Now.event = CloseIssue
+                                                            and Who.session = s)))
+}
+
 /* R4k. THE HOLE THE PRE-TOOL-USE HALF LEAVES OPEN, stated rather than hidden:
    under `claimBeforeWork` alone a session with no claim still reaches a
    commit, because a shell write is not read as `Work` at the moment it is
@@ -2047,6 +2090,9 @@ run Q10c_WorkerClaimsOnAnotherBoundCampaignUnguarded for 5 Issue, 1 PullRequest,
 run Q12_UnbriefedSessionRefused                     for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q12c_UnbriefedSessionReachesTheEventUnguarded   for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q12b_RebriefedSessionActs                       for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q13_UnstampedSessionRefused                     for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q13c_UnstampedSessionReachesTheEventUnguarded  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run Q13b_RestampedSessionActs                      for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 
 -- the gap TwoStepShutdownSuffices rests on
 run R5b_PushedButStillLocalOnly         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

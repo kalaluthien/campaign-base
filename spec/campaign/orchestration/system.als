@@ -249,7 +249,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    each session's own repo root -- and this `fun` is that sweep: a holder is an
    agent whose campaign-directory checkout is on its branch. herdr's row is
    still read for two things -- liveness, and its `cwd` as one more root to
-   sweep and as the tie between an unnamed session and this campaign -- but
+   sweep and as whether an unnamed session is LISTED (never counted) -- but
    never for which branch anyone holds.
 
    AND THE MODEL STOPS ABOVE `checkedOut`, deliberately -- #187's N2 rider asked
@@ -286,28 +286,25 @@ pred namedForAnother[a: Agent, c: Campaign] {
    session working the campaign directory holds no sub-issue and would
    otherwise be invisible.
 
-   The second is where the name enters. Machine-wide alone made every campaign's
-   close gate read the identical set, so closing one campaign asked another's
-   sessions to stand down; and a session named for another campaign is the one
-   case where the machine says "here" and the evidence says "not this one".
-   A name that says NOTHING is not evidence either way, so the cwd decides: that
-   agent blocks while it sits under the base tree, which is the direction that
-   costs a question rather than somebody's work.
+   The second is where the name enters, and ONLY a name enters it: an agent
+   whose session is named for this campaign. Machine-wide alone made every
+   campaign's close gate read the identical set, so closing one campaign asked
+   another's sessions to stand down.
 
-   #187 QUESTION 6 SETTLED IT BY MOVING THE MODEL, not the reader. This used to
-   block on an unnamed agent anywhere on the machine while `classify` counted an
-   unnamed session only when its cwd was under the base root -- a spec wider
-   than its one reader, which is a false statement about the code however
-   cautious it sounds. The reader's narrowing is the load-bearing half: with no
-   name and no tree, nothing on the machine ties a session to THIS campaign, so
-   blocking on it would block on it for every campaign here at once, and closing
-   one would ask another's sessions to stand down.
-
-   There was no third piece of evidence to add, which is what decided the
-   direction. So the residual case is now IN the model rather than named beside
-   it: a session that both renamed to nothing and left the tree does not block,
-   and N7 is the witness that says so out loud. A hole the model states is one
-   a reader can find. */
+   A NAME THAT SAYS NOTHING IS NO CAMPAIGN'S SESSION (rule-check#267, owner,
+   2026-09-12). It used to block while its cwd sat under the base tree -- and
+   the base tree is under every campaign here at once, so it blocked every
+   close on the machine with no evidence tying it to any one of them; closing
+   baseline#1 refused on exactly that, and the owner judged it a false
+   positive. What such a session could hold is read elsewhere and by nothing
+   that needs its name: a claim it stands in is the first disjunct (in the
+   code, `live`'s occupied checkouts), work only on this machine is
+   `campaign-local-work`, and since #185 the guard refuses a session of no
+   name every campaign write by a file tool or `gh` (a shell write it does not
+   read, and its commit still needs a claim branch, which is a checkout the
+   first disjunct sees). `live` still LISTS one under the base root, as
+   not counted, so it stays findable; N2 is the witness that it does not
+   block. */
 /* A live agent whose SESSION is named for THIS campaign. The name is the only
    thing that attributes a session to a campaign: the cwd cannot, since a
    session under the tree is under every campaign's tree at once. */
@@ -318,9 +315,7 @@ pred namedForThis[a: Agent, c: Campaign] {
 pred liveUnderLocally[c: Campaign, m: Machine] {
   some a: Agent | a in Live and a.host = m
     and (a.task in c.memberIssues
-         or (m in machinesHolding[c]
-             and (namedForThis[a, c]
-                  or (no a.peer.campaignNamed and a.peer in UnderBase))))
+         or (m in machinesHolding[c] and namedForThis[a, c]))
 }
 
 /* github's `closable` is the GitHub half. These two add the half that needs

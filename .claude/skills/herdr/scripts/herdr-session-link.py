@@ -35,6 +35,7 @@ import time
 SOURCE = "herdr:claude"  # herdr's own integration id; the authority key
 AGENT = "claude"
 TIMEOUT_S = 3.0
+FRAMES = 2  # how far above this hook the pane's claude may sit; see below
 
 
 def rpc(method, params):
@@ -77,15 +78,23 @@ def is_the_panes_own_session(pane_id):
     A one-shot `claude -p` started from inside a pane fires SessionStart too,
     and stamping on it would replace the pane's link with a throwaway
     session's -- pointing every later verdict at the wrong record. The pane's
-    own agent is the claude the shell started, so walk up from this hook to
-    the claude that owns it and require that one to be the shell's child.
+    own agent is the claude the shell started, so the shell must be found
+    within FRAMES of this hook.
+
+    FRAMES IS A MEASUREMENT, NOT A MARGIN (2026-09-12): a `python3` hook's
+    parent is the claude that runs it, and one spare frame covers a harness
+    that runs its hooks under a shell. A one-shot run from the pane's own
+    Bash tool sits two frames deeper -- the tool's shell and its own claude --
+    so the third frame is exactly where the pane's claude, the shell's child,
+    would admit it. The walk was eight frames until then, and it admitted
+    every descendant of the pane.
     """
     shell_pid = rpc("pane.process_info", {"pane_id": pane_id}) \
         .get("result", {}).get("process_info", {}).get("shell_pid")
     if not shell_pid:
         return False
     pid = os.getppid()
-    for _ in range(8):                  # hooks sit a few frames under claude
+    for _ in range(FRAMES):
         parent = parent_of(pid)
         if parent is None:
             return False

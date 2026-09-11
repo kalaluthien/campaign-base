@@ -184,7 +184,24 @@ def main():
               h.linked is None and "pane.report_agent_session" not in h.methods(),
               str(h.methods()))
 
-        # 8. Outside herdr: no pane, no socket, no payload -- all silent.
+        # 8. A one-shot `claude -p` run from the pane's own session's Bash
+        #    tool: its hook sits under its claude, a tool shell, and then the
+        #    pane's claude, which IS the shell's child -- so a walk that goes
+        #    far enough finds the shell and stamps the throwaway id.
+        p, h = run(tmp, {"session_id": OTHER}, hops=("claude", "sh", "claude"),
+                   linked=SID)
+        quiet("a one-shot inside the pane", p)
+        check("a one-shot claude inside the pane leaves the pane's stamp alone",
+              h.linked == SID and "pane.report_agent_session" not in h.methods(),
+              str(h.methods()))
+        # ...while the pane's own session still stamps through one wrapper
+        # frame, the spare the walk keeps for a harness that runs its hooks
+        # under a shell.
+        p, h = run(tmp, {"session_id": SID}, hops=("claude", "sh"))
+        check("the pane's own session stamps through a shell wrapper",
+              h.linked == SID, str(h.methods()))
+
+        # 9. Outside herdr: no pane, no socket, no payload -- all silent.
         p, h = run(tmp, {"session_id": SID}, drop_env=("HERDR_PANE_ID",))
         quiet("no HERDR_PANE_ID", p)
         check("no HERDR_PANE_ID asks herdr nothing", h.calls == [], str(h.calls))

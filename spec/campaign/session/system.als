@@ -106,9 +106,10 @@ var sig Briefed in Session {}
 
    `.claude/skills/herdr/scripts/herdr-session-link.py` sets it, on
    SessionStart and again on UserPromptSubmit when the record lost it, and only
-   for the pane's own session -- a subagent fires the same hook and writes
-   nothing. So nothing but herdr clears it, by losing the record (a restart,
-   an authority cleared):
+   for the pane's own session -- a subagent, or a one-shot `claude -p` run
+   from the pane's own Bash tool, fires the same hook and writes nothing. So
+   nothing but herdr clears it, by losing the record (a restart, an authority
+   cleared):
    `Unstamp`, whose subject is `Who.session` the way `ContextReset`'s is.
 
    One fact rather than a frame clause in every event, as `Exited` is. */

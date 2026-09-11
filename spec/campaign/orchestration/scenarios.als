@@ -1579,25 +1579,25 @@ pred N1_ForeignNamedSessionDoesNotBlock {
   }
 }
 
-/* N2. CONTROL, and the direction that must NOT be exempted: a session whose
-   name says nothing is not evidence, so it still blocks. Making the absent
-   name exempt too would empty the gate. */
-pred N2_UnnamedSessionStillBlocks {
+/* N2. A SESSION WHOSE NAME SAYS NOTHING DOES NOT BLOCK, even under the base
+   tree (rule-check#267): the tree is under every campaign here at once, so it
+   tied the session to all of them and closing baseline#1 refused on one the
+   owner judged a false positive. N7 is the control that the gate is not
+   emptied by it. Restoring the cwd disjunct in `liveUnderLocally` makes this
+   UNSAT. */
+pred N2_UnnamedSessionDoesNotBlock {
   some c: Campaign, s: Session, a: Agent, m: Machine {
     a.peer = s and a.host = m and s.machine = m
     always no s.campaignNamed
-    /* ...AND UNDER THE BASE TREE, since #187 question 6. An absent name is not
-       evidence either way, so the cwd is what ties the session to this machine's
-       campaigns; N7 is the same session outside the tree, which does NOT block. */
+    /* UNDER THE TREE, which is the case the old rule counted; outside it was
+       never counted. */
     always s in UnderBase
-    /* `a.task not in c.memberIssues` is load-bearing: without it the witness
-       blocks through the FIRST disjunct -- an agent on a sub-issue of this
-       campaign blocks whatever it is called -- and says nothing about whether
-       an absent name exempts the machine-wide one. Making the absent name
-       exempt then left this green. */
+    /* `a.task not in c.memberIssues` is load-bearing: an agent on a sub-issue
+       of this campaign blocks whatever it is called, through the first
+       disjunct, and that is not what is exempted here. */
     eventually (a in Live and m in machinesHolding[c]
                 and a.task not in c.memberIssues
-                and liveUnderLocally[c, m])
+                and not liveUnderLocally[c, m])
   }
 }
 
@@ -1625,23 +1625,20 @@ pred noStrayClaims[c: Campaign] {
   all i: c.memberIssues | i in Claimed implies complete[i]
 }
 
-/* N7. THE RESIDUAL #187 QUESTION 6 LEAVES, stated rather than left as a gap in
-   a comment. A live session of this campaign that renamed to nothing AND left
-   the base tree does not block a close: nothing observable ties it here, and
-   blocking on it would block on it for every campaign on the machine at once.
-   It is a real hole -- that session is asked by nobody -- and this is the
-   witness that makes it findable instead of surprising.
-
-   Expect 1, and it is the pair of N2: the same unnamed session, in the tree and
-   out of it, blocking and not. */
-pred N7_UnnamedSessionOutsideTheTreeDoesNotBlock {
+/* N7. CONTROL for N2: a session NAMED for this campaign still blocks with no
+   sub-issue in hand -- a planner, or a worker between claims. With N2
+   exempting the name that says nothing, this is what keeps the machine-wide
+   disjunct from emptying; deleting that whole second disjunct from
+   `liveUnderLocally`, or making `namedForThis` false, makes it UNSAT.
+   Dropping only the conjunct `and namedForThis[a, c]` leaves it SAT and
+   reddens N1 and N2 instead. */
+pred N7_SessionNamedForThisBlocks {
   some c: Campaign, s: Session, a: Agent, m: Machine {
     a.peer = s and a.host = m and s.machine = m
-    always no s.campaignNamed
-    always s not in UnderBase
+    always s.campaignNamed = c
     eventually (a in Live and m in machinesHolding[c]
                 and a.task not in c.memberIssues
-                and not liveUnderLocally[c, m])
+                and liveUnderLocally[c, m])
   }
 }
 
@@ -1986,9 +1983,9 @@ run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PullRequest, 1 Campaign, 2 Ses
 run R4e_NumberedBranchStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a session named for another campaign does not block this campaign's close
 run N1_ForeignNamedSessionDoesNotBlock       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
--- control: a session whose name says nothing still blocks
-run N2_UnnamedSessionStillBlocks             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run N7_UnnamedSessionOutsideTheTreeDoesNotBlock for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run N2_UnnamedSessionDoesNotBlock            for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+-- control: a session named for this campaign still blocks
+run N7_SessionNamedForThisBlocks             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- control: the name exempts the machine-wide disjunct and nothing else
 run N3_ForeignNameDoesNotExemptOwnSubIssue   for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 

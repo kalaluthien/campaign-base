@@ -34,7 +34,7 @@ statement of that; anything restating it in prose has already drifted.
 3. Record a discovery on the issue it belongs to when you find it. A finding
    held in a session's memory dies with the pane.
 4. Carry the kind on a comment's first line: `KIND <session name>: <one line>`.
-5. Leave by fact, not by announcement: stop the pane, or leave the base tree.
+5. Leave by fact, not by announcement: stop the pane.
 
 ## The two roles
 

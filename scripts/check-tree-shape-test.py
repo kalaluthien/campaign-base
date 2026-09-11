@@ -26,11 +26,10 @@ SQ = chr(39) * 3
 
 # (name, {path: contents}, expected_rule or None)
 CASES = [
-    # R1 -- misfiled markdown, and the two shapes that are not it.
+    # R1 -- misfiled markdown and HTML, and the shape that is not it.
     ("R1 markdown under spec/", {"spec/x.md": "hi\n"}, "R1"),
+    ("R1 html under spec/", {"spec/x.html": "<p>hi</p>\n"}, "R1"),
     ("R1 markdown at the root is where it belongs", {"AGENTS.md": "hi\n"}, None),
-    ("R1 html under spec/ is the diagram beside a model",
-     {"spec/x.html": "<p>hi</p>\n"}, None),
 
     # R2 -- the allowlist. The trailing slash is the shape every entry in the
     # real .gitignore has, so a guard that does not strip it passes nothing.
@@ -129,9 +128,9 @@ CASES = [
     # R3 html -- the language a path grep in one syntax cannot see.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 html: a retired path in markup",
-     {"spec/x.html": "<code>runtime/holder</code>\n"}, "R3b"),
+     {".claude/skills/s/assets/x.html": "<code>runtime/holder</code>\n"}, "R3b"),
     ("R3 html: the same path in an html comment",
-     {"spec/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
+     {".claude/skills/s/assets/x.html": "<!-- runtime/holder is retired -->\n<p>hi</p>\n"}, None),
 
     # The reading-versus-verdict rule: an unknown language is a file the sweep
     # cannot read, and an unread file must not come back as a clean tree.
@@ -471,13 +470,13 @@ def says_what_it_read():
     wrong checkout and an empty file list both look like -- and the count and
     the root are the two things that tell those apart from a clean tree.
     """
-    files = {"spec/x.html": "<p>hi</p>\n"}          # plus the .gitignore: 2
+    files = {"spec/x.als": "sig S {}\n"}          # plus the .gitignore: 2
     wrong = []
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
         (root / ".gitignore").write_text(IGNORE)
         (root / "spec").mkdir()
-        (root / "spec" / "x.html").write_text(files["spec/x.html"])
+        (root / "spec" / "x.als").write_text(files["spec/x.als"])
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
         for args, where in ((["--staged"], "the index"), ([], "the working tree")):

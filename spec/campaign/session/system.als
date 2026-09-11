@@ -232,15 +232,19 @@ pred sessionFrame {
    against the wrong label; `SuccessorNamedForAnotherRefused` is the check.
 
    A WORKER IS NOT HANDED OFF FOR A SLUG RENAME, and cannot be. Its claim is
-   the ref `<slug>/<issue>-<topic>`, and the rename leaves the OLD slug in it;
-   `check-campaign-claim.py` reads a branch as a claim only when its slug is
-   one a campaign directory's `.campaign` marker names and the session's name
-   carries, and after the rename neither does. So no session -- predecessor or
-   successor -- could write under that claim again. What happens instead is an
+   the ref `<slug>/<issue>-<topic>`, and a ref cannot be renamed, so the claim
+   keeps the OLD slug. `check-campaign-claim.py` reads a branch as a claim only
+   when a campaign directory's `.campaign` marker names its slug, and refuses a
+   worker whose name carries another. The rename changes the label, and the
+   marker by hand: while the marker holds the old slug, a successor named for
+   the new one is refused; once it holds the new one, the old claim is no
+   claim. Neither order lets the work move. What happens instead is an
    ordering: the worker lands and releases its claim under the old name, and
-   the slug is renamed only once `campaign-claim live <N>` shows no claim open.
-   The slug is not a value here (github/system.als says why), so this is a rule
-   the model states and does not check.
+   the slug is renamed only once `campaign-claim live <N>` prints no row under
+   either claims group -- `landed` refs released too, since they keep the old
+   slug and nothing reads that prefix after. The slug is not a value here
+   (github/system.als says why), so this is a rule the model states and does
+   not check.
 
    Agents, liveness and the old session's close are orchestration/system.als's
    `handoff`, which refines this event. */

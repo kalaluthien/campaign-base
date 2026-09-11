@@ -249,7 +249,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    each session's own repo root -- and this `fun` is that sweep: a holder is an
    agent whose campaign-directory checkout is on its branch. herdr's row is
    still read for two things -- liveness, and its `cwd` as one more root to
-   sweep and as the tie between an unnamed session and this campaign -- but
+   sweep and as whether an unnamed session is LISTED (never counted) -- but
    never for which branch anyone holds.
 
    AND THE MODEL STOPS ABOVE `checkedOut`, deliberately -- #187's N2 rider asked
@@ -300,7 +300,9 @@ pred namedForAnother[a: Agent, c: Campaign] {
    that needs its name: a claim it stands in is the first disjunct (in the
    code, `live`'s occupied checkouts), work only on this machine is
    `campaign-local-work`, and since #185 the guard refuses a session of no
-   name every campaign write. `live` still LISTS one under the base root, as
+   name every campaign write by a file tool or `gh` (a shell write it does not
+   read, and its commit still needs a claim branch, which is a checkout the
+   first disjunct sees). `live` still LISTS one under the base root, as
    not counted, so it stays findable; N2 is the witness that it does not
    block. */
 /* A live agent whose SESSION is named for THIS campaign. The name is the only

@@ -38,12 +38,12 @@ no hook reaches it.
 ## Handing off
 
 A fresh worker takes over when this one cannot go on: a context too large to
-compact, a harness upgrade. Not a slug rename: the claim ref carries the old
-slug, and the guard admits a claim only when its slug matches a campaign
-directory's marker and the session's name, so after a rename no session could
-write under it. Told of a rename while holding a claim, land and release it
-under the old name first; the planner renames only once `campaign-claim live
-<N>` shows no claim open. The model is `handoff` in
+compact, a harness upgrade. Not a slug rename: the claim ref keeps the old
+slug, the guard reads a branch as a claim only when a `.campaign` marker names
+its slug, and it refuses a worker whose name carries another -- so whichever
+slug the marker holds, one of the two sessions is refused. Told of a rename
+while holding a claim, land and release it under the old name first. The model
+is `handoff` in
 `spec/campaign/orchestration/system.als`; the planner's reference names its
 first run.
 

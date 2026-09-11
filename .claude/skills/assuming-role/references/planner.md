@@ -61,9 +61,11 @@ context too large to compact, a harness upgrade. The model is `handoff` in
 `spec/campaign/orchestration/system.als`. The first run was the rename of
 `upkeep` to `rule-check` (rule-check#272, 2026-09-10): `upkeep-planner-1`
 posted its NOTE, started `rule-check-planner-10`, and the successor closed it.
-Rename the slug only once `campaign-claim live <N>` shows no claim open: a
-claim ref keeps the old slug, and the guard refuses every write under it; the
-worker's handoff in [worker](worker.md) says what it does instead.
+Rename the slug only once `campaign-claim live <N>` prints no row under either
+claims group, `landed` refs released first with `campaign-claim release`: a
+claim ref keeps the old slug, and nothing reads that prefix after the rename.
+Rewrite the `.campaign` marker with the label. The worker's side is in
+[worker](worker.md).
 
 1. **The predecessor posts its last comment**, `NOTE <old>: handed off to
    <new>`, on the campaign issue: the pending list (which sub-issue each

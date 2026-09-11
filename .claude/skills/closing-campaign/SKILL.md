@@ -91,9 +91,9 @@ fact about this machine's directory.
 **For the rest of this step, if `TOOK_IT_HERE` is set, this step and step 2 are
 not applicable — report that, not a pass**; run them anyway, they cost one
 command. **A peer leaves the
-campaign by fact**: it stops its pane. A session named for no campaign is
-listed under **sessions named for no campaign** and refuses nothing; a claim it
-stands in still refuses, as a checked-out claim.
+campaign by fact**: it stops its pane. A session named for no campaign refuses
+nothing, and is listed under **sessions named for no campaign** when it sits
+under the base root; a claim it stands in still refuses, as a checked-out claim.
 There is nothing to say and nothing to post, and a peer still listed is asked,
 not killed. One reader makes all three readings — the remote's claim refs, where
 each is checked out, and herdr's liveness:
@@ -120,7 +120,7 @@ refuse on any of:
   close unpassable — measured on campaign #1, whose `campaign-1/154-…` landed as
   #162 months ago. A row reading `MERGE UNREADABLE` refuses like any other
   failed reading;
-- any row under **live sessions of campaign-N**.
+- any row under **live sessions of `<slug>`**.
 
 For each row of the last kind, send `STATUS`, then `STAND DOWN`, to every such
 session (`AGENTS.md` § The four messages), not only the first, and re-run this

@@ -1585,8 +1585,10 @@ pred noStrayClaims[c: Campaign] {
 /* N7. CONTROL for N2: a session NAMED for this campaign still blocks with no
    sub-issue in hand -- a planner, or a worker between claims. With N2
    exempting the name that says nothing, this is what keeps the machine-wide
-   disjunct from emptying; deleting `namedForThis` from `liveUnderLocally`
-   makes it UNSAT. */
+   disjunct from emptying; deleting that whole second disjunct from
+   `liveUnderLocally`, or making `namedForThis` false, makes it UNSAT.
+   Dropping only the conjunct `and namedForThis[a, c]` leaves it SAT and
+   reddens N1 and N2 instead. */
 pred N7_SessionNamedForThisBlocks {
   some c: Campaign, s: Session, a: Agent, m: Machine {
     a.peer = s and a.host = m and s.machine = m

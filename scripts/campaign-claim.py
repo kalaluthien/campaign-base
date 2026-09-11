@@ -1480,7 +1480,9 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
     baseline#1 refused on exactly that, judged a false positive. What such a
     session could hold is read without its name: a claim it stands in is
     `occupied`, work only on this machine is `campaign-local-work`, and the
-    guard refuses a session of no name every campaign write. `nameless` is
+    guard refuses a session of no name every file-tool and `gh` write (a shell
+    write is not read; a commit still needs a claim branch, which is a
+    checkout `occupied` sees). `nameless` is
     printed and not counted, so it stays findable. The model is
     `liveUnderLocally` and N2 in spec/campaign/orchestration.
 
@@ -1594,10 +1596,10 @@ def cmd_live(args):
     print(f"reading 3  git worktree list -- "
           f"{'FAILED: ' + why3 if why3 else f'{len(roots)} repo(s) swept, {len(unread)} unread'}")
     # NOT `root`: this loop used to rebind the base root that `classify` is
-    # given below, so the cwd rule the peer set turns on was compared against
-    # the last repository swept. The unit case passed throughout, because it
-    # calls `classify` with the right root directly -- a fixture standing in for
-    # the deployed path.
+    # given below, so the cwd rule the `nameless` listing turns on was compared
+    # against the last repository swept. The unit case passed throughout,
+    # because it calls `classify` with the right root directly -- a fixture
+    # standing in for the deployed path.
     for swept in (roots or []):
         print(f"           {swept}")
     for note in unread:

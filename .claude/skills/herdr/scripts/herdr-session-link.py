@@ -81,13 +81,15 @@ def is_the_panes_own_session(pane_id):
     own agent is the claude the shell started, so the shell must be found
     within FRAMES of this hook.
 
-    FRAMES IS A MEASUREMENT, NOT A MARGIN (2026-09-12): a `python3` hook's
-    parent is the claude that runs it, and one spare frame covers a harness
-    that runs its hooks under a shell. A one-shot run from the pane's own
-    Bash tool sits two frames deeper -- the tool's shell and its own claude --
-    so the third frame is exactly where the pane's claude, the shell's child,
-    would admit it. The walk was eight frames until then, and it admitted
-    every descendant of the pane.
+    FRAMES IS A MEASUREMENT, NOT A MARGIN (2026-09-12, re-probed for a plain
+    and a `$VAR`-expanding command alike): a `python3` hook's parent is the
+    claude that runs it, with no shell between, so the pane's own session
+    meets the pane's shell on the first step, and the second step is spare --
+    room for a harness that runs its hooks under a shell. A one-shot run from
+    the pane's own Bash tool sits two frames deeper -- the tool's shell and its
+    own claude -- so the two steps reach the tool's shell and the pane's claude
+    and stop; a third would reach the pane's shell and admit it. The walk was
+    eight frames until then, and it admitted every descendant of the pane.
     """
     shell_pid = rpc("pane.process_info", {"pane_id": pane_id}) \
         .get("result", {}).get("process_info", {}).get("shell_pid")

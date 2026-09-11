@@ -936,7 +936,8 @@ dumped each hook's stdin and echoed a canary (#227 re-plan, worker-9).
   calls do not) with the PARENT's `session_id`. Hook order in `-p`:
   SessionStart, UserPromptSubmit, then the first PreToolUse.
 - A hook's process chain (probed 2026-09-12, macOS): a `python3 "<path>"`
-  hook's parent is the `claude` that runs it, with no shell between; a
+  hook's parent is the `claude` that runs it, with no shell between, even
+  when the command holds a `$VAR` for the harness to expand; a
   `/bin/sh` script hook is the same depth. A one-shot `claude -p` run from a
   pane's Bash tool sits two frames deeper: `hook <- claude -p <- /bin/zsh
   <- claude <- pane shell`. `herdr-session-link.py`'s `FRAMES` rests on

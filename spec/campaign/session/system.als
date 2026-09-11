@@ -100,9 +100,11 @@ var sig Briefed in Session {}
 /* WHETHER THIS SESSION'S PANE RECORD CARRIES ITS OWN SESSION ID, which is what
    every reader of the role joins on: `herdr agent list`'s `agent_session`
    field, matched against the caller's session id. A session whose pane does
-   not carry it has no role any reader can find, so unlike `Briefed` this bit
-   IS a guard's: `check-campaign-claim.py` refuses both planes to a session it
-   cannot name.
+   not carry it has no role any reader can find. Like `Briefed`, no guard
+   refuses on it: `check-campaign-claim.py` finds no herdr row for such a
+   session, reads that as could-not-look, and falls back to the claim reading
+   alone -- the refusal it keeps for a session with no name needs a row that
+   carries the id.
 
    `.claude/skills/herdr/scripts/herdr-session-link.py` sets it, on
    SessionStart and again on UserPromptSubmit when the record lost it, and only

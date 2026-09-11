@@ -334,11 +334,16 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    the hook is the only reader of, and says so rather than implying a refusal
    nobody makes.
 
-   THE STAMP IS THE THIRD, and the one a guard does read: a role is found by
-   joining the caller's session id to `herdr agent list`'s `agent_session`, so a
-   pane that lost its stamp names no session and the guard refuses both planes
-   exactly as it does a session with no name. `herdr-session-link.py` restores
-   it on the next prompt, which Q13b pins. */
+   THE STAMP IS THE THIRD, and NO SCRIPT REFUSES ITS ROW EITHER. A role is
+   found by joining the caller's session id to `herdr agent list`'s
+   `agent_session`, so a pane that lost its stamp names no session -- and the
+   guard reads that as could-not-look, not as a session with no name: `role_of`
+   returns no role, and check-campaign-claim.py falls back to the claim reading
+   alone on purpose, so an unstamped worker holding a claim still writes. What
+   the stamp buys is that the role is read at all; `herdr-session-link.py` is
+   the only thing that keeps it, restoring it on the next prompt, which Q13b
+   pins. Q13 measures that discipline, and says so rather than implying a
+   refusal nobody makes. */
 pred mayAct[s: Session, e: Event, i: lone Issue] {
   some s.role
   s in Briefed
@@ -1398,8 +1403,9 @@ pred Q12b_RebriefedSessionActs {
 }
 
 /* Q13. A session acting while its pane record has lost its id. UNSAT: the
-   `s in Stamped` conjunct is the only thing that refuses it, and dropping that
-   line reddens this one alone. */
+   `s in Stamped` conjunct is the only thing in the model that refuses it, and
+   dropping that line reddens this one alone. No guard refuses it -- see
+   `mayAct` -- so this is the hook's discipline, not a refusal. */
 pred Q13_UnstampedSessionRefused {
   permissionByRole
   some s: Session |

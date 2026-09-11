@@ -40,8 +40,10 @@ no hook reaches it.
 A fresh worker takes over when this one cannot go on: a context too large to
 compact, a harness upgrade. Not a slug rename: the claim ref carries the old
 slug, and the guard admits a claim only when its slug matches a campaign
-directory's marker and the session's name, so a rename waits for the claim's
-release. The model is `handoff` in
+directory's marker and the session's name, so after a rename no session could
+write under it. Told of a rename while holding a claim, land and release it
+under the old name first; the planner renames only once `campaign-claim live
+<N>` shows no claim open. The model is `handoff` in
 `spec/campaign/orchestration/system.als`; the planner's reference names its
 first run.
 

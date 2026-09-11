@@ -67,8 +67,8 @@ and whether it survives the machine. Identify the plane before any git command.
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
 `spec/` is normative and is Alloy whose comments are the spec; it holds no
-markdown and no HTML, and that is the part a guard refuses. Two `pre-commit` guards refuse a commit that breaks the
-shape — `check-tree-shape` and
+markdown and no HTML, and that is the part a guard refuses. Two `pre-commit`
+guards refuse a commit that breaks the shape — `check-tree-shape` and
 `check-rule-readers`, whose header gives the syntax exempting a block that must
 hold a guarded form. **Do not write a second reader of a rule a script owns**:
 two of them drift.

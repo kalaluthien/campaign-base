@@ -181,14 +181,17 @@ pred S4b_ScenarioRenameBreak {
 
 /* The scenario rename the check admits, its T3 allow case: the scenario is
    renamed and, in the same commit, the tests declaring it leave for fresh
-   ones, so the tree is tied on both sides of the step. */
+   ones, so the tree is tied on both sides of the step. The test that enters
+   belongs to another change than the scenario -- a test may declare a
+   scenario of any change -- which is where `rename`'s bound on the changes
+   a test may enter reads anything: at one change it holds of every rename
+   that moves a test. Bound it to the scenario's own change and this is
+   UNSAT; drop it and `OrderedByFeeds` and `AbsenceLicensed` fail. */
 pred S4e_ScenarioRenameWithItsTests {
   allDisciplines
-  one c: Change {
-    developmentProfile[c]
-    eventually (Step.event = Rename and Step.artifact.stage = Spec
-                and some witnesses.(Step.artifact) & Written and some Written & stage.Code)
-  }
+  eventually (Step.event = Rename and Step.artifact.stage = Spec
+              and some Written & stage.Code
+              and some (Written' - Written) - change.(Step.artifact.change))
 }
 
 /* The rename the check admits: the code path's new name still answers to
@@ -310,7 +313,7 @@ run S3a_DocsWaiverOverAShape   for exactly 1 Change, 6 Artifact, 10 steps expect
 run S3b_LateDocs               for exactly 1 Change, 7 Artifact, 12 steps expect 1
 run S4_CodeRenameBreak         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4b_ScenarioRenameBreak    for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
-run S4e_ScenarioRenameWithItsTests for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
+run S4e_ScenarioRenameWithItsTests for 2 Change, 7 Artifact, 10 steps expect 1
 run S4a_TiedCodeRename         for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4c_TestRenameBreak        for exactly 1 Change, exactly 7 Artifact, 10 steps expect 1
 run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 7 Artifact, 10 steps expect 0

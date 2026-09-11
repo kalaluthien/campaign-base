@@ -98,7 +98,8 @@ one module in five entities, each `open`ing the one below — `github`,
 the whole composed model. Each entity is three files: `system.als` is the
 signatures, events and trace, `scenarios.als` the witnesses, `checks.als` the
 assertions. `spec/campaign/orchestration/system.als` for how a campaign
-session and its agents talk. `spec/sdlc/system.als` for the stages a change passes through,
-the tie by name between a scenario, its test and its code path, and the rule
+session and its agents talk. `spec/sdlc/system.als` for the stages a change
+passes through, the tie by name between a scenario, its test and its code
+path, and the rule
 under which a stage may be skipped -- one entity beside `campaign`, opening
 nothing.

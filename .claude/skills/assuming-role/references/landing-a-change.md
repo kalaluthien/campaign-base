@@ -13,7 +13,8 @@ stage feeding it is written or may be skipped. The order reads those feeding
 stages and no further back, so it lets a test be the first thing a change
 writes, and nothing refuses that order: the merge reads what the change holds
 when it lands, and refuses it only if intent or plan is still missing then,
-since neither is ever skippable. A skipped stage is one with no artifact; nothing records the skip.
+since neither is ever skippable. A skipped stage is one with no artifact;
+nothing records the skip.
 
 | stage | its artifact here | it owes the next | its own skip criterion | in `spec/sdlc` |
 | --- | --- | --- | --- | --- |

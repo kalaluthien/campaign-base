@@ -138,6 +138,12 @@ CASES = [
     ("S3 the snapshot at the spec root",
      {"a.md": "Compared to `spec/commands.snapshot.json`.\n",
       "spec/commands.snapshot.json": "{}\n"}, None),
+    ("S3 a view in docs/ that is there",
+     {"a.md": "Drawn in `docs/sdlc.html`.\n",
+      "docs/sdlc.html": "<p>hi</p>\n"}, None),
+    ("S3 a view in docs/ that is not there",
+     {"a.md": "Drawn in `docs/gone.html`.\n"},
+     ("DANGLING", "S3: nothing at this path")),
 
     # ---- S4: relative, and resolved against the SKILL ROOT rather than the
     # citing file's own directory. The second row is the one that fails when

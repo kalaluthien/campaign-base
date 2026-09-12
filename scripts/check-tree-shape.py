@@ -12,7 +12,8 @@ WHAT IT CHECKS
   R1  spec/ holds no markdown and no HTML.
       spec/ is Alloy whose comments are the spec. Markdown under it is what
       "temporary" always turns out to be, and an HTML view beside a model is
-      a second statement of it that no check reads against the model.
+      a second statement of it that no check reads against the model. A view
+      drawn for a reader goes in docs/, R7.
 
   R2  every tracked top-level entry is named in .gitignore's allowlist.
       The root is `/*` plus `!` lines. A directory that gets tracked without
@@ -59,12 +60,22 @@ WHAT IT CHECKS
       scripts is refused for the same reason and on purpose: what sits in a
       `scripts/` is a script, and prose about them goes where prose goes.
 
+  R7  docs/ holds HTML only, one view per model, named for the model.
+      `docs/<p>.html` is admitted when `spec/<p>/` holds an `.als` at any
+      depth, so the view's path mirrors its model directory's, and each model
+      directory has exactly one name its view may take. What docs/ holds is not normative, so spec/'s rules do
+      not reach it and its rules do not reach spec/. The models are read from
+      the index even under `--staged`, since a view is judged against a model
+      the commit need not touch.
+
 WHAT IT DOES NOT CATCH
 
 R3 is a path check, not a concept check: reintroducing the holder role under a
 different word, or in a file that exists, passes. R1 does not read a file's contents, so markdown or HTML
 named `.als` passes. R6 reads no contents either, so a
-shell script named `.py` passes. All are floors -- they stop the commit
+shell script named `.py` passes. Under `--staged` R7 judges only the views the
+commit touches, so deleting a model leaves its view standing until CI, which
+reads the whole tree. All are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
 EXEMPTING A BLOCK FROM R3
@@ -88,7 +99,7 @@ READING VERSUS VERDICT
 A file it cannot read is reported as R0 and refuses the commit. It is never
 skipped: a guard that skips what it cannot read reports nothing and reads
 exactly like a pass, which is the failure mode this whole family of checks
-exists to refuse. R0 is counted apart from R1-R6 because "I looked and found
+exists to refuse. R0 is counted apart from R1-R7 because "I looked and found
 nothing" and "I could not look" want different repairs.
 
 EXIT
@@ -574,6 +585,24 @@ def main():
         if not p.endswith((".py", ".sh")):
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
+
+    # R7. Two questions asked apart, the suffix and the name, so a file that
+    # fails both says so twice.
+    models = [a for a in tracked(False)
+              if a.startswith("spec/") and a.endswith(".als")]
+    for p in paths:
+        if p == "docs":
+            note("R7", p, "a file where docs/ belongs: docs/ is the directory "
+                          "of views")
+            continue
+        if not p.startswith("docs/"):
+            continue
+        if not p.endswith(".html"):
+            note("R7", p, "docs/ holds HTML only: a view drawn for a reader")
+        model = f"spec/{Path(p[len('docs/'):]).with_suffix('')}/"
+        if not any(a.startswith(model) for a in models):
+            note("R7", p, f"names no model: {model} holds no .als, and a "
+                          f"view is named for the model it draws")
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

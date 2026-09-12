@@ -50,9 +50,25 @@ pred S16_MergeReachesInstall {
   }
 }
 
+/* THE ESCAPE `reachDiscipline` leaves open, shown: a machine holding the
+   campaign deletes its directory, and the campaign issue closes, under the
+   discipline, with that machine's install behind a merge. Expect 1: the
+   discipline reads the machines holding the campaign at the close, and after
+   the delete that is none (sdlc-alloy#345 I5). What closes it outside the
+   model is its reader in directory/system.als's comment. */
+pred deleteThenCloseBehind[c: Campaign, m: Machine] {
+  eventually (Now.event = DeleteDir and Where.machine = m and m in machinesHolding[c]
+              and eventually (Now.event = CloseIssue and Now.issue = c.campaignIssue
+                              and some unreached[c, m]))
+}
+pred S16e_DeleteThenCloseEscapesTheDiscipline {
+  one c: Campaign | some m: Machine | reachDiscipline[c] and deleteThenCloseBehind[c, m]
+}
+
 /* ---------------- commands ---------------- */
 
 run S16_MergeReachesInstall     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run S16e_DeleteThenCloseEscapesTheDiscipline for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run S15_NoLocalDirectory        for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 
@@ -224,6 +240,9 @@ assert MachineIndependence {
 
 pred Cov_PullBase { eventually Now.event = PullBase }
 pred Cov_PullClone     { eventually Now.event = PullClone }
+/* A push empties what a commit filled: BaseUnpushed can shrink (I1). */
+pred Cov_PushBase     { eventually (Now.event = PushBase and Where.machine in BaseUnpushed
+                                    and after Where.machine not in BaseUnpushed) }
 pred Cov_CommitLocal   { eventually Now.event = CommitLocal }
 pred Cov_Launch        { eventually Now.event = Launch }
 
@@ -235,5 +254,6 @@ check MachineIndependence for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 R
 -- every own event fires in some trace
 run Cov_PullBase for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_PullClone     for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
+run Cov_PushBase      for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_CommitLocal   for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_Launch        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1

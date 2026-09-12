@@ -49,8 +49,8 @@ guard alone. So every member clone -- where delegates do most of their
 committing -- ran nothing that reads a claim, and "a shell write lands here" was
 true of the base and false of them. Such a clone now gets a hook calling this
 file BY ABSOLUTE PATH in the base, because it has no scripts/ of its own to
-reach it through; the model gap is `commitGateInstalled` in
-spec/campaign/orchestration/scenarios.als.
+reach it through; the model gap is `acquiredCloneOnly` in
+spec/campaign/orchestration/checks.als.
 
 TWO READINGS, PRINTED APART
 

@@ -269,15 +269,6 @@ fun holder[i: Issue]: set Agent {
 pred liveUnder[c: Campaign] {
   some a: Agent | a in Live and (a.task in c.memberIssues or a.host in machinesHolding[c])
 }
-/* What one session can actually read: `herdr agent list` on its own machine. */
-/* A live agent whose SESSION's name says it belongs to some other campaign.
-   The name is evidence about whose work it is and nothing else is: with the
-   record gone, a close reading `herdr agent list` has the name, the cwd, and
-   no third thing. A delegate has no session to be named, so it is never this. */
-pred namedForAnother[a: Agent, c: Campaign] {
-  some a.peer and some a.peer.campaignNamed and a.peer.campaignNamed != c
-}
-
 /* What one session can actually read: `herdr agent list` on its own machine.
 
    TWO DISJUNCTS, AND THEY ARE NOT THE SAME CLAIM. The first is an agent on a
@@ -742,8 +733,9 @@ pred exitSession[s: Session] {
      unclaimed  an open sub-issue with no claim; `claim` repairs it
      settled    a claim whose sub-issue is closed; `release` repairs it
 
-   `backlog` is not modelled, so `unclaimed` here is the script's rule before
-   it leaves a backlog sub-issue out. The rest are outside the model's reach:
+   `unclaimed` leaves a `Backlog` sub-issue out, as the script does; the
+   script also leaves out a `kind:maintenance` one, and the model has no
+   kinds. The rest are outside the model's reach:
    `unworked` and `idle-worker` compare a count of claims with a count of
    workers and never pair one with the other, because that pairing is not
    derivable -- AGENTS.md § Completion, liveness, and local-only work. And
@@ -756,7 +748,7 @@ pred exitSession[s: Session] {
    standing is not one.
    Its act is a compaction of the planner and never `sessionExit`, which
    admits a worker alone. */
-fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }
+fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed - Backlog }
 fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
 
 pred orchestrationInit {

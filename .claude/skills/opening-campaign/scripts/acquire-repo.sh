@@ -219,8 +219,8 @@ is_guard_shim() {
 # writes are "allowed unread; they land at the commit". They landed nowhere.
 # check-commit-claim.py's docstring said a delegate's clone had held this hook
 # since #178, which was true only of a clone that ships an installer, and the
-# only such repository is this base. The model gap is `commitGateInstalled` in
-# spec/campaign/orchestration/scenarios.als.
+# only such repository is this base. The model gap is `acquiredCloneOnly` in
+# spec/campaign/orchestration/checks.als.
 # Leave the campaign's principles where a delegate in this clone will read
 # them: `CLAUDE.local.md` in its own cwd, excluded from the clone's index.
 # Since rule-check#314 that file is the campaign's own additions only -- a

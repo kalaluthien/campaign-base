@@ -36,13 +36,14 @@
  *   scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc
  *   scripts/alloy-check.py --commands spec        -- and --write to update
  *
- * THE THREE MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
- * `tieDiscipline` and `landDiscipline` in checks.als are each assumed by a
- * check and dropped by its `_Bites`, the shape github/system.als's
- * `closeDiscipline` takes, because a rule written into an event is true in
- * every world the model admits and no command can exhibit its absence. The
- * events below are therefore LOOSE: `write` does not read the order, the tie
- * or the allow-list, `land` does not read the skip rule.
+ * THE FOUR MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
+ * `tieDiscipline`, `landDiscipline` and `keepDiscipline` in checks.als are
+ * each assumed by a check and dropped by its `_Bites`, the shape
+ * github/system.als's `closeDiscipline` takes, because a rule written into
+ * an event is true in every world the model admits and no command can exhibit
+ * its absence. The events below are therefore LOOSE: `write` does not read
+ * the order, the tie or the allow-list, `land` does not read the skip rule,
+ * `rename` does not read who may move a scenario.
  */
 module sdlc/system
 
@@ -155,6 +156,14 @@ fun absentStages[c: Change]:  set Stage    { Stage - writtenStages[c] }
    feature -- a stronger suite over a scenario and a code path already in the
    tree -- has its Spec and its Code this way and no other. */
 fun reusedStages[c: Change]:  set Stage    { (writtenOf[c].(witnesses + drives) & Written).stage }
+/* A CHANGE THAT ADDS NO FEATURE has written no scenario of its own, read at
+   the state it is asked in: derived from what the change holds, so there is
+   no label to set and none to forget. scripts/check-sdlc-tie.py reads the
+   same thing per commit off the names -- a commit that leaves the snapshot's
+   command list as it was -- and so reads a renamed scenario as a feature
+   change, where here the new name is the scenario's owner's and a rename by
+   a change with none of its own is still that change's step. */
+pred featureless[c: Change] { no writtenOf[c] & stage.Spec }
 
 /* THE TIE. A test declares the scenario it witnesses and pairs with the code
    path it drives -- `t -> s` in `witnesses` and `t -> k` in `drives`, the
@@ -182,6 +191,8 @@ pred everyCodeHasScenario { all k: Written & stage.Code - Licensed | tied[k] }
    other and still names nothing with the first. `WitnessesResolve_Bites` in
    checks.als is that trace. */
 pred everyWitnessExists { all t: Written | t.witnesses in Written }
+/* THE WRITTEN SCENARIOS SOME WRITTEN TEST WITNESSES. */
+fun witnessed: set Artifact { (Written & stage.Test).witnesses & Written }
 
 /* THE SKIP RULE. A stage may be skipped when the kind's profile lets it be
    AND the criterion holds of the change: it has written no test and no code

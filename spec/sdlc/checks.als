@@ -1,8 +1,8 @@
 /*
  * The disciplines over sdlc/system and the witnesses -- a full chain, a
  * prose-only change with nothing below its plan, the tie broken by a rename at
- * each of its three ends, and each half of the skip rule -- then what must
- * hold under each discipline, the counterexample each one's absence admits,
+ * each of its three ends, each input of the skip rule, reuse being a change
+ * that adds no feature -- then what must hold under each discipline, the counterexample each one's absence admits,
  * and the floor that says every event is reachable at all.
  * sdlc/system.als is this entity's entry point.
  */
@@ -87,7 +87,19 @@ pred landDiscipline {
   always (Step.event = Land implies all s: absentStages[Step.subject] | maySkip[Step.subject, s])
 }
 
-pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline }
+/* A CHANGE THAT ADDS NO FEATURE TAKES NO SCENARIO AWAY: no commit of a
+   change with no scenario of its own moves one out of the tree. A write never
+   removes, so a rename is the step it bites. Read by names, as
+   scripts/check-sdlc-tie.py reads it, a commit that leaves the command list as
+   it was keeps every scenario by definition; what the guard refuses is the
+   consequence, `FeaturelessKeeps`, over an edit this model has no step for --
+   a suite's declaration rewritten in place. */
+pred keepDiscipline {
+  always ((Step.event in Write + Rename and featureless[Step.subject])
+          implies Written & stage.Spec in Written')
+}
+
+pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline and keepDiscipline }
 
 /* ---------------- witnesses ---------------- */
 
@@ -262,6 +274,22 @@ pred S7a_DevelopmentSpecWaiver {
   one c: Change { developmentProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
 }
 
+/* A CHANGE THAT ADDS NO FEATURE: a stronger suite over a scenario and a code
+   path already in the tree. It writes its intent, its plan and a test and
+   nothing else; the test witnesses a scenario another change wrote and drives
+   that change's code path, so its Spec and its Code are reused, and it lands
+   under every discipline. Its test turns the criterion false, so reuse is the
+   one input of `maySkip` that licenses both absences. */
+pred S8_FeaturelessChange {
+  allDisciplines
+  some c: Change {
+    developmentProfile[c]
+    change.c.stage = Intent + Plan + Test
+    eventually (c in Landed and featureless[c] and reusedStages[c] = Spec + Code
+                and everyCodeHasScenario)
+  }
+}
+
 /* ---------------- the order ---------------- */
 
 /* Under `orderDiscipline`, every stage a change has written stands on each
@@ -350,6 +378,24 @@ pred AbsenceLicensed_Bites {
     and historically not (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 
+/* ---------------- the keep rule ---------------- */
+
+/* Under `keepDiscipline`, no commit of a change that adds no feature
+   shrinks the witnessed set either, though the discipline names only the
+   scenarios: a test leaves the tree only beside the scenario it witnesses,
+   renamed in the same commit, and a renamed test keeps its declaration.
+   Without it: such a change renames a scenario with the texts witnessing it,
+   and the scenario they witnessed is gone. */
+assert FeaturelessKeeps {
+  keepDiscipline implies always
+    ((Step.event in Write + Rename and featureless[Step.subject]) implies witnessed in witnessed')
+}
+pred FeaturelessKeeps_Bites {
+  orderDiscipline and tieDiscipline and landDiscipline
+  eventually (Step.event in Write + Rename and featureless[Step.subject]
+              and witnessed not in witnessed')
+}
+
 /* ---------------- reachability floor ----------------
  * An event no trace can reach silently removes a whole question from the
  * commands above, and an over-tight frame is the cheapest way to cause it
@@ -358,6 +404,8 @@ pred AbsenceLicensed_Bites {
 pred Cov_Write  { eventually Step.event = Write }
 pred Cov_Rename { eventually Step.event = Rename }
 pred Cov_Land   { eventually Step.event = Land }
+/* The keep rule's antecedent: a change with no scenario commits a rename. */
+pred Cov_FeaturelessRename { eventually (Step.event = Rename and featureless[Step.subject]) }
 
 /* ---------------- commands ---------------- */
 
@@ -377,6 +425,9 @@ run S6_PrototypingTestWaiver   for exactly 1 Change, exactly 3 Artifact, 10 step
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
 run S7_PrototypingSpecWaiver   for exactly 1 Change, 6 Artifact, 12 steps expect 0
 run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect 1
+-- S8 needs eight commits, so no trace shorter than nine states holds it; the
+-- floor spares the solver refuting each shorter length, past ten minutes without it
+run S8_FeaturelessChange       for 2 Change, 7 Artifact, 9..10 steps expect 1
 
 -- the order: holds under the discipline, and has a counterexample without it.
 -- One change: every term of the order is one change's, so a second adds only
@@ -397,7 +448,12 @@ run   WitnessesResolve_Bites   for 2 Change, 6 Artifact, 10 steps expect 1
 check AbsenceLicensed          for 2 Change, 6 Artifact, 10 steps expect 0
 run   AbsenceLicensed_Bites    for 2 Change, 6 Artifact, 10 steps expect 1
 
+-- the keep rule: a change that adds no feature keeps what is witnessed, and not without it
+check FeaturelessKeeps         for 2 Change, 6 Artifact, 10 steps expect 0
+run   FeaturelessKeeps_Bites   for 2 Change, 6 Artifact, 10 steps expect 1
+
 -- every own event fires in some trace
 run Cov_Write   for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_Rename  for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_Land    for 2 Change, 4 Artifact, 8 steps expect 1
+run Cov_FeaturelessRename for 2 Change, 4 Artifact, 8 steps expect 1

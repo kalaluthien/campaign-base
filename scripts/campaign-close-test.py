@@ -182,7 +182,7 @@ def world(**over):
          "bound": "here\n", "standing": "not-standing\n",
          "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
          "origin": MEMBER, "lands": {},
-         "root": None, "released": {}}
+         "root": "/c", "released": {}}
     w.update(over)
     return w
 
@@ -196,12 +196,16 @@ def answer(w, a):
         if "--branch" in sub and name == "campaign-claim.py":
             return ok(w["released"].get(sub[sub.index("--branch") + 1],
                                         RELEASE_OK))
+        if name == "campaign-claim.py" and sub[0] == "live" and "live_seq" in w:
+            seq = w["live_seq"]
+            return ok(seq.pop(0) if len(seq) > 1 else seq[0])
         if name == "campaign-claim.py":
             return ok(w[sub[0]])
         if name == "campaign-installed.py":
             w["installed_read"] = Path(sub[1]).read_text()
             return ok(w["installed"])
         if name == "campaign-directory.py":
+            w["directory_args"] = sub
             return ok(w["directory"] + "\n", 0 if w["directory"].startswith("/")
                       else 2)
         if name == "campaign-local-work.py":
@@ -628,6 +632,52 @@ def repo_refusal(gate, *says, argv=DROP_REPO, **over):
     return case
 
 
+def case_prune_before_live(m):
+    code, out, asked, _ = drive(m, DROP, world())
+    prune = [i for i, a in enumerate(asked) if a[:2] == ["git", "-C"]
+             and a[2] == "/c" and a[3:] == ["worktree", "prune"]]
+    live_at = [i for i, a in enumerate(asked) if a[0] == sys.executable
+               and a[2:3] == ["live"]]
+    return (code == 0 and prune and live_at and prune[0] < live_at[0]
+            and "pruned stale worktree entries under /c" in out), out
+
+
+def case_directory_gets_the_base(m):
+    w = world()
+    code, out, asked, _ = drive(m, DROP, w)
+    return code == 0 and w["directory_args"] == [N, "/c"], out
+
+
+def case_compact_said_once(m):
+    code, out, asked, _ = drive(m, DROP, world())
+    w = whole(live=live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99"),
+                                ("rc/33-other", "landed as #98")]))
+    code2, out2, _, _ = drive(m, CLOSE_YES, w)
+    note = "enqueues /compact on the pane that runs this"
+    return code == 0 and out.count(note) == 1 and out2.count(note) == 1, out + out2
+
+
+def case_release_rereads_live(m):
+    first = live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99")])
+    second = live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99"),
+                          ("rc/34-late", "landed as #97")])
+    w = whole(live_seq=[first, second])
+    ok, asked, out = halted(m, CLOSE_YES, w, "--delete")
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    return ok and rel == [f"rc/{ISSUE}-drop", "rc/34-late"], out
+
+
+def case_nested_campaign_dir(m):
+    w = whole()
+    nested = Path(w["root"]) / "deeper"
+    nested.mkdir()
+    w["dir"] = Path(shutil.move(str(w["dir"]), str(nested)))
+    w["directory"] = str(w["dir"])
+    ok, asked, out = refused(m, CLOSE_ALL, w, "delete",
+                             "is not a campaign directory directly under")
+    return ok and w["dir"].exists(), out
+
+
 CASES = {
     # allows
     "drop: an open sub-issue with a vacant claim and nobody listed is closed "
@@ -763,6 +813,30 @@ CASES = {
     "refuse campaign: lsof that did not run": case_lsof_missing,
     "refuse campaign: a directory with no marker is not deleted":
         case_not_a_campaign_dir,
+    "refuse campaign: a marked directory not directly under the base is not "
+    "deleted": case_nested_campaign_dir,
+    "refuse campaign: the number has a parent of its own": whole_refusal(
+        "settlement", "#10 is not a campaign issue", "is itself a sub-issue of #9",
+        settlement=settlement_all().replace(
+            "  -- claims:", "  -- REPORT: this campaign issue is itself a "
+            "sub-issue of #9 -- closing that campaign will not settle this one"
+            "\n  -- claims:")),
+    "refuse campaign: the number carries no campaign label": whole_refusal(
+        "settlement", "#10 is not a campaign issue", "may be a sub-issue read",
+        settlement=settlement_all().replace(
+            "  -- claims:", "  -- REPORT: no `campaign` label, so this may be a "
+            "sub-issue read as a campaign issue\n  -- claims:")),
+    "campaign: the release reads live again after the writes":
+        case_release_rereads_live,
+    "live: stale worktree entries are pruned under the base before live reads":
+        case_prune_before_live,
+    "directory: campaign-directory is handed the base, not the cwd":
+        case_directory_gets_the_base,
+    "release: the compaction is said once, beside the first release":
+        case_compact_said_once,
+    "refuse: a release that printed neither word did not release": refusal(
+        "release", "printed neither", release=f"releasing rc/{ISSUE}-drop\n",
+        acted=True),
     # the whole: here
     "here: bound elsewhere, a vacant claim does not block, and --delete lets "
     "it go": case_here_lets_go,
@@ -982,6 +1056,30 @@ MUTATIONS = [
      "dirnames[:] = [x for x in dirnames if d / x not in skip]",
      "dirnames[:] = [x for x in dirnames]", "campaign: the delete's list names "
      "a checkout once and skips runtime and repos"),
+    ("shape: directly under the base", "if path.parent != root or not (",
+     "if not (", "refuse campaign: a marked directory not directly under the "
+     "base is not deleted"),
+    ("release printed neither", "if refusal or not done:", "if refusal:",
+     "refuse: a release that printed neither word did not release"),
+    ("not a campaign refuses", 'if s["not_campaign"]:', "if False:",
+     "refuse campaign: the number has a parent of its own"),
+    ("both reports are read", '"may be a sub-issue read as a campaign issue",',
+     '"<never printed>",', "refuse campaign: the number carries no campaign label"),
+    ("prune before live", 'r = run("git", "-C", str(root), "worktree", "prune")',
+     'r = run("true")',
+     "live: stale worktree entries are pruned under the base before live reads"),
+    ("the base is passed", 'word_of(DIRECTORY_SCRIPT, n, str(base_root("directory")))',
+     "word_of(DIRECTORY_SCRIPT, n)",
+     "directory: campaign-directory is handed the base, not the cwd"),
+    ("compact said by one release", "    print(COMPACT_NOTE)\n    why = release_refusal",
+     "    why = release_refusal",
+     "release: the compaction is said once, beside the first release"),
+    ("compact said by the loop", "    print(COMPACT_NOTE)\n    failed = []",
+     "    failed = []",
+     "release: the compaction is said once, beside the first release"),
+    ("release reads live again", "step_release_all(n, read_live(n, slug),",
+     "step_release_all(n, reading,",
+     "campaign: the release reads live again after the writes"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

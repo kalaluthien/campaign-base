@@ -24,8 +24,10 @@ THE GATES, and why each exists (printed beside every refusal)
                campaign open, and only they take the label off.
   settlement   `campaign-tracker.py settlement <N>`. The one reader of
                whether a sub-issue is open, and whether the campaign closes.
-  live         `campaign-claim.py live <N>`: the claim refs, where each is
-               checked out, herdr's sessions. A claim somebody is standing
+  live         `campaign-claim.py live <N>`, after `git worktree prune` on
+               the base root, since a worktree deleted by hand stays listed
+               and would read as an occupied claim: the claim refs, where
+               each is checked out, herdr's sessions. A claim somebody is standing
                in, or may be, is asked about and never closed out from under
                them. A listed session is printed by name, "ask it which claim
                it holds"; nothing here writes into a pane but `worker`'s
@@ -46,7 +48,8 @@ delete (`--delete`). Every run re-reads every gate, so a run that stopped
 halfway is run again, never resumed from memory.
 
 A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS -- every
-`campaign-claim release` does, and `sub-issue` and `campaign` both call it.
+`campaign-claim release` does, and `sub-issue` and `campaign` both call it;
+a run says so once, beside its first release.
 
 SCOPE sub-issue <N> <issue> --not-planned "<why>"
 
@@ -123,8 +126,10 @@ SCOPE campaign <N> [--close] [--delete]
                   and no session of the campaign is listed.
   5. local-work   Holds when: the last line reads `clear`.
   6. installed    Holds when: the last line reads `clear`.
-  7. settlement   Holds when: it ends `; closable` or the index is empty. An
-                  open row halts, listed: its disposition is the person's.
+  7. settlement   Holds when: <N> is a campaign issue -- no REPORT that it
+                  lacks the label or is itself a sub-issue -- and it ends
+                  `; closable` or the index is empty. An open row halts,
+                  listed: its disposition is the person's.
   8. author       As in `sub-issue` step 4.
      -- without --close, halt: the close is the person's word.
   9. sync         Holds when: `runtime/campaign-issue-body-derived.md` equals
@@ -134,8 +139,8 @@ SCOPE campaign <N> [--close] [--delete]
  10. announce     `NOTE <author>: closing campaign #<N>` on the campaign
                   issue, listing what the delete destroys outside `runtime/`
                   and `repos/`. Holds when: gh exited 0.
- 11. release      Every claim ref checked out nowhere, `campaign-claim
-                  release --branch`. Holds when: each printed `deleted` or
+ 11. release      Every claim ref checked out nowhere in `live` read AGAIN
+                  here, after the writes, `campaign-claim release --branch`. Holds when: each printed `deleted` or
                   `no ref to delete`. Then `gh issue close` with `NOTE
                   <author>: campaign closed.`; a CLOSED issue skips 9-11's
                   writes and still releases.
@@ -277,6 +282,11 @@ def holds(step, evidence):
 SETTLED = re.compile(r"-- \d+/\d+ settled")
 SETTLEMENT_HEAD = re.compile(r"^campaign issue \S+#\d+\s+\[(\w+)\]")
 SETTLEMENT_ROW = re.compile(r"^  (\S+/\S+#\d+)\s+(\S+)")
+# campaign-tracker's two REPORTs that the number is no campaign issue: no
+# `campaign` label, or a parent of its own. Closing either closes the wrong
+# thing, so both refuse.
+NOT_A_CAMPAIGN = ("may be a sub-issue read as a campaign issue",
+                  "is itself a sub-issue of")
 
 
 def settlement_word(text, issue):
@@ -297,8 +307,11 @@ def settlement_word(text, issue):
 def settlement_rows(text):
     """The campaign issue's state, every row as (ref, word, line), and whether
     the reader finished and called the campaign closable."""
-    out = {"state": None, "rows": [], "finished": False, "closable": False}
+    out = {"state": None, "rows": [], "finished": False, "closable": False,
+           "not_campaign": []}
     for line in text.splitlines():
+        if any(x in line for x in NOT_A_CAMPAIGN):
+            out["not_campaign"].append(line.strip())
         head = SETTLEMENT_HEAD.match(line)
         if head:
             out["state"] = head.group(1)
@@ -447,8 +460,17 @@ def gate_bound(n, want_here):
     holds("bound", said)
 
 
+def base_root(gate):
+    root, why = CLAIM.base_root()
+    if root is None:
+        raise Refused(gate, f"the base root did not resolve: {why}")
+    return Path(root)
+
+
 def read_directory(n, need=False):
-    said, err = word_of(DIRECTORY_SCRIPT, n)
+    # THE BASE IS PASSED, never left to the cwd: the delete below resolves it
+    # from this script, and the two must name one base.
+    said, err = word_of(DIRECTORY_SCRIPT, n, str(base_root("directory")))
     if said == "none" and not need:
         holds("directory", "none on this machine")
         return None
@@ -471,6 +493,11 @@ def gate_standing(n):
 
 
 def read_live(n, slug):
+    root = base_root("live")
+    r = run("git", "-C", str(root), "worktree", "prune")
+    print(f"  pruned stale worktree entries under {root}" if r.returncode == 0
+          else f"  git worktree prune exited {r.returncode}: a worktree deleted "
+               f"by hand may read below as an occupied claim")
     reading = live_reading(script(CLAIM_SCRIPT, "live", n), n, slug)
     if not reading["read"]:
         raise Refused("live", "`campaign-claim live` did not make all three "
@@ -594,6 +621,9 @@ def read_settlement(n):
     s = settlement_rows(script(TRACKER_SCRIPT, "settlement", n))
     if not s["finished"]:
         raise Refused("settlement", "the reading did not finish")
+    if s["not_campaign"]:
+        raise Refused("settlement", f"#{n} is not a campaign issue: "
+                                    + " | ".join(s["not_campaign"]))
     unread_rows = [ln for _, w, ln in s["rows"] if w == "unread"]
     if unread_rows:
         raise Refused("settlement", "rows that did not read settle nothing: "
@@ -683,7 +713,12 @@ def release_refusal(text):
     return None
 
 
+COMPACT_NOTE = ("  each `campaign-claim release` enqueues /compact on the "
+                "pane that runs this")
+
+
 def step_release(n, issue):
+    print(COMPACT_NOTE)
     why = release_refusal(script(CLAIM_SCRIPT, "release", n, issue))
     if why:
         raise Refused("release", why,
@@ -697,6 +732,7 @@ def step_release_all(n, reading, changed):
     if not rows:
         holds("release", "no claim ref of the campaign is left")
         return
+    print(COMPACT_NOTE)
     failed = []
     for branch, issue, _ in rows:
         why = release_refusal(script(CLAIM_SCRIPT, "release", n, issue,
@@ -778,11 +814,11 @@ def step_close_campaign(n, author):
 
 
 def campaign_dir_shape(path):
-    root, why = CLAIM.base_root()
-    if root is None or path.parent != Path(root) or not (
+    root = base_root("delete")
+    if path.parent != root or not (
             (path / ".campaign").is_file() and (path / "runtime").is_dir()):
         raise Refused("delete", f"{path} is not a campaign directory directly "
-                                f"under the base root ({root or why})")
+                                f"under the base root {root}")
     return path
 
 
@@ -946,8 +982,9 @@ def campaign(args):
         wrote = bool(directory) and step_sync(n, directory)
         step_announce(n, author, directory, changed="the body was written"
                       if wrote else "nothing was changed")
-        step_release_all(n, reading, changed="the body synced and the close "
-                                             "announced; #%s is still open" % n)
+        step_release_all(n, read_live(n, slug),
+                         changed="the body synced and the close announced; "
+                                 "#%s is still open" % n)
         step_close_campaign(n, author)
     if directory is None:
         holds("delete", "no directory on this machine")

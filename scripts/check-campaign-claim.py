@@ -1784,9 +1784,95 @@ def comment_first_line():
 
 
 _TRACKER = None
-# Set when the reference rule would not load, and carried into the verdict
-# beside the comment that could not be judged for it.
-REFERENCE_RULE_UNREADABLE = None
+# Set when campaign-tracker.py would not load: the exception's class name,
+# carried into whichever verdict needed the module.
+TRACKER_UNREADABLE = None
+
+
+def tracker():
+    """campaign-tracker.py loaded once, or None with TRACKER_UNREADABLE set.
+    Never raises, for the reason `comment_first_line` gives: a PreToolUse hook
+    that raises exits 1, which the harness reads as the HOOK's error and lets
+    the call proceed -- a hole, not a refusal."""
+    global _TRACKER, TRACKER_UNREADABLE
+    if _TRACKER is None and TRACKER_UNREADABLE is None:
+        src = HERE / "campaign-tracker.py"
+        try:
+            spec = importlib.util.spec_from_loader(
+                "ctracker", importlib.machinery.SourceFileLoader(
+                    "ctracker", str(src)))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+        except Exception as e:          # noqa: BLE001 -- reported, not raised
+            TRACKER_UNREADABLE = e.__class__.__name__
+            return None
+        _TRACKER = m
+    return _TRACKER
+
+
+# How long the sub-issue carve-out waits for GitHub: this runs before every
+# tool call, so a `gh` that hangs would hang the session.
+PARENT_READ_TIMEOUT = 10
+
+
+def parent_of(issue):
+    """(the campaign issue the tracker's `issue` hangs from as a string, or
+    None; the sentence saying what was read). Asked of campaign-tracker.py's
+    `issue_shape`, the one reader of an issue's parent, and only by the
+    sub-issue carve-out -- the one network read this guard makes, so it is
+    reached only after every local reading has failed to cover the write.
+    None is "could not say" as well as "not a sub-issue", and both leave the
+    write to the claim reading, the narrower gate.
+
+    A SUB-ISSUE BY THE TRACKER'S OWN CLASSIFICATION, `kind_of`, and not by a
+    parent alone: an issue labelled `campaign` AND parented is the tracker's
+    `stray` defect, a campaign issue somebody filed under a parent, and a
+    worker may not reopen a campaign."""
+    m = tracker()
+    if m is None:
+        return None, (f"could not read #{issue}'s parent: campaign-tracker.py "
+                      f"would not load ({TRACKER_UNREADABLE})")
+    _title, _body, labels, parent, why = m.issue_shape(
+        m.DEFAULT_REPO, issue, PARENT_READ_TIMEOUT)
+    if why:
+        return None, f"could not read #{issue}'s parent ({why})"
+    kind = m.kind_of(m.CAMPAIGN_LABEL in labels, parent)
+    if kind != m.SUB_ISSUE:
+        return None, f"#{issue} is no sub-issue: the tracker reads it as {kind}"
+    return str(parent), f"#{issue} is a sub-issue of #{parent}"
+
+
+def off_tracker(writes, issue, cwd, root):
+    """None when every write to `issue` goes to the tracker, else the sentence
+    saying where one goes. The carve-out reads the parent ON THE TRACKER, so a
+    `-R` naming another repository, or no `-R` from a checkout that is not the
+    base's -- a member clone, whose `gh` defaults to its own remote -- is a
+    write to some other repository's #issue that the tracker's says nothing
+    about."""
+    m = tracker()
+    home = m.DEFAULT_REPO.lower() if m is not None else None
+    for x in writes:
+        r = repo_named(x)
+        if r is None and checkout_of(cwd)[0] != root:
+            return (f"`gh` names no repository for #{issue} from {cwd}, which "
+                    f"is not the base's checkout, so it writes that checkout's "
+                    f"repository and not the tracker")
+        if r is not None and r.lower() != home:
+            return f"`gh` names {r} for #{issue}, which is not the tracker"
+    return None
+
+
+def repo_named(tokens):
+    """The repository a `gh` segment names with `-R`/`--repo`, in any of
+    pflag's three spellings, or None when it names none."""
+    for j, t in enumerate(tokens):
+        if t in ("-R", "--repo"):
+            return tokens[j + 1] if j + 1 < len(tokens) else ""
+        if t.startswith("--repo="):
+            return t[len("--repo="):]
+        if t.startswith("-R") and len(t) > 2:
+            return t[2:]
+    return None
 
 
 def bare_references(text):
@@ -1803,24 +1889,11 @@ def bare_references(text):
     `comment_first_line` gives: a PreToolUse hook that raises exits 1, which the
     harness reads as the HOOK's error and lets the call proceed -- a hole, not a
     refusal."""
-    global _TRACKER, REFERENCE_RULE_UNREADABLE
-    if _TRACKER is None and REFERENCE_RULE_UNREADABLE is None:
-        src = HERE / "campaign-tracker.py"
-        try:
-            spec = importlib.util.spec_from_loader(
-                "ctracker", importlib.machinery.SourceFileLoader(
-                    "ctracker", str(src)))
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
-        except Exception as e:          # noqa: BLE001 -- reported, not raised
-            REFERENCE_RULE_UNREADABLE = (
-                f"campaign-tracker.py, which owns the `<slug>#N` reference "
-                f"form, would not load ({e.__class__.__name__})")
-            return "", REFERENCE_RULE_UNREADABLE
-        _TRACKER = m
-    if _TRACKER is None:
-        return "", REFERENCE_RULE_UNREADABLE
-    return _TRACKER.bare_reference_warning(_TRACKER.bare_references(text)), None
+    m = tracker()
+    if m is None:
+        return "", (f"campaign-tracker.py, which owns the `<slug>#N` reference "
+                    f"form, would not load ({TRACKER_UNREADABLE})")
+    return m.bare_reference_warning(m.bare_references(text)), None
 
 
 # THE BODY FLAGS, and `--comment` IS NOT AMONG THEM. `gh`'s own example is
@@ -2243,6 +2316,11 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
     return refuse(read + [f"Clause 2 does not hold: {how}.", *detail, TAKE])
 
 
+# The holder `bash_call` records for an issue a worker's own-campaign carve-out
+# covers rather than a claim, so the allow can tell the two apart.
+CARVED = "its own campaign"
+
+
 def bash_call(command, cwd: Path, session_id=""):
     pairs, why = paired_segments(command)
     segs = None if pairs is None else [t for t, _, _ in pairs]
@@ -2479,6 +2557,9 @@ def bash_call(command, cwd: Path, session_id=""):
                 and (role != "worker" or campaign is None
                      or claim_token(own[1]) == campaign)):
             holders = [own]
+        verbs_on_i = {(sub, verb) for j, sub, verb in per_write if j == i}
+        licence = (roles().ROLES["worker"]["own_campaign_gh"]
+                   if role == "worker" and own_number is not None else None)
         # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
         # cover it: the campaign issue is nobody's sub-issue, so `held` finds
         # nothing there for anyone and every worker was refused a comment on
@@ -2486,11 +2567,11 @@ def bash_call(command, cwd: Path, session_id=""):
         # carries that campaign's number -- the same fact the rest of this
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the worker's, on one (#207).
-        if (role == "worker" and own_number is not None and i == own_number
-                and all((sub, verb) in roles().ROLES["worker"]["own_campaign_gh"]
-                        for j, sub, verb in per_write if j == i)):
-            covering.append((i, [("its own campaign", campaign,
-                                  "the session name")]))
+        if (licence and i == own_number
+                and verbs_on_i <= licence["campaign issue"]):
+            covering.append((i, [(CARVED, campaign, f"#{i} is the campaign "
+                                  f"issue of the campaign this session is "
+                                  f"of")]))
             carved = True
             continue
         # A WORKER STANDS ONLY ON ITS OWN CAMPAIGN'S CLAIMS, and the filter
@@ -2507,6 +2588,24 @@ def bash_call(command, cwd: Path, session_id=""):
             detail += [f"{h[0]} is on {h[1]}, a claim of another campaign; "
                        f"this session is of campaign `{campaign}`"
                        for h in foreign]
+        # ANY SUB-ISSUE OF ITS OWN CAMPAIGN, for the verbs that append to its
+        # record (#354): a discovery goes onto the sub-issue covering it,
+        # reopened, and the worker holds no claim there. Asked last and only
+        # when no claim covers the write, because it is the one reading here
+        # that goes to the network; the PARENT is what licenses it, read from
+        # GitHub, never the number the command typed.
+        if (licence and not holders and i != own_number
+                and verbs_on_i <= licence["sub-issue"]):
+            elsewhere = off_tracker(
+                [x for x in writes if issue_target(x) == i], i, cwd, root)
+            parent, note = (None, elsewhere) if elsewhere else parent_of(i)
+            if parent == own_number:
+                covering.append((i, [(CARVED, campaign,
+                                      f"{note}, the campaign issue of the "
+                                      f"campaign this session is of")]))
+                carved = True
+                continue
+            detail.append(note)
         detail += d
         (covering if holders else uncovered).append((i, holders))
     # THE NARROWEST REFUSAL WINS, and that is a rule now rather than the order
@@ -2529,9 +2628,9 @@ def bash_call(command, cwd: Path, session_id=""):
         # this, `gh issue comment 1 && gh pr merge 12` was admitted: the
         # comment satisfied the campaign issue, the merge fell to the
         # unnarrowed fallback, and any claim under the root carried it out.
-        return refuse([f"{what}: the campaign issue is covered by this "
-                       f"session's name, and that covers no other write in "
-                       f"the same command.", how, *read_on, *fell_back,
+        return refuse([f"{what}: an issue of this session's own campaign is "
+                       f"covered by its name, and that covers no other write "
+                       f"in the same command.", how, *read_on, *fell_back,
                        *detail, TAKE])
     if unreadable:
         holders, d = held(root)
@@ -2559,14 +2658,15 @@ def bash_call(command, cwd: Path, session_id=""):
     # fixtures. Deleted rather than kept as a comfort: a branch nothing reaches
     # is a branch nothing tests, and it read as a second, differently-worded
     # answer to a question already answered.
-    path, branch, source = covering[0][1][0]
-    named = ", ".join(f"#{i}" for i, _ in covering)
-    if path == "its own campaign":
-        return allow([f"{what}: {how_role}, and #{covering[0][0]} is the "
-                      f"campaign issue of the campaign this session is of.",
+    carved_by = [f"{h[0][2]}." for _i, h in covering if h[0][0] == CARVED]
+    claimed = [(i, h[0]) for i, h in covering if h[0][0] != CARVED]
+    if not claimed:
+        return allow([f"{what}: {how_role}, and {' '.join(carved_by)}",
                       *read_on, *fell_back])
+    path, branch, source = claimed[0][1]
+    named = ", ".join(f"#{i}" for i, _ in claimed)
     return allow([f"{what}: {how}; {path} is on {branch}, a claim "
-                  f"({source}). It covers {named}.", *fell_back])
+                  f"({source}). It covers {named}.", *carved_by, *fell_back])
 
 
 def agent_call(tool_input, cwd: Path):

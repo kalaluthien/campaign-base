@@ -479,6 +479,12 @@ def main():
     check("T4 a line dropped while the path it licensed stays untied, the "
           "commit never touching the path: the line leaves with the tie",
           ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
+    r = own_list_case(["scripts/a.py"], [],
+                      change={"scripts/a.py": None, "scripts/b.py": CODE})
+    ok, want = judge(r, "T4")
+    check("T4 a listed path renamed with its line dropped, still untied: the "
+          "line lost is the old path's",
+          ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
     r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"})
     ok, want = judge(r, "T4")
     check("T4 a line added for an untied path the commit never touches: the "

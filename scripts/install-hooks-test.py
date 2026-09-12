@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: Cov_PushBase
 """Prove the hooks install-hooks writes actually refuse.
 
 Every other suite here tests a script in isolation. This one builds a

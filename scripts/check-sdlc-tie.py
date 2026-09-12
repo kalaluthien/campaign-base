@@ -352,7 +352,8 @@ LEGACY = (
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
     # No suite of its stem; check-campaign-claim-test.py drives its table.
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
-    # The model's `LocalOnly` is read by the handoff rules, not by this reading.
+    # Its suite reads a directory's leftovers and drives no scenario over
+    # `LocalOnly`, the set this script reads (R5b needs an agent's push).
     "scripts/campaign-local-work.py",
     # No model rule: what is installed and declared on this machine.
     "scripts/campaign-primitives.py",
@@ -370,8 +371,6 @@ LEGACY = (
     "scripts/guard-corpus.py",
     # The model states the verdict log, not the pairing read off it.
     "scripts/guard-precision.py",
-    # The model does not tell an installer from acquire-repo's shim.
-    "scripts/install-hooks.sh",
     # No suite of its stem; install-hooks-test.py section 6 drives it
     # (`Cov_PushBase`).
     "scripts/push-campaign-branch.sh",

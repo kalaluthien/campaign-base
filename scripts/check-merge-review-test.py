@@ -20,8 +20,9 @@ TWO CASES RUN THE MODEL'S OWN SITUATION rather than a hand-written one
 prints its instance, and `instance_fixture` turns that into the canned `gh`
 answer and the word the model says the reader owes. M2 merges on a push with
 no review, M2c on a review taken after the push, so the REVIEW body and the sha
-it names reach the verdict. They need the solver, as CI installs it, and fail
-red without one.
+it names reach the verdict. The revision a `Push` advances reaches no verdict
+yet: head and REVIEW shift together until a witness reviews before a push.
+They need the solver, as CI installs it, and fail red without one.
 
 Usage: scripts/check-merge-review-test.py   (needs ~/.local/bin/alloy)
 """
@@ -130,7 +131,9 @@ def instance_fixture(digest):
     `Review` of it is a REVIEW naming the head in force in its state, signed by
     a session name the reader admits (`S0` is an atom, not one). The word
     is the model's own: `reviewed` exactly when the merged pull request is in
-    `Reviewed` in the state whose event is `MergePullRequest`."""
+    `Reviewed` in the state whose event is `MergePullRequest`. The `Push` half
+    reaches no verdict until a witness reviews before a push: the suite passes
+    with it deleted, since M2 and M2c move head and REVIEW together."""
     lines = digest.splitlines()
     if "Reviewed" not in next((l for l in lines if l.startswith("var (")), ""):
         raise LookupError("the digest read no `Reviewed`, so the model's word is unknown")

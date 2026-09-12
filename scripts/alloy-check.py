@@ -4,6 +4,7 @@
     scripts/alloy-check.py <file.als> [-o <dir>]
     scripts/alloy-check.py --commands spec [--write]
     scripts/alloy-check.py --digest <solution-0.txt> [...]
+    scripts/alloy-check.py --closure <file.als>
 
 Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
 clause the solver enforces: `expect 0` where the solver says UNSAT -- a check
@@ -84,6 +85,13 @@ modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It
 reads the run's output rather than the model, so it is the same command's
 second half rather than a second script.
+
+`--closure` prints <file> and every file its `open`s reach, one path per line
+relative to the working directory, in the order they are reached -- the same
+walk the dead-event reading makes, so a module's verdict reads exactly these
+files and the jar. CI keys a cached verdict on their hash. An `open` that is
+not there prints no path at all, exit 2: a partial list would key a verdict
+on fewer files than it read.
 """
 import json
 import os
@@ -535,6 +543,18 @@ def main(argv):
                   file=sys.stderr)
             return 1
         return commands_mode(rest[0], "--write" in argv[1:])
+    if argv[0] == "--closure":
+        if len(argv) != 2:
+            print("usage: alloy-check.py --closure <file.als>")
+            return 2
+        try:
+            found = composed(argv[1])
+        except (OSError, LookupError) as e:
+            print(f"could not look: the closure of {argv[1]} was not read ({e})")
+            return 2
+        for p in found:
+            print(os.path.relpath(p))
+        return 0
 
     path, outdir = argv[0], None
     if len(argv) >= 3 and argv[1] == "-o":

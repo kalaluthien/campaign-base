@@ -69,30 +69,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      # check-commit-claim.py is deliberately absent: it refuses a branch that
-      # is not a claim, and a pull request runner's branch never is.
-      - name: The three guards that read the tree, as the pre-commit runs them
+      # THE GUARDS, the pre-commit's list, each over the whole tree rather than
+      # a staged change. check-commit-claim.py is deliberately absent: it
+      # refuses a branch that is not a claim, and a pull request runner's
+      # branch never is.
+      #
+      # The tie guard judges a change against a tree, and the runner's HEAD is
+      # the merge commit -- against HEAD there is nothing left to judge, which
+      # is why a `--no-verify` commit once landed a T1, T2 or T3 unread (#268).
+      # `--against origin/main` makes the before-tree the base branch, so what
+      # is judged is the pull request's whole change. The fetch is here because
+      # `actions/checkout` leaves no `origin/main` ref on a pull request even at
+      # full depth. NOT `--depth=1`: the guard reads two trees AND asks whether
+      # HEAD contains the ref, and a shallow fetch answers that no every time.
+      #
+      # `alloy-check.py --commands spec` needs no solver. A deleted command is
+      # the one thing the `expect` clauses below cannot catch, having no clause
+      # left to miss, and it refuses a command declared in a system.als.
+      - name: The guards, over the whole tree and the whole change
         run: |
           scripts/check-rule-readers.py
           scripts/check-tree-shape.py
           scripts/check-cross-references.py
-
-      # The fourth guard, and the one reading the pre-commit cannot give it. It
-      # judges a change against a tree, and the runner's HEAD is the merge
-      # commit -- against HEAD there is nothing left to judge, which is why this
-      # step did not exist until #268 and why a `--no-verify` commit landed a
-      # T1, T2 or T3 unread. `--against origin/main` makes the before-tree the
-      # base branch, so what is judged is the pull request's whole change rather
-      # than its last commit.
-      #
-      # The fetch is its own step because `actions/checkout` leaves no
-      # `origin/main` ref on a pull request even at full depth. NOT `--depth=1`:
-      # the guard reads two trees AND asks whether HEAD contains the ref, and a
-      # shallow fetch answers that question no every time.
-      - name: The tie guard, over the whole change rather than one commit
-        run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           scripts/check-sdlc-tie.py --against origin/main
+          scripts/alloy-check.py --commands spec
 
       # Java, the jar verified by its sha256, and the `alloy` wrapper; the
       # action says why each is pinned the way it is.
@@ -127,16 +128,11 @@ jobs:
           [ "$n" -gt 0 ] || { echo "no suite was found under scripts/ or .claude/skills/*/scripts/"; exit 1; }
           echo "$n suite(s) ran"
 
-      # Seconds, and it needs no solver, so it runs before the slow step: a
-      # deleted command is the one thing the `expect` clauses below cannot
-      # catch, having no clause left to miss.
-      - name: The command snapshot still names every declared command
-        run: scripts/alloy-check.py --commands spec
-
       # Every module of every entity under the spec/ root, system modules
-      # included: one that no longer parses is a failure the two sibling
-      # modules would report only indirectly, and a system module declares no
-      # command so running it costs one trivial `Default`. `find`, not a
+      # included: one that no longer parses is a failure its checks module
+      # would report only indirectly, and a system module declares no command
+      # -- `alloy-check.py --commands` refuses one -- so running it costs one
+      # trivial `Default`. `find`, not a
       # depth-2 glob: the step above inventories to any depth, and a module the
       # inventory sees but this list misses is one whose commands nothing here
       # runs. A plan that finds no module fails, since an empty matrix is green.
@@ -148,25 +144,10 @@ jobs:
       # reads the git diff, and main honours the same key: a module whose
       # closure did not change has nothing new to say. `--closure` refuses
       # rather than list part of a closure, and that refusal fails this step.
-      #
-      # THE FLOORS: a module's solver seconds, the larger of main at 8778b40
-      # (run 34646154482) and pr#309 (run 34667942811). Its budget is the
-      # floor plus a quarter, and never under 60 s, the budget of a module with
-      # no row; the solve job warns past it and never fails, so a widening is
-      # seen on the pull request that makes it. A row naming no module warns.
-      # A module folded from two carries the sum of their rows (sdlc-alloy#343),
-      # except spec/sdlc/checks.als, which is its own time in run 34700750567
-      # (sdlc-alloy#341).
       - name: One solve job per module, keyed on what its verdict reads
         id: matrix
         run: |
           set -euo pipefail
-          floors='spec/sdlc/checks.als 571
-          spec/campaign/orchestration/checks.als 788
-          spec/campaign/session/checks.als 79'
-          for r in $(awk '{print $1}' <<< "$floors"); do
-            [ -f "$r" ] || echo "::warning title=solver budget::a floor row in check.yml names $r, which is not a module"
-          done
           jar=$(sha256sum ~/.local/share/alloy/alloy-6.2.0.jar | cut -d' ' -f1)
           checker=$(sha256sum scripts/alloy-check.py | cut -d' ' -f1)
           rows=""
@@ -175,15 +156,13 @@ jobs:
             files=$(scripts/alloy-check.py --closure "$m")
             closure=$(sha256sum $files | sha256sum | cut -d' ' -f1)
             key="alloy-verdict-$jar-$checker-$m-$closure"
-            floor=$(awk -v m="$m" '$1 == m {print $2}' <<< "$floors")
-            budget=$(( ${floor:-0} * 5 / 4 )); [ "$budget" -ge 60 ] || budget=60
-            echo "$m  $(echo $files | wc -w) file(s) in its closure  budget ${budget}s  $key"
-            rows+="$m"$'\t'"$key"$'\t'"$budget"$'\n'
+            echo "$m  $(echo $files | wc -w) file(s) in its closure  $key"
+            rows+="$m"$'\t'"$key"$'\n'
             n=$((n + 1))
           done
           [ "$n" -gt 0 ] || { echo "no .als module was found under spec"; exit 1; }
           echo "$n module(s) found"
-          echo "matrix=$(printf '%s' "$rows" | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {module: .[0], key: .[1], budget: .[2]})')" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(printf '%s' "$rows" | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {module: .[0], key: .[1]})')" >> "$GITHUB_OUTPUT"
 
   # One module, and the solver only on a miss. The lookup is the cache
   # action's own, so what a pull request may reuse -- its own entries and
@@ -202,7 +181,6 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       MODULE: ${{ matrix.module }}
-      BUDGET: ${{ matrix.budget }}
     steps:
       - name: A verdict already saved under this module's key
         id: lookup
@@ -224,8 +202,7 @@ jobs:
 
       # The same run refuses a check over an event no witness shows firing,
       # which its `expect` cannot see (alloy-check.py, THE DEAD EVENT). It
-      # prints `<module> <seconds>` into the log and the run's summary, and
-      # warns past the module's budget (THE FLOORS, in `plan`).
+      # prints `<module> <seconds>` into the log and the run's summary.
       - name: Every command comes out as its `expect` clause says
         if: steps.lookup.outputs.cache-hit != 'true'
         run: |
@@ -236,7 +213,6 @@ jobs:
           scripts/alloy-check.py "$MODULE" | tee verdict/alloy-check.txt || rc=$?
           secs=$(( $(date +%s) - start ))
           echo "$MODULE $secs" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "$secs" -le "$BUDGET" ] || echo "::warning title=solver budget::$MODULE took ${secs}s, over its ${BUDGET}s budget (check.yml, THE FLOORS)"
           exit "$rc"
 
       - name: Save the verdict under this module's key

@@ -21,7 +21,10 @@ IGNORE = "/*\n!/.gitignore\n!/spec/\n!/.claude/\n!/scripts/\n!/AGENTS.md\n"
 # This repository's own allowlist, for the one case asking what IT admits:
 # every other fixture writes IGNORE, which cannot notice a line missing here.
 REAL_IGNORE = (Path(__file__).resolve().parent.parent / ".gitignore").read_text()
-DOCS_IGNORE = IGNORE + "!/docs/\n"
+
+# The other module of an entity, for a fixture whose subject is its system.als:
+# without it R8 answers too.
+ENTITY = {"spec/e/checks.als": "open e/system\n"}
 
 # A fixture that spells a triple quote spells it with chr(), the way this
 # file already spells the single-quoted one: written out, the guard reading
@@ -31,9 +34,8 @@ SQ = chr(39) * 3
 
 # (name, {path: contents}, expected_rule or None)
 CASES = [
-    # R1 -- misfiled markdown and HTML, and the shape that is not it.
+    # R1 -- misfiled markdown, and the shape that is not it.
     ("R1 markdown under spec/", {"spec/x.md": "hi\n"}, "R1"),
-    ("R1 html under spec/", {"spec/x.html": "<p>hi</p>\n"}, "R1"),
     ("R1 markdown at the root is where it belongs", {"AGENTS.md": "hi\n"}, None),
 
     # R2 -- the allowlist. The trailing slash is the shape every entry in the
@@ -42,34 +44,35 @@ CASES = [
      {"scratch/x.txt": "hi\n"}, "R2"),
     ("R2 an entry written with its trailing slash still matches",
      {".claude/skills/s/SKILL.md": "hi\n"}, None),
-    ("R2 this repository's .gitignore admits docs/",
-     {".gitignore": REAL_IGNORE, "docs/m.html": "<p>hi</p>\n",
-      "spec/m/a.als": "sig S {}\n"}, None),
+    ("R2 this repository's .gitignore does not admit docs/",
+     {".gitignore": REAL_IGNORE, "docs/m.html": "<p>hi</p>\n"}, "R2"),
 
-    # R7 -- docs/, the view drawn for a reader. Each case carries the
-    # allowlist line, or R2 answers before R7 does.
-    ("R7 a view named for the model it draws",
-     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
-      "spec/m/a.als": "sig S {}\n"}, None),
-    ("R7 a view of a nested model mirrors its path",
-     {".gitignore": DOCS_IGNORE, "docs/m/n.html": "<p>hi</p>\n",
-      "spec/m/n/a.als": "sig S {}\n"}, None),
-    ("R7 a view naming no model",
-     {".gitignore": DOCS_IGNORE, "docs/gone.html": "<p>hi</p>\n",
-      "spec/m/a.als": "sig S {}\n"}, "R7"),
-    ("R7 a spec directory holding no .als is no model",
-     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
-      "spec/m/x.json": "{}\n"}, "R7"),
-    ("R7 markdown under docs/",
-     {".gitignore": DOCS_IGNORE, "docs/m.md": "hi\n",
-      "spec/m/a.als": "sig S {}\n"}, "R7"),
-    ("R7 a model whose name only begins with the view's is not its model",
-     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
-      "spec/mx/a.als": "sig S {}\n"}, "R7"),
-    ("R7 a docs/ below the root is not the views' directory",
-     {".claude/skills/s/assets/docs/x.md": "hi\n"}, None),
-    ("R7 a file named docs is refused, not a crash",
-     {".gitignore": DOCS_IGNORE, "docs": "hi\n"}, "R7"),
+    # R8 -- an entity is its two modules, plus any HTML form beside them.
+    ("R8 an entity of its two modules",
+     {"spec/m/system.als": "sig S {}\n", "spec/m/checks.als": "open m/system\n"},
+     None),
+    ("R8 an HTML form beside the two modules",
+     {"spec/m/system.als": "sig S {}\n", "spec/m/checks.als": "open m/system\n",
+      "spec/m/view.html": "<p>hi</p>\n"}, None),
+    ("R8 a nested entity is judged where it sits",
+     {"spec/m/n/system.als": "sig S {}\n", "spec/m/n/checks.als": "open m/n/system\n"},
+     None),
+    ("R8 a directory holding no .als and no .html is no entity",
+     {"spec/commands.snapshot.json": "{}\n"}, None),
+    ("R8 an entity with no checks.als",
+     {"spec/m/system.als": "sig S {}\n"}, "R8"),
+    ("R8 an entity with no system.als",
+     {"spec/m/checks.als": "sig S {}\n"}, "R8"),
+    ("R8 a third module",
+     {"spec/m/system.als": "sig S {}\n", "spec/m/checks.als": "open m/system\n",
+      "spec/m/scenarios.als": "open m/system\n"}, "R8"),
+    ("R8 a file that is neither module nor HTML",
+     {"spec/m/system.als": "sig S {}\n", "spec/m/checks.als": "open m/system\n",
+      "spec/m/notes.txt": "hi\n"}, "R8"),
+    ("R8 HTML with no entity around it",
+     {"spec/x.html": "<p>hi</p>\n"}, "R8"),
+    ("R8 a module straight under spec/",
+     {"spec/a.als": "sig S {}\n"}, "R8"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -85,17 +88,17 @@ CASES = [
     # R3 Alloy -- where the prose lives inside the comment.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 als: a retired name in a signature",
-     {"spec/a.als": "sig S { holder: runtime/holder }\n"}, "R3b"),
+     {**ENTITY, "spec/e/system.als": "sig S { holder: runtime/holder }\n"}, "R3b"),
     ("R3 als: the same name inside a block comment",
-     {"spec/a.als": "/*\n * `runtime/holder` is retired with the role.\n */\nsig S {}\n"}, None),
+     {**ENTITY, "spec/e/system.als": "/*\n * `runtime/holder` is retired with the role.\n */\nsig S {}\n"}, None),
     ("R3 als: after a // line comment",
-     {"spec/a.als": "sig S {}  // runtime/holder went with #100\n"}, None),
+     {**ENTITY, "spec/e/system.als": "sig S {}  // runtime/holder went with #100\n"}, None),
     ("R3 als: after a -- line comment",
-     {"spec/a.als": "sig S {}  -- runtime/holder went with #100\n"}, None),
+     {**ENTITY, "spec/e/system.als": "sig S {}  -- runtime/holder went with #100\n"}, None),
     ("R3 als: the earliest line-comment marker wins, not the first in the table",
-     {"spec/a.als": "sig S {} -- runtime/holder // x\n"}, None),
+     {**ENTITY, "spec/e/system.als": "sig S {} -- runtime/holder // x\n"}, None),
     ("R3 als: a one-line block comment does not swallow the rest of the file",
-     {"spec/a.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3b"),
+     {**ENTITY, "spec/e/system.als": "/* a note */\nsig S { h: runtime/holder }\n"}, "R3b"),
 
     # R3 scripts -- docstring and hash prose.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -115,13 +118,13 @@ CASES = [
     ("R3 py: the exemption is spent at the next blank line",
      {"scripts/x.py": '# unguarded: check-tree-shape -- fixture\nx = 1\n\nopen("runtime/holder")\n'}, "R3b"),
     ("R3 als: the marker is read on a block comment's opening line",
-     {"spec/a.als": "/* unguarded: check-tree-shape -- fixture */\nsig S { h: runtime/holder }\n"}, None),
+     {**ENTITY, "spec/e/system.als": "/* unguarded: check-tree-shape -- fixture */\nsig S { h: runtime/holder }\n"}, None),
     # A block comment runs many lines and the marker is usually not on the
     # first: that is a separate branch, and the one-line fixture above pins
     # nothing about it.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("R3 als: the marker is read on a block comment's continuation line",
-     {"spec/a.als": "/*\n * why this is here\n * unguarded: check-tree-shape -- fixture\n */\nsig S { h: runtime/holder }\n"}, None),
+     {**ENTITY, "spec/e/system.als": "/*\n * why this is here\n * unguarded: check-tree-shape -- fixture\n */\nsig S { h: runtime/holder }\n"}, None),
 
     # Who the exemption belongs to. Both halves were live: an unowned marker
     # exempted whatever followed it, so this guard's own header -- which spells
@@ -482,26 +485,34 @@ def committed_then_staged():
                               capture_output=True, text=True)
 
 
-def view_of_a_committed_model():
-    """R7 under `--staged`: a view staged alone, its model committed before.
+def on_a_committed_entity(stage):
+    """R8 under `--staged`: an entity committed, then `stage` run over it.
 
-    The staged file list holds the view and not the model, so an R7 that
-    looked for models in that list would refuse a view whose model is
-    plainly in the tree."""
+    The staged file list holds only what `stage` touched, so an R8 that read
+    an entity's files from that list would refuse an HTML form staged alone,
+    and one that read only added and modified paths would miss a deletion."""
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / ".gitignore").write_text(DOCS_IGNORE)
+        (root / ".gitignore").write_text(IGNORE)
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         (root / "spec" / "m").mkdir(parents=True)
-        (root / "spec" / "m" / "a.als").write_text("sig S {}\n")
+        (root / "spec" / "m" / "system.als").write_text("sig S {}\n")
+        (root / "spec" / "m" / "checks.als").write_text("open m/system\n")
         subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
         subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
                         "commit", "-qm", "in", "--no-verify"], cwd=root, check=True)
-        (root / "docs").mkdir()
-        (root / "docs" / "m.html").write_text("<p>hi</p>\n")
-        subprocess.run(["git", "add", "docs/m.html"], cwd=root, check=True)
+        stage(root)
         return subprocess.run([sys.executable, str(GUARD), "--staged"], cwd=root,
                               capture_output=True, text=True)
+
+
+def stage_an_html_form(root):
+    (root / "spec" / "m" / "view.html").write_text("<p>hi</p>\n")
+    subprocess.run(["git", "add", "spec/m/view.html"], cwd=root, check=True)
+
+
+def stage_a_deleted_module(root):
+    subprocess.run(["git", "rm", "-q", "spec/m/checks.als"], cwd=root, check=True)
 
 
 def judge(r, rule):
@@ -555,13 +566,17 @@ def main():
         print(f"FAIL  --staged does not judge a violation this commit does not "
               f"touch\n      wanted {want}, got exit {r.returncode}: "
               f"{(r.stdout + r.stderr).strip()[:160]}")
-    r = view_of_a_committed_model()
-    ok, want = judge(r, None)
-    if not ok:
-        failed += 1
-        print(f"FAIL  R7 --staged finds the model in the index, not the "
-              f"staged list\n      wanted {want}, got exit {r.returncode}: "
-              f"{(r.stdout + r.stderr).strip()[:160]}")
+    for stage, rule, name in (
+            (stage_an_html_form, None, "R8 --staged reads an entity from the "
+             "index, not the staged list"),
+            (stage_a_deleted_module, "R8", "R8 --staged judges an entity a "
+             "staged deletion touched")):
+        r = on_a_committed_entity(stage)
+        ok, want = judge(r, rule)
+        if not ok:
+            failed += 1
+            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}: "
+                  f"{(r.stdout + r.stderr).strip()[:160]}")
     for name, staged, worktree, rule in STAGED_CASES:
         r = run_staged_case(staged, worktree)
         ok, want = judge(r, rule)
@@ -576,7 +591,7 @@ def main():
             failed += 1
             print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
                   f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
-    total = len(CASES) + len(STAGED_CASES) + 3
+    total = len(CASES) + len(STAGED_CASES) + 4
     print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 

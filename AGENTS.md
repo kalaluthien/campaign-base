@@ -639,8 +639,8 @@ looks at that merge. **Posting the REVIEW re-runs the check**:
 `.github/workflows/review-rerun.yml` runs `scripts/rerun-check.py` on every
 comment and review, which re-runs a red `check` once a REVIEW names the head.
 `--report` asks the same sha from the writer's end — a `REPORT` pinning
-anything but it — and **nothing calls that mode**: a session runs it or does
-not.
+anything but it — and **`scripts/check-campaign-claim.py` calls it** on every
+`REPORT` a `gh pr` verb posts, refusing the post on `stale`.
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
 pull request head has no `check` at all**, so fast-forwarding `main` onto a

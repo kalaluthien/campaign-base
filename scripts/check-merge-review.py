@@ -14,6 +14,8 @@
                         asks for a review at a revision nobody is going to
                         merge. The first word is `pinned`, `stale` or
                         `unknown`, and the status agrees: 0, 1, 2.
+                        check-campaign-claim.py calls it on every REPORT a
+                        `gh pr` verb posts, and refuses the post on `stale`.
     check-merge-review.py <pr> --land BEFORE  [--repo OWNER/REPO]
                         THE LANDING. Reads `landDiscipline` in
                         spec/sdlc/checks.als over the checkout's HEAD against

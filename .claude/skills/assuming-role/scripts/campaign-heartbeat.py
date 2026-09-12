@@ -48,10 +48,17 @@ WHAT IS READ, AND FROM WHERE
   the refs             the campaign's claim refs, as the watch reads them
                        (`claim_reading`): a `<slug>/<N>-` ref standing is
                        sub-issue N still claimed.
-  the events feed      `gh api repos/<repo>/events` on every repository the
-                       refs were read on: the latest DeleteEvent of a branch
-                       under `<slug>/<N>-` is when N's claim went. Asked only
-                       for an idle worker's N with no ref standing.
+  the pull requests    when N's claim went, asked only for an idle worker's
+                       N with no ref standing, on every repository the refs
+                       were read on: the latest `head_ref_deleted` in the
+                       timeline of each pull request whose head is under
+                       `<slug>/<N>-` (`gh pr list`, the newest 100).
+  the events feed      the fallback, only where N has no pull request: the
+                       latest DeleteEvent of a branch under `<slug>/<N>-` in
+                       `gh api repos/<repo>/events`. It is not the first
+                       source because it drops or delays a delete -- two, an
+                       hour late (2026-09-12) -- and is unordered across
+                       pages (2026-09-13).
   the banner           `campaign-limit-reset.py <pane>`, its first word. The
                        own pane is not read: it is running this, so it is not
                        stopped.
@@ -68,10 +75,12 @@ says the stop has passed, and the pane is judged like any other.
 WHAT `retire` CANNOT SEE, both ways. Who released the ref is not read, and
 neither is which checkout a session stands in (AGENTS.md § Completion): a
 worker that took another claim before its assigned one's ref went, and has
-been idle since, reads as done. The rest err the safe way, `keep`: the feed
-holds a repository's last 300 events, however long that is, and may lag the
-delete, so a deletion out of it or not yet in it reads as none;
-a sub-issue given in a prompt of another shape is no assignment, and one
+been idle since, reads as done. The rest err the safe way, `keep`: a claim
+with no pull request -- or one older than the newest 100 -- falls to the
+feed, which holds the last 300 events however long that is and drops some
+deletes, so one it dropped reads as none, and so does a pull request whose
+head is not deleted yet; a sub-issue given in a prompt of another shape is
+no assignment, and one
 whose prompt sits in an earlier file a resume left behind is none; and a
 done worker that answers a peer's message with a tool call after the ref
 went is kept for good.
@@ -712,11 +721,39 @@ def claim_reading(issue, slug, claim, repos=None):
     return (out, repos), None
 
 
+def pull_requests(repo):
+    """([(number, head branch)], None), or (None, why): the newest 100 pull
+    requests of `repo`, any state."""
+    r = run("gh", "pr", "list", "-R", repo, "--state", "all", "--limit",
+            "100", "--json", "number,headRefName")
+    if r.returncode != 0:
+        return None, f"gh pr list -R {repo}: {r.stderr.strip()[:160]}"
+    try:
+        return [(p["number"], p["headRefName"])
+                for p in json.loads(r.stdout or "[]")], None
+    except (ValueError, KeyError, TypeError) as e:
+        return None, f"gh pr list -R {repo}: {e.__class__.__name__}"
+
+
+def head_deletions(repo, number):
+    """([times], None), or (None, why): every `head_ref_deleted` in a pull
+    request's timeline. Recorded at the delete, and kept for good."""
+    path = f"repos/{repo}/issues/{number}/timeline"
+    r = run("gh", "api", "--paginate", path, "--jq",
+            '.[] | select(.event == "head_ref_deleted") | .created_at')
+    if r.returncode != 0:
+        return None, f"gh api {path}: {r.stderr.strip()[:160]}"
+    return r.stdout.split(), None
+
+
 def events_feed(repo):
     """(events, None), or (None, why): a repository's events feed, every page
-    to EVENT_PAGES, or to a short one. UNORDERED ACROSS PAGES, measured
-    2026-09-13: 29 inversions over pages 1-3, page 1 holding an event two days
-    older than page 2's newest. So every page is read, and no hit ends it."""
+    to EVENT_PAGES, or to a short one. The fallback for a claim with no pull
+    request, for two facts measured here: it DROPS OR DELAYS A DELETE (two
+    branch deletes absent an hour later, the events around them present,
+    2026-09-12), and it is UNORDERED ACROSS PAGES (29 inversions over pages
+    1-3, page 1 holding an event two days older than page 2's newest,
+    2026-09-13). So every page is read, and no hit ends it."""
     events = []
     for page in range(1, EVENT_PAGES + 1):
         path = f"repos/{repo}/events?per_page=100&page={page}"
@@ -733,32 +770,63 @@ def events_feed(repo):
     return events, None
 
 
-def deletion_of(feeds, prefix):
-    """((when or None, what was read), None), or (None, why): the latest
-    DeleteEvent of a branch under `prefix` in `feeds`, {repo: `events_feed`'s
-    answer}. Pure; the latest by time over every event, since the feed is
-    not in order."""
-    latest, read = None, []
-    for repo, (events, why) in feeds.items():
+def latest(times):
+    """The latest of ISO timestamps, or None."""
+    return max(times, key=when, default=None)
+
+
+def deletion_of(repos, prefix, pulls, timeline, feed):
+    """((when or None, which source said it), None), or (None, why): when a
+    branch under `prefix` was last deleted on `repos`. Pure over three
+    readers -- `pull_requests`, `head_deletions`, `events_feed` -- in a fixed
+    order: the timelines of the pull requests whose head is under `prefix`,
+    latest wins; the feed only where there is none, since a claim with a
+    pull request never needs it and reading it there re-imports its lag."""
+    heads = []
+    for repo in repos:
+        got, why = pulls(repo)
+        if got is None:
+            return None, why
+        heads += [(repo, n) for n, head in got if head.startswith(prefix)]
+    if heads:
+        times = []
+        for repo, n in heads:
+            got, why = timeline(repo, n)
+            if got is None:
+                return None, why
+            times += got
+        return (latest(times), "the timeline of " + ", ".join(
+            f"{repo} pr#{n}" for repo, n in heads)), None
+    times, read = [], []
+    for repo in repos:
+        events, why = feed(repo)
         if events is None:
-            return None, f"{repo}: {why}"
-        for e in events:
-            if (e.get("type") == "DeleteEvent"
-                    and (e.get("payload") or {}).get("ref_type") == "branch"
-                    and str(e["payload"].get("ref")).startswith(prefix)
-                    and (latest is None
-                         or when(e["created_at"]) > when(latest))):
-                latest = e["created_at"]
+            return None, f"no pull request, and the events feed not read: {why}"
+        times += [e["created_at"] for e in events
+                  if e.get("type") == "DeleteEvent"
+                  and (e.get("payload") or {}).get("ref_type") == "branch"
+                  and str(e["payload"].get("ref")).startswith(prefix)]
         read.append(f"{repo} {len(events)} event(s)")
-    return (latest, "; ".join(read)), None
+    return (latest(times), "no pull request, so the events feed, the "
+            "fallback: " + "; ".join(read)), None
 
 
 def refs_reader(claims, slug):
     """A function from a sub-issue n to ((the `<slug>/<n>-` refs standing,
     when the last went or None, what was read), None) or (None, why), over
-    `claims`, `claim_reading`'s answer. The feed is asked only when no ref
-    stands, and once per repository however many workers ask."""
-    feeds = {}
+    `claims`, `claim_reading`'s answer. GitHub is asked only when no ref
+    stands, and each repository's pull requests and feed once however many
+    workers ask."""
+    once = {}
+
+    def cached(fn):
+        def read(repo):
+            if (fn, repo) not in once:
+                once[(fn, repo)] = fn(repo)
+            return once[(fn, repo)]
+        return read
+
+    pulls, feed = cached(pull_requests), cached(events_feed)
 
     def of(n):
         got, why = claims
@@ -770,13 +838,10 @@ def refs_reader(claims, slug):
         standing = sorted(b for b, m in branches.items() if m == n)
         if standing:
             return (standing, None, read), None
-        for repo in repos:
-            if repo not in feeds:
-                feeds[repo] = events_feed(repo)
-        found, why = deletion_of({r: feeds[r] for r in repos}, prefix)
+        found, why = deletion_of(repos, prefix, pulls, head_deletions, feed)
         if found is None:
-            return None, f"{read}: no ref standing; the feed not read: {why}"
-        return ([], found[0], f"{read}; the feed: {found[1]}"), None
+            return None, f"{read}: no ref standing; its deletion not read: {why}"
+        return ([], found[0], f"{read}; {found[1]}"), None
     return of
 
 

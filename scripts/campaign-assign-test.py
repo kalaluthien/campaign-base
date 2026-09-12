@@ -88,6 +88,8 @@ if a[:3] == ["issue", "view", "7"]:
     print("## Repos\n\n- none\n"); sys.exit(0)
 if a[:2] == ["api", T + "/git/matching-refs/heads/rc/"]:
     print(json.dumps(["refs/heads/rc/9-y"] if standing else [])); sys.exit(0)
+if a[:2] == ["pr", "list"]:
+    print("[]"); sys.exit(0)
 if a[:2] == ["api", T + "/events?per_page=100&page=1"]:
     print(json.dumps([{"type": "DeleteEvent", "created_at": %r,
                        "payload": {"ref": "rc/9-x", "ref_type": "branch"}}]))

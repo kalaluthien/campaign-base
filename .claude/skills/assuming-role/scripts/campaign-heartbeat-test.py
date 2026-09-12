@@ -486,11 +486,20 @@ if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
         {"number": 6, "state": "open", "labels": [{"name": "backlog"}]},
         {"number": 8, "state": "closed", "labels": [{"name": "bug"}]}])); sys.exit(0)
 if a[:2] == ["pr", "list"]:
-    pr = lambda n, head, k: {"number": n, "headRefName": head, "state": "OPEN",
-                             "headRefOid": "abc1234def", "comments": [{}] * k,
-                             "reviews": [{}]}
+    pr = lambda n, head, k, st="OPEN": {
+        "number": n, "headRefName": head, "state": st,
+        "headRefOid": "abc1234def", "comments": [{}] * k, "reviews": [{}]}
     print(json.dumps([pr(11, "tk/5-a", 2), pr(3, "tk/5-a", 0),
-                      pr(12, "other/5-a", 9)])); sys.exit(0)
+                      pr(12, "other/5-a", 9), pr(4, "tk/5-old", 0, "MERGED"),
+                      pr(20, "tk/13-z", 0, "MERGED"),
+                      pr(21, "tk/14-a", 0, "MERGED"),
+                      pr(22, "tk/14-b", 0, "MERGED")])); sys.exit(0)
+if a[:2] == ["api", "--paginate"] and a[2].endswith("/timeline"):
+    # What `--jq` leaves of a timeline: each head_ref_deleted's time.
+    n = int(a[2].split("/")[-2])
+    print({4: "2026-09-10T10:05:00Z", 20: "2026-09-10T10:04:00Z",
+           21: "2026-09-10T10:02:00Z",
+           22: "2026-09-10T10:05:00Z"}.get(n, "")); sys.exit(0)
 if a[:1] == ["api"] and a[1].startswith(T + "/events?per_page=100&page="):
     if broken("events-broken"):
         sys.stderr.write("HTTP 502\n"); sys.exit(1)
@@ -550,13 +559,19 @@ FLEET = [  # (sid, name, pane, status, records, screen)
     # A planner that is not this one, assigned the same done sub-issue: never
     # retired.
     ("S9", "tk-planner-9", "w1:p9", "idle", [prompt(1, work(9)), boundary(2)], ""),
-    # Assigned #5, whose tk/5-a still stands though an older topic went at
-    # 10:05: holds work.
+    # Assigned #5, whose tk/5-a still stands though an older topic's pull
+    # request, pr#4, had its head deleted at 10:05: holds work.
     ("SB", "tk-worker-11", "w1:pB", "idle",
      [prompt(1, work(5)), call(2), boundary(3)], ""),
     # Assigned #4, no ref standing and no tk/4- branch deleted -- only a tag
     # and tk/40-z: no time it went.
     ("SC", "tk-worker-12", "w1:pC", "idle", [prompt(1, work(4)), call(2)], ""),
+    # Assigned #13, whose pr#20's head went at 10:04 by its timeline; the
+    # feed holds no tk/13- deletion.
+    ("SD", "tk-worker-13", "w1:pD", "idle", [prompt(1, work(13)), call(2)], ""),
+    # Assigned #14, two pull requests: pr#21's head went at 10:02, pr#22's
+    # at 10:05; it worked until 10:03.
+    ("SE", "tk-worker-14", "w1:pE", "idle", [prompt(1, work(14)), call(3)], ""),
     # Two transcripts carry this id: unread, so keep, never compact.
     ("SA", "tk-worker-10", "w1:pA", "idle", [usage(1, 900_000)], ""),
 ]
@@ -650,7 +665,8 @@ def _(m):
         code, out, _ = heartbeat(m, fleet(d), "7")
     want = {"w1:p1": "compact", "w1:p2": "retire", "w1:p3": "compact",
             "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep",
-            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep", "w1:pC": "keep"}
+            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep", "w1:pC": "keep",
+            "w1:pD": "retire", "w1:pE": "retire"}
     return code == 0 and verdicts(out) == want, out
 
 
@@ -658,7 +674,7 @@ def _(m):
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d), "7")
-    return ("10 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
+    return ("12 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
             and "own pane, banner not read" in out and "herdr idle" in out), out
 
 
@@ -677,6 +693,33 @@ def _(m):
             and "went 2026-09-10T10:03:00Z" in got
             and "kalaluthien/campaign-base 7 event(s)" in got
             and "tk/5-a standing" in line_of(out, "w1:pB")), out
+
+
+@case("a pull request's timeline answers where the feed has no deletion")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:pD")
+    return (got.startswith("retire") and "went 2026-09-10T10:04:00Z" in got
+            and "the timeline of kalaluthien/campaign-base pr#20" in got), out
+
+
+@case("a sub-issue with no pull request falls to the feed, and says it is the fallback")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:p2")
+    return (got.startswith("retire")
+            and "no pull request, so the events feed, the fallback" in got), out
+
+
+@case("two pull requests: the later head_ref_deleted wins")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:pE")
+    return (got.startswith("retire") and "went 2026-09-10T10:05:00Z" in got
+            and "pr#21, kalaluthien/campaign-base pr#22" in got), out
 
 
 @case("the feed is read once a run, however many idle workers ask")
@@ -722,7 +765,7 @@ def _(m):
         (d / "events-broken").write_text("")
         _, out, _ = heartbeat(m, d, "7")
     got = line_of(out, "w1:p2")
-    return got.startswith("keep") and "the feed not read" in got, out
+    return got.startswith("keep") and "the events feed not read" in got, out
 
 
 @case("without --apply nothing is sent and each action says what it would do")
@@ -1076,7 +1119,7 @@ def _(m):
     return (why is None and set(ss) == {
                 "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
                 "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
-                "tk-worker-12", "tk-worker-10"}
+                "tk-worker-12", "tk-worker-13", "tk-worker-14", "tk-worker-10"}
             and ss["tk-worker-3"]["context"] == 210_000
             and ss["tk-worker-6"]["context"] is None
             and ss["tk-worker-4"]["banner"].startswith("session")
@@ -1091,7 +1134,11 @@ def _(m):
     return (got["claims"] == ({"tk/5-a": 5, "tk/6-b": 6}, None)
             and got["issues"] == ({5: ("open", False), 6: ("open", True),
                                    8: ("closed", False)}, None)
-            and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3)}, None)), got
+            and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3),
+                                "tk/5-old": (4, "merged", "abc1234", 1),
+                                "tk/13-z": (20, "merged", "abc1234", 1),
+                                "tk/14-a": (21, "merged", "abc1234", 1),
+                                "tk/14-b": (22, "merged", "abc1234", 1)}, None)), got
 
 
 @case("watch reader: an unreadable or garbled source is a why, not a raise")
@@ -1330,14 +1377,24 @@ MUTATIONS = [
      "the run gives one verdict per session of the campaign, and no other"),
     ("a branch, not a tag", '.get("ref_type") == "branch"', '.get("ref_type") is not None',
      "the run gives one verdict per session of the campaign, and no other"),
-    ("the latest over every page", 'and (latest is None\n                         or when(e["created_at"]) > when(latest))):',
-     "and latest is None):", "a later deletion on a later page wins over an older one on page 1"),
+    ("the latest over every page", "return max(times, key=when, default=None)",
+     "return times[0] if times else None", "a later deletion on a later page wins over an older one on page 1"),
+    ("the timeline first", "    if heads:\n", "    if False:\n",
+     "a pull request's timeline answers where the feed has no deletion"),
+    ("the feed only without a pull request", "    if heads:\n", "    if heads and False:\n",
+     "two pull requests: the later head_ref_deleted wins"),
+    ("every pull request's timeline", "            times += got\n", "            times = times or got\n",
+     "two pull requests: the later head_ref_deleted wins"),
+    ("a head under the prefix", "for n, head in got if head.startswith(prefix)]", "for n, head in got]",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("the fallback names itself", '"no pull request, so the events feed, the "', '"the "',
+     "a sub-issue with no pull request falls to the feed, and says it is the fallback"),
     ("no hit ends the feed", "        events += got\n",
      "        events += got\n        if any(e.get('type') == 'DeleteEvent' for e in got):\n            break\n",
      "a later deletion on a later page wins over an older one on page 1"),
     ("a short page ends the feed", "        if len(got) < 100:\n            break\n", "",
      "the feed is read once a run, however many idle workers ask"),
-    ("the feed once per repository", "            if repo not in feeds:\n", "            if True:\n",
+    ("the feed once per repository", "            if (fn, repo) not in once:\n", "            if True:\n",
      "the feed is read once a run, however many idle workers ask"),
     ("the feed's later pages", "for page in range(1, EVENT_PAGES + 1):", "for page in range(1, 2):",
      "a deletion on the feed's third page is read, and no page past it"),

@@ -14,6 +14,13 @@
                         asks for a review at a revision nobody is going to
                         merge. The first word is `pinned`, `stale` or
                         `unknown`, and the status agrees: 0, 1, 2.
+    check-merge-review.py <pr> --land BEFORE  [--repo OWNER/REPO]
+                        THE LANDING. Reads `landDiscipline` in
+                        spec/sdlc/checks.als over the checkout's HEAD against
+                        the tree BEFORE names: every stage the change has no
+                        artifact for is one its kind's profile and the
+                        criterion license. The first word is `licensed`,
+                        `unlicensed` or `unknown`: 0, 1, 2.
 
 `--head` IS THE SHA A CHECK RUN IS RECORDED AGAINST, and the branch's live tip
 is a different question. They come apart: a run queued for sha A while the
@@ -55,6 +62,26 @@ admits both spellings -- `gh pr comment` and `gh pr review --comment -b` are
 both `COMMENT_WRITES` in check-campaign-claim.py -- so reading one of them would
 refuse a correctly written REVIEW for the channel it arrived on.
 
+WHAT THE LANDING READS
+
+The sub-issue is the one the head branch claims -- check-campaign-claim.py's
+`claim_issue` -- and from it `## Intent`, `## Plan` and the `kind:` label,
+through campaign-tracker.py's own readers. The kind's profile is the
+`optional = ...` line of its reference, kind-<k>.md in the tree judged; a
+kind with none, and a
+sub-issue with no label, take the line in opening-campaign's AGENTS.md
+template. The change is the paths `git diff BEFORE HEAD` touches, and the tree
+is HEAD's, both read by check-sdlc-tie.py's own functions. As the model says,
+an artifact the change REUSES is the change's: a code path it wrote holds Test
+through its suite and Spec through a scenario that suite witnesses, and a
+suite it wrote holds Code through the path it drives. Spec is also held by a
+rewritten spec/commands.snapshot.json -- a command added, renamed or removed.
+The criterion is that the change wrote no suite and no code path.
+
+The model's stages are per change, not per path, so a change writing one tied
+and one untied code path holds all three: the untied ones are printed by name
+and do not decide. tieDiscipline judges them path by path, at the commit.
+
 THE FIRST LINE IS NOT PARSED HERE. `check-campaign-claim.py` owns what
 `KIND <session name|owner>: <one line>` is; this imports that pattern and reads
 which kind matched. A pattern that will not load is `unknown`, never a pass:
@@ -78,6 +105,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 GUARD = HERE / "check-campaign-claim.py"
 REPOS = HERE / "campaign-repos.py"
+TRACKER = HERE / "campaign-tracker.py"
+TIE = HERE / "check-sdlc-tie.py"
+
+# THE LANDING'S VOCABULARY is spec/sdlc/system.als's: its five stages, and
+# `skippable`, the three a profile may name.
+STAGES = ("Intent", "Plan", "Spec", "Test", "Code")
+SKIPPABLE = ("Spec", "Test", "Code")
+PROFILE = re.compile(r"^`optional = ([A-Za-z +]+)`", re.M)
+# Read from the tree being judged, so a change to a profile is judged by it.
+REFERENCES = Path(".claude/skills/assuming-role/references")
+DEFAULT_PROFILE = Path(".claude/skills/opening-campaign/assets/AGENTS.md")
 
 # SEVEN, which is git's own floor for an abbreviation and this tracker's habit.
 # Shorter is not a sha anybody writes, and matching it would let a four-digit
@@ -230,7 +268,9 @@ def subject_head(repo, pr, want):
 # it would make every `release` refuse with "which is none of".
 GATE_WORDS = ("reviewed", "unreviewed", "unknown")
 REPORT_WORDS = ("pinned", "stale", "unknown")
-STATUS = {"reviewed": 0, "pinned": 0, "unreviewed": 1, "stale": 1, "unknown": 2}
+LAND_WORDS = ("licensed", "unlicensed", "unknown")
+STATUS = {"reviewed": 0, "pinned": 0, "licensed": 0,
+          "unreviewed": 1, "stale": 1, "unlicensed": 1, "unknown": 2}
 
 
 def answer(word, line, extra=()):
@@ -319,6 +359,116 @@ def report(repo, pr, body, pattern, want_head):
                      "(AGENTS.md, § The four messages)."])
 
 
+def profile_of(kind, root):
+    """(optional stages, the file read, why). A kind with no reference --
+    `development` -- and a sub-issue with no label take the template's line."""
+    where = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
+    # HEAD's copy, not the disk's: the tree judged is HEAD's.
+    if run("git", "-C", str(root), "cat-file", "-e", f"HEAD:{where}")[0] != 0:
+        where = DEFAULT_PROFILE
+    code, text, err = run("git", "-C", str(root), "show", f"HEAD:{where}")
+    if code != 0:
+        return None, where, f"HEAD:{where}: {err.strip()[:200]}"
+    m = PROFILE.search(text)
+    if not m:
+        return None, where, f"{where} carries no `optional = ...` line"
+    optional = set()
+    for word in (w.strip() for w in m.group(1).split("+")):
+        if word == "skippable":
+            optional |= set(SKIPPABLE)
+        elif word in SKIPPABLE:
+            optional.add(word)
+        else:
+            return None, where, f"`{word}` in {where}'s profile is no skippable stage"
+    return optional, where, None
+
+
+def change_of(before):
+    """({code, suites, snapshot, stages, untied}, why) -- what the change
+    wrote and which of Spec, Test and Code it holds, reused artifacts
+    included, read with check-sdlc-tie.py's tree and diff."""
+    tie, why = load(TIE, "check_sdlc_tie")
+    if why:
+        return None, f"could not import the tie reading -- {why}"
+    code, out, err = run("git", "rev-parse", "--show-toplevel")
+    if code != 0:
+        return None, f"git rev-parse exited {code}: {err.strip()[:200]}"
+    tie.ROOT = out.strip()
+    code, _, _ = run("git", "-C", tie.ROOT, "rev-parse", "--verify", "-q",
+                     f"{before}^{{commit}}")
+    if code != 0:
+        return None, f"`{before}` names no commit in {tie.ROOT}, so there is no change to read"
+    tree = tie.head_tree((tie.load_sibling("check-tree-shape.py").in_scripts_dir,))
+    _moved, touched = tie.changed(before, "commit")
+    code_paths, suites = set(tree.code), set(tree.suites)
+    wrote_code = sorted(touched & code_paths)
+    wrote_suites = sorted(touched & suites)
+    tests = set(wrote_suites) | {s for k in wrote_code for s in tree.suites_of(k)}
+    codes = set(wrote_code) | {k for k in code_paths
+                               if set(tree.suites_of(k)) & set(wrote_suites)}
+    snapshot = tie.SNAPSHOT in touched
+    held = ({"Spec"} if snapshot or any(tree.witnesses_a_scenario(s) for s in tests)
+            else set()) | ({"Test"} if tests else set()) | ({"Code"} if codes else set())
+    return {"root": Path(tie.ROOT), "touched": len(touched),
+            "code": wrote_code, "suites": wrote_suites,
+            "snapshot": snapshot, "stages": held,
+            "untied": [k for k in wrote_code if not tree.tied(k)]}, None
+
+
+def land(repo, pr, base, guard, before):
+    """Is every stage the change has no artifact for licensed at the landing?"""
+    ref, why = head_ref(repo, pr)
+    if why:
+        return answer("unknown", why)
+    head, branch = ref
+    issue = guard.claim_issue(branch)
+    if not issue:
+        return answer("unknown", f"the head branch `{branch}` of {repo}#{pr} is "
+                                 f"no claim, so there is no sub-issue to read "
+                                 f"the Intent, Plan and kind of")
+    tracker, why = load(TRACKER, "campaign_tracker")
+    if why:
+        return answer("unknown", f"could not import the sub-issue readers -- {why}")
+    _title, body, names, _parent, why = tracker.issue_shape(base, issue)
+    if why:
+        return answer("unknown", f"{base}#{issue}: {why}")
+    kind, why = tracker.work_kind_of(names)
+    if why:
+        return answer("unknown", f"{base}#{issue}: {why}")
+    change, why = change_of(before)
+    if why:
+        return answer("unknown", why)
+    optional, where, why = profile_of(kind, change["root"])
+    if why:
+        return answer("unknown", why)
+    sections = set(tracker.SECTION.findall(body))
+    held = {s for s in ("Intent", tracker.PLAN_SECTION) if s in sections}
+    held |= change["stages"]
+    criterion = not change["code"] and not change["suites"]
+    absent = [s for s in STAGES if s not in held]
+    refused = [s for s in absent if not (s in optional and criterion)]
+    trail = [f"head {head[:12]} on `{branch}`, claiming {base}#{issue}, "
+             f"kind {kind or 'none (no label)'}",
+             f"profile `optional = {' + '.join(s for s in SKIPPABLE if s in optional) or 'none'}` "
+             f"from {where}",
+             f"against {before}: {change['touched']} path(s) touched; wrote "
+             f"{len(change['code'])} code path(s), {len(change['suites'])} "
+             f"suite(s)" + (", the snapshot" if change["snapshot"] else ""),
+             f"criterion (nothing runs): {'holds' if criterion else 'false'}",
+             f"stages held: {', '.join(s for s in STAGES if s in held) or 'none'}; "
+             f"absent: {', '.join(absent) or 'none'}",
+             ("untied code paths it wrote: " + ", ".join(change["untied"]))
+             if change["untied"] else "untied code paths it wrote: none"]
+    if not refused:
+        return answer("licensed", f"every absent stage of {repo}#{pr} is one "
+                                  f"its profile and the criterion license", trail)
+    return answer("unlicensed", f"{repo}#{pr} lands without {', '.join(refused)}, "
+                                f"which neither its profile nor the criterion "
+                                f"licenses",
+                  trail + ["landDiscipline in spec/sdlc/checks.als: the remedy "
+                           "is to write the stage after all."])
+
+
 def read_body(where):
     """(body, why). `-` is stdin, so a caller can pipe the comment it is about
     to post rather than writing it out twice."""
@@ -359,6 +509,8 @@ def parse(argv, base):
                          "the sha a check run is recorded against")
     ap.add_argument("--report", metavar="FILE",
                     help="judge this REPORT body's sha instead, `-` for stdin")
+    ap.add_argument("--land", metavar="BEFORE",
+                    help="judge landDiscipline over HEAD against this ref instead")
     try:
         return ap.parse_args(argv), None
     except ValueError as e:
@@ -386,6 +538,8 @@ def main(argv=None) -> int:
     if pattern is None:
         return answer("unknown", f"the comment-kind reading would not build: "
                                  f"{guard.FIRST_LINE_UNREADABLE}")
+    if args.land is not None:
+        return land(args.repo, args.pr, base or args.repo, guard, args.land)
     if args.report is None:
         return gate(args.repo, args.pr, pattern, args.head)
     body, why = read_body(args.report)

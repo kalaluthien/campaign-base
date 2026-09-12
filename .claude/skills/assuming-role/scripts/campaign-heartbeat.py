@@ -20,7 +20,8 @@ verdict first, then what it read and from where:
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
              listed but the own pane (herdr), no open sub-issue without
-             `backlog` (the index, as `drift unclaimed` reads it), no claim
+             `backlog` or `kind:maintenance` (the index, as `drift unclaimed`
+             reads it), no claim
              ref standing (the refs). One not made is not quiet, and the own
              pane is judged as any other.
     keep     anything else -- working, blocked, small, and every reading that
@@ -105,12 +106,13 @@ and read quiet print `quiet <slug>: <the three readings>` and exit 0.
                             calls a mid-turn pause idle; the own pane has none
   limit <pane> <banner>     limit-reset's first line, on a non-working pane
   claim <branch>            campaign-claim's refs, in the tracker and ## Repos
-  issue <n> <state> [backlog]   the campaign's sub-issue index
+  issue <n> <state> [backlog] [maintenance]   the campaign's sub-issue index
   pr <n> <branch> <state> <sha> comments=<k>   a claim's pull request;
                             k counts comments and reviews, so a REPORT or a
                             REVIEW moves it
   drift <rule> <subject>    a desired state that does not hold:
-    unclaimed    an open sub-issue without `backlog` has no claim
+    unclaimed    an open sub-issue without `backlog` or `kind:maintenance`
+                 has no claim
     unworked     more claims than workers
     stuck        a claim with no pull request change for 30m while no worker
                  works
@@ -442,9 +444,17 @@ QUIET_POLLS = 2
 
 def workable(issues):
     """The open sub-issues without `backlog`, over the index as
-    {n: (state, backlog)}: what `drift unclaimed` and `quiet` both ask."""
-    return sorted(n for n, (state, backlog) in issues.items()
-                  if state == "open" and not backlog)
+    {n: (state, backlog, maintenance)}: what `drift unclaimed` and `quiet`
+    both ask.
+
+    NOR A `kind:maintenance` ONE (rule-check#354). That kind may stand open
+    with no deliverable, a claim cut per tidy and released after it, so
+    between tidies it would drift `unclaimed` every heartbeat and keep the
+    campaign from ever reading quiet. While it holds a claim it is read like
+    any other: the claim is what `stuck`, `settled` and `quiet` read."""
+    return sorted(n for n, (state, backlog, maintenance) in issues.items()
+                  if state == "open" and not backlog
+                  and not maintenance)
 
 
 def quiet_reading(own, panes, claims, issues):
@@ -463,7 +473,7 @@ def quiet_reading(own, panes, claims, issues):
     return not (others or todo or claims), (
         f"herdr {len(panes)} session(s), {len(others)} but the own pane; "
         f"the index {len(issues)} sub-issue(s), {len(todo)} open without "
-        f"backlog; the refs {len(claims)} claim(s)")
+        f"backlog or kind:maintenance; the refs {len(claims)} claim(s)")
 
 
 class Watch:
@@ -569,7 +579,8 @@ class Watch:
                 lines.add(f"drift context {name} {s['context'] // 1000}k")
         lines |= {f"claim {b}" for b in claims}
         lines |= {f"issue {n} {st}{' backlog' if bl else ''}"
-                  for n, (st, bl) in issues.items()}
+                  f"{' maintenance' if mt else ''}"
+                  for n, (st, bl, mt) in issues.items()}
         lines |= {f"pr {p[0]} {b} {p[1]} {p[2]} comments={p[3]}"
                   for b, p in prs.items() if b in claims}
         lines |= self.drift(claims, issues, prs, workers, now)
@@ -909,9 +920,13 @@ def watch_readers(issue, slug, own, claim, names, cache):
         items, why = tracker.fetch_index(claim.TRACKER, issue)
         if items is None:
             return None, why
-        return {i["number"]: (i["state"], any(
-            lb.get("name") == tracker.BACKLOG_LABEL
-            for lb in i.get("labels") or [])) for i in items}, None
+        out = {}
+        for i in items:
+            names = [lb.get("name") for lb in i.get("labels") or []]
+            out[i["number"]] = (
+                i["state"], tracker.BACKLOG_LABEL in names,
+                tracker.work_kind_of(names)[0] == tracker.STANDING_KIND)
+        return out, None
 
     def prs():
         if not repos:

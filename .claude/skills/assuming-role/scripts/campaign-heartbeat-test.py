@@ -484,7 +484,9 @@ if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
     print(json.dumps([
         {"number": 5, "state": "open", "labels": []},
         {"number": 6, "state": "open", "labels": [{"name": "backlog"}]},
-        {"number": 8, "state": "closed", "labels": [{"name": "bug"}]}])); sys.exit(0)
+        {"number": 8, "state": "closed", "labels": [{"name": "bug"}]},
+        {"number": 9, "state": "open", "labels": [{"name": "kind:maintenance"}]}]))
+    sys.exit(0)
 if a[:2] == ["pr", "list"]:
     pr = lambda n, head, k, st="OPEN": {
         "number": n, "headRefName": head, "state": st,
@@ -616,7 +618,8 @@ def quiet_fleet(d, *markers):
 
 
 QUIET_LINE = ("quiet tk: herdr 1 session(s), 0 but the own pane; the index 2 "
-              "sub-issue(s), 0 open without backlog; the refs 0 claim(s)")
+              "sub-issue(s), 0 open without backlog or kind:maintenance; the "
+              "refs 0 claim(s)")
 
 
 def heartbeat(m, d, *args, own="w1:p1"):
@@ -898,7 +901,7 @@ LIMIT = "session limit, resets 4pm (in 2h)"
 def _(m):
     [out] = polls(m, (0, readings(
         sessions={"tk-worker-2": sess(banner=LIMIT)},
-        claims={"tk/5-a": 5}, issues={5: ("open", False), 6: ("open", False)})))
+        claims={"tk/5-a": 5}, issues={5: ("open", False, False), 6: ("open", False, False)})))
     return (out[0].startswith("watching tk:")
             and "+ drift unclaimed tk#6" in out
             and f"+ limit w1:p2 {LIMIT}" in out
@@ -928,9 +931,19 @@ def _(m):
 def _(m):
     [out] = polls(m, (0, readings(
         claims={"tk/5-a": 5},
-        issues={5: ("open", False), 6: ("open", False), 7: ("open", True),
-                8: ("closed", False)})))
+        issues={5: ("open", False, False), 6: ("open", False, False), 7: ("open", True, False),
+                8: ("closed", False, False)})))
     return drifts(out, "unclaimed") == ["+ drift unclaimed tk#6"], out
+
+
+@case("watch: an unclaimed kind:maintenance sub-issue is not unclaimed")
+def _(m):
+    # rule-check#354: a standing sub-issue with no claim between tidies.
+    [out] = polls(m, (0, readings(
+        claims={"tk/5-a": 5},
+        issues={5: ("open", False, True), 6: ("open", False, True),
+                7: ("open", False, False)})))
+    return drifts(out, "unclaimed") == ["+ drift unclaimed tk#7"], out
 
 
 @case("watch: unworked is more claims than workers, and a planner is no worker")
@@ -966,7 +979,7 @@ def _(m):
 @case("watch: settled is a claim whose sub-issue is closed")
 def _(m):
     [out] = polls(m, (0, readings(claims={"tk/5-a": 5, "tk/6-b": 6},
-                                  issues={5: ("closed", False), 6: ("open", False)})))
+                                  issues={5: ("closed", False, False), 6: ("open", False, False)})))
     return drifts(out, "settled") == ["+ drift settled tk/5-a"], out
 
 
@@ -1026,7 +1039,7 @@ def _(m):
 
 @case("watch: a drift still standing reprints as = every 30m")
 def _(m):
-    r = readings(issues={6: ("open", False)})
+    r = readings(issues={6: ("open", False, False)})
     outs = polls(m, (0, r), (29, r), (30, r), (45, r), (60, r))
     eq = "= drift unclaimed tk#6"
     return ([o.count(eq) for o in outs[1:]] == [0, 1, 0, 1]), outs
@@ -1132,8 +1145,9 @@ def _(m):
     if isinstance(got, Exception):
         return False, f"the reader raised {got!r}"
     return (got["claims"] == ({"tk/5-a": 5, "tk/6-b": 6}, None)
-            and got["issues"] == ({5: ("open", False), 6: ("open", True),
-                                   8: ("closed", False)}, None)
+            and got["issues"] == ({5: ("open", False, False), 6: ("open", True, False),
+                                   8: ("closed", False, False),
+                                   9: ("open", False, True)}, None)
             and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3),
                                 "tk/5-old": (4, "merged", "abc1234", 1),
                                 "tk/13-z": (20, "merged", "abc1234", 1),
@@ -1219,7 +1233,7 @@ def _(m):
 
 @case("watch: no drift is read from a source never read")
 def _(m):
-    [out] = polls(m, (0, readings(issues={5: ("open", False)},
+    [out] = polls(m, (0, readings(issues={5: ("open", False, False)},
                                   sessions={"tk-worker-2": sess()}, fail=("claims",))))
     return not [ln for ln in out if " drift " in ln], out
 
@@ -1227,7 +1241,7 @@ def _(m):
 @case("watch: each rule waits only for its own sources")
 def _(m):
     [no_sessions] = polls(m, (0, readings(
-        claims={"tk/5-a": 5}, issues={5: ("closed", False), 6: ("open", False)},
+        claims={"tk/5-a": 5}, issues={5: ("closed", False, False), 6: ("open", False, False)},
         fail=("sessions",))))
     idle = {"tk-worker-2": sess()}
     no_prs = polls(m, (0, readings(sessions=idle, claims={"tk/5-a": 5}, fail=("prs",))),
@@ -1240,8 +1254,8 @@ def _(m):
 
 @case("watch: a drift clears when its repair lands: a claim, a release")
 def _(m):
-    open5 = {5: ("open", False)}
-    closed5 = {5: ("closed", False)}
+    open5 = {5: ("open", False, False)}
+    closed5 = {5: ("closed", False, False)}
     one = {"tk-worker-2": sess()}
     outs = polls(m, (0, readings(sessions=one, issues=open5)),
                  (1, readings(sessions=one, issues=open5, claims={"tk/5-a": 5})),
@@ -1254,7 +1268,7 @@ def _(m):
 
 
 QUIET = {"sessions": {"tk-planner-1": sess(pane="w1:p1")},
-         "issues": {6: ("open", True), 8: ("closed", False)}}
+         "issues": {6: ("open", True, False), 8: ("closed", False, False)}}
 
 
 def said_quiet(m, **change):
@@ -1293,8 +1307,15 @@ def _(m):
 
 @case("quiet: an open sub-issue without backlog is not quiet")
 def _(m):
-    got = said_quiet(m, issues={5: ("open", False), 6: ("open", True)})
+    got = said_quiet(m, issues={5: ("open", False, False), 6: ("open", True, False)})
     return got == [], got
+
+
+@case("quiet: an open kind:maintenance sub-issue with no claim is quiet")
+def _(m):
+    got = said_quiet(m, issues={6: ("open", False, True),
+                                8: ("closed", False, False)})
+    return got == [QUIET_LINE], got
 
 
 @case("quiet: a claim standing is not quiet")
@@ -1488,12 +1509,18 @@ MUTATIONS = [
      "watch: a pull request is a line only while its branch is claimed"),
     ("unclaimed", "for n in workable(issues):", "for n in ():",
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
-    ("unclaimed skips backlog", 'if state == "open" and not backlog)', 'if state == "open")',
+    ("unclaimed skips backlog", 'if state == "open" and not backlog\n', 'if state == "open"\n',
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
+    ("unclaimed skips an unclaimed maintenance one", "and not maintenance)", ")",
+     "watch: an unclaimed kind:maintenance sub-issue is not unclaimed"),
+    ("the index reads kind:maintenance", "tracker.work_kind_of(names)[0] == tracker.STANDING_KIND)", "False)",
+     "watch reader: claims, sub-issues and pull requests of this slug"),
     ("unclaimed skips a claimed one", "if n not in claimed:", "if True:",
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
-    ("quiet skips a backlog sub-issue", 'if state == "open" and not backlog)', 'if state == "open")',
+    ("quiet skips a backlog sub-issue", 'if state == "open" and not backlog\n', 'if state == "open"\n',
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("quiet skips an unclaimed maintenance one", "and not maintenance)", ")",
+     "quiet: an open kind:maintenance sub-issue with no claim is quiet"),
     ("quiet ends the watch", "            if watch.quiet:\n                return 0\n", "",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("quiet prints its line", "([self.quiet] if ends else []))", "[])",
@@ -1583,7 +1610,7 @@ MUTATIONS = [
      "watch reader: claims, sub-issues and pull requests of this slug"),
     ("the latest pull request of a branch", "key=lambda p: p[\"number\"]):", "key=lambda p: -p[\"number\"]):",
      "watch reader: claims, sub-issues and pull requests of this slug"),
-    ("backlog by its label", "lb.get(\"name\") == tracker.BACKLOG_LABEL", "False",
+    ("backlog by its label", "tracker.BACKLOG_LABEL in names,", "False,",
      "watch reader: claims, sub-issues and pull requests of this slug"),
     ("claims from the refs", "        out[b] = int(n) if n else None\n", "",
      "watch reader: claims, sub-issues and pull requests of this slug"),

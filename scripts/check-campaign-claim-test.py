@@ -184,6 +184,27 @@ def no_herdr(d):
     return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}"}
 
 
+def gh_stub(d, env, parents):
+    """`env` with a `gh` first on PATH answering `gh issue view <n> ...` from
+    `parents` -- {issue: parent number or None, or (parent, [label names])};
+    an issue absent from it exits 1, the could-not-read case. The sub-issue
+    carve-out's one network read."""
+    bindir = Path(d) / f"gh-{abs(hash(repr(sorted(parents.items())))) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    table = json.dumps({str(k): v for k, v in parents.items()})
+    (bindir / "gh").write_text(
+        f"#!/usr/bin/env python3\nimport json, sys\n"
+        f"table = json.loads({table!r})\n"
+        f"n = next((a for a in sys.argv[3:] if a.isdigit()), None)\n"
+        f"if sys.argv[1:3] != ['issue', 'view'] or n not in table:\n"
+        f"    sys.exit('gh stub: no answer for ' + ' '.join(sys.argv[1:]))\n"
+        f"p, names = table[n] if isinstance(table[n], list) else (table[n], [])\n"
+        f"print(json.dumps({{'title': '', 'body': '', 'labels': [{{'name': x}} for x in names],\n"
+        f"                  'parent': {{'number': p}} if p else None}}))\n")
+    (bindir / "gh").chmod(0o755)
+    return {"PATH": f"{bindir}:{env['PATH']}"}
+
+
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
         tool_input=None, env=None, session="sid-1", run_cwd=None, guard=None):
     """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
@@ -1468,6 +1489,72 @@ def main():
               "is still refused",
               r.returncode == 2 and "no claim covering a write to #99"
               in r.stderr, out(r)[:400])
+
+        # #354: ANY SUB-ISSUE OF ITS OWN CAMPAIGN takes a comment and a
+        # reopen without a claim, so a discovery lands on the sub-issue that
+        # covers it. The parent, read from GitHub, is what licenses it: #42
+        # hangs from #1, this worker's campaign; #43 from #2, another's; #44
+        # could not be read.
+        member = gh_stub(d, worker, {42: 1, 43: 2})
+        for cmd in ("gh issue comment 42 --body 'NOTE demo-worker-4: x'",
+                    "gh issue reopen 42"):
+            r = ask(f.base, tool="Bash", command=cmd, env=member)
+            check(f"a worker may `{cmd.split(' --')[0]}` on a sub-issue of its "
+                  f"own campaign it holds no claim on",
+                  r.returncode == 0 and "#42 is a sub-issue of #1" in r.stdout,
+                  out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue comment 43 --body 'NOTE demo-worker-4: x'",
+                env=member)
+        check("...and not on a sub-issue of another campaign",
+              r.returncode == 2 and "#43 is a sub-issue of #2" in r.stderr,
+              out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue reopen 44", env=member)
+        check("...nor on one whose parent could not be read",
+              r.returncode == 2 and "could not read #44's parent" in r.stderr,
+              out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue close 42", env=member)
+        check("...and only the two verbs: `close` still needs a claim",
+              r.returncode == 2 and "no claim covering a write to #42"
+              in r.stderr, out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue reopen 42 && gh pr merge 12 --merge",
+                env=member)
+        check("...and it carries no other write in the same command",
+              r.returncode == 2 and "covers no other write" in r.stderr,
+              out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue reopen 42",
+                env=gh_stub(d, stranger, {42: 1}))
+        check("...and a worker of another campaign gets no carve-out on it",
+              r.returncode == 2, out(r)[:400])
+        # ON THE TRACKER ONLY (pr#357's review). The parent is read on the
+        # tracker, so a write to ANOTHER repository's #42 -- named with `-R`,
+        # or made from a member clone whose `gh` defaults to its own remote --
+        # is not licensed by it. Naming the tracker itself still is.
+        for flag in ("-R other/repo", "--repo=other/repo", "-Rother/repo"):
+            r = ask(f.base, tool="Bash", command=f"gh issue reopen 42 {flag}",
+                    env=member)
+            check(f"...and not for another repository's #42 (`{flag}`)",
+                  r.returncode == 2 and "which is not the tracker" in r.stderr,
+                  out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue reopen 42 -R Kalaluthien/Campaign-Base",
+                env=member)
+        check("...while `-R` naming the tracker is carved, in any case",
+              r.returncode == 0 and "#42 is a sub-issue of #1" in r.stdout,
+              out(r)[:400])
+        clone = f.member()
+        r = ask(clone, tool="Bash", command="gh issue reopen 42", env=member)
+        check("...and not from a member clone with no `-R`",
+              r.returncode == 2 and "not the base's checkout" in r.stderr,
+              out(r)[:400])
+        # A SUB-ISSUE BY THE TRACKER'S CLASSIFICATION: labelled `campaign`
+        # and parented is its `stray` defect, a campaign under a parent.
+        r = ask(f.base, tool="Bash", command="gh issue reopen 45",
+                env=gh_stub(d, worker, {45: [1, ["campaign"]]}))
+        check("...and not for a `campaign`-labelled issue that has a parent",
+              r.returncode == 2 and "#45 is no sub-issue" in r.stderr,
+              out(r)[:400])
 
         # CLAUSE 1 IS BOUND BY THE CAMPAIGN TOO. It asks only whether the
         # target's checkout is on SOME claim, so a worker of another
@@ -3148,7 +3235,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 441
+    EXPECTED = 454
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

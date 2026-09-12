@@ -258,6 +258,10 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
                                                         sub-issue it has claimed
      no role    refused on both planes
 
+   A comment and a reopen are no event here, so the table is silent on them;
+   the guard lets a worker comment on its own campaign's issue (#207), and
+   comment on or reopen any sub-issue of that campaign without a claim (#354).
+
    The issue argument is `lone` and the `in` tests are vacuously true when there
    is none, which is the right reading and not an accident: `writeBody` and the
    directory events name no issue, and for those the rule is the plane and the

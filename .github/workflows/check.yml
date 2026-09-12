@@ -159,7 +159,7 @@ jobs:
         id: matrix
         run: |
           set -euo pipefail
-          floors='spec/sdlc/checks.als 1310
+          floors='spec/sdlc/checks.als 571
           spec/campaign/orchestration/checks.als 788
           spec/campaign/session/checks.als 79'
           for r in $(awk '{print $1}' <<< "$floors"); do

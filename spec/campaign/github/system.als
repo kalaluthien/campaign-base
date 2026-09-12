@@ -98,7 +98,7 @@ sig Issue {
    issue's NUMBER is the identity: it is what `gh` is given, what `--parent`
    links, and what `bound` and `settlement` are asked about. The SLUG is what a
    person reads: every session name, claim branch and directory is built from
-   it, and none of them carries the number any more (#181).
+   it, and none of them carries the number.
 
    The slug is not modelled as a value, for the same reason the session name is
    not: `.claude/skills/assuming-role/scripts/campaign-name-session.py`
@@ -110,7 +110,7 @@ sig Issue {
    reader may answer. `campaign-tracker.py`'s `slug`, `issue` and `slugs` are
    the readers; `campaign-issues` refuses an open campaign that has none.
 
-   A SUB-ISSUE'S KIND is a label of the same shape, `kind:<k>` (rule-check#314):
+   A SUB-ISSUE'S KIND is a label of the same shape, `kind:<k>`:
    one per sub-issue, read by exact name by `campaign-tracker.py kind <N>`,
    and two of them a question no reader may answer; what `check` does with
    none and with two is AGENTS.md § Sub-issues' to state. It is a
@@ -142,21 +142,17 @@ var sig Filed  in Campaign {}
    own -- `Issue.repo`, "where the work lands, never where the issue is filed".
    It is therefore not the taker's to choose, which is what `claimOnTheIssuesRepo`
    in orchestration/checks.als says and what `R8_ClaimCutOnAnotherRepo` shows
-   the cost of dropping. The script agrees since #187: `take` and `release` read
-   the sub-issue's own `## Lands in` section and `--repo` may only confirm it,
-   where before `--repo` alone decided and two takers naming different
-   repositories both succeeded on one sub-issue.
+   the cost of dropping. The script agrees: `take` and `release` read the
+   sub-issue's own `## Lands in` section and `--repo` may only confirm it.
 
-   `## Lands in` REPLACED THE `Repository:` LINE in kalaluthien/campaign-base#217,
-   and the replacement is a shape change and not a reading change: one purpose
-   had two shapes -- a keyword line on a sub-issue, a heading on a campaign
-   issue -- and two readers that agreed only by both being exact. It is one
-   heading holding one entry, `- owner/repo` or `- none`, read through the same
-   slug reader `## Repos` uses. `- none` and the base's own slug are the same
-   destination, which is why `campaign-repos.py` may refuse the base in
-   `## Repos` and admit it here: the two sections ask different questions --
-   which repositories to CLONE, and where ONE sub-issue's work lands -- of one
-   vocabulary. */
+   `## Lands in` is one heading holding one entry, `- owner/repo` or `- none`,
+   read through the same slug reader `## Repos` uses, because one purpose in
+   two shapes -- a keyword line on a sub-issue, a heading on a campaign issue
+   -- needs two readers that agree only by both being exact. `- none` and the base's
+   own slug are the same destination, which is why `campaign-repos.py` may
+   refuse the base in `## Repos` and admit it here: the two sections ask
+   different questions -- which repositories to CLONE, and where ONE
+   sub-issue's work lands -- of one vocabulary. */
 var sig Claimed in Issue {}
 
 /* THE PERSON'S HOLD ON THE CLOSE, and the only precondition here that is not a
@@ -196,10 +192,7 @@ fact WellFormed {
      would have a campaign acquire a second checkout of the base over the
      first. It is the premise `claimWithinScope`'s `Base` disjunct rests on --
      no campaign lists the base, so no campaign is out of scope for changing
-     it -- and until kalaluthien/campaign-base#205 it was prose in three files
-     with no reader and no fact: `campaign-repos.py` accepted the entry and
-     exited 0, and this model let a trace put `Base` in `reposInBody`.
-     `S20_TheBaseIsNeverListed` is the command that reddens when this line
+     it. `S20_TheBaseIsNeverListed` is the command that reddens when this line
      goes; `campaign-repos.py` is the reader that refuses the entry, and a
      fact stricter than its reader would be a false claim that reads as
      cautious. */
@@ -265,18 +258,16 @@ one sig Stutter, FileCampaignIssue, AddMember, RemoveMember,
 one sig Now {
   var event:    one Event,
   var issue: lone Issue,
-  /* WHICH REPOSITORY THE EVENT ACTED ON. Added by #187 for one reason: without
-     it the model cannot state the defect it fixes. `Issue.repo` says where a
-     sub-issue's work lands, but nothing said where a CLAIM was cut, so "a taker
-     cut the ref on a repository that is not the sub-issue's" had no spelling
-     here and the script was free to let `--repo` decide.
+  /* WHICH REPOSITORY THE EVENT ACTED ON. Without it the model cannot state the
+     defect it fixes. `Issue.repo` says where a sub-issue's work lands, but
+     nothing said where a CLAIM was cut, so "a taker cut the ref on a
+     repository that is not the sub-issue's" had no spelling here.
 
      UNCONSTRAINED BY EVERY EVENT, `claim` INCLUDED, and deliberately: it is a
      record of what happened, not state, and the rule that ties it to the
      sub-issue is `claimOnTheIssuesRepo` in orchestration/checks.als. Written
      into `claim` itself it would be true in every world the model admits, so no
-     scenario could exhibit its absence and R8b could never redden -- which is
-     how the first draft of this went green while testing nothing. */
+     scenario could exhibit its absence and R8b could never redden. */
   var repo:  lone Repo
 }
 
@@ -377,24 +368,21 @@ pred writeBody[c: Campaign] {
    the atomicity is a named discipline above (orchestration/checks.als's
    `claimAtomic`) with its absence runnable as a control.
 
-   AND `claimAtomic` IS NOT create-ref ALONE, which is what this comment used to
-   say. `Claimed` is a set of ISSUES, so the discipline is per sub-issue; the
-   ref that carries a claim is named `<slug>/<issue>-<topic>`, so
-   create-ref's server-side refusal serialises ref NAMES and admits two topics
-   on one sub-issue. Nothing here models a topic, which is exactly why the
-   model could not see that gap. What closes it is in the script: `take` reads
-   the campaign's refs again AFTER its own create, and where two name one
-   sub-issue, EVERY taker that sees a rival deletes what it just cut. A
-   smallest-name tiebreak was the first shape of this and was wrong: the racers
-   do not read the same set, so two of them can each believe they won. Yielding
-   has no such state, and its worst case -- both yield, the sub-issue is left
-   unclaimed -- the next `take` fixes.
+   AND `claimAtomic` IS NOT create-ref ALONE. `Claimed` is a set of ISSUES, so
+   the discipline is per sub-issue; the ref that carries a claim is named
+   `<slug>/<issue>-<topic>`, so create-ref's server-side refusal serialises ref
+   NAMES and admits two topics on one sub-issue. Nothing here models a topic.
+   What closes it is in the script: `take` reads the campaign's refs again
+   AFTER its own create, and where two name one sub-issue, EVERY taker that
+   sees a rival deletes what it just cut. A smallest-name tiebreak is wrong:
+   the racers do not read the same set, so two of them can each believe they
+   won. Yielding has no such state, and its worst case -- both yield, the
+   sub-issue is left unclaimed -- the next `take` fixes.
 
-   NOT scoped to a single repository any more, and the sentence that said so
-   pointed at a `Claimed` comment #187 rewrote to say the opposite. A claim is
-   the sub-issue, and the repository is the sub-issue's own -- see
-   `claimOnTheIssuesRepo` in orchestration/checks.als, whose R8b is what
-   reddens if that stops holding. */
+   NOT scoped to a single repository. A claim is the sub-issue, and the
+   repository is the sub-issue's own -- see `claimOnTheIssuesRepo` in
+   orchestration/checks.als, whose R8b is what reddens if that stops
+   holding. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
   Claimed' = Claimed + i

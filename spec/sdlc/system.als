@@ -77,9 +77,10 @@ fun skippable: set Stage { Spec + Test + Code }
    .claude/skills/assuming-role/references/, kind-<k>.md, states this set in
    one line; `development` has no reference, and its line is the default in the
    campaign's AGENTS.md. The two profiles in checks.als (`developmentProfile`,
-   `prototypingProfile`) are what those lines derive from -- the second being
-   the only one that narrows anything, and so the only one that witnesses
-   this half of `maySkip`. No kind is an atom here: the model owns how a
+   `narrowingProfile`) are what those lines derive from -- the second a
+   profile no kind states since rule-check#354, kept as the only one that
+   narrows anything, and so the only one that witnesses this half of
+   `maySkip`. No kind is an atom here: the model owns how a
    profile and a change combine, and the kinds own their profiles, so adding
    a kind changes no model.
 

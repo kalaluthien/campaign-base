@@ -19,25 +19,27 @@ open sdlc/system
    code path may skip neither Spec nor Test. So its profile is every skippable
    stage, each still gated by the criterion: all three go for a change that
    writes nothing that runs (`S2a_ProseOnlyChange`), and Test and Code for one
-   that wrote only its scenario (`S6a_DevelopmentTestWaiver`). `analysis`,
-   `migration` and `research` state the same profile and differ only in what
-   their changes write, which no command here separates, so they have no
-   witness of their own.
+   that wrote only its scenario (`S6a_DevelopmentTestWaiver`). `research`
+   and `maintenance` state the same profile and differ only in what their
+   changes write, which no command here separates, so they have no witness of
+   their own.
 
-   THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and development
-   narrows nothing -- so it does not witness that half of `maySkip`, and
-   `prototyping` is here to. It keeps the running thing, and
-   `S6_PrototypingTestWaiver` is the profile half on its own. Its one optional
+   THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and no kind
+   narrows anything since rule-check#354 folded `prototyping`, the one that
+   did, into `development`. `narrowingProfile` is that retired kind's profile
+   kept as a witness, because without one the profile half of `maySkip` is
+   tested by nothing. It keeps the running thing, and
+   `S6_NarrowingTestWaiver` is the profile half on its own. Its one optional
    stage, Spec, is dead as a waiver rather than narrow: a change the criterion
-   lets skip Spec wrote nothing that runs, and this kind lets neither Test nor
-   Code go, so no landing change of it ever skips its scenario
-   (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at the
+   lets skip Spec wrote nothing that runs, and this profile lets neither Test
+   nor Code go, so no landing change under it ever skips its scenario
+   (`S7_NarrowingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at the
    same scope). Every profile line is the procedure's to state, in this
    vocabulary: `development`'s is the default in the campaign's AGENTS.md,
    from the template .claude/skills/opening-campaign/assets/AGENTS.md, and the
-   other four kinds' are one line each in their references, kind-<k>.md. */
+   other kinds' are one line each in their references, kind-<k>.md. */
 pred developmentProfile[c: Change] { c.optional = skippable }
-pred prototypingProfile[c: Change] { c.optional = Spec }
+pred narrowingProfile[c: Change] { c.optional = Spec }
 
 /* ---------------- disciplines ---------------- */
 
@@ -221,17 +223,17 @@ pred S5a_WithoutTheCommitCheck  { orderDiscipline and landDiscipline
                                   some c: Change | codeWithoutSpec[c] }
 pred S5b_WithoutTheLandingCheck { orderDiscipline and some c: Change | codeWithoutSpec[c] }
 
-/* THE PROFILE HALF OF `maySkip`, ON ITS OWN. A `prototyping` change that wrote
+/* THE PROFILE HALF OF `maySkip`, ON ITS OWN. A `narrowingProfile` change that wrote
    its scenario and neither a test nor a code path: the criterion holds --
-   nothing runs -- and the kind refuses the absence all the same, because the
-   running thing is what this kind never goes without. No trace lands it.
+   nothing runs -- and the profile refuses the absence all the same, because
+   the running thing is what it never goes without. No trace lands it.
    `S6a` is the same chain under a kind that allows it, so neither the shape
    nor the scope is what refuses it here, and the pair is what catches
    `s in c.optional` going missing from `maySkip`. */
-pred S6_PrototypingTestWaiver {
+pred S6_NarrowingTestWaiver {
   allDisciplines
   one c: Change {
-    prototypingProfile[c]
+    narrowingProfile[c]
     change.c.stage = Intent + Plan + Spec
     eventually (c in Landed and absentStages[c] = Test + Code)
   }
@@ -245,16 +247,16 @@ pred S6a_DevelopmentTestWaiver {
   }
 }
 
-/* `prototypingProfile` LICENSES NOTHING A LANDING CHANGE CAN USE, which is
+/* `narrowingProfile` LICENSES NOTHING A LANDING CHANGE CAN USE, which is
    not the same as being narrow. The criterion lets a change skip Spec only
-   when it wrote nothing that runs; this kind lets neither Test nor Code go, so
+   when it wrote nothing that runs; this profile lets neither Test nor Code go, so
    such a change cannot land, and one that does land wrote a code path and is
    refused Spec by the criterion (`S5_CodeWithoutSpec`). `S7a` is the same
    question under a kind that narrows nothing, so neither the shape nor the
    scope is what refuses `S7`. */
-pred S7_PrototypingSpecWaiver {
+pred S7_NarrowingSpecWaiver {
   allDisciplines
-  one c: Change { prototypingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
+  one c: Change { narrowingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
 }
 pred S7a_DevelopmentSpecWaiver {
   allDisciplines
@@ -366,9 +368,9 @@ run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 6 Artifact, 10 step
 run S5_CodeWithoutSpec         for 2 Change, 6 Artifact, 10 steps expect 0
 run S5a_WithoutTheCommitCheck  for 2 Change, 6 Artifact, 10 steps expect 0
 run S5b_WithoutTheLandingCheck for 2 Change, 6 Artifact, 10 steps expect 1
-run S6_PrototypingTestWaiver   for exactly 1 Change, exactly 3 Artifact, 10 steps expect 0
+run S6_NarrowingTestWaiver   for exactly 1 Change, exactly 3 Artifact, 10 steps expect 0
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
-run S7_PrototypingSpecWaiver   for exactly 1 Change, 6 Artifact, 12 steps expect 0
+run S7_NarrowingSpecWaiver   for exactly 1 Change, 6 Artifact, 12 steps expect 0
 run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect 1
 
 -- the order: holds under the discipline, and has a counterexample without it.

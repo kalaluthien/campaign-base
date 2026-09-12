@@ -356,7 +356,7 @@ as soon as it is filed or reopened.
 kind <N>` reads it, `check` warns when it is missing and refuses two, and the
 brief hook hands the assigned session the kind's reference from
 `.claude/skills/assuming-role/references/` — the `assuming-role` skill's
-catalogue names the five.
+catalogue names them.
 
 **Every comment carries its kind on its first line**, `KIND <session
 name|owner>: <one line>`, one intent per comment, under the comment ceiling, and

@@ -50,10 +50,10 @@ module sdlc/system
    is at this base: intent and plan are the sub-issue's `## Intent` and
    `## Plan`; spec is a scenario or check in spec/; test is a case in a
    scripts/*-test.* suite; code is a path in scripts/ or .claude/ that a test
-   drives. Docs is a view a person reads beside the model, and this base no
-   longer keeps one. A member repository maps the last four onto its own
-   tree, and the profile line of its campaign's kind says which of them it
-   has at all. */
+   drives. Docs is a view a person reads beside the model, at
+   docs/<model>.html, whose shape is check-tree-shape's R7. A member
+   repository maps the last four onto its own tree, and the profile line of
+   its campaign's kind says which of them it has at all. */
 abstract sig Stage {}
 one sig Intent, Plan, Spec, Docs, Test, Code extends Stage {}
 

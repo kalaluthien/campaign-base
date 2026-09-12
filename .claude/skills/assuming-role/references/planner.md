@@ -28,9 +28,9 @@ Contents: the moments below, then
    prompt is the session's own user turn, so its hooks run.
 7. **Answer a `BLOCKED`** with the decision, or carry it to the owner. A relay
    is never the authority; point at the durable artifact instead.
-8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
-   transcript shows released and compacted, holding no claim it cut, with no
-   prompt since the release and no tool call since the compaction; any other
+8. **Retire agents as the campaign runs.** The heartbeat retires an idle
+   worker whose last assigned sub-issue has no claim ref left, with no prompt
+   and no tool call since the ref went, whoever released it; any other
    listed peer is asked which claim it holds, never killed.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a

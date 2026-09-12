@@ -13,9 +13,9 @@ verdict first, then what it read and from where:
              <pane> --fire <own pane>` schedules the planner's wake, once per
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
-    retire   a worker, idle, whose last release was followed by a compaction,
-             holding no claim it cut, with no prompt since the release and no
-             tool call since the compaction, so it holds nothing: `/exit`
+    retire   a worker, idle, whose last assignment prompt names sub-issue N,
+             with no `<slug>/<N>-` ref standing and no prompt and no tool
+             call since the last such ref went: done by a GitHub fact, `/exit`
     quiet    the own pane, when the campaign has nothing left to do: `/compact`,
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
@@ -41,10 +41,17 @@ WHAT IS READ, AND FROM WHERE
                        `campaign_of`, and the role word beside it.
   the transcript       `~/.claude/projects/*/<session id>.jsonl`, the file
                        herdr's session id names. Context size, the last
-                       release, the last compaction and the last prompt all
-                       come from here and never from the screen:
-                       `transcript_reading` is the one reader, and
+                       assignment prompt, the last compaction, prompt and
+                       tool call all come from here and never from the
+                       screen: `transcript_reading` is the one reader, and
                        `campaign-assign.py` asks it the same question.
+  the refs             the campaign's claim refs, as the watch reads them
+                       (`claim_reading`): a `<slug>/<N>-` ref standing is
+                       sub-issue N still claimed.
+  the events feed      `gh api repos/<repo>/events` on every repository the
+                       refs were read on: the latest DeleteEvent of a branch
+                       under `<slug>/<N>-` is when N's claim went. Asked only
+                       for an idle worker's N with no ref standing.
   the banner           `campaign-limit-reset.py <pane>`, its first word. The
                        own pane is not read: it is running this, so it is not
                        stopped.
@@ -58,15 +65,16 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
-WHAT `retire` CANNOT SEE, both ways. `take` and `release` both name the
-branch, so a claim is paired with its release; a claim whose `claimed` line
-this transcript does not hold -- cut by somebody else, or by a `take` whose
-output was filtered -- reads as not held, and a worker holding only such a
-claim reads as done once its release's compaction runs. Two residues err the
-safe way, `keep` for good: a claim whose release line this transcript lacks
-(released by another session, deleted by hand, released with no pane found),
-and a done worker that answers a peer's message with a tool call after its
-compaction.
+WHAT `retire` CANNOT SEE, both ways. Who released the ref is not read, and
+neither is which checkout a session stands in (AGENTS.md § Completion): a
+worker that took another claim before its assigned one's ref went, and has
+been idle since, reads as done. The rest err the safe way, `keep`: the feed
+holds a repository's last 300 events (11.5h of this base's, 2026-09-12) and
+may lag the delete, so a deletion out of it or not yet in it reads as none;
+a sub-issue given in a prompt of another shape is no assignment, and one
+whose prompt sits in an earlier file a resume left behind is none; and a
+done worker that answers a peer's message with a tool call after the ref
+went is kept for good.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
@@ -112,6 +120,7 @@ every source it reads has been read, since an unread one is not empty; each
 install is a source of its own, so one unreadable install hides no other.
 """
 import argparse
+import datetime
 import importlib.util
 import json
 import os
@@ -127,9 +136,13 @@ BASE = HERE.parents[3]   # .claude/skills/assuming-role/scripts -> the base
 # cut to a summary, and the heartbeat is the only thing that looks.
 COMPACT_AT = 200_000
 
-# The line `campaign-claim.py release` prints, and the pane it names. Taken
-# from that script, never copied.
+# The claim refs and herdr's listing, through that script's readers.
 RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
+# The assignment sentence's shape: `ASSIGNMENT` there is its one home.
+ASSIGN_SCRIPT = BASE / "scripts" / "campaign-assign.py"
+# GitHub's events feed: 100 a page, and HTTP 422 past the third page (probed
+# 2026-09-12), so a repository's last 300 events.
+EVENT_PAGES = 3
 # What the watch asks for a campaign's directory and its installs.
 DIRECTORY_SCRIPT = BASE / "scripts" / "campaign-directory.py"
 INSTALLED_SCRIPT = BASE / "scripts" / "campaign-installed.py"
@@ -153,6 +166,9 @@ def load(path, name):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+ASSIGNMENT = load(ASSIGN_SCRIPT, "campaign_assign").ASSIGNMENT
 
 
 def run(*args, **kw):
@@ -194,30 +210,21 @@ def is_prompt(content):
         COMPACTION_ECHOES + (TASK_NOTICE,))
 
 
-def result_lines(content):
-    """Every line of every tool result in a user record's content."""
-    for b in content if isinstance(content, list) else []:
-        if not isinstance(b, dict) or b.get("type") != "tool_result":
-            continue
-        inner = b.get("content")
-        for text in ([inner] if isinstance(inner, str) else texts(inner)):
-            yield from text.splitlines()
+def assignment(content):
+    """The sub-issue number an assignment sentence in this content names, or
+    None: `ASSIGNMENT`, as the brief hook reads it."""
+    hit = ASSIGNMENT.search("".join(texts(content)))
+    return int(hit.group("issue")) if hit else None
 
 
-def transcript_reading(lines, anchor, pane, took=None):
+def transcript_reading(lines):
     """What one session's transcript says. Pure, over its lines. Returns a
     dict of timestamps and the context size:
 
-      released   the last tool result line opening with `anchor` and ending
-                 ` in <pane>`: this session's own release. A release it only
-                 DISPLAYED -- another pane's, read with `herdr pane read` --
-                 names that other pane. Only a tool result counts, so a
-                 summary or a prompt quoting the line does not.
-      held       the claims this session holds: every branch a tool result
-                 line opening with `took` names (`campaign-claim.py take`
-                 prints `claimed <branch>` when it cuts one) with no later
-                 release of that branch in this pane. The caller passes
-                 `claimed <slug>/`, so prose opening "claimed " is no claim.
+      assigned   the sub-issue the last prompt carrying an assignment
+                 sentence names, at `assigned_at`: `campaign-assign.py`'s
+                 prompt and the launch brief. Only a prompt counts, so a
+                 summary or a tool result quoting the sentence does not.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
       prompted   the last user record carrying text that is not the
@@ -225,12 +232,9 @@ def transcript_reading(lines, anchor, pane, took=None):
                  or the last prompt typed while the pane was busy: an
                  `attachment` record of type `queued_command`, mode
                  `prompt`, not `isMeta` -- which a peer's message is, and a
-                 task notification is another mode. That is the one prompt
-                 that can land between a release and its `/compact`.
-      acted      the last assistant record calling a tool. The release turn
-                 goes on calling tools after the release (a REPORT, a memory
-                 filed), so `retire` asks only for none after the compaction,
-                 which a new turn or an auto-compaction mid-work would show.
+                 task notification is another mode.
+      acted      the last assistant record calling a tool: a turn after the
+                 claim went is work `retire` must not cut off.
       context    input plus cache tokens of the latest usage record, or the
                  boundary's `postTokens` when a compaction came after it --
                  none when the boundary carries none, since the usage before
@@ -242,11 +246,9 @@ def transcript_reading(lines, anchor, pane, took=None):
     queued, which can be earlier than records written before it, so every
     "last" is the latest time. Records of a subagent (`isSidechain`) are its
     own context, not this session's."""
-    out = {"released": None, "compacted": None, "prompted": None,
-           "acted": None, "held": [], "context": None, "context_at": None,
-           "records": 0}
-    cut, freed = {}, {}
-    tail = f" in {pane}"
+    out = {"assigned": None, "assigned_at": None, "compacted": None,
+           "prompted": None, "acted": None, "context": None,
+           "context_at": None, "records": 0}
 
     def later(key, ts):
         if out[key] is None or ts > out[key]:
@@ -255,6 +257,13 @@ def transcript_reading(lines, anchor, pane, took=None):
     def size(ts, tokens):
         if out["context_at"] is None or ts > out["context_at"]:
             out["context"], out["context_at"] = tokens, ts
+
+    def said(ts, content):
+        later("prompted", ts)
+        n = assignment(content)
+        if n is not None and (out["assigned_at"] is None
+                              or ts > out["assigned_at"]):
+            out["assigned"], out["assigned_at"] = n, ts
 
     for line in lines:
         try:
@@ -284,62 +293,74 @@ def transcript_reading(lines, anchor, pane, took=None):
                 "input_tokens", "cache_creation_input_tokens",
                 "cache_read_input_tokens")))
         elif kind == "user":
-            content = msg.get("content")
-            for ln in result_lines(content):
-                if ln.startswith(anchor) and ln.endswith(tail):
-                    later("released", ts)
-                    branch = ln[len(anchor):-len(tail)].strip()
-                    freed[branch] = max(freed.get(branch, ts), ts)
-                if took and ln.startswith(took):
-                    branch = ln.split()[1]
-                    cut[branch] = max(cut.get(branch, ts), ts)
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
+            content = msg.get("content")
             if is_prompt(content):
-                later("prompted", ts)
+                said(ts, content)
         elif kind == "attachment":
             a = r.get("attachment") or {}
             if (a.get("type") == "queued_command"
                     and a.get("commandMode") == "prompt"
                     and not a.get("isMeta") and is_prompt(a.get("prompt"))):
-                later("prompted", ts)
-    out["held"] = sorted(b for b, t in cut.items()
-                         if b not in freed or freed[b] < t)
+                said(ts, a.get("prompt"))
     return out
 
 
-def read_transcript(session_id, anchor, pane, took=None):
+def read_transcript(session_id):
     """(reading, where, None), or (None, where, why)."""
     path, why = transcript_path(session_id)
     if path is None:
         return None, "no transcript", why
     try:
         with open(path, encoding="utf-8") as fh:
-            return (transcript_reading(fh, anchor, pane, took), str(path),
-                    None)
+            return transcript_reading(fh), str(path), None
     except OSError as e:
         return None, str(path), f"could not read it: {e}"
 
 
-def compacted_since_release(reading):
-    """(verdict, why): has this session compacted since its last release?
+def when(ts):
+    """A transcript's or GitHub's ISO timestamp, as a time: the two write
+    different precisions, so their strings do not sort against each other."""
+    return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-      compacted  a compaction later than the last release
-      stale      a release and no compaction after it
-      unknown    no release of this pane's in the transcript -- a session
-                 that never released, or one whose release sits in an
-                 earlier file a resume left behind; nothing here tells the
-                 two apart
 
-    LAST RELEASE, NOT FIRST: a session that released, compacted, worked and
-    released again holds a compaction older than its release."""
-    rel, comp = reading["released"], reading["compacted"]
-    if rel is None:
-        return "unknown", (f"no release naming this pane in "
-                           f"{reading['records']} record(s)")
-    if comp and comp > rel:
-        return "compacted", f"released {rel}, compacted {comp}"
-    return "stale", f"released {rel}, no compaction after it"
+def ref_went(reading, refs):
+    """(when, why): when the claim of the sub-issue this session was last
+    assigned went, or None and why no such time is read. Pure over
+    `transcript_reading`'s dict and `refs`, a function from a sub-issue to
+    ((refs standing, when the last went or None, what was read), None) or
+    (None, why)."""
+    n = reading["assigned"]
+    if n is None:
+        return None, (f"no assignment prompt in {reading['records']} "
+                      f"record(s)")
+    got, why = refs(n)
+    if got is None:
+        return None, f"assigned #{n}; {why}"
+    standing, went, read = got
+    if standing:
+        return None, f"assigned #{n}; {', '.join(standing)} standing ({read})"
+    if went is None:
+        return None, f"assigned #{n}; no ref standing and no deletion read ({read})"
+    return went, f"assigned #{n}; no ref standing, the last went {went} ({read})"
+
+
+def compacted_since_ref(reading, refs):
+    """(verdict, why) for `campaign-assign.py`: has this session compacted
+    since the claim of its last assigned sub-issue went?
+
+      compacted  a compaction later than that
+      stale      the claim went and no compaction after it
+      unknown    no time it went: no assignment prompt, a ref still
+                 standing, or a deletion not read"""
+    went, why = ref_went(reading, refs)
+    if went is None:
+        return "unknown", why
+    comp = reading["compacted"]
+    if comp and when(comp) > when(went):
+        return "compacted", f"{why}, compacted {comp}"
+    return "stale", f"{why}, no compaction after it"
 
 
 # --------------------------------------------------------- the verdict
@@ -356,10 +377,12 @@ def banner_word(line):
     return "unread"
 
 
-def verdict(role, own, idle, banner, reading):
+def verdict(role, own, idle, banner, reading, refs):
     """(verdict, why). Pure. `banner` is limit-reset's first line, or None
     for the own pane; `reading` is `transcript_reading`'s dict, or a string
-    saying why there is none; `idle` is campaign-assign's idle reading."""
+    saying why there is none; `idle` is campaign-assign's idle reading;
+    `refs` is `ref_went`'s, asked only of another pane's idle worker. A
+    worker not retired says why beside the verdict it got."""
     if not own:
         word = banner_word(banner)
         if word == "unread":
@@ -372,14 +395,16 @@ def verdict(role, own, idle, banner, reading):
         return "keep", f"transcript not read: {reading}"
     passed = " (the limit it stopped on has passed)" if (
         not own and banner_word(banner) == "passed") else ""
-    since, why = compacted_since_release(reading)
-    rel, comp = reading["released"], reading["compacted"]
-    if (role == "worker" and not own and since == "compacted"
-            and not (reading["prompted"] and reading["prompted"] > rel)
-            and not reading["held"]
-            and not (reading["acted"] and reading["acted"] > comp)):
-        return "retire", (f"{why}, no claim held, no prompt since the "
-                          f"release, no tool call since the compaction{passed}")
+    if role == "worker" and not own:
+        went, why = ref_went(reading, refs)
+        since = [f"a {what} at {ts}" for what, ts in (
+            ("prompt", reading["prompted"]), ("tool call", reading["acted"]))
+            if went and ts and when(ts) > when(went)]
+        if went and not since:
+            return "retire", (f"{why}; no prompt and no tool call since"
+                              f"{passed}")
+        passed += "; not retired: " + (
+            f"{' and '.join(since)} after {went}" if since else why)
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
@@ -646,7 +671,7 @@ def fire_args(issue, pane, own):
     return argv
 
 
-def context_of(session_id, pane, anchor, cache):
+def context_of(session_id, cache):
     """A session's context size through `transcript_reading`, re-read only
     when its transcript changed: an idle session's file does not."""
     path, _ = transcript_path(session_id)
@@ -657,10 +682,87 @@ def context_of(session_id, pane, anchor, cache):
         key = (st.st_mtime_ns, st.st_size)
         if cache.get(path, (None,))[0] != key:
             with open(path, encoding="utf-8") as fh:
-                cache[path] = (key, transcript_reading(fh, anchor, pane)["context"])
+                cache[path] = (key, transcript_reading(fh)["context"])
     except OSError:
         return None
     return cache[path][1]
+
+
+def claim_reading(issue, slug, claim, repos=None):
+    """(({claim branch: its sub-issue}, the repositories read), None), or
+    (None, why): the campaign's claim refs on the tracker and every
+    `## Repos` entry, through campaign-claim's readers. The watch's `claims`
+    and the run's `retire` both read this. `repos`, a list, receives the
+    repositories once `## Repos` reads, refs or not: the watch's pull
+    requests need no refs."""
+    listed, why = claim.campaign_repos(issue)
+    if listed is None:
+        return None, why
+    repos = repos if repos is not None else []
+    repos[:] = [claim.TRACKER] + [r for r in listed if r != claim.TRACKER]
+    found, unread = claim.all_refs(repos, issue, slug)
+    if unread:
+        return None, "; ".join(unread)
+    out = {}
+    for b in found:
+        n = claim.issue_of_branch(b, issue, slug)
+        out[b] = int(n) if n else None
+    return (out, repos), None
+
+
+def deletion_of(repos, prefix):
+    """((when or None, what was read), None), or (None, why): the latest
+    DeleteEvent of a branch under `prefix` in the events feed of any of
+    `repos`. The feed is newest first, so a repository's first hit is its
+    latest and its later pages are not asked."""
+    latest, read = None, []
+    for repo in repos:
+        seen = 0
+        for page in range(1, EVENT_PAGES + 1):
+            path = f"repos/{repo}/events?per_page=100&page={page}"
+            r = run("gh", "api", path)
+            if r.returncode != 0:
+                return None, f"gh api {path}: {r.stderr.strip()[:160]}"
+            try:
+                events = json.loads(r.stdout or "[]")
+            except ValueError as e:
+                return None, f"gh api {path}: {e.__class__.__name__}"
+            seen += len(events)
+            hits = [e["created_at"] for e in events
+                    if e.get("type") == "DeleteEvent"
+                    and (e.get("payload") or {}).get("ref_type") == "branch"
+                    and str(e["payload"].get("ref")).startswith(prefix)]
+            if hits:
+                top = max(hits, key=when)
+                if latest is None or when(top) > when(latest):
+                    latest = top
+                break
+            if len(events) < 100:
+                break
+        read.append(f"{repo} {seen} event(s)")
+    return (latest, "; ".join(read)), None
+
+
+def refs_reader(claims, slug):
+    """A function from a sub-issue n to ((the `<slug>/<n>-` refs standing,
+    when the last went or None, what was read), None) or (None, why), over
+    `claims`, `claim_reading`'s answer. The feed is asked only when no ref
+    stands."""
+    def of(n):
+        got, why = claims
+        if got is None:
+            return None, f"the refs not read: {why}"
+        branches, repos = got
+        prefix = f"{slug}/{n}-"
+        read = f"{prefix}* on {', '.join(repos)}"
+        standing = sorted(b for b, m in branches.items() if m == n)
+        if standing:
+            return (standing, None, read), None
+        found, why = deletion_of(repos, prefix)
+        if found is None:
+            return None, f"{read}: no ref standing; the feed not read: {why}"
+        return ([], found[0], f"{read}; the feed: {found[1]}"), None
+    return of
 
 
 def install_readings(rows, read_install, readable):
@@ -711,8 +813,7 @@ def watch_readers(issue, slug, own, claim, names, cache):
             s = {"pane": row["pane"], "status": st, "context": None,
                  "banner": None}
             if st != "working":
-                s["context"] = context_of(sid, row["pane"], claim.RELEASED,
-                                          cache)
+                s["context"] = context_of(sid, cache)
                 if row["pane"] != own:
                     b = limit_reset(row["pane"]).stdout.strip().splitlines()
                     s["banner"] = b[0] if b else "(no answer)"
@@ -720,19 +821,9 @@ def watch_readers(issue, slug, own, claim, names, cache):
         return out, None
 
     def claims():
-        listed, why = claim.campaign_repos(issue)
-        if listed is None:
-            repos.clear()
-            return None, why
-        repos[:] = [claim.TRACKER] + [r for r in listed if r != claim.TRACKER]
-        found, unread = claim.all_refs(repos, issue, slug)
-        if unread:
-            return None, "; ".join(unread)
-        out = {}
-        for b in found:
-            n = claim.issue_of_branch(b, issue, slug)
-            out[b] = int(n) if n else None
-        return out, None
+        repos.clear()
+        got, why = claim_reading(issue, slug, claim, repos)
+        return (got[0] if got else None), why
 
     def issues():
         items, why = tracker.fetch_index(claim.TRACKER, issue)
@@ -813,7 +904,7 @@ def main(argv=None):
         return run_watch(Watch(slug, own),
                          watch_reader(issue, slug, own, claim, names, {}),
                          args.every)
-    assign = load(BASE / "scripts" / "campaign-assign.py", "campaign_assign")
+    assign = load(ASSIGN_SCRIPT, "campaign_assign")
     sessions, why = claim.herdr_sessions()
     if sessions is None:
         print(f"could not list the sessions: {why}")
@@ -823,11 +914,15 @@ def main(argv=None):
                    if names.campaign_of(row["name"]) == slug))
     print(f"read {len(sessions)} session(s) from herdr agent list; "
           f"{len(ours)} of {slug} (#{issue}); own pane {own or 'unknown'}")
-    got = read_all({s: fn for s, fn in watch_readers(
-        issue, slug, own, claim, names, {}).items() if s in ("claims", "issues")})
+    got = read_all({
+        "claims": lambda: claim_reading(issue, slug, claim),
+        "issues": watch_readers(issue, slug, own, claim, names, {})["issues"]})
+    claims = got["claims"]
     calm, what = quiet_reading(own, ([p for p, _, _ in ours], None),
-                               got["claims"], got["issues"])
+                               (claims[0][0], None) if claims[0] else claims,
+                               got["issues"])
     print(f"{'quiet' if calm else 'not quiet'} {slug}: {what}")
+    refs = refs_reader(claims, slug)
 
     todo = []
     for pane, sid, row in ours:
@@ -837,10 +932,9 @@ def main(argv=None):
         if not is_own:
             r = limit_reset(pane)
             banner = (r.stdout.strip().splitlines() or ["(no answer)"])[0]
-        reading, where, why = read_transcript(sid, claim.RELEASED, pane,
-                                              f"{claim.CLAIMED} {slug}/")
+        reading, where, why = read_transcript(sid)
         word, reason = verdict(role, is_own, assign.idle_verdict(row),
-                               banner, reading if reading else why)
+                               banner, reading if reading else why, refs)
         if is_own and calm:
             word, reason = "quiet", f"{slug} has nothing left to do"
         print(f"{word} {pane} {row['name']}: {reason}")

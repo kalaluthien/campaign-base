@@ -713,18 +713,18 @@ pred agentRelease {
   no Target.agent
 }
 
-/* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: the worker
-   released, is compacted -- it launched nothing since -- and holds no live
-   agent. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads
-   the first two off the session's transcript (a release, a compaction after
-   it) and stands in for the third with what a transcript can show: every
-   claim it cut released, no prompt since the release, no tool call since
-   the compaction. `once` because a fresh session is Compacted from the start and
-   the heartbeat never retires one that never released. */
+/* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: a
+   sub-issue the worker took was released, BY ANY SESSION, and it holds no
+   live agent. On the base the planner releases, so a release by the worker
+   itself left every base worker unretirable (rule-check#349).
+   `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads the
+   first as GitHub has it -- the sub-issue its last assignment prompt names
+   has no ref standing, and the events feed says when the last went -- and
+   stands in for the second with no prompt and no tool call since then. No
+   compaction is asked: `/exit` ends the context whatever its size. */
 pred exitSession[s: Session] {
   Now.event = SessionExit and Who.session = s
-  once (Now.event = Release and Who.session = s)
-  s in Compacted
+  some a: peer.s | once (Now.event = Release and Now.issue = a.task)
   no heldBy[s]
   agentFrame and no Target.agent
 }
@@ -752,8 +752,8 @@ pred exitSession[s: Session] {
    listed but the planner's own, no open sub-issue without `backlog`, and no
    claim -- on two polls running, each read that poll, since a last reading
    standing is not one.
-   Its act is a compaction of the planner and never `sessionExit`: a planner
-   releases nothing, so `exitSession`'s `once Release` never holds of it. */
+   Its act is a compaction of the planner and never `sessionExit`, which
+   admits a worker alone. */
 fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }
 fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
 

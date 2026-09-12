@@ -214,6 +214,12 @@ def main():
     work, why = m.work_kind_of(["kind:"])
     check("a bare `kind:` is refused rather than returned as the empty string",
           work is None and why)
+    check("the standing kind is one of WORK_KINDS",
+          m.STANDING_KIND in m.WORK_KINDS)
+    text, why = m.gh_read([sys.executable, "-c", "import time; time.sleep(5)"],
+                          timeout=0.5)
+    check("a read past its timeout is a read that did not happen, saying so",
+          text is None and why and "0.5s" in why)
     check("work_kind_labels ignores a label that merely opens with the letters",
           m.work_kind_labels(["kindly", "kind", "kind:research"])
           == ["kind:research"])

@@ -239,16 +239,22 @@ STANDING_LABEL = "standing"
 NOT_EMPTY = "An index that did not read is not an empty campaign."
 
 
-def gh_read(cmd):
+def gh_read(cmd, timeout=None):
     """Run a `gh` invocation for its stdout. Returns (text, why_unreadable).
 
     A `gh` that is not installed comes back as a failed run rather than a
     traceback: "I could not look" is the case every reader here is written to
-    report, and a stack trace loses the reason the caller was about to print."""
+    report, and a stack trace loses the reason the caller was about to print.
+
+    `timeout` is seconds, None for none. A caller on a hook's path passes one
+    (check-campaign-claim.py, rule-check#354): a `gh` that hangs there hangs
+    every tool call. A timeout is a read that did not happen, like any other."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (FileNotFoundError, PermissionError) as e:
         return None, f"could not run gh ({e.__class__.__name__})"
+    except subprocess.TimeoutExpired:
+        return None, f"gh did not answer within {timeout}s"
     if r.returncode != 0:
         return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
     return r.stdout, None
@@ -968,13 +974,13 @@ def shape_findings(kind, title, body, want_plan, names=()):
     return out
 
 
-def issue_shape(repo, number):
+def issue_shape(repo, number, timeout=None):
     """(title, body, labels, the parent's number or None, why_unreadable).
     The number and not a bool, because `check` prints it: a sub-issue is
     closed as a sub-issue OF its parent, and `campaign-close.py` reads which
     one off that line rather than asking GitHub a second time."""
     text, why = gh_read(["gh", "issue", "view", str(number), "-R", repo,
-                         "--json", "title,body,labels,parent"])
+                         "--json", "title,body,labels,parent"], timeout)
     if why:
         return None, None, None, None, why
     try:

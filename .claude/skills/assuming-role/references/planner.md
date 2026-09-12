@@ -41,15 +41,16 @@ session of its own on this machine, or a delegate on a claim.
   one ordering the work cannot fold: each costs a review and a reconciliation
   whatever its diff.
 - **Decide the landing order first**, and leave alone a symptom a merge will
-  remove: two sub-issues meeting in one file are kept apart by that order, not
-  by re-scoping.
+  remove, since the merge deletes it for free; two sub-issues meeting in one
+  file are kept apart by that order, not by re-scoping.
 - **Commission no review while `main` still has moves to absorb**: each push
   retires the review read before it.
 - **Drive a sub-issue whose mechanism is not chosen one step at a time** —
   measure, probe, choose — deciding each step yourself from the worker's NOTE:
   a whole-body brief fits only a fixed plan.
 - **Run a large design as a design NOTE, an adversarial NOTE, then one
-  `DECISION`** that is the worker's whole brief, so it reads one comment.
+  `DECISION`** that is the worker's whole brief, marking any earlier plan
+  comment superseded, so the worker reads one comment.
 - **Route, claim and hand a recorded defect to a worker in the same turn**: a
   note with no worker is never read again.
 

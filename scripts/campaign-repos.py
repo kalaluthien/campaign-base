@@ -380,4 +380,3 @@ def main():
 # keeps one reader rather than two.
 if __name__ == "__main__":
     main()
-# probe for #310: a scripts-only push, reverted in the next commit

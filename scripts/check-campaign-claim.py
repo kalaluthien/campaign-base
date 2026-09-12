@@ -223,7 +223,7 @@ FANS_OUT = "code-review"
 # on the same diff, so the bar reaches every level above it and not this one.
 # What `low` does not do is satisfy merge condition 1 -- it reads no tests and
 # no full files, and it missed two of the three behavioural findings the plain
-# brief made on that diff -- which is prose in § Review, not a branch here: the
+# brief made on that diff -- which is prose in reviewing.md, not a branch here: the
 # payload cannot say which review a merge is going to wait on.
 CHEAP_LEVEL = "low"
 

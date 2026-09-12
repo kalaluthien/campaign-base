@@ -1,11 +1,19 @@
 # Commissioning a review, in full
 
-The procedure behind `AGENTS.md` § Review, which keeps the
-rules. A review is the only thing standing between a branch and `main`, and the
-two ways it goes wrong are running it in the wrong mode and running it at a
-level nobody chose.
+The one home of every judgement about a review; `AGENTS.md` § Review names the
+mechanisms that decide the rest, and `AGENTS.md` § Merge conditions the three
+conditions a review serves. A review is the only thing standing between a
+branch and `main`, and the two ways it goes wrong are running it in the wrong
+mode and running it at a level nobody chose.
 
 ## The call
+
+**Every review runs as an in-process subagent. There is no other way to run
+one** -- not a default and not the cheapest option, the one mode. It is
+launched by whoever wants the merge, the author included, because merge
+condition 2 is on who *writes* it; `review` in
+`spec/campaign/orchestration/system.als` is why it has no guard on who
+commissions it.
 
 ```
 Agent(subagent_type: "general-purpose", model: "<named below>",
@@ -16,22 +24,16 @@ Agent(subagent_type: "general-purpose", model: "<named below>",
 `general-purpose` because `fork` inherits the author's context and would review
 the author's own reasoning. `description` because the tool requires it.
 `isolation` unset, because a worktree or a remote environment buys a review
-nothing -- it changes no working tree.
-
-**Name the model, always.** Leaving it out inherits a default rather than
-expressing a choice, and there is no value meaning "whatever the launcher is".
+nothing -- it changes no working tree. The `model` is not optional:
+`scripts/check-campaign-claim.py` refuses a launch naming none, and says why.
 
 **`ultra` is not a level.** It is a person-only review mode, and putting it in
 that slot is the one way to write this block illegally.
 
 **A plain brief, not `/code-review` above `low`, until a fanned round prices
-under a narrowed round**, and `scripts/check-campaign-claim.py` refuses the call
-that does otherwise -- along with a launch naming no model, the rule above.
-**It reads the `Skill` call and not the prompt**, probed live on 2026-09-10
-(#278): a subagent whose prompt opened `/code-review low ...` made 19 Bash calls
-and loaded no skill, while one told to call `Skill(skill="code-review",
-args="low ...")` loaded it and forked its own review agent. A slash command in
-an `Agent` prompt is plain text.
+under a narrowed round.** The guard refuses the `Skill` call that does
+otherwise, and its `FANS_OUT` comment keeps the two probes showing that a slash
+command in an `Agent` prompt is plain text and runs no skill.
 `/code-review` above `low` inside a reviewer subagent fans out into an
 orchestrator, finders and their verifiers, each its own further subagent --
 metered at the launching call's own turns alone until
@@ -45,11 +47,9 @@ kalaluthien/campaign-base#272: 47 rounds, 98 nested transcripts folded in,
 transcripts per round at 656,852-1,566,076 input_new each, so #255 is not the
 only one; the NOTE lists 15, 16, 254, 261, 263, 265 and 269 as nested-0 at the
 time it was written (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
-Write the brief as `"review PR <N> at <level>"`, level right after `at` --
-that position sets nothing mechanically the way `/code-review`'s own does
-below, it is only where `campaign-token-tally.py` and a reader both know to
-look -- naming what to check after a blank line, and reserve `/code-review`
-above `low` for a reviewer once a fanned round prices under that figure.
+Write the brief as `"review PR <N> at <level>"`, level right after `at`,
+naming what to check after a blank line, and reserve `/code-review` above
+`low` for a reviewer once a fanned round prices under that figure.
 
 **The brief says what a reviewer may do**: it reads, runs checks, and edits,
 kills or launches nothing. That is one sentence of the brief and not a
@@ -59,14 +59,12 @@ what kind of agent is being launched (owner's DECISION on #278, 2026-09-10).
 **`low` is under the bar and outside it.** #282 ran both rows on one diff with
 one model (2026-09-10): `/code-review low` cost 60,774 input_new, 101,697 with
 the subagent that launched it, against 127,442 for the narrowed plain brief on
-the same diff -- inside the 57,374-134,222 band below. It cannot fan out, since
-the skill body at that level is one diff pass, no verification stage, at most
-four findings and no subagents. So the bar reaches every level above `low` and
-not `low` itself. **What `low` does not do is satisfy merge condition 1**: it
-skips test hunks and reads no full files, and on that diff it returned 2
-findings against the plain brief's 5, missing two of the three behavioural ones.
-It is a cheap first pass, and the review a merge waits on is still the plain
-brief.
+the same diff -- inside the 57,374-134,222 band below. It cannot fan out, which
+is why the guard's `CHEAP_LEVEL` passes it. **What `low` does not do is satisfy
+merge condition 1**: it skips test hunks and reads no full files, and on that
+diff it returned 2 findings against the plain brief's 5, missing two of the
+three behavioural ones. It is a cheap first pass, and the review a merge waits
+on is still the plain brief.
 
 ## The two knobs
 
@@ -83,12 +81,10 @@ light does not license a lighter reviewer.
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes
 above it. **`/code-review`'s level is the first token after the command and
-nowhere else**: asking for it in the brief sets nothing, because only that
-token is parsed, and omitting it falls back to a persisted setting and then to
-the session's own effort -- a level chosen by neither the launcher nor the
-work. **A plain brief sets no level mechanically at all** -- there is no
-harness position that reads one, only the reviewer's own judgment of what you
-wrote and, separately, `campaign-token-tally.py`'s own reading of the token
+nowhere else**: asking for it in the brief sets nothing, and the guard refuses
+a `/code-review` call naming none. **A plain brief sets no level mechanically
+at all** -- there is no harness position that reads one, only the reviewer's
+own judgment of what you wrote and, separately, `campaign-token-tally.py`'s own reading of the token
 right after `at` for its own accounting. Put the level there anyway, since
 that is the one place a launcher and the tally agree to look, but say what you
 mean in the rest of the brief too.
@@ -115,9 +111,8 @@ machine's sessions really made.
 launching session already holds, and its findings arrive as a relay instead of on
 the pull request.
 
-**Reading the diff yourself** and calling it reviewed fails merge condition 2,
-which is about who wrote the commits -- the author's own read is not a review at
-any length or care.
+**Reading the diff yourself** and calling it reviewed fails merge condition 2
+at any length or care.
 
 **A herdr session** buys nothing a review uses, and pays a process boundary for
 it.
@@ -132,16 +127,26 @@ other way.
 **One full review, at the final sha, and narrowed reviews after it.** The full
 review is commissioned once, on the pull request as a whole, when the work is
 what the author means to land. Every fix round after it is reviewed on that
-round's diff only — a plain brief naming the diff range, launched by the
-worker that made the fixes. A narrowed review does not re-run a
-measurement the full review already made and reported, **unless the fix
+round's diff only — a plain brief naming the diff range. A narrowed review
+does not re-run a measurement the full review already made and reported, **unless the fix
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.
 
-A reconciliation with `main` is a push, so condition 1 wants a review at the
-combined sha either way; the reconciliation decides its breadth. Clean auto-merge,
-narrowed on the merge diff. Hand-resolved, full, reading the combination
-(`AGENTS.md` § Concurrency).
+**A fix round is: findings on the pull request, one worker, one `REPORT`.** The
+worker verifies each finding at the site it names before touching anything.
+Follow-ups fold into the same round, whose boundary is the `REPORT` and never a
+push, and which ends in one `REPORT` carrying the sha and a per-finding
+disposition. **Check that disposition against the findings list mechanically**: a
+round claiming "all fixed" without re-running its sweep is what keeps happening.
+
+**A reconciliation with `main` decides the breadth of the review it needs**, and
+a full re-review is due at one moment only, a reconciliation that needed a hand
+resolution. It is a push, so condition 1
+wants a review at the combined sha either way. A clean auto-merge earns a
+narrowed one, on the merge commit's diff alone. A merge that needed a hand
+resolution earns a full one, and its brief says it reads the combination:
+**containment buys attention from nobody**, and the resolution is where the two
+branches actually met.
 
 **What a round costs, so that "one more round" is a priced decision.** Measured
 over 2026-09-04T00:45Z–2026-09-05T01:00Z (#200, `campaign-token-tally.py reviews`,
@@ -180,16 +185,7 @@ a fix start while the rest of the review is still running.
 
 ## What the REVIEW comment has to carry
 
-`scripts/check-merge-review.py` reads it, and the merge waits on what it says,
-so two things about the comment are now load-bearing rather than tidy.
-
-- **The first line is `REVIEW <session name|owner>: <one line>`**, the shape
-  `check-campaign-claim.py` owns. A comment that opens any other way is not a
-  REVIEW to the gate, whatever it says below.
-- **The body names the sha it was read at**, seven hex characters or more, and
-  that sha is the pull request's head. A REVIEW at the sha before the last push
-  is the round it was; it is not the review the merge needs.
-
-Both cost a red required check rather than a wasted round. Posting a REVIEW
-that names the head re-runs the job by itself (`review-rerun.yml`).
-
+Two readers decide it, and a comment either fails costs a red required check
+rather than a wasted round: its first line is the `KIND` shape
+`scripts/check-campaign-claim.py` owns, and its body must name the pull
+request's head sha the way `scripts/check-merge-review.py` reads one.

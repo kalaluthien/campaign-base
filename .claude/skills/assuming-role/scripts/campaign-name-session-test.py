@@ -12,13 +12,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-# The subject moved under the skill that owns the role machinery (#227);
-# the suite stays here, where CI's `scripts/*-test.*` loop finds it, and
-# resolves its subject by path as acquire-repo-test.py does.
 HERE = Path(__file__).resolve().parent
-BASE = HERE.parent
-SCRIPT = (BASE / ".claude" / "skills" / "assuming-role" / "scripts"
-          / "campaign-name-session.py")
+BASE = HERE.parents[3]
+SCRIPT = HERE / "campaign-name-session.py"
 
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys

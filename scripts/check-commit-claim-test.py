@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: R4l_CommitGateClosesIt, R4m_GateAdmitsClaimedCommit
 """Prove the commit gate refuses a commit on campaign work with no claim, through
 the hook install-hooks actually writes.
 

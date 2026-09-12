@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: S20_TheBaseIsNeverListed, S20a_ControlANonBaseRepoIsListed
 """Prove campaign-repos refuses each wrong list for its own reason, and reads a
 right one.
 

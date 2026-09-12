@@ -2,7 +2,7 @@
 """Read the claim guard's precision off its own verdict log.
 
     scripts/guard-precision.py [LOG ...] [--minutes N] [--base PATH]
-                               [--pairs N] [--sessions ID,...] [--all]
+                               [--sessions ID,...] [--all]
 
 WHY THIS EXISTS. Every false positive `check-campaign-claim.py` has had was
 found by whoever it hit, after the fact, and filed by hand. The guard runs on
@@ -92,6 +92,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 LOG_NAME = os.path.join("runtime", "guard.log")
+# How many pairs are printed verbatim under each refusal sentence.
+PAIRS_SHOWN = 5
 # What varies between two instances of one refusal: a number, an absolute path,
 # a quoted fragment. Replaced so the grouping is by the SENTENCE and not by the
 # call that happened to trigger it.
@@ -235,8 +237,6 @@ def main(argv=None):
                                            "runtime/guard.log under --base")
     p.add_argument("--minutes", type=float, default=30.0)
     p.add_argument("--base", default=str(Path.home() / "campaign-base"))
-    p.add_argument("--pairs", type=int, default=5,
-                   help="how many pairs to print verbatim per refusal sentence")
     p.add_argument("--sessions", default=None,
                    help="comma-separated session ids to keep, instead of the "
                         "default UUID shape")
@@ -323,7 +323,7 @@ def main(argv=None):
         if not d["fp"]:
             continue
         print(f"\n  {sentence[:100]}")
-        for r, later in d["fp"][:a.pairs]:
+        for r, later in d["fp"][:PAIRS_SHOWN]:
             print(f"    REFUSED {r.get('at', '?')} {r.get('tool', '?')}: "
                   f"{(r.get('command') or r.get('target') or '')[:100]}")
             print(f"    allowed {later.get('at', '?')} "

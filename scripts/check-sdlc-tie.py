@@ -44,9 +44,8 @@ THE THREE NAMES, as the tree carries them today
              is not a code path here either, and what it refuses (no
              extension) is not one until it has one.
 
-The suite may sit in a different scripts/ directory from its code path --
-scripts/acquire-repo-test.py drives a skill's acquire-repo.sh -- so the pair is
-made on the stem alone, tree-wide. The stem pairs on the name and not the
+The suite may sit in a different scripts/ directory from its code path, so
+the pair is made on the stem alone, tree-wide. The stem pairs on the name and not the
 extension, since a Python suite drives a shell script.
 
 A DECLARATION, NOT A MENTION. Until #268 the tie was any whole-word occurrence
@@ -95,6 +94,10 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       wherever its path is, save a line moved with the file it names: the list
       only shrinks (`licenceNeverGrows`, `DebtNeverGrows_Bites`), so a line
       licenses only a path the list held before the commit as well as after.
+      And it refuses a line the commit DROPS whose path is untied after it,
+      touched or not: the line leaves with the tie, since a path off the list
+      must be tied after every commit (`everyCodeHasScenario`), and unscoped
+      this is no wall -- a fixture's list is a copy nothing edits.
   T5  an allow-list entry whose code path is TIED now. The licence is spent and
       the line comes out in the same commit. An entry naming no code path here
       is counted in the reading instead of refused: the path may have been
@@ -336,26 +339,41 @@ def own_list(tree):
 # path is TIED now -- a line naming no code path here is a count in the reading,
 # because from inside a fixture tree that is indistinguishable from the list
 # being about another repository.
+#
+# Each line left says why its path does not tie (sdlc-alloy#250): the model
+# holds no scenario its suite drives, or no suite carries its stem. Neither is
+# a declaration's to fix -- a `# witnesses:` line naming a scenario the suite
+# does not drive is the forgery the declaration exists to prevent -- so a line
+# goes when the model gains the scenario or the path gains a suite.
 LEGACY = (
+    # The model states what a name says (spec/campaign/session/system.als)
+    # and leaves its shape to this script; its suite drives the setter and no
+    # scenario.
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
-    ".claude/skills/assuming-role/scripts/campaign-role-brief.py",
+    # Its suite checks the table's shape, which the model does not state;
+    # check-campaign-claim-test.py drives the verdicts the table decides.
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
-    ".claude/skills/opening-campaign/scripts/acquire-repo.sh",
-    "scripts/campaign-installed.py",
+    # Its suite reads a directory's leftovers and drives no scenario over
+    # `LocalOnly`, the set this script reads (R5b needs an agent's push).
     "scripts/campaign-local-work.py",
+    # No model rule: what is installed and declared on this machine.
     "scripts/campaign-primitives.py",
-    "scripts/campaign-repos.py",
+    # Test tooling: a mutation runner over campaign-token-tally-test.py.
     "scripts/campaign-token-tally-mutations.py",
+    # No model rule: token accounting over transcripts.
     "scripts/campaign-token-tally.py",
-    "scripts/campaign-tracker.py",
-    "scripts/check-campaign-claim.py",
-    "scripts/check-commit-claim.py",
+    # No model rule: a document's pointer at another resolving.
     "scripts/check-cross-references.py",
+    # No model rule: one reader per rule a script owns.
     "scripts/check-rule-readers.py",
+    # No model rule: R1-R9 are tree-layout rules the model does not state.
     "scripts/check-tree-shape.py",
+    # No model rule: which recorded calls a replay corpus keeps.
     "scripts/guard-corpus.py",
+    # The model states the verdict log, not the pairing read off it.
     "scripts/guard-precision.py",
-    "scripts/install-hooks.sh",
+    # No suite of its stem; install-hooks-test.py section 6 drives it
+    # (`Cov_PushBase`).
     "scripts/push-campaign-branch.sh",
 )
 
@@ -740,6 +758,11 @@ def judge(after_kind, against, legacy_path):
                                       f"commit, since a later one would be a "
                                       f"line the list gains. Move it to {k}, or "
                                       f"tie it"))
+        elif was in allowed_before:              # its line dropped, still untied
+            findings.append(("T4", k, f"untied, and the allow-list ({source}) "
+                                      f"loses its line in this commit: a line "
+                                      f"leaves with the tie, in the same commit. "
+                                      f"Tie it, or keep the line"))
         elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
             # that the change never opened is not this change's debt, and every

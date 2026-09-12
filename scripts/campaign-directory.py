@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# witnesses: Cov_CreateDir, S15_NoLocalDirectory
 """Answer which directory on this machine is a campaign's, read from its marker.
 
 A campaign directory is named `campaign-<slug>-<date>` and the bare `<slug>/` is

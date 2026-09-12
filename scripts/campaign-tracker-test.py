@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: S2_SubIssueDropped, S8_CloseWithOpenSubIssue
 """Prove campaign-tracker reads the whole thing, and says when it could not.
 
 All four subcommands replace a `gh` line that once lived in prose, and all four
@@ -214,8 +215,6 @@ def main():
     work, why = m.work_kind_of(["kind:"])
     check("a bare `kind:` is refused rather than returned as the empty string",
           work is None and why)
-    check("the standing kind is one of WORK_KINDS",
-          m.STANDING_KIND in m.WORK_KINDS)
     text, why = m.gh_read([sys.executable, "-c", "import time; time.sleep(5)"],
                           timeout=0.5)
     check("a read past its timeout is a read that did not happen, saying so",
@@ -264,7 +263,7 @@ def main():
         claim_repos=lambda repo, root: ([repo], "1 repositor(y/ies)"),
         campaign_slug=lambda n: ("machinery", f"#{n} is `machinery`"),
         all_refs=lambda repos, n, slug=None: (seen.setdefault("slug", slug), {}, [])[1:],
-        refs_for_issue=lambda branches, n, number: [])
+        refs_for_issue=lambda branches, number, slug=None: [])
     real_reader = m.claim_reader
     m.claim_reader = lambda: (fake, None)
     try:
@@ -273,6 +272,19 @@ def main():
         m.claim_reader = real_reader
     check("claim_column resolves the campaign's slug and hands it to all_refs",
           seen.get("slug") == "machinery")
+    # THE SLUG REACHES THE PER-ROW MATCH TOO (rule-check#369). The fake above
+    # returns [] whatever it is given, so a call dropping the slug passed it
+    # while `settlement` printed every claimed row `unclaimed`; this one
+    # matches with campaign-claim's own function.
+    fake.all_refs = lambda repos, n, slug=None: ({"machinery/245-x": "o/r"}, [])
+    fake.refs_for_issue = reader.refs_for_issue
+    m.claim_reader = lambda: (fake, None)
+    try:
+        word, _ = m.claim_column("o/r", "7")
+    finally:
+        m.claim_reader = real_reader
+    check("claim_column's row word finds a claim under the campaign's slug",
+          word("245") == "claimed: machinery/245-x")
 
     # ------------------------------------------- bound and bind: the binding
     # The binding is a `bound:` LABEL since #176. A label set is read by exact

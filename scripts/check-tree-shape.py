@@ -61,9 +61,9 @@ WHAT IT CHECKS
       `scripts/` is a script, and prose about them goes where prose goes.
 
   R7  docs/ holds HTML only, one view per model, named for the model.
-      `docs/<p>.html` is admitted when `spec/<p>/` holds an `.als`, so the
-      view's path mirrors its model's and a second view of one model has no
-      name to take. What docs/ holds is not normative, so spec/'s rules do
+      `docs/<p>.html` is admitted when `spec/<p>/` holds an `.als` at any
+      depth, so the view's path mirrors its model directory's, and each model
+      directory has exactly one name its view may take. What docs/ holds is not normative, so spec/'s rules do
       not reach it and its rules do not reach spec/. The models are read from
       the index even under `--staged`, since a view is judged against a model
       the commit need not touch.
@@ -591,7 +591,11 @@ def main():
     models = [a for a in tracked(False)
               if a.startswith("spec/") and a.endswith(".als")]
     for p in paths:
-        if p.split("/")[0] != "docs":
+        if p == "docs":
+            note("R7", p, "a file where docs/ belongs: docs/ is the directory "
+                          "of views")
+            continue
+        if not p.startswith("docs/"):
             continue
         if not p.endswith(".html"):
             note("R7", p, "docs/ holds HTML only: a view drawn for a reader")

@@ -23,7 +23,7 @@ leaves the others live and unflagged, so all four are here.
 
   S3  a literal `spec/...` or `docs/...` path, against the filesystem -- any
       entity's, since #246 put a second one beside spec/campaign/, and any
-      view's, since #302 moved the views out of spec/ into docs/.
+      view's, since #302 gave the views drawn for a reader docs/.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and

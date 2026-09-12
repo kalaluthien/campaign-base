@@ -63,6 +63,13 @@ CASES = [
     ("R7 markdown under docs/",
      {".gitignore": DOCS_IGNORE, "docs/m.md": "hi\n",
       "spec/m/a.als": "sig S {}\n"}, "R7"),
+    ("R7 a model whose name only begins with the view's is not its model",
+     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
+      "spec/mx/a.als": "sig S {}\n"}, "R7"),
+    ("R7 a docs/ below the root is not the views' directory",
+     {".claude/skills/s/assets/docs/x.md": "hi\n"}, None),
+    ("R7 a file named docs is refused, not a crash",
+     {".gitignore": DOCS_IGNORE, "docs": "hi\n"}, "R7"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans

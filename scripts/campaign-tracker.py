@@ -300,9 +300,9 @@ def is_standing(names):
     """Whether this label list holds the person's hold on the close.
 
     THE ONE READER of `standing`, asked by the survey's row, the `standing`
-    verb and the heartbeat's index alike, so the word a close acts on and the word a survey prints can
-    never disagree. A calculation over labels already fetched, so on and off are
-    both cases with no network in them."""
+    verb and the heartbeat's index alike, so the word a close acts on and the
+    word a survey prints can never disagree. A calculation over labels already
+    fetched, so on and off are both cases with no network in them."""
     return STANDING_LABEL in names
 
 

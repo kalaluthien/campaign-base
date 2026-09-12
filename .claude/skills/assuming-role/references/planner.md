@@ -135,7 +135,8 @@ old pane, its transcript and a scratchpad carry none of it.
 A second planner may run beside the campaign's own, to keep the tree in order
 under a `kind:maintenance` sub-issue wearing `standing`. It is started the way
 [handing off](#handing-off) step 2 starts a successor, named
-`<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It files sub-issues, investigates,
-and posts `NOTE`s; it launches nothing and assigns nothing, which stay the
-campaign planner's. It leaves by stopping its own pane, since `quiet` and the
-close both wait on every listed session of the campaign.
+`<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It
+files sub-issues, investigates, and posts `NOTE`s; it launches nothing and
+assigns nothing, which stay the campaign planner's. It leaves by stopping its
+own pane, since `quiet` and the close both wait on every listed session of the
+campaign.

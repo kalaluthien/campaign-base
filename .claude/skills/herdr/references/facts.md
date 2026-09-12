@@ -4,7 +4,7 @@ Probed facts about herdr and the Claude CLI on this machine, merged from the
 machine-wide and campaign-base memory pools. `.claude/skills/herdr/SKILL.md`
 (taken from `herdr --skill`) is the authority on the happy path; this file is
 only where that path breaks, or what it does not state at all. `AGENTS.md`
-§ Delegate launch and `.claude/skills/opening-campaign/references/launching.md`
+§ Delegate launch and `.claude/skills/assuming-role/references/launching.md`
 own the launch *procedure*; this file holds what they do not. Every fact
 carries the version and date it was probed against; where two probes of the
 same fact disagree, both are kept side by side rather than one being chosen.

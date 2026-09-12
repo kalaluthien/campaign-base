@@ -124,7 +124,7 @@ Two hazards stay with the clone: **behind is a merged pull request the
 checkout has not caught up to**, so the clone must not be behind at launch and
 the install must not be edited while behind; and **a skill edited inside the
 clone does not change the running campaign**. Commands:
-`.claude/skills/opening-campaign/references/launching.md`.
+`.claude/skills/assuming-role/references/launching.md`.
 
 # Session identity
 
@@ -186,7 +186,7 @@ session that takes a sub-issue, or a herdr delegate the planner launches
 — a delegate is the ordinary shape for a member repository and the mode of last
 resort for the base, and a repo-less campaign has the first form and not the
 second; the launch itself is
-`.claude/skills/opening-campaign/references/launching.md`). What each role may
+`.claude/skills/assuming-role/references/launching.md`). What each role may
 write is `.claude/skills/assuming-role/scripts/campaign-roles.py`, and the
 moments of each lifecycle are that skill's two references; neither is restated
 here. The model is `Planner` in `spec/campaign/orchestration/system.als`, and it
@@ -515,7 +515,7 @@ delegate as **`CLAUDE.local.md` written into its clone** and excluded via
 `.git/info/exclude` — a file on disk, so nothing has to prove it arrived. A
 campaign's principles only ever *add*. The full procedure — the launch line, the
 outcome names, and the three dialogs — is
-`.claude/skills/opening-campaign/references/launching.md`.
+`.claude/skills/assuming-role/references/launching.md`.
 
 # The running agent
 
@@ -661,7 +661,7 @@ names the new sha *and* asks; a session that asked and received nothing stops.
 reviewed on its own diff alone.** A full re-review is due at one moment only, a
 reconciliation with `main` that needed a hand resolution (§ Concurrency). What a
 round costs and how the narrowed brief is written are
-`.claude/skills/opening-campaign/references/reviewing.md`, which keeps the
+`.claude/skills/assuming-role/references/reviewing.md`, which keeps the
 measurement.
 
 **A fix round is: findings on the pull request, one worker, one `REPORT`.** The
@@ -706,12 +706,12 @@ condition 1 for nothing** — it reads no tests and no full files, so it is a
 cheap first pass and not the review a merge waits on (#282, 2026-09-10). The
 level of a plain brief is not among the refusals, because no position in one
 sets it. What each shape costs, and when the bar lifts, are
-`.claude/skills/opening-campaign/references/reviewing.md` § The call's.
+`.claude/skills/assuming-role/references/reviewing.md` § The call's.
 
 **A session that cannot start a subagent is blocked**: it says so and the pull
 request waits, which is never a licence to review some other way. The call itself,
 the two knobs in full, the three wrong modes and the shape of a round are
-`.claude/skills/opening-campaign/references/reviewing.md`.
+`.claude/skills/assuming-role/references/reviewing.md`.
 
 ## Watching and retiring
 
@@ -721,7 +721,7 @@ decision. **Do not trust the absence of that reading either**: a usage-limit men
 reports `idle` too; silence is a liveness question. The folder-trust dialog
 also reports `idle` (whether the external-import one does is unmeasured), but
 neither is a person's stop — the planner clears both itself
-(`opening-campaign`'s `launching.md`).
+(`assuming-role`'s `launching.md`).
 
 **Anchor a wait on the run's own marker**, or write the run to a fresh file: an
 appended log holds every previous run's success line. **Give a polling loop's

@@ -1754,7 +1754,8 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
    suffix with no `Review` in it. This is the single step -- a push, and a merge
    in the very next state. It is the REPORT that pinned the pre-push sha, asking
    for a review at a revision nobody is going to merge, and it is what
-   scripts/check-merge-review.py refuses on the machine.
+   scripts/check-merge-review.py refuses on the machine, at the REPORT's post
+   through scripts/check-campaign-claim.py.
 
    The rule it exercises is `mergedOnCurrentReview` and nothing new. #274 asked
    for a READER of merge condition 1, and a reader is not a fact this vocabulary

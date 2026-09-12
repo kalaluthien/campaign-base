@@ -657,63 +657,18 @@ write the code.
 it asks**, because **a silent wait is indistinguishable from work**: the `REPORT`
 names the new sha *and* asks; a session that asked and received nothing stops.
 
-## The fix round
-
-**One full review, at the pull request's final sha; every round after it is
-reviewed on its own diff alone.** A full re-review is due at one moment only, a
-reconciliation with `main` that needed a hand resolution (§ Concurrency). What a
-round costs and how the narrowed brief is written are
-`.claude/skills/assuming-role/references/reviewing.md`, which keeps the
-measurement.
-
-**A fix round is: findings on the pull request, one worker, one `REPORT`.** The
-worker verifies each finding at the site it names before touching anything.
-Follow-ups fold into the same round, whose boundary is the `REPORT` and never a
-push, and which ends in one `REPORT` carrying the sha and a per-finding
-disposition. **Check that disposition against the findings list mechanically**: a
-round claiming "all fixed" without re-running its sweep is what keeps happening.
-
-**A round returning only refinement ends the loop**: findings that are wording, a
-number in prose, a name or a claim softened -- with no behavioural defect in
-shipped code
-and no test that passes with its branch deleted -- are applied in one commit,
-reviewed narrowed on that diff, and merged, rather than answered with another
-round. A number a check enforces is not prose.
-
 ## Review
 
-**Every review runs as an in-process subagent. There is no other way to run one** —
-not a default and not the cheapest option, the one mode. It is launched by whoever
-wants the merge, the author included: merge condition 2 is on who *writes* it.
-
-**Name the model and the level on every launch**, and they answer different
-questions: the model by the **depth** of the change, because a weaker reader
-returns "looks fine" on exactly the reasoning that needed a reader; the level by
-**how much there is to read**, `medium` being the baseline. **`/code-review`'s
-level is the first token after the command and nowhere else**; asking in the
-brief sets nothing. A plain brief sets no level mechanically at all — put it
-after `at` anyway, since that is what `campaign-token-tally.py` reads for its
-own accounting, and say what you mean in the rest of the brief.
-
-**A plain brief, not `/code-review` above `low`, and a model named on every
-launch.** `scripts/check-campaign-claim.py` refuses a `Skill` call of
-`code-review` above `low`, which fans out into an orchestrator, finders and
-their verifiers, and an `Agent` naming no `model` — **every** launch and not
-only a reviewer's, since no field of the payload says what a subagent is for;
-`install-hooks.sh`'s matcher routes both to it, so a guard installed before #278
-enforces neither. **It reads
-the `Skill` call and not the prompt**: a slash command in an `Agent` prompt is
-plain text and runs no skill. **`low` never fans out, and satisfies merge
-condition 1 for nothing** — it reads no tests and no full files, so it is a
-cheap first pass and not the review a merge waits on (#282, 2026-09-10). The
-level of a plain brief is not among the refusals, because no position in one
-sets it. What each shape costs, and when the bar lifts, are
-`.claude/skills/assuming-role/references/reviewing.md` § The call's.
-
-**A session that cannot start a subagent is blocked**: it says so and the pull
-request waits, which is never a licence to review some other way. The call itself,
-the two knobs in full, the three wrong modes and the shape of a round are
-`.claude/skills/assuming-role/references/reviewing.md`.
+**Two mechanisms decide the call, and the rest is judgement.**
+`scripts/check-campaign-claim.py` refuses a `Skill` call of `code-review` above
+`low` and an `Agent` naming no `model` — **every** launch and not only a
+reviewer's, since no field of the payload says what a subagent is for — and
+`install-hooks.sh`'s matcher routes both to it, so a guard installed before
+#278 enforces neither; `scripts/check-merge-review.py` reads merge condition 1
+(§ Merge conditions). Every judgement about a review — the one mode, who
+launches it, the model and the level, `low`, what the brief licenses, and the
+shape of a round, the fix round and the narrowed round included — is
+`.claude/skills/assuming-role/references/reviewing.md`'s, its one home.
 
 ## Watching and retiring
 
@@ -769,12 +724,9 @@ branch, read `git branch --show-current` before each commit, and read a branch's
 log for commits you did not author before fast-forwarding it.
 
 **Two open pull requests over the same normative files are normal, and the second
-to land reconciles** — **the gate is condition 3**. The merge is a push, so
-condition 1 still wants a review at the combined sha; what the reconciliation
-decides is that review's *breadth*. A clean auto-merge earns a narrowed one, on
-the merge commit's diff alone. A merge that needed a hand resolution earns a full
-one, and its brief says it reads the combination: **containment buys attention
-from nobody**, and the resolution is where the two branches actually met.
+to land reconciles** — **the gate is condition 3**; the breadth of the review
+at the combined sha is `.claude/skills/assuming-role/references/reviewing.md`
+§ The shape of a round.
 
 **The named cost: no concurrent cross-machine or cloud work on one campaign.**
 Another machine may read a campaign, may file a sub-issue of it, and may open a

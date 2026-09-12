@@ -19,11 +19,9 @@ and, on a claim, the code the sub-issue names.
    published work out of sight.
 5. **Post a `REPORT` once per round**, on the pull request, pinning the sha.
    A verdict or a fix report that does not pin its sha is unactionable.
-6. **Launch the review as an in-process subagent**, naming the model and the
-   level. A session that cannot start one is blocked and says so.
-7. **Merge only on all three conditions**: a review read at the sha being
-   merged, written by an agent that did not write the commits, and a branch
-   containing the current `main`. **Then reach the install**, when the
+6. **Launch the review** as `references/reviewing.md` says.
+7. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
+   **Then reach the install**, when the
    repository has one here — the base always does:
    `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>`,
    and the `REPORT` quotes the line it prints, which names the install's sha.

@@ -290,6 +290,22 @@ FORMS = [
         re.compile(r"\bgh\b[^|;&]*\bapi\b[^|;&]*matching-refs/heads/"),
         "the claim-ref listing",
     ),
+    (
+        "merge-review",
+        "scripts/check-merge-review.py",
+        # Merge condition 1's reading: which comment is a REVIEW, and whether it
+        # names the head. `check-merge-review.py` is its one reader -- CI and
+        # `campaign-claim release` both ask it -- and it imports the `KIND`
+        # line from the guard rather than restating it, so a block that points
+        # a tool at `REVIEW` is a third reader of a rule with two owners
+        # already agreeing. A REVIEW comment WRITTEN in a block carries no
+        # tool word before the kind, so the template a person posts is left
+        # alone; `jq`'s own `test(`/`contains(` count as tools, because
+        # `--jq '.[] | select(...)'` puts a `|` between the flag and the kind.
+        re.compile(r"(\bgrep\b|\bsed\b|\bawk\b|\brg\b|\bjq\b|--jq|\bre\."
+                   r"|startswith|\btest\(|\bcontains\()[^|;&]*\bREVIEW\b"),
+        "the REVIEW-at-the-head reading",
+    ),
 ]
 
 

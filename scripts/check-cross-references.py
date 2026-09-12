@@ -21,9 +21,8 @@ leaves the others live and unflagged, so all four are here.
 
   S2  a literal `.claude/skills/...` path, against the filesystem.
 
-  S3  a literal `spec/...` or `docs/...` path, against the filesystem -- any
-      entity's, since #246 put a second one beside spec/campaign/, and any
-      view's, since #302 gave the views drawn for a reader docs/.
+  S3  a literal `spec/...` path, against the filesystem -- any entity's,
+      since #246 put a second one beside spec/campaign/.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and
@@ -153,32 +152,6 @@ RUN = re.compile(r"[A-Za-z0-9._<>*-]*/[A-Za-z0-9._/<>*-]*")
 # reference says "directory".
 TRAILING = ".,;:!?)]}\"'`"
 
-# The `>` closing an HTML tag immediately before a `.src` citation, e.g.
-# `<span class="src">spec/campaign/x.als</span>` -- RUN's own `<>` (kept for
-# a `<placeholder>` FORM) glues onto that `>` with no space between, so the
-# token starts `>spec/...` and neither matches ABSOLUTE_PREFIXES nor prints
-# as the path a reader would grep for. Stripped from the front only: a
-# genuine leading `<` still marks a template, which this must not widen.
-LEADING = ">"
-
-# The CLOSING TAG glues onto the far end the same way, and only when the
-# citation carries no `:line-range` for `:` to break the match on first --
-# `spec/x.als</span>` has no `:` in it, so RUN swallows `</span>` whole.
-# `LEADING`/`TRAILING` cannot reach it: it is neither a lone leading char nor
-# sentence punctuation, and stripping it wholesale would also eat a genuine
-# `</kind>`-shaped placeholder. Cut at `</` specifically, which a closing tag
-# always opens with and a path never contains -- an opening `<placeholder>`
-# has no `</` in it and is untouched, and is caught as a template by the "<"
-# check below regardless.
-#
-# RESIDUE: an OPENING tag nested in FRONT of the path -- `<b><i>x.als</i></b>`
-# -- still reads as `template`, because `<b><i>` starts with `<` and LEADING
-# strips only a lone `>`. No `.src` citation in this tree nests a tag around
-# its path (checked at #267); the general fix is a real HTML parse, which
-# this is not and does not try to be -- it stays a path scanner over prose,
-# `.als` and now `.html`, not an HTML reader.
-CLOSING_TAG = "</"
-
 SECTION = re.compile("§")
 
 # The qualifier of a `§`: a markdown path written just before it, backticked or
@@ -194,7 +167,7 @@ DEFAULT_TARGET = "AGENTS.md"
 
 # Which shape a run belongs to, by prefix. Order matters only in that the two
 # absolute prefixes are tested before the two relative ones.
-ABSOLUTE_PREFIXES = (".claude/skills/", "spec/", "docs/")
+ABSOLUTE_PREFIXES = (".claude/skills/", "spec/")
 RELATIVE_PREFIXES = ("references/", "assets/")
 SCRIPT_PREFIX = "scripts/"
 SCRIPT_SUFFIXES = (".py", ".sh")
@@ -481,10 +454,7 @@ def check_paths(rel, text, tree, report):
     root = skill_root(rel)
     for m in RUN.finditer(text):
         raw = m.group(0)
-        tok = raw.rstrip(TRAILING).lstrip(LEADING)
-        close = tok.find(CLOSING_TAG)
-        if close > 0:
-            tok = tok[:close]
+        tok = raw.rstrip(TRAILING)
         if not tok or "/" not in tok:
             continue
         n = line_of(text, m.start())
@@ -621,15 +591,8 @@ def main(argv):
         # retired script path standing in `github/system.als` that a
         # markdown-only sweep could not see. Three `§` citations, across two of
         # these files, are read as well, and those resolve too.
-        #
-        # `.html` IS ONE TOO (NOTE on #250): an HTML view of a model carries
-        # `.src` citations of the lines it draws, e.g.
-        # `<span class="src">spec/campaign/github/system.als:60-77 @ sha</span>`,
-        # and a sweep that skipped `.html` let such a pin go stale in two
-        # files unnoticed instead of one. R1 of check-tree-shape keeps HTML
-        # out of spec/ since #246 and R7 gives it docs/, so the sweep stays.
         paths = [p for p in tracked(root)
-                 if p.endswith((".md", ".markdown", ".als", ".html"))]
+                 if p.endswith((".md", ".markdown", ".als"))]
 
     report = Report()
     unreadable = []

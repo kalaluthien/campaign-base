@@ -3,7 +3,8 @@
 
     scripts/alloy-check.py <file.als> [-o <dir>]
     scripts/alloy-check.py --commands spec [--write]
-    scripts/alloy-check.py --digest <solution-0.txt> [...]
+    scripts/alloy-check.py --staged
+    scripts/alloy-check.py --digest <file.als> <solution-0.txt> [...]
     scripts/alloy-check.py --closure <file.als>
 
 Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
@@ -65,6 +66,17 @@ verdict back in a file for a script to read. The module key is the path relative
 to <dir> -- `campaign/orchestration/checks.als` -- so a command moving between entities
 reads as one line gone and one line new, naming itself at both ends.
 
+A COMMAND IN A system.als IS REFUSED, `--write` included, so no snapshot
+records one. An entity is its model in system.als and every command over it in
+checks.als (check-tree-shape's R8 says the two files exist; this says what
+the first may not hold), so a verdict is found where CI and a reader look.
+
+`--staged` is the same comparison over the index, for the pre-commit hook,
+which runs every guard that way: the models and the snapshot as the commit
+will hold them, under the spec/ root of the checkout making it. An index with
+no .als under spec/ -- a fixture repository, a tree with no models -- has
+nothing to compare and passes, saying so.
+
 Its ceiling, stated rather than hidden: it does not stop a commit that deletes a
 command and regenerates in one go, any more than a hand-kept count stops one
 that also edits the number. It catches the careless deletion. A floor, not a
@@ -85,6 +97,16 @@ modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It
 reads the run's output rather than the model, so it is the same command's
 second half rather than a second script.
+
+Beside the two tables, the digest prints every `var` sig and field that
+<file.als>'s own entity declares -- the modules of its closure in its own
+directory -- as a column of its own name, so a relation the tables never
+listed still reaches a reader: `Reviewed`, which merge condition 1 is about,
+was one (sdlc-alloy#342). They are read from the model because the trace does
+not mark them: a `var` relation that stays empty looks like a static one. The
+`var:` line names what was read, so a relation declared and empty in a state
+is told apart from one never read; a declared relation the trace does not hold
+at all means the trace is not that model's, and is `could not look`, exit 2.
 
 `--closure` prints <file> and every file its `open`s reach, one path per line
 relative to the working directory, in the order they are reached -- the same
@@ -142,14 +164,52 @@ def inventory(directory):
         raise SystemExit(f"alloy-check --commands: {directory} was read and holds "
                          f"no .als file at any depth; the models are gone or this "
                          f"is the wrong directory")
+    return declared((key, open(os.path.join(directory, key)).read()) for key in als)
+
+
+def declared(modules):
+    """[[module, kind, name]] over (key, text) pairs, sorted."""
     found = []
-    for key in sorted(als):
-        with open(os.path.join(directory, key)) as fh:
-            for line in fh:
-                m = DECL.match(line)
-                if m:
-                    found.append([key, m.group(1), m.group(2)])
+    for key, text in modules:
+        for line in text.splitlines():
+            m = DECL.match(line)
+            if m:
+                found.append([key, m.group(1), m.group(2)])
     return sorted(found)
+
+
+def compare(found, was, snapshot):
+    """Print the models' commands against the snapshot's; 0 when they agree.
+
+    `was` is the snapshot's command list, or None when there is none."""
+    if was is None:
+        print(f"snapshot  ABSENT  {snapshot}")
+        print("RESULT    could not compare: write it with --write")
+        return 1
+    print(f"snapshot  {snapshot}")
+    gone = [c for c in was if c not in found]
+    new = [c for c in found if c not in was]
+    for mod, kind, name in gone:
+        print(f"GONE      {mod:<40} {kind:<6} {name}")
+    for mod, kind, name in new:
+        print(f"NEW       {mod:<40} {kind:<6} {name}")
+    if gone or new:
+        print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
+              f"rerun with --write and commit {SNAPSHOT}")
+        return 1
+    print(f"RESULT    the snapshot names exactly the {len(found)} declared commands")
+    return 0
+
+
+def in_a_system(found):
+    """The commands declared in a system.als, each printed; empty when none."""
+    misplaced = [c for c in found if os.path.basename(c[0]) == "system.als"]
+    for mod, kind, name in misplaced:
+        print(f"SYSTEM    {mod:<40} {kind:<6} {name}")
+    if misplaced:
+        print(f"RESULT    {len(misplaced)} command(s) declared in a system.als; "
+              f"an entity's commands live in its checks.als")
+    return misplaced
 
 
 def snapshot_root(directory):
@@ -181,6 +241,8 @@ def commands_mode(directory, write):
         return 1
     snapshot = os.path.join(directory, SNAPSHOT)
     found = inventory(directory)
+    if in_a_system(found):
+        return 1
     # Hand-rolled rather than json.dumps(indent=...), which puts every element
     # of a triple on its own line: one command per line is the whole point, so
     # that a deletion is one removed line naming the command that went.
@@ -201,24 +263,36 @@ def commands_mode(directory, write):
         return 0
 
     print(f"models    {directory}  ({len(found)} commands declared)")
-    if not os.path.exists(snapshot):
-        print(f"snapshot  ABSENT  {snapshot}")
-        print("RESULT    could not compare: write it with --write")
+    was = ([list(c) for c in json.load(open(snapshot))["commands"]]
+           if os.path.exists(snapshot) else None)
+    return compare(found, was, snapshot)
+
+
+def staged_mode():
+    """`--commands spec` over the index: the pre-commit hook's form."""
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+
+    def git(*args):
+        return subprocess.run(["git", "-C", top, *args], capture_output=True,
+                              text=True, check=True).stdout
+
+    prefix = SNAPSHOT_ROOT + "/"
+    als = [p for p in git("ls-files", "-z", "--", SNAPSHOT_ROOT).split("\0")
+           if p.endswith(".als")]
+    if not als:
+        print(f"alloy-check --staged: the index under {top} holds no .als under "
+              f"{prefix}, so there is no command list to compare")
+        return 0
+    found = declared((p[len(prefix):], git("show", f":{p}")) for p in als)
+    print(f"models    the index, {prefix} under {top}  ({len(found)} commands declared)")
+    if in_a_system(found):
         return 1
-    print(f"snapshot  {snapshot}")
-    was = [list(c) for c in json.load(open(snapshot))["commands"]]
-    gone = [c for c in was if c not in found]
-    new = [c for c in found if c not in was]
-    for mod, kind, name in gone:
-        print(f"GONE      {mod:<40} {kind:<6} {name}")
-    for mod, kind, name in new:
-        print(f"NEW       {mod:<40} {kind:<6} {name}")
-    if gone or new:
-        print(f"RESULT    {len(gone)} gone, {len(new)} new; if deliberate, "
-              f"rerun with --write and commit {SNAPSHOT}")
-        return 1
-    print(f"RESULT    the snapshot names exactly the {len(found)} declared commands")
-    return 0
+    snapshot = prefix + SNAPSHOT
+    held = git("ls-files", "--", snapshot).strip()
+    was = ([list(c) for c in json.loads(git("show", f":{snapshot}"))["commands"]]
+           if held else None)
+    return compare(found, was, f"{snapshot} in the index")
 
 
 def run_alloy(path, outdir):
@@ -478,7 +552,54 @@ def short(text):
     return ATOM.sub(rep, unqualify(text))
 
 
-def parse_trace(path):
+# `var sig A, B in C {`, `one sig Target {`: the qualifiers, the names, and the
+# brace that opens the field list.
+SIG = re.compile(r"\b((?:(?:abstract|one|lone|some|var|private)\s+)*)sig\s+"
+                 r"([\w\s,]+?)\s*(?:\b(?:extends|in)\s[^{]*)?\{")
+
+
+def own_vars(path):
+    """(the entity's directory, [every `var` relation its modules declare, as
+    the trace names it once unqualified]): `Reviewed` for a sig, `Target<:agent`
+    for a field. The entity is the modules of <path>'s closure in its own
+    directory; a module another entity owns is that entity's to show."""
+    here = os.path.dirname(os.path.abspath(path))
+    keys = []
+    for p, text in composed(path).items():
+        if os.path.dirname(p) != here:
+            continue
+        for m in SIG.finditer(text):
+            names = [n.strip() for n in m.group(2).split(",")]
+            if "var" in m.group(1).split():
+                keys += names
+            # The field list: split at top-level commas, and a piece with no
+            # `:` is a name sharing the next piece's type -- `var a, b: T`.
+            depth, i, piece, pieces = 1, m.end(), "", []
+            while depth:
+                c = text[i]
+                depth += (c in "([{") - (c in ")]}")
+                if depth == 1 and c == ",":
+                    pieces.append(piece)
+                    piece = ""
+                elif depth:
+                    piece += c
+                i += 1
+            pieces.append(piece)
+            decl = ""
+            for piece in pieces:
+                decl += piece
+                if ":" not in piece:
+                    decl += ","
+                    continue
+                head = decl.split(":")[0].split()
+                if head and head[0] == "var":
+                    fields = " ".join(head[1:]).split(",")
+                    keys += [f"{s}<:{f.strip()}" for s in names for f in fields if f.strip()]
+                decl = ""
+    return here, keys
+
+
+def parse_trace(path, wanted=WANTED):
     states = []
     cur = None
     for line in open(path):
@@ -495,22 +616,31 @@ def parse_trace(path):
         # module with its path; both reduce to the bare name, and anything that
         # is not a relation this digest shows is dropped here.
         name = unqualify(key)
-        if name in WANTED:
+        if name in wanted:
             cur["rel"][name] = val.strip("{}")
     return states
 
 
-def render(path):
-    states = parse_trace(path)
+def render(model, path):
+    """The digest of one trace, or raise LookupError when the trace does not
+    hold a relation <model>'s entity declares."""
+    here, own = own_vars(model)
+    columns = VARYING + [(key, key) for key in own if key not in dict(VARYING)]
+    states = parse_trace(path, WANTED | set(own))
     if not states:
         return f"{path}: no trace\n"
+    absent = [key for key in own if key not in states[0]["rel"]]
+    if absent:
+        raise LookupError(f"{path} holds no {', '.join(absent)}, which "
+                          f"{os.path.relpath(here)}/ declares var: it is not that model's trace")
     out = [f"# {path.split('/')[-1]}"]
     fixed = states[0]["rel"]
     facts = [f"{label}={short(fixed[label]) or '-'}" for label in STATIC if fixed.get(label)]
     out.append("static: " + "; ".join(facts))
+    out.append(f"var ({os.path.relpath(here)}/): " + ", ".join(own))
     for s in states:
         parts = []
-        for key, label in VARYING:
+        for key, label in columns:
             val = s["rel"].get(key, "")
             if not val:
                 continue
@@ -529,12 +659,16 @@ def main(argv):
         print(__doc__.strip())
         return 0
     if argv[0] == "--digest":
-        if len(argv) < 2:
-            print("alloy-check --digest: name at least one trace file",
-                  file=sys.stderr)
+        if len(argv) < 3 or not argv[1].endswith(".als"):
+            print("alloy-check --digest: name the model, then at least one "
+                  "trace file it wrote", file=sys.stderr)
             return 1
-        for arg in argv[1:]:
-            print(render(arg))
+        for arg in argv[2:]:
+            try:
+                print(render(argv[1], arg))
+            except (OSError, LookupError) as e:
+                print(f"could not look: {e}", file=sys.stderr)
+                return 2
         return 0
     if argv[0] == "--commands":
         rest = [a for a in argv[1:] if a != "--write"]
@@ -543,6 +677,8 @@ def main(argv):
                   file=sys.stderr)
             return 1
         return commands_mode(rest[0], "--write" in argv[1:])
+    if argv[0] == "--staged":
+        return staged_mode()
     if argv[0] == "--closure":
         if len(argv) != 2:
             print("usage: alloy-check.py --closure <file.als>")

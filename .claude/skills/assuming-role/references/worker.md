@@ -13,21 +13,38 @@ and, on a claim, the code the sub-issue names.
 3. **Work in the checkout the claim names** — a worktree for the base, the
    clone for a member repository. The stages inside this step, what each
    produces and when one may be skipped, are
-   [landing a change](references/landing-a-change.md).
-4. **Open the pull request on the first commit**, not when the work is ready.
+   [landing a change](landing-a-change.md).
+4. **Sort each choice into one of four routes** before you act on it:
+   - **decide it**: what a check settles, and how to build what the
+     Definition of done names;
+   - **the review**, step 7: whether work already written is right, a
+     trade-off inside the Definition of done included;
+   - **ask the planner**: the brief is silent, or reads two ways, on what it
+     asks of you -- which step is next, what a line means, whether a file is in
+     scope;
+   - **hand it up**: it changes what the work is -- a Plan or Definition of
+     done item added, dropped or moved, even one a check shows is moot, a rule
+     found two ways, an off-limits file or target, a destructive step, a
+     Definition of done you cannot meet, a pick the Plan reserves.
+
+   A question and a hand-up take one channel: a `BLOCKED` on the sub-issue
+   whose `BLOCKED <name>:` line says which of the two it is, then the message
+   -- not a NOTE, a question in the pane, or a DECISION of your own.
+5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.
-5. **Post a `REPORT` once per round**, on the pull request, pinning the sha.
+6. **Post a `REPORT` once per round**, on the pull request, pinning the sha.
    A verdict or a fix report that does not pin its sha is unactionable.
-6. **Launch the review as an in-process subagent**, naming the model and the
-   level. A session that cannot start one is blocked and says so.
-7. **Merge only on all three conditions**: a review read at the sha being
-   merged, written by an agent that did not write the commits, and a branch
-   containing the current `main`. **Then reach the install**, when the
+   After it the next move is the planner's -- the review, the next pull
+   request of a multi-PR Plan, or the next assignment -- so wait for its
+   prompt and launch nothing.
+7. **Launch the review** as `references/reviewing.md` says.
+8. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
+   **Then reach the install**, when the
    repository has one here — the base always does:
    `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>`,
    and the `REPORT` quotes the line it prints, which names the install's sha.
-8. **Release the claim** when the sub-issue is settled. The release compacts
+9. **Release the claim** when the sub-issue is settled. The release compacts
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.
 

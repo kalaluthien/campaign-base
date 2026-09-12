@@ -268,6 +268,7 @@
     ["sdlc/checks.als", "check", "AbsenceLicensed"],
     ["sdlc/checks.als", "check", "DebtNeverGrows"],
     ["sdlc/checks.als", "check", "FeaturelessKeeps"],
+    ["sdlc/checks.als", "check", "FormsTieNothing"],
     ["sdlc/checks.als", "check", "OrderedByFeeds"],
     ["sdlc/checks.als", "check", "TreeStaysTied"],
     ["sdlc/checks.als", "check", "WitnessesResolve"],

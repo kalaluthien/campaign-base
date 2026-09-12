@@ -59,7 +59,8 @@
  *
  *   scripts/alloy-check.py spec/campaign/github/checks.als -o /tmp/alloy-github
  *   scripts/alloy-check.py --commands spec               -- and --write to update
- *   scripts/alloy-check.py --digest /tmp/alloy-github/S1_HappyPath-solution-0.txt
+ *   scripts/alloy-check.py --digest spec/campaign/github/checks.als \
+ *       /tmp/alloy-github/S1_HappyPath-solution-0.txt
  *
  * HOW THE ENTITIES COMPOSE
  *

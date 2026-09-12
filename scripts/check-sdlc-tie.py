@@ -27,6 +27,14 @@ THE THREE NAMES, as the tree carries them today
              `witnesses`, `t -> k` from `drives`, so `tie` holds `s -> t -> k`
              and `tied[k]` asks whether some suite named after k declares some
              scenario that exists.
+  html form  an `.html` under spec/, which check-tree-shape.py's R8 admits
+             only beside an entity's `system.als` and `checks.als`: a
+             scenario drawn for a reader, the model's `Html`. It DECLARES the
+             commands it draws on a `<section data-scenario
+             data-refines="<Name>[, <Name>...]">` tag -- `h -> s` in the
+             model's `refines`, read the way a suite's `# witnesses:` line is
+             -- and a name counts only as a command of the form's own entity,
+             a snapshot row whose module sits in the `.html`'s directory.
   code path  a script by check-tree-shape.py's R6 -- `.py` or `.sh`, sitting
              directly in a scripts/ directory -- whose stem does not end in
              `-test`. R6's membership is IMPORTED (`in_scripts_dir`), so what
@@ -57,7 +65,7 @@ before it; a code path the commit renamed keeps its identity across the two
 readings where git pairs the rename (`-M`), and a rewrite git cannot pair is a
 new path, judged as one. A path that was in the tree before but not a code
 path -- nested, extensionless, under fixtures/ -- ENTERS the code set when it
-is moved into a scripts/ slot, and is judged as new. Six shapes are refused,
+is moved into a scripts/ slot, and is judged as new. Seven shapes are refused,
 one per cause; a suite whose only declared name is dead reads T1 or T3 and T6
 together, the first saying what the code path lost and T6 which name did it:
 
@@ -97,7 +105,15 @@ together, the first saying what the code path lost and T6 which name did it:
       `WitnessesResolve_Bites`). Scoped the way T4 is: in a suite this change
       touched every dead name is refused, and in one it never opened only a
       name that resolved before the change and does not after it; the dead
-      names left in unopened suites are counted in the reading.
+      names left in unopened suites are counted in the reading. An html
+      form's `data-refines` names are read the same way, against the
+      commands of its own entity.
+  T7  an html form that refines no scenario, or refines one no suite's
+      `# witnesses:` line declares. The form is a Spec artifact tied by
+      name, so a view of nothing, or of a scenario nothing tests, is refused
+      rather than kept as a second statement no check reads. Scoped as T6:
+      in a form this change touched every such fault, in one it never opened
+      only a fault the change introduced.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
@@ -213,6 +229,29 @@ SNAPSHOT = "spec/commands.snapshot.json"
 # ties anything. A suite may carry the line more than once and the names union.
 WITNESSES = re.compile(r"^[ \t]*#[ \t]*witnesses:[ \t]*(.*)$")
 
+# WHAT AN HTML FORM DECLARES IT REFINES: a `<section>` tag carrying
+# `data-scenario` and `data-refines="<Name>[, <Name>...]"`, the names split on
+# commas and matched exactly, as WITNESSES's are. A tag without `data-scenario`
+# declares nothing, so a section that only mentions a name is prose. The tag's
+# attributes are read one by one, name then value, so `data-scenario-id` is not
+# `data-scenario` and a `data-refines` inside another attribute's value is text.
+SECTION = re.compile(r"<section\b([^>]*)>", re.IGNORECASE)
+ATTR = re.compile(r"""([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?""")
+
+
+def attributes(text):
+    """{lowercased name: value, or None for a bare attribute} of one tag."""
+    found = {}
+    for m in ATTR.finditer(text):
+        value = next((v for v in m.groups()[1:] if v is not None), None)
+        found.setdefault(m.group(1).lower(), value)
+    return found
+
+
+def html_form(path):
+    return path.startswith("spec/") and path.endswith(".html")
+
+
 # THE LEGACY ALLOW-LIST, the model's `Licensed`. Every code path this tree held
 # untied when #268 wrote it, derived from the tree by running the guard over it
 # -- the shape #237 gave
@@ -317,10 +356,12 @@ def read_blobs(oids):
 
 def wanted(paths, in_scripts_dir):
     """The paths whose TEXT is read: the snapshot, for the command names,
-    and every suite, for the `# witnesses:` lines. Nothing else's bytes are
-    fetched, which is what keeps a tree to one listing and one batch."""
+    every suite, for the `# witnesses:` lines, and every html form, for its
+    `data-refines`. Nothing else's bytes are fetched, which is what keeps a
+    tree to one listing and one batch."""
     return [p for p in paths
-            if p == SNAPSHOT or (in_scripts_dir(p) and stem(p).endswith("-test"))]
+            if p == SNAPSHOT or html_form(p)
+            or (in_scripts_dir(p) and stem(p).endswith("-test"))]
 
 
 class Tree:
@@ -337,8 +378,12 @@ class Tree:
         self.suites = [p for p in scripts if stem(p).endswith("-test")]
         self.code = [p for p in scripts if not stem(p).endswith("-test")
                      and p.endswith(CODE_SUFFIXES)]
-        self.scenarios = ({row[2] for row in json.loads(texts[SNAPSHOT])["commands"]}
-                          if SNAPSHOT in texts else set())
+        rows = json.loads(texts[SNAPSHOT])["commands"] if SNAPSHOT in texts else []
+        self.scenarios = {row[2] for row in rows}
+        self._by_entity = {}
+        for module, _, name in rows:
+            self._by_entity.setdefault(str(PurePosixPath(module).parent), set()).add(name)
+        self.htmls = [p for p in paths if html_form(p)]
         self._declared = {}
 
     def suites_of(self, code_path):
@@ -363,6 +408,29 @@ class Tree:
 
     def tied(self, code_path):
         return any(self.witnesses_a_scenario(s) for s in self.suites_of(code_path))
+
+    def refines(self, html):
+        """The names an html form's `data-scenario` sections declare."""
+        names = set()
+        for m in SECTION.finditer(self.texts.get(html, "")):
+            attrs = attributes(m.group(1))
+            if "data-scenario" in attrs and attrs.get("data-refines"):
+                names |= {n.strip() for n in attrs["data-refines"].split(",")
+                          if n.strip()}
+        return names
+
+    def html_faults(self, html):
+        """(T6, T7) for one html form: the names that are no command of its
+        entity, and what it lacks as a tie -- each a sorted list of strings."""
+        entity = str(PurePosixPath(html).parent.relative_to("spec"))
+        own = self._by_entity.get(entity, set())
+        names = self.refines(html)
+        witnessed = set().union(*(self.declared(s) for s in self.suites))
+        t7 = ([] if names else ['refines no scenario: it carries no `<section '
+                                'data-scenario data-refines="<Name>">`'])
+        t7 += [f"refines `{n}`, which no suite's `# witnesses:` line declares"
+               for n in sorted(names & own - witnessed)]
+        return sorted(names - own), t7
 
 
 def entries(out, oid_field):
@@ -532,7 +600,8 @@ def judge(after_kind, against, legacy_path):
                              after_kind)
 
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
-          f"{len(after.suites)} suite(s), {len(after.code)} code path(s) from "
+          f"{len(after.suites)} suite(s), {len(after.htmls)} html form(s), "
+          f"{len(after.code)} code path(s) from "
           f"{after.label} under {root}; each judged against {before.label}, "
           f"{len(moved)} path(s) renamed in between; two trees read in "
           f"{(t1 - t0) * 1000:.0f} + {(t2 - t1) * 1000:.0f} ms")
@@ -613,13 +682,31 @@ def judge(after_kind, against, legacy_path):
                                       f"no such command. Rename it to the "
                                       f"scenario it witnesses, or drop it, or "
                                       f"regenerate the snapshot"))
+    kept = 0
+    for h in after.htmls:
+        dead, lacks = after.html_faults(h)
+        if h not in touched:                     # T6's scope, for a form
+            # Untouched is unrenamed too: a rename puts both ends in `touched`.
+            old_dead, old_lacks = (before.html_faults(h) if h in before.htmls
+                                   else ([], []))
+            kept += (sum(n in old_dead for n in dead)
+                     + sum(w in old_lacks for w in lacks))
+            dead = [n for n in dead if n not in old_dead]
+            lacks = [w for w in lacks if w not in old_lacks]
+        for n in dead:
+            findings.append(("T6", h, f"its `data-refines` declares `{n}`, and "
+                                      f"{SNAPSHOT} in {after.label} lists no such "
+                                      f"command in its entity"))
+        for w in lacks:
+            findings.append(("T7", h, f"an html form is a scenario tied by name, "
+                                      f"and this one {w}"))
     for code, path, what in sorted(findings):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "
           f"path(s) untied and licensed by the allow-list ({source}, "
           f"{len(allowed)} entr(ies), {absent} naming no code path here); "
           f"{left} dead witness name(s) left where the change never opened "
-          f"the suite")
+          f"the suite, {kept} fault(s) left in html forms it never opened")
     return 1 if findings else 0
 
 

@@ -2,8 +2,9 @@
  * The disciplines over sdlc/system and the witnesses -- a full chain, a
  * prose-only change with nothing below its plan, the tie broken by a rename at
  * each of its three ends, each input of the skip rule, reuse being a change
- * that adds no feature -- then what must hold under each discipline, the counterexample each one's absence admits,
- * and the floor that says every event is reachable at all.
+ * that adds no feature -- then what must hold under each discipline, the
+ * counterexample each one's absence admits, and the floor that says every
+ * event is reachable at all.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/checks
@@ -16,10 +17,11 @@ open sdlc/system
    own kind: the model before the code, and a test that failed first. Neither
    is a stage the KIND forbids skipping, because each is already refused by
    the criterion wherever there is anything to refuse -- a change that wrote a
-   code path may skip neither Spec nor Test, save by reusing them. So its profile is every skippable
-   stage, each still gated by the criterion: all three go for a change that
-   writes nothing that runs (`S2a_ProseOnlyChange`), and Test and Code for one
-   that wrote only its scenario (`S6a_DevelopmentTestWaiver`). `analysis`,
+   code path may skip neither Spec nor Test, save by reusing them. So its
+   profile is every skippable stage, each still gated by the criterion: all
+   three go for a change that writes nothing that runs
+   (`S2a_ProseOnlyChange`), and Test and Code for one that wrote only its
+   scenario (`S6a_DevelopmentTestWaiver`). `analysis`,
    `migration` and `research` state the same profile and differ only in what
    their changes write, which no command here separates, so they have no
    witness of their own.
@@ -32,10 +34,11 @@ open sdlc/system
    lets skip Spec wrote nothing that runs, and this kind lets neither Test nor
    Code go, so no landing change of it skips its scenario by the profile
    (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at the
-   same scope); reusing one is not a skip the profile grants. Every profile line is the procedure's to state, in this
-   vocabulary: `development`'s is the default in the campaign's AGENTS.md,
-   from the template .claude/skills/opening-campaign/assets/AGENTS.md, and the
-   other four kinds' are one line each in their references, kind-<k>.md. */
+   same scope); reusing one is not a skip the profile grants. Every profile
+   line is the procedure's to state, in this vocabulary: `development`'s is
+   the default in the campaign's AGENTS.md, from the template
+   .claude/skills/opening-campaign/assets/AGENTS.md, and the other four
+   kinds' are one line each in their references, kind-<k>.md. */
 pred developmentProfile[c: Change] { c.optional = skippable }
 pred prototypingProfile[c: Change] { c.optional = Spec }
 
@@ -91,9 +94,9 @@ pred landDiscipline {
    change with no scenario of its own moves one out of the tree. A write never
    removes, so a rename is the step it bites. Read by names, as
    scripts/check-sdlc-tie.py reads it, a commit that leaves the command list as
-   it was keeps every scenario by definition; what the guard refuses is the
-   consequence, `FeaturelessKeeps`, over an edit this model has no step for --
-   a suite's declaration rewritten in place. */
+   it was keeps every scenario by definition; what the guard refuses, as T8,
+   is the consequence, `FeaturelessKeeps`, over an edit this model has no step
+   for -- a suite's declaration rewritten, or a suite deleted, in place. */
 pred keepDiscipline {
   always ((Step.event in Write + Rename and featureless[Step.subject])
           implies Written & stage.Spec in Written')

@@ -5,7 +5,9 @@ The reader of `tieDiscipline` in spec/sdlc/checks.als: after a commit that
 writes or renames an artifact the tree is tied (`everyCodeHasScenario` in
 spec/sdlc/system.als), which is to say every code path the allow-list does not
 exempt walks back to a scenario through the test that drives it, and every
-name a test declares is a scenario (`everyWitnessExists`). The model says what a tie is; this
+name a test declares is a scenario (`everyWitnessExists`); and of what
+`keepDiscipline` makes true, that a change adding no feature leaves every
+scenario witnessed (`FeaturelessKeeps`, T8). The model says what a tie is; this
 says how one is read off this tree, and judges the commit by what it CHANGES
 about the reading rather than by the tree's whole debt.
 
@@ -65,9 +67,10 @@ before it; a code path the commit renamed keeps its identity across the two
 readings where git pairs the rename (`-M`), and a rewrite git cannot pair is a
 new path, judged as one. A path that was in the tree before but not a code
 path -- nested, extensionless, under fixtures/ -- ENTERS the code set when it
-is moved into a scripts/ slot, and is judged as new. Seven shapes are refused,
+is moved into a scripts/ slot, and is judged as new. Eight shapes are refused,
 one per cause; a suite whose only declared name is dead reads T1 or T3 and T6
-together, the first saying what the code path lost and T6 which name did it:
+together, the first saying what the code path lost and T6 which name did it,
+and a suite dropping a scenario nothing else witnesses reads T8 beside them:
 
   T1  a code path the commit ADDS is untied: no suite carries its stem, or
       the suite declares no scenario. The write that `TreeStaysTied_Bites`
@@ -88,7 +91,9 @@ together, the first saying what the code path lost and T6 which name did it:
       touched scope is what separates this tree's debt from a tree the list is
       not about -- every fixture repository under scripts/*-test.py is a tree of
       copied guards with no suites, and unscoped this refused every commit any
-      of them made.
+      of them made. A line licenses only a path the list held BEFORE the
+      commit as well as after it, so a line added by the commit that needs it
+      licenses nothing (`licenceNeverGrows`, `DebtNeverGrows_Bites`).
   T5  an allow-list entry whose code path is TIED now. The licence is spent and
       the line comes out in the same commit. An entry naming no code path here
       is counted in the reading instead of refused: the path may have been
@@ -114,13 +119,24 @@ together, the first saying what the code path lost and T6 which name did it:
       rather than kept as a second statement no check reads. Scoped as T6:
       in a form this change touched every such fault, in one it never opened
       only a fault the change introduced.
+  T8  a scenario some suite's `# witnesses:` line declared before the commit
+      and none declares after it, where the commit leaves the snapshot's
+      command list as it was. That commit adds no feature, and a change that
+      adds none keeps what is witnessed (`FeaturelessKeeps_Bites`): the model
+      proves it from `keepDiscipline` and `rename`, and this reads it over the
+      edit the model has no step for, a declaration rewritten or a suite
+      deleted in place. A commit that changes the command list is a feature
+      change and is not read here, where the model reads a rename by a change
+      with no scenario of its own as that change's; deleting a script with its
+      suite retires its scenario in the same commit.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
 `LEGACY` is what the model's `Licensed` names (spec/sdlc/system.als), and
 `licenceNeverGrows` is the rule it is kept to: T1, T2 and T3 are judged before
 the list is read, so a line licenses only a path that was untied before the
-commit. Every other code path is to be tied, and a check that refused every
+commit, and T4 reads the list twice -- the copy the tree before holds, at
+`LEGACY_HOME`, and the one running -- so a line licenses only what both name. Every other code path is to be tied, and a check that refused every
 edit to alloy-check.py until it had a suite would be a wall across the
 repair. So the debt is licensed by name in `LEGACY` -- derived from the tree
 when #268 wrote it, the shape #237 gave R3 -- and the licence bites both ways:
@@ -139,8 +155,11 @@ what the change touched, and an entry naming no code path here is a count in the
 reading rather than a finding.
 
 `--legacy <file>` substitutes a list, one path per line, `#` starting a
-comment. It is how check-sdlc-tie-test.py exercises T4 and T5 over a fixture
-tree, whose paths no built-in list could name.
+comment, on both sides of the change. It is how check-sdlc-tie-test.py
+exercises T4 and T5 over a fixture tree, whose paths no built-in list could
+name; the cases about the list growing carry their own copy of this guard
+instead. A tree before that holds no copy -- a first commit, a fixture --
+has the running list stand for it, and the reading says which was read.
 
 THE SKIP, and why nothing declares one here
 
@@ -203,9 +222,11 @@ Usage: scripts/check-sdlc-tie.py [--staged | --against <ref>] [--legacy <file>]
                    of a pull request's change, which judging against HEAD on a
                    merge commit cannot see)
   otherwise        read the working tree and judge it against HEAD
-  --legacy <file>  take the allow-list from <file> instead of `LEGACY`
+  --legacy <file>  take the allow-list from <file> instead of `LEGACY`, before
+                   and after the change alike
 """
 import argparse
+import ast
 import importlib.machinery
 import importlib.util
 import json
@@ -250,6 +271,21 @@ def attributes(text):
 
 def html_form(path):
     return path.startswith("spec/") and path.endswith(".html")
+
+
+# WHERE A TREE HOLDS ITS OWN ALLOW-LIST: this guard's `LEGACY`, read from the
+# tree before the commit as well as from the copy running. See the docstring's T4.
+LEGACY_HOME = "scripts/check-sdlc-tie.py"
+
+
+def listed(text):
+    """The `LEGACY` a copy of this guard assigns, or None where it assigns
+    none -- a tree holding no copy reads as the empty text."""
+    for node in ast.parse(text).body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "LEGACY" for t in node.targets):
+            return set(ast.literal_eval(node.value))
+    return None
 
 
 # THE LEGACY ALLOW-LIST, the model's `Licensed`. Every code path this tree held
@@ -356,11 +392,11 @@ def read_blobs(oids):
 
 def wanted(paths, in_scripts_dir):
     """The paths whose TEXT is read: the snapshot, for the command names,
-    every suite, for the `# witnesses:` lines, and every html form, for its
-    `data-refines`. Nothing else's bytes are fetched, which is what keeps a
+    every suite, for the `# witnesses:` lines, every html form, for its
+    `data-refines`, and this guard's own copy, for the list it held. Nothing else's bytes are fetched, which is what keeps a
     tree to one listing and one batch."""
     return [p for p in paths
-            if p == SNAPSHOT or html_form(p)
+            if p in (SNAPSHOT, LEGACY_HOME) or html_form(p)
             or (in_scripts_dir(p) and stem(p).endswith("-test"))]
 
 
@@ -403,6 +439,13 @@ class Tree:
             self._declared[suite] = names
         return self._declared[suite]
 
+    def declared_by_suites(self):
+        return set().union(*(self.declared(s) for s in self.suites))
+
+    def witnessed(self):
+        """The listed scenarios some suite declares: the model's `witnessed`."""
+        return self.declared_by_suites() & self.scenarios
+
     def witnesses_a_scenario(self, suite):
         return bool(self.declared(suite) & self.scenarios)
 
@@ -425,7 +468,7 @@ class Tree:
         entity = str(PurePosixPath(html).parent.relative_to("spec"))
         own = self._by_entity.get(entity, set())
         names = self.refines(html)
-        witnessed = set().union(*(self.declared(s) for s in self.suites))
+        witnessed = self.declared_by_suites()
         t7 = ([] if names else ['refines no scenario: it carries no `<section '
                                 'data-scenario data-refines="<Name>">`'])
         t7 += [f"refines `{n}`, which no suite's `# witnesses:` line declares"
@@ -598,6 +641,13 @@ def judge(after_kind, against, legacy_path):
     t2 = time.perf_counter()
     moved, touched = changed(against if after_kind == "commit" else "HEAD",
                              after_kind)
+    held = None if legacy_path is not None else listed(before.texts.get(LEGACY_HOME, ""))
+    allowed_before = allowed if held is None else held
+    list_read = (f"the list before read from {before.label}'s {LEGACY_HOME}, "
+                 f"{len(held)} entr(ies)" if held is not None else
+                 f"{source} stands for the list before too"
+                 + ("" if legacy_path is not None
+                    else f": {before.label} holds no {LEGACY_HOME} assigning one"))
 
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
           f"{len(after.suites)} suite(s), {len(after.htmls)} html form(s), "
@@ -632,7 +682,8 @@ def judge(after_kind, against, legacy_path):
                                           f"commit. Rewrite its `# witnesses:` "
                                           f"line"))
             continue
-        if was in allowed or k in allowed:   # a rename carries the licence
+        names = {was, k}                     # a rename carries the licence
+        if names & allowed and names & allowed_before:
             licensed.append(k)
         elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
@@ -645,11 +696,12 @@ def judge(after_kind, against, legacy_path):
             # request, where the same path is new and T1 has it already.
             licensed.append(k)
         else:
+            why = (f"names it only from this commit on, and a line licenses "
+                   f"nothing the list did not hold before" if names & allowed
+                   else "does not name it: the debt grew where nothing read it")
             findings.append(("T4", k, f"untied before this commit and untied "
                                       f"after it, and the allow-list ({source}) "
-                                      f"does not name it: the debt grew where "
-                                      f"nothing read it. Tie it, or list it on "
-                                      f"purpose"))
+                                      f"{why}. Tie it"))
     absent = 0
     for e in sorted(allowed):
         if e not in after.code:
@@ -700,11 +752,26 @@ def judge(after_kind, against, legacy_path):
         for w in lacks:
             findings.append(("T7", h, f"an html form is a scenario tied by name, "
                                       f"and this one {w}"))
+    if after.scenarios == before.scenarios:
+        # NO FEATURE, READ BY NAMES: the command list is what it was. Every
+        # scenario a suite declared must still be declared by some suite.
+        for n in sorted(before.witnessed() - after.witnessed()):
+            for s in before.suites:
+                if n in before.declared(s):
+                    findings.append(("T8", s, f"declared `{n}` before this commit "
+                                              f"and no suite declares it after, "
+                                              f"while {SNAPSHOT} lists the "
+                                              f"commands it did: a change that "
+                                              f"adds no feature keeps what is "
+                                              f"witnessed. Keep the declaration, "
+                                              f"or retire the scenario in the "
+                                              f"same commit"))
     for code, path, what in sorted(findings):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "
           f"path(s) untied and licensed by the allow-list ({source}, "
-          f"{len(allowed)} entr(ies), {absent} naming no code path here); "
+          f"{len(allowed)} entr(ies), {absent} naming no code path here; "
+          f"{list_read}); "
           f"{left} dead witness name(s) left where the change never opened "
           f"the suite, {kept} fault(s) left in html forms it never opened")
     return 1 if findings else 0

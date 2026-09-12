@@ -12,6 +12,11 @@ state.
 which is `development`'s; a labelled sub-issue takes the profile its kind's
 reference states.
 
+Under any profile, a change that writes no scenario of its own -- a stronger
+suite, a refactor -- has the scenario and the code path its tests witness and
+drive (`reusedStages`), and leaves every scenario witnessed (`keepDiscipline`;
+check-sdlc-tie.py's T8).
+
 ## Every session
 
 What a session of this campaign does that the `assuming-role` skill does not

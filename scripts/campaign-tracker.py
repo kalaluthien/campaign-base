@@ -963,7 +963,10 @@ def shape_findings(kind, title, body, want_plan, names=()):
 
 
 def issue_shape(repo, number):
-    """(title, body, labels, has a parent, why_unreadable)."""
+    """(title, body, labels, the parent's number or None, why_unreadable).
+    The number and not a bool, because `check` prints it: a sub-issue is
+    closed as a sub-issue OF its parent, and `campaign-close.py` reads which
+    one off that line rather than asking GitHub a second time."""
     text, why = gh_read(["gh", "issue", "view", str(number), "-R", repo,
                          "--json", "title,body,labels,parent"])
     if why:
@@ -974,7 +977,7 @@ def issue_shape(repo, number):
         return None, None, None, None, f"could not parse gh's output ({e})"
     names = [l.get("name") for l in data.get("labels") or []]
     return (data.get("title") or "", data.get("body") or "", names,
-            bool(data.get("parent")), None)
+            (data.get("parent") or {}).get("number"), None)
 
 
 def cmd_check(args):
@@ -991,7 +994,7 @@ def cmd_check(args):
     # that gets trusted for months while checking nothing.
     print(f"read {repo}#{number}: {kind}"
           f" (label `{CAMPAIGN_LABEL}`: {'yes' if CAMPAIGN_LABEL in names else 'no'},"
-          f" parent: {'yes' if parented else 'no'})")
+          f" parent: {'#' + str(parented) if parented else 'no'})")
     print(f"  title  {len(title)} chars (ceiling {TITLE_CEILING})")
     print(f"  body   {len(body)} chars (ceiling {BODY_CEILING})")
     print(f"  sections found: {', '.join(found) or '<none>'}")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Close one piece of a campaign, or the whole of it, behind the gates every close shares.
 
+    scripts/campaign-close.py [<target>] [--not-planned "<why>"] [--close] [--delete]
     scripts/campaign-close.py sub-issue <N> <issue> --not-planned "<why>"
     scripts/campaign-close.py worker <N> <pane>
     scripts/campaign-close.py repo <N> <owner/repo> [--delete]
@@ -50,6 +51,24 @@ halfway is run again, never resumed from memory.
 A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS -- every
 `campaign-claim release` does, and `sub-issue` and `campaign` both call it;
 a run says so once, beside its first release.
+
+THE FRONT DOOR -- `/close <target>` -- reads the scope off the one target and
+prints which it read and from where, then runs that scope as below. The five
+scopes stay callable by name; the front door only chooses among them.
+
+  a number        `campaign-tracker.py check <n>`'s kind line: a campaign
+                  issue is scope campaign; a sub-issue is scope sub-issue of
+                  the parent the line names, and halts without --not-planned.
+                  Any other kind refuses.
+  owner/repo      scope repo, of the campaign read as for no target.
+  a session name  one `herdr agent list` names: scope worker, of the campaign
+                  its name's slug names, on the pane herdr gives it.
+  no target       scope here, of the campaign whose directory this runs in
+                  (its `.campaign` marker), else the one this session's name
+                  names (`campaign-tracker.py issue <slug>`).
+  anything else   refuses, saying what it tried -- a scope's own name typed
+                  alone among them. A flag the scope read does not take
+                  refuses too, rather than being dropped.
 
 SCOPE sub-issue <N> <issue> --not-planned "<why>"
 
@@ -235,6 +254,8 @@ WHY = {
              "(HERDR_ENV=1), so it cannot act on somebody else's session",
     "exit": "a session leaves by fact, and the fact is its pane stopping",
     "gone": "a session still listed is asked, never killed",
+    "target": "the scope is read off the target, and a target read as nothing "
+              "closes nothing",
 }
 
 
@@ -995,7 +1016,157 @@ def campaign(args):
     step_delete(campaign_dir_shape(directory))
 
 
+# ------------------------------------------------------------- the front door
+
+
+SCOPES = ("sub-issue", "worker", "repo", "here", "campaign")
+NUMBER = re.compile(r"^#?(\d+)$")
+CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
+                        r"third kind) \(label `[^`]+`: (?:yes|no), parent: "
+                        r"(#\d+|no)\)", re.M)
+# The flags each scope takes. Any other one refuses: a flag dropped in silence
+# is an answer the person gave and nobody read.
+FLAGS = {"campaign": ("close", "delete"), "here": ("delete",),
+         "repo": ("delete",), "sub-issue": ("not_planned",), "worker": ()}
+
+
+def campaign_named(slug, whose):
+    n, err = word_of(TRACKER_SCRIPT, "issue", slug)
+    if not n.isdigit():
+        raise Refused("target", f"{whose} names slug {slug}, and "
+                                f"campaign-tracker issue {slug} answered "
+                                f"{n or err or '<nothing>'!r}")
+    return n
+
+
+def own_campaign():
+    """(N, where it was read): the campaign directory this runs in, by its
+    marker, else the campaign this session's herdr name names."""
+    guard = load(HERE / "check-campaign-claim.py", "guard")
+    here_dir = guard.campaign_dir_of(Path.cwd().resolve(),
+                                     base_root("target").resolve())
+    fields = guard.marker_fields(here_dir) if here_dir else None
+    if fields:
+        return fields[0], f"the marker {here_dir / '.campaign'}"
+    sid = os.environ.get(CLAIM.SESSION_ID_VAR)
+    sessions, why = CLAIM.herdr_sessions() if sid else (None, "no session id")
+    name = ((sessions or {}).get(sid) or {}).get("name")
+    slug = NAMES.campaign_of(name) if name else None
+    if slug is None:
+        raise Refused("target", f"no campaign directory holds {Path.cwd()}, "
+                                f"and this session has no campaign name "
+                                f"({why or name or 'no row'})")
+    return campaign_named(slug, f"this session's name {name}"), \
+        f"this session's name {name}"
+
+
+def front_door(args):
+    """The scope's own argv, read off the one target, with what was read and
+    from where printed first."""
+    t = (args.target or "").strip() or None
+    if t in SCOPES:
+        raise Refused("target", f"{t!r} is the name of a scope, not a target: "
+                                f"give it its arguments (`campaign-close.py "
+                                f"{t} ...`, see --help), or give /close a "
+                                f"target")
+    if t is None:
+        n, where = own_campaign()
+        scope, argv, how = "here", ["here", n], f"no target; #{n} from {where}"
+    elif num := NUMBER.match(t):
+        n = num.group(1)
+        text = script(TRACKER_SCRIPT, "check", n)
+        m = CHECK_LINE.search(text)
+        if m is None:
+            raise Refused("target", f"campaign-tracker check {n} printed no kind "
+                                    f"line: {(text.strip().splitlines() or ['<nothing>'])[0][:160]}")
+        if m.group(1) != n:
+            raise Refused("target", f"campaign-tracker check {n} answered for "
+                                    f"#{m.group(1)}")
+        kind, parent = m.group(2), m.group(3)
+        if kind == "campaign issue":
+            scope, argv = "campaign", ["campaign", n]
+        elif kind == "sub-issue":
+            scope, argv = "sub-issue", ["sub-issue", parent.lstrip("#"), n]
+        else:
+            raise Refused("target", f"#{n} reads as a {kind} (campaign-tracker "
+                                    f"check), neither a campaign issue nor a "
+                                    f"sub-issue")
+        how = (f"#{n} is a {kind}" + (f" of {parent}" if kind == "sub-issue"
+                                      else "") + ", by campaign-tracker check")
+    elif "/" in t:
+        repo = REPOS.slug(t)
+        if repo is None:
+            raise Refused("target", f"{t!r} has a slash and names no owner/repo")
+        n, where = own_campaign()
+        scope, argv = "repo", ["repo", n, repo]
+        how = f"{repo} is an owner/repo name; #{n} from {where}"
+    else:
+        sessions, why = CLAIM.herdr_sessions()
+        if sessions is None:
+            raise Refused("target", f"{t!r} is not a number or owner/repo, and "
+                                    f"herdr agent list did not read: {why}")
+        panes = [r["pane"] for r in sessions.values() if r["name"] == t]
+        if len(panes) != 1:
+            raise Refused("target", f"{t!r} is not a number, not owner/repo, and "
+                                    f"{len(panes)} of the {len(sessions)} "
+                                    f"sessions herdr lists carry that name")
+        slug = NAMES.campaign_of(t)
+        if slug is None:
+            raise Refused("target", f"session {t} carries no campaign name")
+        n = campaign_named(slug, f"session {t}")
+        scope, argv = "worker", ["worker", n, panes[0]]
+        how = f"{t} is a session herdr lists, pane {panes[0]}, of #{n}"
+    extra = [f for f in ("close", "delete", "not_planned")
+             if getattr(args, f) and f not in FLAGS[scope]]
+    if extra:
+        raise Refused("target", f"read as scope {scope} ({how}), which does not "
+                                f"take --{extra[0].replace('_', '-')}")
+    print(f"{'target':<11} read as scope {scope} -- {how}")
+    if scope == "sub-issue":
+        if not args.not_planned:
+            raise Halt(f"#{n} is a sub-issue; dropping it not planned is the "
+                       f"person's disposition", '--not-planned "<why>"')
+        argv += ["--not-planned", args.not_planned]
+    return argv + ["--close"] * bool(args.close) + ["--delete"] * bool(args.delete)
+
+
+def front_parser():
+    ap = argparse.ArgumentParser(
+        prog="campaign-close.py", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("target", nargs="?",
+                    help="an issue number, a session name, owner/repo, or none")
+    ap.add_argument("--not-planned", metavar="WHY")
+    ap.add_argument("--close", action="store_true")
+    ap.add_argument("--delete", action="store_true")
+    return ap
+
+
+def answered(fn):
+    """Run one step of the close, printing a refusal or a halt the one way."""
+    try:
+        return 0, fn()
+    except Refused as r:
+        print(f"REFUSE {r.gate}: {r.reason}")
+        print(f"  why: {WHY[r.gate]}")
+        print(f"  {r.changed}")
+        return 1, None
+    except Halt as h:
+        print(f"HALT: {h.question}"
+              + (f" -- re-run with {h.flag} once they say so" if h.flag else ""))
+        return 3, None
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    # A SCOPE'S NAME ALONE IS NOT THE SCOPE'S FORM, which takes arguments, so it
+    # goes to the front door and is refused there in the REFUSE vocabulary,
+    # rather than dying in argparse outside it.
+    if not argv or argv[0] not in SCOPES + ("-h", "--help") or (
+            argv[0] in SCOPES and len(argv) == 1):
+        code, argv = answered(lambda: front_door(front_parser().parse_args(argv)))
+        if code:
+            return code
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="scope", required=True)
@@ -1037,18 +1208,7 @@ def main(argv=None):
                    help="the person's word to delete the directory")
     c.set_defaults(fn=campaign)
     args = ap.parse_args(argv)
-    try:
-        args.fn(args)
-    except Refused as r:
-        print(f"REFUSE {r.gate}: {r.reason}")
-        print(f"  why: {WHY[r.gate]}")
-        print(f"  {r.changed}")
-        return 1
-    except Halt as h:
-        print(f"HALT: {h.question}"
-              + (f" -- re-run with {h.flag} once they say so" if h.flag else ""))
-        return 3
-    return 0
+    return answered(lambda: args.fn(args))[0]
 
 
 if __name__ == "__main__":

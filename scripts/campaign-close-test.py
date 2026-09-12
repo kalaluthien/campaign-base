@@ -132,6 +132,13 @@ README_DROPPED = "## Intent\n\n- new\n\n## Repos\n\n- none\n"
 TMP = []
 
 
+def check_line(kind, parent="no", n=ISSUE):
+    """`campaign-tracker.py check`'s first line, as it prints it."""
+    label = "yes" if kind == "campaign issue" else "no"
+    return (f"read {TRACKER}#{n}: {kind} (label `campaign`: {label}, parent: "
+            f"{parent})\n  title  9 chars (ceiling 40)\n")
+
+
 def settlement_all(rows=((f"{TRACKER}#{ISSUE}", "complete"),), state="OPEN"):
     out = [f"campaign issue {TRACKER}#{N}  [{state}]  Title",
            f"  -- claims: #{N} is `{SLUG}`"]
@@ -182,7 +189,8 @@ def world(**over):
          "bound": "here\n", "standing": "not-standing\n",
          "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
          "origin": MEMBER, "lands": {},
-         "root": "/c", "released": {}}
+         "root": "/c", "released": {}, "issue": "none\n",
+         "check": ""}
     w.update(over)
     return w
 
@@ -261,10 +269,18 @@ def drive(m, argv, w):
                                                   "HERDR_ENV")}
     os.environ.update(w["env"])
     buf = io.StringIO()
+    was = os.getcwd()
+    os.chdir(w.get("cwd") or tempfile.gettempdir())
     try:
-        with contextlib.redirect_stdout(buf):
-            code = m.main(argv)
+        # argparse exits on an argv it refuses; its status is the reading,
+        # so a case asserts on it rather than the run ending.
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            try:
+                code = m.main(argv)
+            except SystemExit as e:
+                code = e.code
     finally:
+        os.chdir(was)
         for k, v in saved.items():
             os.environ.pop(k, None)
             if v is not None:
@@ -678,6 +694,74 @@ def case_nested_campaign_dir(m):
     return ok and w["dir"].exists(), out
 
 
+# ------------------------------------------------------------- the front door
+
+
+def whole_padded(m):
+    w = whole(check=check_line("campaign issue", n=N))
+    code, out, asked, _ = drive(m, [f" {N} "], w)
+    return code == 3 and "read as scope campaign -- #10 is a campaign issue" in out, out
+
+
+def case_front_campaign(m):
+    w = whole(check=check_line("campaign issue", n=N))
+    code, out, asked, _ = drive(m, [N], w)
+    return (code == 3 and "read as scope campaign -- #10 is a campaign issue, "
+            "by campaign-tracker check" in out and "re-run with --close" in out), out
+
+
+def case_front_sub_issue(m):
+    w = world(check=check_line("sub-issue", parent=f"#{N}"))
+    code, out, asked, _ = drive(m, [ISSUE, "--not-planned", "superseded"], w)
+    rel = releases(asked)
+    return (code == 0 and f"read as scope sub-issue -- #{ISSUE} is a sub-issue "
+            f"of #{N}" in out and len(closes(asked)) == 1
+            and rel and rel[0][3:5] == [N, ISSUE]), out
+
+
+def case_front_sub_issue_halts(m):
+    w = world(check=check_line("sub-issue", parent=f"#{N}"))
+    code, out, asked, _ = drive(m, [ISSUE], w)
+    return (code == 3 and 're-run with --not-planned "<why>"' in out
+            and not closes(asked)), out
+
+
+def case_front_repo(m):
+    w = dropped()
+    w["cwd"] = str(w["dir"] / "scripts")
+    code, out, asked, _ = drive(m, [MEMBER], w)
+    return (code == 3 and f"read as scope repo -- {MEMBER} is an owner/repo name; "
+            f"#{N} from the marker" in out and "re-run with --delete" in out), out
+
+
+def case_front_worker(m):
+    # The first herdr reading is the front door's lookup, the second the
+    # wait after the /exit.
+    listed = {"S9": dict(ROW, name="rc-worker-2", pane=PANE)}
+    w = world(issue=f"{N}\n", polls=[(listed, None), ({}, None)])
+    code, out, asked, _ = drive(m, ["rc-worker-2"], w)
+    hb = [a for a in asked if a[0] == sys.executable
+          and Path(a[1]).name == "campaign-heartbeat.py"]
+    return (code == 0 and f"read as scope worker -- rc-worker-2 is a session "
+            f"herdr lists, pane {PANE}, of #{N}" in out and hb and hb[0][2:] == [N]
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
+
+
+def case_front_here_marker(m):
+    w = whole(bound="unbound\n")
+    w["cwd"] = str(w["dir"] / "scripts")
+    code, out, asked, _ = drive(m, [], w)
+    return (code == 3 and "read as scope here -- no target; #10 from the marker"
+            in out and "re-run with --delete" in out), out
+
+
+def case_front_here_session(m):
+    w = whole(bound="unbound\n", issue=f"{N}\n")
+    code, out, asked, _ = drive(m, [], w)
+    return (code == 3 and "no target; #10 from this session's name rc-planner-1"
+            in out), out
+
+
 CASES = {
     # allows
     "drop: an open sub-issue with a vacant claim and nobody listed is closed "
@@ -834,6 +918,57 @@ CASES = {
         case_directory_gets_the_base,
     "release: the compaction is said once, beside the first release":
         case_compact_said_once,
+    "front: a campaign issue number reads as scope campaign": case_front_campaign,
+    "front: a sub-issue number reads as scope sub-issue of its parent":
+        case_front_sub_issue,
+    "front: a sub-issue without --not-planned halts for the disposition":
+        case_front_sub_issue_halts,
+    "front: owner/repo reads as scope repo of the directory's campaign":
+        case_front_repo,
+    "front: a session herdr lists reads as scope worker on its pane":
+        case_front_worker,
+    "front: no target in a campaign directory reads as scope here by its marker":
+        case_front_here_marker,
+    "front: no target elsewhere reads as scope here by the session's name":
+        case_front_here_session,
+    "refuse front: a scope's name alone is not a target": refusal(
+        "target", "'here' is the name of a scope, not a target", argv=["here"]),
+    "refuse front: digits with more after them are not a number": refusal(
+        "target", "'32x' is not a number", argv=["32x"]),
+    "refuse front: check answering for another number": refusal(
+        "target", "campaign-tracker check 7 answered for #8", argv=["7"],
+        check=check_line("campaign issue", n="8")),
+    "front: a padded number is read as the number": whole_padded,
+    "refuse front: a number of the third kind": refusal(
+        "target", "reads as a third kind", argv=["7"],
+        check=check_line("third kind", n="7")),
+    "refuse front: a number check could not read": refusal(
+        "target", "printed no kind line", argv=["7"],
+        check="campaign-tracker check: could not read kalaluthien/campaign-base#7\n"),
+    "refuse front: a slash that names no repository": refusal(
+        "target", "names no owner/repo", argv=["a/b/c"]),
+    "refuse front: a word no session carries": refusal(
+        "target", "0 of the 1 sessions herdr lists carry that name",
+        argv=["rc-worker-9"]),
+    "refuse front: a name two sessions carry": refusal(
+        "target", "2 of the 2 sessions herdr lists carry that name",
+        argv=["rc-worker-2"], sessions={
+            "S8": dict(ROW, name="rc-worker-2", pane="w1:p8"),
+            "S9": dict(ROW, name="rc-worker-2", pane="w1:p9")}),
+    "refuse front: a session whose name carries no campaign": refusal(
+        "target", "session plain carries no campaign name", argv=["plain"],
+        sessions={"S9": dict(ROW, name="plain", pane=PANE)}),
+    "refuse front: herdr did not answer the lookup": refusal(
+        "target", "herdr agent list did not read: herdr is down", argv=["plain"],
+        polls=[(None, "herdr is down")]),
+    "refuse front: a session whose slug names no campaign": refusal(
+        "target", "campaign-tracker issue rc answered 'none'", argv=["rc-worker-2"],
+        sessions={"S9": dict(ROW, name="rc-worker-2", pane=PANE)}, issue="none\n"),
+    "refuse front: no target, no campaign directory, no campaign name": refusal(
+        "target", "no campaign directory holds", argv=[], env={}),
+    "refuse front: a flag the scope does not take": whole_refusal(
+        "target", "which does not take --not-planned",
+        argv=[N, "--not-planned", "x"], check=check_line("campaign issue", n=N)),
     "refuse: a release that printed neither word did not release": refusal(
         "release", "printed neither", release=f"releasing rc/{ISSUE}-drop\n",
         acted=True),
@@ -1080,6 +1215,44 @@ MUTATIONS = [
     ("release reads live again", "step_release_all(n, read_live(n, slug),",
      "step_release_all(n, reading,",
      "campaign: the release reads live again after the writes"),
+    ("front: campaign kind", 'if kind == "campaign issue":', "if False:",
+     "front: a campaign issue number reads as scope campaign"),
+    ("front: sub-issue kind", 'elif kind == "sub-issue":', "elif False:",
+     "front: a sub-issue number reads as scope sub-issue of its parent"),
+    ("front: of its parent", '["sub-issue", parent.lstrip("#"), n]',
+     '["sub-issue", n, n]',
+     "front: a sub-issue number reads as scope sub-issue of its parent"),
+    ("front: a slash is a repository", 'elif "/" in t:', "elif False:",
+     "front: owner/repo reads as scope repo of the directory's campaign"),
+    ("front: one session by that name", "if len(panes) != 1:", "if not panes:",
+     "refuse front: a name two sessions carry"),
+    ("front: the slug names a campaign", "if not n.isdigit():", "if False:",
+     "refuse front: a session whose slug names no campaign"),
+    ("front: the marker first", "if fields:\n        return fields[0]",
+     "if False:\n        return fields[0]",
+     "front: no target in a campaign directory reads as scope here by its marker"),
+    ("front: the session's name second",
+     'if slug is None:\n        raise Refused("target", f"no campaign directory',
+     'if False:\n        raise Refused("target", f"no campaign directory',
+     "refuse front: no target, no campaign directory, no campaign name"),
+    ("front: a session of no campaign",
+     'if slug is None:\n            raise Refused("target", f"session {t} carries',
+     'if False:\n            raise Refused("target", f"session {t} carries',
+     "refuse front: a session whose name carries no campaign"),
+    ("front: a scope's name alone reaches the front door",
+     "or (\n            argv[0] in SCOPES and len(argv) == 1)", "or (False)",
+     "refuse front: a scope's name alone is not a target"),
+    ("front: a scope's name alone refuses", "    if t in SCOPES:\n", "    if False:\n",
+     "refuse front: a scope's name alone is not a target"),
+    ("front: the number is the whole target", 'NUMBER = re.compile(r"^#?(\\d+)$")',
+     'NUMBER = re.compile(r"^#?(\\d+)")',
+     "refuse front: digits with more after them are not a number"),
+    ("front: the target is stripped", 't = (args.target or "").strip() or None',
+     "t = args.target", "front: a padded number is read as the number"),
+    ("front: check answers for that number", "if m.group(1) != n:", "if False:",
+     "refuse front: check answering for another number"),
+    ("front: an unread flag refuses", "if extra:", "if False:",
+     "refuse front: a flag the scope does not take"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

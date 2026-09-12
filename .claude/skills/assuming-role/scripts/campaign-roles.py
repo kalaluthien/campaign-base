@@ -104,7 +104,7 @@ ROLES = {
         # licence exists to buy. What is wrong is the ROUTE, not the plane:
         # `campaign-claim take` reads the binding, the sub-issue's real parent,
         # and the campaign issue's `## Repos` -- `claimWithinScope` in
-        # spec/campaign/orchestration/scenarios.als -- and `gh issue develop`
+        # spec/campaign/orchestration/checks.als -- and `gh issue develop`
         # reads none of the three and cuts the ref anyway. Refusing it leaves
         # ONE route to a claim, which is the only condition under which that
         # model rule has a reader at all.

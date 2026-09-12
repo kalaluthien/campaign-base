@@ -4,7 +4,7 @@
     check-campaign-claim.py    PreToolUse, reading the hook payload on stdin
 
 The pre-tool-use half of the claim gate; scripts/check-commit-claim.py is the
-commit half (spec/campaign/orchestration/scenarios.als, `claimBeforeWork` and
+commit half (spec/campaign/orchestration/checks.als, `claimBeforeWork` and
 `claimBeforeCommit`). A claim is a `<slug>/<issue>-<topic>` branch whose
 ref exists on the remote, and nothing on disk (#176).
 
@@ -2573,8 +2573,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # machine sat on a claim for #9 -- and the planner's own
         # `campaign-claim take` before a delegate launch creates exactly that
         # state. A licence removal that leaves the write allowed is not a
-        # removal, and the sentence in scenarios.als saying so was false. Found
-        # by the review of 48dd5fc.
+        # removal.
         #
         # IT CARRIES `how` AND `read_on` OUT WITH IT, which the first cut of
         # the return dropped: a refusal on `gh pr merge 5 && gh issue develop 9`

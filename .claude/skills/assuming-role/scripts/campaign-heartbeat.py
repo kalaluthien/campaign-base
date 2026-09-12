@@ -16,11 +16,19 @@ verdict first, then what it read and from where:
     retire   a worker, idle, whose last release was followed by a compaction,
              holding no claim it cut, with no prompt since the release and no
              tool call since the compaction, so it holds nothing: `/exit`
+    quiet    the own pane, when the campaign has nothing left to do: `/compact`,
+             never `/exit`, since a campaign always has a planner. Quiet is
+             three readings, each made this run: no session of the campaign
+             listed but the own pane (herdr), no open sub-issue without
+             `backlog` (the index, as `drift unclaimed` reads it), no claim
+             ref standing (the refs). One not made is not quiet, and the own
+             pane is judged as any other.
     keep     anything else -- working, blocked, small, and every reading that
              could not be made. It never acts.
 
-Then one line per action: `sent`, `would send` (no --apply) or `could not
-send`. Without --apply nothing is sent and no wake is scheduled.
+A line after the header says whether the campaign is quiet and what the three
+readings were. Then one line per action: `sent`, `would send` (no --apply) or
+`could not send`. Without --apply nothing is sent and no wake is scheduled.
 
     exit 0   the sessions were listed and every action asked for was sent
     exit 1   the slug or the listing could not be read, or an action failed
@@ -63,13 +71,18 @@ compaction.
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
 
---watch IS THE PLANNER'S WAKE: it polls every S seconds (60) until killed and
-prints only what changed, so a Monitor over it wakes the planner on an event,
-and the planner runs this with --apply. Keyed by N and its slug, which the
-planner holds at launch; a pull request that appears later is one more line.
-Each poll builds a snapshot and prints `+ line` for a line that appeared and
-`- line` for one that went; a drift still standing after 30m reprints as
-`= line`. The first poll prints `watching <slug>` and every drift and limit.
+--watch IS THE PLANNER'S WAKE: it polls every S seconds (60) until killed or
+quiet and prints only what changed, so a Monitor over it wakes the planner on
+an event, and the planner runs this with --apply. Keyed by N and its slug,
+which the planner holds at launch; a pull request that appears later is one
+more line. Each poll builds a snapshot and prints `+ line` for a line that
+appeared and `- line` for one that went; a drift still standing after 30m
+reprints as `= line`. The first poll prints `watching <slug>` and every drift
+and limit.
+
+A QUIET CAMPAIGN ENDS THE WATCH: two polls running whose sessions, claims and
+sub-issues were each read THAT poll -- a last reading standing is not one --
+and read quiet print `quiet <slug>: <the three readings>` and exit 0.
 
   session <name> <status>   herdr, counted after two equal polls, since herdr
                             calls a mid-turn pause idle; the own pane has none
@@ -386,6 +399,35 @@ IDLE_AFTER = 10 * 60
 REPRINT_AFTER = 30 * 60
 UNREAD_POLLS = 3       # a source failing this many polls running prints `error`
 POLL_CEILING = 300     # one poll past this exits 1, so a hung watch is loud
+# Quiet polls running before the watch ends: an index or refs read that
+# succeeds empty on a `gh` hiccup is one poll, and the exit is for good.
+QUIET_POLLS = 2
+
+
+def workable(issues):
+    """The open sub-issues without `backlog`, over the index as
+    {n: (state, backlog)}: what `drift unclaimed` and `quiet` both ask."""
+    return sorted(n for n, (state, backlog) in issues.items()
+                  if state == "open" and not backlog)
+
+
+def quiet_reading(own, panes, claims, issues):
+    """(quiet, what was read). Pure. Each reading is (value, why) as the
+    watch takes it -- the panes of the campaign's listed sessions, its claim
+    refs, its sub-issue index -- and one not made is not quiet, and says why.
+    Quiet is no pane but `own`, no workable sub-issue, and no claim."""
+    unread = [f"{name} not read: {why}" for name, (_, why) in (
+        ("herdr", panes), ("the refs", claims), ("the index", issues))
+        if why is not None]
+    if unread:
+        return False, "; ".join(unread)
+    panes, claims, issues = panes[0], claims[0], issues[0]
+    others = [p for p in panes if p != own]
+    todo = workable(issues)
+    return not (others or todo or claims), (
+        f"herdr {len(panes)} session(s), {len(others)} but the own pane; "
+        f"the index {len(issues)} sub-issue(s), {len(todo)} open without "
+        f"backlog; the refs {len(claims)} claim(s)")
 
 
 class Watch:
@@ -402,6 +444,8 @@ class Watch:
         self.moved = {}      # claim -> (its pull request as last read, since)
         self.shown = None    # the last snapshot; None before the first poll
         self.printed = {}    # drift line -> when it was last printed
+        self.calm_polls = 0  # polls running that read quiet
+        self.quiet = None    # the `quiet` line, once QUIET_POLLS read it
 
     def poll(self, readings, now):
         out = []
@@ -423,6 +467,14 @@ class Watch:
                     self.fails.pop(gone, None)
             if source == "sessions":
                 self.settle(value)
+        # Quiet reads this poll's readings, never a last one standing.
+        fresh = {s: readings.get(s, (None, "not read this poll"))
+                 for s in ("sessions", "claims", "issues")}
+        sessions, why = fresh["sessions"]
+        calm, what = quiet_reading(
+            self.own, (None, why) if why is not None else
+            ([s["pane"] for s in sessions.values()], None),
+            fresh["claims"], fresh["issues"])
         lines = self.snapshot(now)
         if self.shown is None:
             out.insert(0, f"watching {self.slug}: {len(lines)} line(s)")
@@ -440,8 +492,12 @@ class Watch:
             if ln.startswith("drift "):
                 self.printed[ln] = now
         self.shown = lines
+        self.calm_polls = self.calm_polls + 1 if calm else 0
+        ends = self.calm_polls >= QUIET_POLLS
+        if ends:
+            self.quiet = f"quiet {self.slug}: {what}"
         return (out + [f"- {ln}" for ln in removed] + [f"+ {ln}" for ln in added]
-                + [f"= {ln}" for ln in reprint])
+                + [f"= {ln}" for ln in reprint] + ([self.quiet] if ends else []))
 
     def settle(self, sessions):
         """A status counts only after two equal polls: herdr calls a mid-turn
@@ -495,8 +551,8 @@ class Watch:
         read = set(self.last)
         claimed = set(claims.values())
         if {"claims", "issues"} <= read:
-            for n, (state, backlog) in issues.items():
-                if state == "open" and not backlog and n not in claimed:
+            for n in workable(issues):
+                if n not in claimed:
                     out.add(f"drift unclaimed {self.slug}#{n}")
             for b, n in claims.items():
                 if issues.get(n, ("open",))[0] == "closed":
@@ -525,8 +581,8 @@ class PollOverrun(BaseException):
 
 
 def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
-    """Poll until killed, or `polls` times; exit 1 when one poll runs past
-    POLL_CEILING. `read` returns the readings `Watch.poll` takes."""
+    """Poll until killed, quiet, or `polls` times; exit 1 when one poll runs
+    past POLL_CEILING. `read` returns the readings `Watch.poll` takes."""
     import signal
     import time
     clock, sleep = clock or time.time, sleep or time.sleep
@@ -545,6 +601,8 @@ def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
                 signal.alarm(0)
             if out:
                 print("\n".join(out), flush=True)
+            if watch.quiet:
+                return 0
             done += 1
             if polls is None or done < polls:
                 sleep(every)
@@ -558,7 +616,7 @@ def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
 # --------------------------------------------------------- the shell
 
 
-ACTIONS = {"compact": "/compact", "retire": "/exit"}
+ACTIONS = {"compact": "/compact", "retire": "/exit", "quiet": "/compact"}
 
 
 def slug_of(issue):
@@ -630,8 +688,8 @@ def read_all(readers):
     return out
 
 
-def watch_reader(issue, slug, own, claim, names, cache):
-    """The shell half of the watch: a function returning every source's
+def watch_readers(issue, slug, own, claim, names, cache):
+    """The shell half of the watch: one function per source returning its
     reading as (value, why), through the readers the heartbeat and
     campaign-claim already own. `## Repos` is read each poll with the
     claims, so a failed read is that source's why and a scope change shows."""
@@ -711,8 +769,14 @@ def watch_reader(issue, slug, own, claim, names, cache):
         return install_readings(rows, installed.read_install,
                                 installed.readable), None
 
-    readers = {"sessions": sessions, "claims": claims, "issues": issues,
-               "prs": prs, "installs": installs}
+    return {"sessions": sessions, "claims": claims, "issues": issues,
+            "prs": prs, "installs": installs}
+
+
+def watch_reader(issue, slug, own, claim, names, cache):
+    """A function returning every source's reading as `Watch.poll` takes it,
+    each install a source of its own."""
+    readers = watch_readers(issue, slug, own, claim, names, cache)
 
     def read():
         out = read_all(readers)
@@ -759,6 +823,11 @@ def main(argv=None):
                    if names.campaign_of(row["name"]) == slug))
     print(f"read {len(sessions)} session(s) from herdr agent list; "
           f"{len(ours)} of {slug} (#{issue}); own pane {own or 'unknown'}")
+    got = read_all({s: fn for s, fn in watch_readers(
+        issue, slug, own, claim, names, {}).items() if s in ("claims", "issues")})
+    calm, what = quiet_reading(own, ([p for p, _, _ in ours], None),
+                               got["claims"], got["issues"])
+    print(f"{'quiet' if calm else 'not quiet'} {slug}: {what}")
 
     todo = []
     for pane, sid, row in ours:
@@ -772,6 +841,8 @@ def main(argv=None):
                                               f"{claim.CLAIMED} {slug}/")
         word, reason = verdict(role, is_own, assign.idle_verdict(row),
                                banner, reading if reading else why)
+        if is_own and calm:
+            word, reason = "quiet", f"{slug} has nothing left to do"
         print(f"{word} {pane} {row['name']}: {reason}")
         print(f"  read: herdr {row['status']}; transcript {where}"
               + ("; own pane, banner not read" if is_own

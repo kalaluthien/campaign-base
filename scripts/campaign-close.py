@@ -38,9 +38,10 @@ THE GATES, and why each exists (printed beside every refusal)
   installed    `campaign-installed.py check <README>`. A merge that has not
                reached its install is a merge nobody installed.
   retire       `campaign-heartbeat.py <N>` without --apply, one pane's line.
-               Only a worker the heartbeat reads as released, compacted and
-               idle since holds nothing an `/exit` could lose; that reading is
-               the heartbeat's, and nothing here restates it.
+               Only a worker the heartbeat reads as done -- its assigned
+               sub-issue's ref gone, idle since -- holds nothing an `/exit`
+               could lose; that reading is the heartbeat's, and nothing here
+               restates it.
 
 THE PERSON'S ANSWERS are flags, and a run without one halts before the write
 it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
@@ -248,8 +249,9 @@ WHY = {
     "close": "a close is a GitHub fact or it is nothing",
     "release": "a claim ref is residue only once it is deleted",
     "delete": "the delete is the one step nothing recovers",
-    "retire": "only a worker the heartbeat reads as released, compacted and "
-              "idle since holds nothing an /exit could lose",
+    "retire": "only a worker the heartbeat reads as done, its assigned "
+              "sub-issue's ref gone and idle since, holds nothing an /exit "
+              "could lose",
     "herdr": "a herdr command that drives a pane runs only inside herdr "
              "(HERDR_ENV=1), so it cannot act on somebody else's session",
     "exit": "a session leaves by fact, and the fact is its pane stopping",

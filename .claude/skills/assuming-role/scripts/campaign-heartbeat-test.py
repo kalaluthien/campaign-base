@@ -380,6 +380,12 @@ def _(m):
     return v[0] == "keep" and "a tool call at" in v[1], v
 
 
+@case("a tool call at the very instant the ref went is not retired")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)), gone(3))
+    return v[0] == "keep" and "a tool call at" in v[1], v
+
+
 @case("no deletion read, or the refs unread, is not retired")
 def _(m):
     a = m.verdict("worker", False, IDLE, NONE, DONE, gone(None))
@@ -1277,10 +1283,12 @@ MUTATIONS = [
      "a prompt after the ref went is not retired"),
     ("no tool call after the ref went", '("tool call", reading["acted"])', '("tool call", None)',
      "a tool call after the ref went is not retired, though in the same second"),
-    ("only what came after the ref went", "if went and ts and when(ts) > when(went)]",
+    ("only what came after the ref went", "if went and ts and when(ts) >= when(went)]",
      "if went and ts]", "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
-    ("times, not strings", "if went and ts and when(ts) > when(went)]",
-     "if went and ts and ts > went]", "a tool call after the ref went is not retired, though in the same second"),
+    ("times, not strings", "if went and ts and when(ts) >= when(went)]",
+     "if went and ts and ts >= went]", "a tool call after the ref went is not retired, though in the same second"),
+    ("a tie is after the delete", "if went and ts and when(ts) >= when(went)]",
+     "if went and ts and when(ts) > when(went)]", "a tool call at the very instant the ref went is not retired"),
     ("no assignment, no retire", '    if n is None:\n        return None, (f"no assignment prompt',
      '    if False:\n        return None, (f"no assignment prompt', "no assignment prompt is not retired"),
     ("a ref standing, no retire", "    if standing:\n        return None, f\"assigned #{n}; {', '.join(standing)}",

@@ -31,7 +31,9 @@ Contents: the moments below, then
 8. **Retire agents as the campaign runs.** The heartbeat retires an idle
    worker whose last assigned sub-issue has no claim ref left, with no prompt
    and no tool call since the ref went, whoever released it; any other
-   listed peer is asked which claim it holds, never killed.
+   listed peer is asked which claim it holds, never killed. `retire` is
+   decided before `compact`, so assign a released worker you mean to reuse
+   before the next `--apply`, or it gets `/exit`.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.

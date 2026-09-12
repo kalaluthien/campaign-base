@@ -397,9 +397,11 @@ def verdict(role, own, idle, banner, reading, refs):
         not own and banner_word(banner) == "passed") else ""
     if role == "worker" and not own:
         went, why = ref_went(reading, refs)
+        # AT the delete counts as after it: GitHub gives the second, so a tie
+        # is a call that may have come later, and it errs to `keep`.
         since = [f"a {what} at {ts}" for what, ts in (
             ("prompt", reading["prompted"]), ("tool call", reading["acted"]))
-            if went and ts and when(ts) > when(went)]
+            if went and ts and when(ts) >= when(went)]
         if went and not since:
             return "retire", (f"{why}; no prompt and no tool call since"
                               f"{passed}")

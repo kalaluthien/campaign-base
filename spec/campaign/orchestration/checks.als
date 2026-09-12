@@ -481,8 +481,9 @@ pred L1b_PromptAfterTheResetIsAnswered {
    sub-issue was released, by any session, and which holds nothing is sent
    `/exit`; one holding a claim or a live agent, one with no sub-issue
    released, and a planner are not. The first is reachable; the second is
-   UNSAT, and dropping any one guard of `sessionExit` or `exitSession` makes
-   it SAT. */
+   UNSAT, and dropping any one of the four guards on `s` -- its role, its
+   claims, a released sub-issue, its live agents -- makes it SAT
+   (`no Target.agent` is a frame, and dropping it leaves this UNSAT). */
 pred H1_HeartbeatRetiresADoneWorker {
   some s: Session | eventually (Now.event = Release and Who.session = s
                      and eventually (Now.event = SessionExit and Who.session = s))

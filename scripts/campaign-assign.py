@@ -181,16 +181,18 @@ def main():
     ap.add_argument("issue")
     ap.add_argument("--repo", default=DEFAULT_REPO)
     # TWO DOORS, NOT ONE, because the states behind them are not alike.
-    # `--assume-fresh` covers what an honest reading CANNOT REACH: no release
-    # in the transcript, or a transcript that would not read. `--force` covers
-    # what it read and found wanting.
+    # `--assume-fresh` covers what an honest reading CANNOT REACH: no time the
+    # last sub-issue's claim went, or a transcript that would not read.
+    # `--force` covers what it read and found wanting.
     ap.add_argument("--assume-fresh", action="store_true",
-                    help="assign a pane whose release this did not see, or "
-                         "could not read for. Does NOT waive a pane that was "
-                         "read and has not compacted.")
+                    help="assign a pane for which no time its last "
+                         "sub-issue's claim went was read, or whose transcript "
+                         "could not be. Does NOT waive a pane that was read "
+                         "and has not compacted.")
     ap.add_argument("--force", action="store_true",
                     help="assign a pane that was READ and has not compacted "
-                         "since its last release. Implies --assume-fresh.")
+                         "since its last sub-issue's claim went. Implies "
+                         "--assume-fresh.")
     args = ap.parse_args()
     # AGENTS.md types a sub-issue as `#N`, so the hash is what a caller
     # copying from an issue or a listing will type. Stripped here, or the

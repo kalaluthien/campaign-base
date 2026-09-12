@@ -95,6 +95,10 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       wherever its path is, save a line moved with the file it names: the list
       only shrinks (`licenceNeverGrows`, `DebtNeverGrows_Bites`), so a line
       licenses only a path the list held before the commit as well as after.
+      And it refuses a line the commit DROPS whose path is untied after it,
+      touched or not: the line leaves with the tie, since a path off the list
+      must be tied after every commit (`everyCodeHasScenario`), and unscoped
+      this is no wall -- a fixture's list is a copy nothing edits.
   T5  an allow-list entry whose code path is TIED now. The licence is spent and
       the line comes out in the same commit. An entry naming no code path here
       is counted in the reading instead of refused: the path may have been
@@ -754,6 +758,11 @@ def judge(after_kind, against, legacy_path):
                                       f"commit, since a later one would be a "
                                       f"line the list gains. Move it to {k}, or "
                                       f"tie it"))
+        elif was in allowed_before:              # its line dropped, still untied
+            findings.append(("T4", k, f"untied, and the allow-list ({source}) "
+                                      f"loses its line in this commit: a line "
+                                      f"leaves with the tie, in the same commit. "
+                                      f"Tie it, or keep the line"))
         elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
             # that the change never opened is not this change's debt, and every

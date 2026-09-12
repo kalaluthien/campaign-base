@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: Q12b_RebriefedSessionActs
 """Cases for campaign-role-brief.py, run against a fake `herdr` on PATH.
 
 The subject lives under the skill it briefs (#227); this suite stays here,

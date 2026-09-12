@@ -336,26 +336,40 @@ def own_list(tree):
 # path is TIED now -- a line naming no code path here is a count in the reading,
 # because from inside a fixture tree that is indistinguishable from the list
 # being about another repository.
+#
+# Each line left says why its path does not tie (sdlc-alloy#250): the model
+# holds no scenario its suite drives, or no suite carries its stem. Neither is
+# a declaration's to fix -- a `# witnesses:` line naming a scenario the suite
+# does not drive is the forgery the declaration exists to prevent -- so a line
+# goes when the model gains the scenario or the path gains a suite.
 LEGACY = (
+    # The model leaves the session name unmodelled on purpose
+    # (spec/campaign/session/system.als), so there is no scenario to drive.
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
-    ".claude/skills/assuming-role/scripts/campaign-role-brief.py",
+    # No suite of its stem; check-campaign-claim-test.py drives its table.
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
-    ".claude/skills/opening-campaign/scripts/acquire-repo.sh",
-    "scripts/campaign-installed.py",
+    # The model's `LocalOnly` is read by the handoff rules, not by this reading.
     "scripts/campaign-local-work.py",
+    # No model rule: what is installed and declared on this machine.
     "scripts/campaign-primitives.py",
-    "scripts/campaign-repos.py",
+    # Test tooling: a mutation runner over campaign-token-tally-test.py.
     "scripts/campaign-token-tally-mutations.py",
+    # No model rule: token accounting over transcripts.
     "scripts/campaign-token-tally.py",
-    "scripts/campaign-tracker.py",
-    "scripts/check-campaign-claim.py",
-    "scripts/check-commit-claim.py",
+    # No model rule: a document's pointer at another resolving.
     "scripts/check-cross-references.py",
+    # No model rule: one reader per rule a script owns.
     "scripts/check-rule-readers.py",
+    # No model rule: R1-R9 are tree-layout rules the model does not state.
     "scripts/check-tree-shape.py",
+    # No model rule: which recorded calls a replay corpus keeps.
     "scripts/guard-corpus.py",
+    # The model states the verdict log, not the pairing read off it.
     "scripts/guard-precision.py",
+    # The model does not tell an installer from acquire-repo's shim.
     "scripts/install-hooks.sh",
+    # No suite of its stem; install-hooks-test.py section 6 drives it
+    # (`Cov_PushBase`).
     "scripts/push-campaign-branch.sh",
 )
 

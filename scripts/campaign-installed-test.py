@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: S16_MergeReachesInstall
 """Prove campaign-installed reads an install for what it is, names the
 merge-not-reached case, and reaches one.
 

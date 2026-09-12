@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: S2_SubIssueDropped, S8_CloseWithOpenSubIssue
 """Prove campaign-tracker reads the whole thing, and says when it could not.
 
 All four subcommands replace a `gh` line that once lived in prose, and all four

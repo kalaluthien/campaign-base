@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: R4i_GuardClosesOwnHandsGap, R4j_GuardAdmitsClaimedWork, R15b_DurableExcludesIt, R15c_DurableStillAdmitsTheWork
 """Prove the claim guard refuses for the reason it prints, and allows for one too.
 
 Every case runs the shipped script against a fixture built here -- never the

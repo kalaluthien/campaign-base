@@ -55,6 +55,8 @@
     ["campaign/github/checks.als", "run", "S20a_ControlANonBaseRepoIsListed"],
     ["campaign/github/checks.als", "run", "S21_StandingBlocksTheClose"],
     ["campaign/github/checks.als", "run", "S21a_ControlTheCloseHappensWithTheHoldOff"],
+    ["campaign/github/checks.als", "run", "S22_BacklogBlocksTheClaim"],
+    ["campaign/github/checks.als", "run", "S22a_ControlTheClaimHappensWithTheHoldOff"],
     ["campaign/github/checks.als", "run", "S2_SubIssueDropped"],
     ["campaign/github/checks.als", "run", "S5_FollowUpAfterSettled"],
     ["campaign/github/checks.als", "run", "S6_RepoJoinsMidFlight"],

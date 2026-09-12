@@ -173,6 +173,14 @@ var sig Claimed in Issue {}
    release, which is not the label. */
 var sig Standing in Campaign {}
 
+/* THE PERSON'S HOLD ON A SUB-ISSUE: `backlog`, a label on a sub-issue that
+   the owner alone puts on and takes off, for the reason `standing` is
+   theirs. A sub-issue carrying it is not worked, and `campaign-claim take`
+   refuses a claim on one (`backlogDiscipline`); one without it is worked as
+   soon as it is filed or reopened. `var` and unconstrained, as `Standing`
+   is: the owner may lift it at any step. */
+var sig Backlog in Issue {}
+
 fact WellFormed {
   all c: Campaign | c.campaignIssue.repo = Base
   all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue
@@ -215,6 +223,13 @@ pred campaignClosed[c: Campaign] { c.campaignIssue not in Open }
 /* S8 is what happens without it. */
 pred closeDiscipline[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closable[c])
+}
+
+/* No claim is cut on a sub-issue the owner holds back. Assumed and not a
+   fact, as `closeDiscipline` is: `campaign-claim take` is its reader, and a
+   fact could not show the claim it refuses. S22 is what happens without it. */
+pred backlogDiscipline {
+  always (Now.event = Claim implies Now.issue not in Backlog)
 }
 
 /* A trace that closes first and merges later satisfies `settled` the whole

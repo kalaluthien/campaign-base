@@ -93,7 +93,7 @@ def call(bindir, *args, stdin=None):
     return (text.split(" ", 1)[0].strip() if text else ""), p.returncode, text
 
 
-MODEL = SCRIPT.parent.parent / "spec" / "campaign" / "orchestration" / "scenarios.als"
+MODEL = SCRIPT.parent.parent / "spec" / "campaign" / "orchestration" / "checks.als"
 WITNESS = "M2_MergeInTheStateAfterAPush"
 ALLOY = Path.home() / ".local" / "bin" / "alloy"
 STATE = re.compile(r"\s*S\d+(?: \(loop\))?  (.*)")

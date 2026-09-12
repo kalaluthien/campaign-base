@@ -1810,24 +1810,69 @@ def tracker():
     return _TRACKER
 
 
+# How long the sub-issue carve-out waits for GitHub: this runs before every
+# tool call, so a `gh` that hangs would hang the session.
+PARENT_READ_TIMEOUT = 10
+
+
 def parent_of(issue):
-    """(the campaign issue `issue` hangs from as a string, or None; the
-    sentence saying what was read). Asked of campaign-tracker.py's
+    """(the campaign issue the tracker's `issue` hangs from as a string, or
+    None; the sentence saying what was read). Asked of campaign-tracker.py's
     `issue_shape`, the one reader of an issue's parent, and only by the
     sub-issue carve-out -- the one network read this guard makes, so it is
     reached only after every local reading has failed to cover the write.
-    None is "could not say" as well as "no parent", and both leave the write
-    to the claim reading, the narrower gate."""
+    None is "could not say" as well as "not a sub-issue", and both leave the
+    write to the claim reading, the narrower gate.
+
+    A SUB-ISSUE BY THE TRACKER'S OWN CLASSIFICATION, `kind_of`, and not by a
+    parent alone: an issue labelled `campaign` AND parented is the tracker's
+    `stray` defect, a campaign issue somebody filed under a parent, and a
+    worker may not reopen a campaign."""
     m = tracker()
     if m is None:
         return None, (f"could not read #{issue}'s parent: campaign-tracker.py "
                       f"would not load ({TRACKER_UNREADABLE})")
-    _title, _body, _labels, parent, why = m.issue_shape(m.DEFAULT_REPO, issue)
+    _title, _body, labels, parent, why = m.issue_shape(
+        m.DEFAULT_REPO, issue, PARENT_READ_TIMEOUT)
     if why:
         return None, f"could not read #{issue}'s parent ({why})"
-    if parent is None:
-        return None, f"#{issue} is a sub-issue of no campaign issue"
+    kind = m.kind_of(m.CAMPAIGN_LABEL in labels, parent)
+    if kind != m.SUB_ISSUE:
+        return None, f"#{issue} is no sub-issue: the tracker reads it as {kind}"
     return str(parent), f"#{issue} is a sub-issue of #{parent}"
+
+
+def off_tracker(writes, issue, cwd, root):
+    """None when every write to `issue` goes to the tracker, else the sentence
+    saying where one goes. The carve-out reads the parent ON THE TRACKER, so a
+    `-R` naming another repository, or no `-R` from a checkout that is not the
+    base's -- a member clone, whose `gh` defaults to its own remote -- is a
+    write to some other repository's #issue that the tracker's says nothing
+    about."""
+    m = tracker()
+    home = m.DEFAULT_REPO.lower() if m is not None else None
+    for x in writes:
+        r = repo_named(x)
+        if r is None and checkout_of(cwd)[0] != root:
+            return (f"`gh` names no repository for #{issue} from {cwd}, which "
+                    f"is not the base's checkout, so it writes that checkout's "
+                    f"repository and not the tracker")
+        if r is not None and r.lower() != home:
+            return f"`gh` names {r} for #{issue}, which is not the tracker"
+    return None
+
+
+def repo_named(tokens):
+    """The repository a `gh` segment names with `-R`/`--repo`, in any of
+    pflag's three spellings, or None when it names none."""
+    for j, t in enumerate(tokens):
+        if t in ("-R", "--repo"):
+            return tokens[j + 1] if j + 1 < len(tokens) else ""
+        if t.startswith("--repo="):
+            return t[len("--repo="):]
+        if t.startswith("-R") and len(t) > 2:
+            return t[2:]
+    return None
 
 
 def bare_references(text):
@@ -2551,7 +2596,9 @@ def bash_call(command, cwd: Path, session_id=""):
         # GitHub, never the number the command typed.
         if (licence and not holders and i != own_number
                 and verbs_on_i <= licence["sub-issue"]):
-            parent, note = parent_of(i)
+            elsewhere = off_tracker(
+                [x for x in writes if issue_target(x) == i], i, cwd, root)
+            parent, note = (None, elsewhere) if elsewhere else parent_of(i)
             if parent == own_number:
                 covering.append((i, [(CARVED, campaign,
                                       f"{note}, the campaign issue of the "

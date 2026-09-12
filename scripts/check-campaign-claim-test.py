@@ -186,8 +186,9 @@ def no_herdr(d):
 
 def gh_stub(d, env, parents):
     """`env` with a `gh` first on PATH answering `gh issue view <n> ...` from
-    `parents` -- {issue: parent number or None}; an issue absent from it exits
-    1, the could-not-read case. The sub-issue carve-out's one network read."""
+    `parents` -- {issue: parent number or None, or (parent, [label names])};
+    an issue absent from it exits 1, the could-not-read case. The sub-issue
+    carve-out's one network read."""
     bindir = Path(d) / f"gh-{abs(hash(repr(sorted(parents.items())))) % 10**8}"
     bindir.mkdir(exist_ok=True)
     table = json.dumps({str(k): v for k, v in parents.items()})
@@ -197,8 +198,8 @@ def gh_stub(d, env, parents):
         f"n = next((a for a in sys.argv[3:] if a.isdigit()), None)\n"
         f"if sys.argv[1:3] != ['issue', 'view'] or n not in table:\n"
         f"    sys.exit('gh stub: no answer for ' + ' '.join(sys.argv[1:]))\n"
-        f"p = table[n]\n"
-        f"print(json.dumps({{'title': '', 'body': '', 'labels': [],\n"
+        f"p, names = table[n] if isinstance(table[n], list) else (table[n], [])\n"
+        f"print(json.dumps({{'title': '', 'body': '', 'labels': [{{'name': x}} for x in names],\n"
         f"                  'parent': {{'number': p}} if p else None}}))\n")
     (bindir / "gh").chmod(0o755)
     return {"PATH": f"{bindir}:{env['PATH']}"}
@@ -1526,6 +1527,34 @@ def main():
                 env=gh_stub(d, stranger, {42: 1}))
         check("...and a worker of another campaign gets no carve-out on it",
               r.returncode == 2, out(r)[:400])
+        # ON THE TRACKER ONLY (pr#357's review). The parent is read on the
+        # tracker, so a write to ANOTHER repository's #42 -- named with `-R`,
+        # or made from a member clone whose `gh` defaults to its own remote --
+        # is not licensed by it. Naming the tracker itself still is.
+        for flag in ("-R other/repo", "--repo=other/repo", "-Rother/repo"):
+            r = ask(f.base, tool="Bash", command=f"gh issue reopen 42 {flag}",
+                    env=member)
+            check(f"...and not for another repository's #42 (`{flag}`)",
+                  r.returncode == 2 and "which is not the tracker" in r.stderr,
+                  out(r)[:400])
+        r = ask(f.base, tool="Bash",
+                command="gh issue reopen 42 -R Kalaluthien/Campaign-Base",
+                env=member)
+        check("...while `-R` naming the tracker is carved, in any case",
+              r.returncode == 0 and "#42 is a sub-issue of #1" in r.stdout,
+              out(r)[:400])
+        clone = f.member()
+        r = ask(clone, tool="Bash", command="gh issue reopen 42", env=member)
+        check("...and not from a member clone with no `-R`",
+              r.returncode == 2 and "not the base's checkout" in r.stderr,
+              out(r)[:400])
+        # A SUB-ISSUE BY THE TRACKER'S CLASSIFICATION: labelled `campaign`
+        # and parented is its `stray` defect, a campaign under a parent.
+        r = ask(f.base, tool="Bash", command="gh issue reopen 45",
+                env=gh_stub(d, worker, {45: [1, ["campaign"]]}))
+        check("...and not for a `campaign`-labelled issue that has a parent",
+              r.returncode == 2 and "#45 is no sub-issue" in r.stderr,
+              out(r)[:400])
 
         # CLAUSE 1 IS BOUND BY THE CAMPAIGN TOO. It asks only whether the
         # target's checkout is on SOME claim, so a worker of another
@@ -3206,7 +3235,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 448
+    EXPECTED = 454
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

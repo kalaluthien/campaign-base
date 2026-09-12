@@ -16,7 +16,7 @@ open sdlc/system
    own kind: the model before the code, and a test that failed first. Neither
    is a stage the KIND forbids skipping, because each is already refused by
    the criterion wherever there is anything to refuse -- a change that wrote a
-   code path may skip neither Spec nor Test. So its profile is every skippable
+   code path may skip neither Spec nor Test, save by reusing them. So its profile is every skippable
    stage, each still gated by the criterion: all three go for a change that
    writes nothing that runs (`S2a_ProseOnlyChange`), and Test and Code for one
    that wrote only its scenario (`S6a_DevelopmentTestWaiver`). `analysis`,
@@ -30,9 +30,9 @@ open sdlc/system
    `S6_PrototypingTestWaiver` is the profile half on its own. Its one optional
    stage, Spec, is dead as a waiver rather than narrow: a change the criterion
    lets skip Spec wrote nothing that runs, and this kind lets neither Test nor
-   Code go, so no landing change of it ever skips its scenario
+   Code go, so no landing change of it skips its scenario by the profile
    (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at the
-   same scope). Every profile line is the procedure's to state, in this
+   same scope); reusing one is not a skip the profile grants. Every profile line is the procedure's to state, in this
    vocabulary: `development`'s is the default in the campaign's AGENTS.md,
    from the template .claude/skills/opening-campaign/assets/AGENTS.md, and the
    other four kinds' are one line each in their references, kind-<k>.md. */
@@ -210,11 +210,12 @@ pred S4d_TestRenameWitnessLoss {
    scope holds two changes because the tie reads the TREE, so a scenario and
    a test of another change could reach the path. The tie does not widen the
    licence either: `criterion` reads what the CHANGE wrote, never what the
-   tree ties. */
+   tree ties. "No scenario" is read at the landing and counts a reused one,
+   which a later rename can take away from a change that landed with it. */
 pred codeWithoutSpec[c: Change] {
-  eventually (c in Landed
+  eventually (Step.event = Land and Step.subject = c
               and some writtenOf[c] & stage.Code
-              and no writtenOf[c] & stage.Spec)
+              and Spec not in writtenStages[c] + reusedStages[c])
 }
 pred S5_CodeWithoutSpec         { allDisciplines and some c: Change | codeWithoutSpec[c] }
 pred S5a_WithoutTheCommitCheck  { orderDiscipline and landDiscipline
@@ -332,15 +333,21 @@ pred WitnessesResolve_Bites {
 /* ---------------- the skip rule ---------------- */
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
-   was licensed, and stays so: a landed change writes nothing more, a rename
-   keeps its stages, and its profile is static. Without it: a change lands
-   with an absence its kind or the criterion refuses. */
+   is licensed by its kind and the criterion, which stays so -- a landed
+   change writes nothing more, a rename keeps its stages, and its profile is
+   static -- or was reused when it landed. Reuse is read with `once` because it
+   does not stay: a later rename can take the reused scenario away. Without
+   the discipline: a change lands with an absence nothing licenses. */
 assert AbsenceLicensed {
-  landDiscipline implies always all c: Landed, s: absentStages[c] | maySkip[c, s]
+  landDiscipline implies always all c: Landed, s: absentStages[c] |
+    (s in c.optional and criterion[c])
+    or once (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 pred AbsenceLicensed_Bites {
   not landDiscipline
-  eventually some c: Landed, s: absentStages[c] | not maySkip[c, s]
+  eventually some c: Landed, s: absentStages[c] |
+    not (s in c.optional and criterion[c])
+    and historically not (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 
 /* ---------------- reachability floor ----------------

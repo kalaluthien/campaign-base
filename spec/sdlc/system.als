@@ -81,7 +81,8 @@ fun skippable: set Stage { Spec + Test + Code }
    the only one that narrows anything, and so the only one that witnesses
    this half of `maySkip`. No kind is an atom here: the model owns how a
    profile and a change combine, and the kinds own their profiles, so adding
-   a kind changes no model.
+   a kind changes no model. Reuse is the third input, and licenses an absence
+   without either of the other two.
 
    A SKIPPED STAGE IS AN ABSENT ARTIFACT. Nothing records a waiver: the
    stages a change has no artifact for are its skips, and whether each is
@@ -90,10 +91,10 @@ fun skippable: set Stage { Spec + Test + Code }
 sig Change { optional: set Stage }
 
 /* ONE TEXT UNDER ONE NAME: what a stage produced for a change, what it
-   witnesses and what it drives. An artifact a change REUSES -- a test
-   witnessing a scenario that already existed -- is an artifact of that change
-   here as much as one it wrote: the check reads the tree, not the diff, and
-   the model does not say which commit first wrote a file.
+   witnesses and what it drives. An artifact is its writer's alone: a change
+   that REUSES one -- a test witnessing a scenario another change wrote, or
+   driving its code path -- has that stage by `reusedStages`, not by owning
+   the artifact.
 
    THE TIE'S RAW MATERIAL IS TWO RELATIONS, NOT ONE, because the two halves
    break at different ends. `witnesses` is a DECLARATION carried in the test's
@@ -149,6 +150,11 @@ fact SdlcWellFormed {
 fun writtenOf[c: Change]:     set Artifact { change.c & Written }
 fun writtenStages[c: Change]: set Stage    { writtenOf[c].stage }
 fun absentStages[c: Change]:  set Stage    { Stage - writtenStages[c] }
+/* THE STAGES A CHANGE REUSES: the written scenarios its tests witness and the
+   written code paths they drive, whoever wrote them. A change that adds no
+   feature -- a stronger suite over a scenario and a code path already in the
+   tree -- has its Spec and its Code this way and no other. */
+fun reusedStages[c: Change]:  set Stage    { (writtenOf[c].(witnesses + drives) & Written).stage }
 
 /* THE TIE. A test declares the scenario it witnesses and pairs with the code
    path it drives -- `t -> s` in `witnesses` and `t -> k` in `drives`, the
@@ -190,17 +196,25 @@ pred everyWitnessExists { all t: Written | t.witnesses in Written }
    of the same change turned the criterion false -- a scenario skipped at the
    change's first test, and a code path written after it, which is
    `S5b_WithoutTheLandingCheck`. The moment that decides is `land`, under
-   `landDiscipline`. */
+   `landDiscipline`.
+
+   OR THE STAGE IS REUSED, whatever the profile and the criterion say: the
+   change's tests witness a written scenario, or drive a written code path, so
+   what the stage owes exists. Reuse goes stale too, from the other side -- a
+   later commit may rename what was reused -- which is why `AbsenceLicensed`
+   reads it at the landing. */
 pred criterion[c: Change] { no writtenOf[c] & stage.(Test + Code) }
-pred maySkip[c: Change, s: Stage] { s in c.optional and criterion[c] }
+pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in c.optional and criterion[c]) }
 
 /* ---------------- observable events ---------------- */
 
 abstract sig Event {}
 one sig Stutter, Write, Rename, Land extends Event {}
 
-/* The artifact a write or a rename is about, and the change a landing is
-   about; the stage is the artifact's. */
+/* The artifact a write or a rename is about, and the change whose step it
+   is: a write's own change, the change landing, and for a rename the change
+   committing it -- any change, since a later commit may rename what a landed
+   change wrote. The stage is the artifact's. */
 one sig Step {
   var event:    one Event,
   var artifact: lone Artifact,
@@ -218,7 +232,7 @@ pred write[a: Artifact] {
   a.change not in Landed
   a not in Written
   Written' = Written + a and Landed' = Landed
-  Step.event = Write and Step.artifact = a and no Step.subject
+  Step.event = Write and Step.artifact = a and Step.subject = a.change
 }
 
 /* A COMMIT THAT RENAMES AN ARTIFACT. The text moves: `b` declares what `a`
@@ -251,7 +265,7 @@ pred rename[a, b: Artifact] {
   Written' - Written - b in stage.Test
   (Written - Written' - a).change = (Written' - Written - b).change
   b.witnesses = a.witnesses
-  Step.event = Rename and Step.artifact = a and no Step.subject
+  Step.event = Rename and Step.artifact = a and one Step.subject
 }
 
 /* THE CHANGE MERGES. Structurally it waits on nothing: whether each absent

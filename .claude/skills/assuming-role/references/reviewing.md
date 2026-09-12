@@ -82,9 +82,9 @@ light does not license a lighter reviewer.
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes
 above it. **`/code-review`'s level is the first token after the command and
 nowhere else**: asking for it in the brief sets nothing, and the guard refuses
-a call naming none. **A plain brief sets no level mechanically at all** -- there
-is no harness position that reads one, only the reviewer's own judgment of what
-you wrote and, separately, `campaign-token-tally.py`'s own reading of the token
+a `/code-review` call naming none. **A plain brief sets no level mechanically
+at all** -- there is no harness position that reads one, only the reviewer's
+own judgment of what you wrote and, separately, `campaign-token-tally.py`'s own reading of the token
 right after `at` for its own accounting. Put the level there anyway, since
 that is the one place a launcher and the tally agree to look, but say what you
 mean in the rest of the brief too.
@@ -127,9 +127,8 @@ other way.
 **One full review, at the final sha, and narrowed reviews after it.** The full
 review is commissioned once, on the pull request as a whole, when the work is
 what the author means to land. Every fix round after it is reviewed on that
-round's diff only — a plain brief naming the diff range, launched by the
-worker that made the fixes. A narrowed review does not re-run a
-measurement the full review already made and reported, **unless the fix
+round's diff only — a plain brief naming the diff range. A narrowed review
+does not re-run a measurement the full review already made and reported, **unless the fix
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.
 
@@ -141,7 +140,8 @@ disposition. **Check that disposition against the findings list mechanically**: 
 round claiming "all fixed" without re-running its sweep is what keeps happening.
 
 **A reconciliation with `main` decides the breadth of the review it needs**, and
-a full re-review is due at that one moment only. It is a push, so condition 1
+a full re-review is due at one moment only, a reconciliation that needed a hand
+resolution. It is a push, so condition 1
 wants a review at the combined sha either way. A clean auto-merge earns a
 narrowed one, on the merge commit's diff alone. A merge that needed a hand
 resolution earns a full one, and its brief says it reads the combination:

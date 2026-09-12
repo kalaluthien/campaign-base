@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: Cov_Acquire
 """Prove `acquire-repo.sh` leaves a clone with what a delegate needs: the principles, and a commit gate.
 
 Two defects, one shape. #187 question 5: #176 wrote the principles channel down
@@ -26,7 +27,7 @@ takes the last two path segments and strips `.git` -- so a local bare repo is a
 member repository as far as `acquire` is concerned, and the whole entry point
 runs offline.
 
-Usage: scripts/acquire-repo-test.py
+Usage: .claude/skills/opening-campaign/scripts/acquire-repo-test.py
 """
 import importlib
 import os
@@ -46,9 +47,8 @@ GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
 
 HERE = Path(__file__).resolve().parent
-BASE = HERE.parent
-SCRIPT = (BASE / ".claude" / "skills" / "opening-campaign" / "scripts"
-          / "acquire-repo.sh")
+BASE = HERE.parents[3]
+SCRIPT = HERE / "acquire-repo.sh"
 # What the installed hook must name. Derived from this file's own location, the
 # same way `install_commit_guard` derives it from the script's -- so a case
 # asserting on it fails when the two stop agreeing, rather than when a copy kept
@@ -61,6 +61,7 @@ GATE = BASE / "scripts" / "check-commit-claim.py"
 _M = [l for l in SCRIPT.read_text().splitlines() if l.startswith("SHIM_MARKER=")]
 SHIM_MARKER = _M[0].split("=", 1)[1].strip("'") if len(_M) == 1 else None
 
+sys.path.append(str(BASE / "scripts"))
 harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
@@ -75,10 +76,10 @@ def install_principles(dest):
     src = SCRIPT.read_text()
     body = src[src.index("install_principles() {"):
                src.index("install_commit_guard() {")]
-    harness = ('log() { printf "%s\\n" "$*"; }\n'
+    shell = ('log() { printf "%s\\n" "$*"; }\n'
                'die() { printf "die: %s\\n" "$*" >&2; exit 1; }\n'
                + body + f'\ninstall_principles "{dest}"\n')
-    return subprocess.run(["bash", "-c", harness], capture_output=True,
+    return subprocess.run(["bash", "-c", shell], capture_output=True,
                           text=True, env=GIT_ENV)
 
 
@@ -227,7 +228,7 @@ def a_base_copy(d, gate=True, name="otherbase"):
         shutil.copy(GATE, root / "scripts" / GATE.name)
         # The gate imports the claim reading from beside itself: one script owns
         # it, and a copy without its neighbour would refuse for the wrong reason.
-        shutil.copy(HERE / "check-campaign-claim.py",
+        shutil.copy(BASE / "scripts" / "check-campaign-claim.py",
                     root / "scripts" / "check-campaign-claim.py")
     return root, copy
 

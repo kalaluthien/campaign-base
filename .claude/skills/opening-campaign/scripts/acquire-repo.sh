@@ -173,7 +173,7 @@ checkout_branch() {
 #
 # What keeps them from drifting is not this comment: both are pinned against
 # the bytes the printf below actually writes -- the convergence case in
-# scripts/acquire-repo-test.py here, case 5d in scripts/install-hooks-test.py
+# acquire-repo-test.py beside this file, case 5d in scripts/install-hooks-test.py
 # there. That covers the guard CALL, which both read out of the shim. It does
 # not cover the marker: this file reads SHIM_MARKER, so the marker cannot drift
 # on this side by construction, and the copy in install-hooks.sh is pinned by

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+# witnesses: Q12b_RebriefedSessionActs
 """Cases for campaign-role-brief.py, run against a fake `herdr` on PATH.
 
-The subject lives under the skill it briefs (#227); this suite stays here,
-where CI's `scripts/*-test.*` loop finds it, and resolves its subject by path
-as campaign-name-session-test.py does. Every case runs the REAL SKILL.md and
+The suite sits beside its subject, under the skill it briefs (#227, moved
+with rule-check#369). Every case runs the REAL SKILL.md and
 the REAL references -- the brief's content is the artifact, and a fixture
 standing in for it would leave the shipped text covered by nothing.
 
@@ -21,13 +21,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
+BASE = HERE.parents[3]
+sys.path.append(str(BASE / "scripts"))
 harness = importlib.import_module("suite-harness-test")
 check = harness.check
-
-HERE = Path(__file__).resolve().parent
-BASE = HERE.parent
-SCRIPT = (BASE / ".claude" / "skills" / "assuming-role" / "scripts"
-          / "campaign-role-brief.py")
+SCRIPT = HERE / "campaign-role-brief.py"
 
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys

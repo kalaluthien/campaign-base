@@ -270,43 +270,43 @@ def pure_cases(m):
     # so omitting it leaves nothing to match and every reading comes back None
     # -- which is `could not look`, not `no claim`.
     check("a claim branch names its sub-issue",
-          m.issue_of_branch("machinery/176-github-facts", "1", "machinery")
+          m.issue_of_branch("machinery/176-github-facts", "machinery")
           == "176")
     check("...and a branch of another campaign names none here",
-          m.issue_of_branch("other/176-x", "1", "machinery") is None)
+          m.issue_of_branch("other/176-x", "machinery") is None)
     # The one that would silently mis-attribute: `17` must not answer for `176`.
     check("a shorter number is not a prefix match",
-          m.issue_of_branch("machinery/176-x", "1", "machinery") == "176"
-          and m.refs_for_issue(["machinery/176-x"], "1", "17", "machinery") == [])
+          m.issue_of_branch("machinery/176-x", "machinery") == "176"
+          and m.refs_for_issue(["machinery/176-x"], "17", "machinery") == [])
     check("a second segment with no number claims no sub-issue",
-          m.issue_of_branch("machinery/topic-only", "1") is None)
+          m.issue_of_branch("machinery/topic-only") is None)
     check("a branch outside the campaign prefix is not ours",
-          m.issue_of_branch("main", "1") is None)
+          m.issue_of_branch("main") is None)
 
     # --- one prefix, and what an unreadable slug means ---
     # THE WINDOW IS CLOSED (#237). `campaign-<N>/` was read beside the slug
     # until the last such pull request merged; the cases pinning it are gone
     # and their slug twins are these.
     check("a slug branch names its sub-issue",
-          m.issue_of_branch("demo/176-x", "1", "demo") == "176")
+          m.issue_of_branch("demo/176-x", "demo") == "176")
     check("...and the retired form names none, now that nothing reads it",
-          m.issue_of_branch("campaign-1/176-x", "1", "demo") is None)
+          m.issue_of_branch("campaign-1/176-x", "demo") is None)
     check("...and another campaign's slug names none here",
-          m.issue_of_branch("other/176-x", "1", "demo") is None)
+          m.issue_of_branch("other/176-x", "demo") is None)
     check("a campaign's claims wear exactly one prefix",
-          m.prefixes("1", "demo") == ["demo/"])
+          m.prefixes("demo") == ["demo/"])
     # EMPTY IS `COULD NOT LOOK`. With the retired form gone there is no second
     # prefix to fall back to, so a slug that would not read leaves nothing --
     # and `list_refs` must refuse rather than report an empty campaign, which
     # is what `release` deletes refs off.
     check("no readable slug leaves no prefix at all",
-          m.prefixes("1", None) == [])
+          m.prefixes(None) == [])
     # ONE FORM IS MINTED. Nothing is ever named `campaign-<N>/` again, which is
     # what closes the window rather than letting it linger.
     check("a claim is cut as <slug>/<issue>-<topic>",
           m.branch_name("demo", "176", "x") == "demo/176-x")
     check("only the campaign's own slug prefix is its sub-issue's ref",
-          m.refs_for_issue(["demo/7-a", "campaign-1/7-b"], "1", "7", "demo")
+          m.refs_for_issue(["demo/7-a", "campaign-1/7-b"], "7", "demo")
           == ["demo/7-a"])
 
     # AN UNREADABLE SLUG DENIES THE WHOLE LISTING. Before #237 it fell back to
@@ -376,7 +376,7 @@ def pure_cases(m):
                "status": "idle"},
     }
     occupied, vacant, ours, _ = m.classify(
-        ["machinery/7-a", "machinery/8-b"], stood, sessions, "1", "machinery")
+        ["machinery/7-a", "machinery/8-b"], stood, sessions, "machinery")
     check("a claim with a checkout is occupied",
           occupied == [("machinery/7-a", ["/w/7"])])
     check("a claim with no checkout is vacant",
@@ -386,7 +386,7 @@ def pure_cases(m):
     # A campaign whose number is a prefix of another's must not collect it.
     check("campaign 1 does not collect campaign 11's sessions",
           not m.classify([], {}, {"s": {"name": "eleven-worker-1"}},
-                         "1", "machinery")[2])
+                         "machinery")[2])
 
     check("occupants names every workspace holding the branch",
           m.occupants({"b": ["/w1", "/w2"]}, "b") == ["/w1", "/w2"])
@@ -1855,7 +1855,7 @@ def peer_cases(m):
         "other": {"name": "third-worker-1", "cwd": "/elsewhere",
                   "pane": "p", "status": "idle"},
     }
-    _, _, ours, nameless = m.classify([], {}, sessions, "9", "demo",
+    _, _, ours, nameless = m.classify([], {}, sessions, "demo",
                                       root="/base", caller="me")
     names = sorted(sid for sid, _ in ours)
     # THE CLOSER IS NOT ITS OWN BLOCKER: a close runs from a session of the
@@ -1879,10 +1879,10 @@ def peer_cases(m):
     under_base = {"x": {"name": "machinery-planner-3", "cwd": "/base",
                         "pane": "p", "status": "idle"}}
     check("a session named for ANOTHER campaign is not this one's, even here",
-          not m.classify([], {}, under_base, "116", "elsewhere", root="/base",
+          not m.classify([], {}, under_base, "elsewhere", root="/base",
                          caller=None)[2])
     check("...and it IS its own campaign's",
-          len(m.classify([], {}, under_base, "1", "machinery", root="/base",
+          len(m.classify([], {}, under_base, "machinery", root="/base",
                          caller=None)[2]) == 1)
 
     # ONE NAME FORM SINCE #237. The retired `campaign-<N>-<role>-<n>` was a
@@ -1896,7 +1896,7 @@ def peer_cases(m):
              "alien": {"name": "other-worker-1", "cwd": "/elsewhere",
                        "pane": "p", "status": "idle"}}
     got = sorted(sid for sid, _ in
-                 m.classify([], {}, mixed, "9", "nine", root="/base",
+                 m.classify([], {}, mixed, "nine", root="/base",
                             caller=None)[2])
     check("a peer named for the slug is ours", got == ["new"], str(got))
     check("...and one still wearing the retired `campaign-<N>` name is not",
@@ -1908,7 +1908,7 @@ def peer_cases(m):
     # be claimed as this campaign's -- and a close reading zero peers here is
     # reading an unanswered question, not an empty machine.
     got = sorted(sid for sid, _ in
-                 m.classify([], {}, mixed, "9", None, root="/base",
+                 m.classify([], {}, mixed, None, root="/base",
                             caller=None)[2])
     check("with no slug read, no session elsewhere is named as ours",
           got == [], str(got))
@@ -1923,7 +1923,7 @@ def peer_cases(m):
                           "pane": "p", "status": "idle"},
                    "worker": {"name": "machinery-worker-9", "cwd": "/base",
                              "pane": "p", "status": "idle"}}
-    _, _, ours, nameless = m.classify([], {}, with_daemon, "1", "machinery",
+    _, _, ours, nameless = m.classify([], {}, with_daemon, "machinery",
                                       root="/base", caller=None)
     check("the remote-control listener is not counted as a live peer",
           [sid for sid, _ in ours] == ["worker"], str(ours))

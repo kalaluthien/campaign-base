@@ -246,14 +246,15 @@ jobs:
 
       # `landDiscipline`, GIVEN A READER (sdlc-alloy#363): every stage the
       # change has no artifact for is licensed by its kind's profile and the
-      # criterion. ADVISORY: `continue-on-error` until sdlc-alloy#250 ties the
-      # LEGACY paths and removes that line, because a change writing an untied
-      # one lands with no Spec and would be refused today. It prints its word,
+      # criterion. ADVISORY: `continue-on-error` while `LEGACY` in
+      # check-sdlc-tie.py holds a line, because a change writing an untied
+      # path lands with no Spec and would be refused; the pull request that
+      # empties the list removes that line (sdlc-alloy#363). It prints its word,
       # what it read and the untied paths on every run all the same. Before the
       # REVIEW step, which fails on the ordinary unreviewed push and would skip
       # it. Against `HEAD^1`, not a fetched `origin/main`: a re-run keeps its
       # merge commit, and a `main` that moved since would read as this change.
-      - name: Every absent stage licensed at the landing (advisory until sdlc-alloy#250)
+      - name: Every absent stage licensed at the landing (advisory while LEGACY holds a line)
         if: github.event_name == 'pull_request'
         continue-on-error: true
         env:

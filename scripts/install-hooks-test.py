@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: Cov_PushBase
 """Prove the hooks install-hooks writes actually refuse.
 
 Every other suite here tests a script in isolation. This one builds a
@@ -535,7 +536,8 @@ def main():
         # #190 that shim carries the claim gate as well as the guard. Asserted
         # on the two things it must name rather than on the whole text: a copy
         # of the body here would be the second reader this repository refuses,
-        # and scripts/acquire-repo-test.py is where the installed hook is RUN.
+        # and opening-campaign's acquire-repo-test.py is where the installed
+        # hook is RUN.
         dest = checkout("bare", False)
         out = subprocess.run([str(acq), "owner/repo", str(dest)], env=env,
                              capture_output=True, text=True)

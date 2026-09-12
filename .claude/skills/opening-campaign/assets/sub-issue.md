@@ -37,13 +37,11 @@
      the sub-issue is handed that kind's reference from
      `assuming-role/references/kind-<k>.md` by the brief hook; a campaign mixes
      kinds, so the label is the sub-issue's and not the campaign's.
-     `campaign-tracker.py check` warns when it is missing and refuses two, and
-     `campaign-tracker.py kind <N>` reads it back. The five words, by what the
-     sub-issue exists to do: `research` answers an open question; `analysis`
-     measures or audits something that already runs; `prototyping` finds out
-     whether an approach can work at all; `migration` moves a working system
-     from one form to another; `development` builds something new under a
-     specification, and has no reference, its rules being the base's own. -->
+     `campaign-tracker.py kind <N>` reads it back, and what
+     `campaign-tracker.py check` does with a missing or doubled label is
+     AGENTS.md § Sub-issues'. The five words and what each is for are the
+     `assuming-role` skill's table, "The kind of a sub-issue", and
+     `campaign-tracker.py`'s `WORK_KINDS` is the list `check` enforces. -->
 
 ## Intent
 

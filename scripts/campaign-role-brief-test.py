@@ -43,7 +43,10 @@ else:
 # test is the tracker's own, and a fake tracker would leave it covered by
 # nothing. EVERY INVOCATION IS LOGGED, so a case can assert that no call was
 # made, which is the only way to tell "asked and got nothing" from "never
-# asked".
+# asked". It also answers the OTHER gh read in this path, `gh issue view
+# ... --json state`, which SessionStart makes itself: `FAKE_ISSUE_STATE` is the
+# word it prints, and that call is logged like any other, so a case can say
+# which of the two reads happened.
 FAKE_GH = r'''#!/usr/bin/env python3
 import json, os, sys
 log = os.environ.get("FAKE_GH_LOG")
@@ -52,6 +55,8 @@ if log:
         f.write(" ".join(sys.argv[1:]) + "\n")
 if os.environ.get("FAKE_GH_FAILS"):
     print("gh: api broke", file=sys.stderr); sys.exit(1)
+if sys.argv[1:3] == ["issue", "view"]:
+    print(os.environ.get("FAKE_ISSUE_STATE", "OPEN")); sys.exit(0)
 print(json.dumps(json.loads(os.environ.get("FAKE_LABELS", "[]"))))
 '''
 
@@ -85,7 +90,7 @@ def row(session_id, name="demo-worker-10"):
 def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
         campaign_agents=CAMPAIGN_AGENTS, record=None, lock_runtime=False,
         raw=None, record_swallows=False, labels=None, gh_fails=False,
-        kind_record=None):
+        kind_record=None, state=None):
     """(completed process, the record's text or None, the campaign dir).
 
     The kind record and the `gh` call log go to `LAST`, since every existing
@@ -139,6 +144,8 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             env["FAKE_LIST_FAILS"] = "1"
         if gh_fails:
             env["FAKE_GH_FAILS"] = "1"
+        if state is not None:
+            env["FAKE_ISSUE_STATE"] = state
         if payload is not None and payload.get("session_id"):
             env["CLAUDE_CODE_SESSION_ID"] = payload["session_id"]
         r = subprocess.run(
@@ -504,16 +511,21 @@ FENCE-MARK
     check("two `kind:` labels are the tracker's REFUSAL, quoted, and not a "
           "kind this picked one of",
           r.returncode == 0 and "# Kind of" not in r.stdout
-          and "campaign-tracker refused to read the kind" in r.stderr
+          and "would not answer the kind" in r.stderr
           and "2 `kind:` labels" in r.stderr and LAST["kind"] is None,
           f"err {r.stderr!r}")
 
+    # THE TRACKER EXITS 2 FOR BOTH: a refusal to answer, and a `gh` read it
+    # could not make -- so the line may not call this one a refusal. What
+    # separates them is the quoted first line, which here is gh's own failure.
     r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"],
                   gh_fails=True)
     check("a gh that will not answer is a reading never made, named as such, "
           "and still exit 0 with nothing emitted",
           r.returncode == 0 and "# Kind of" not in r.stdout
           and "kind:" in r.stderr and "exited 1" in r.stderr
+          and "would not answer the kind" in r.stderr
+          and "refused" not in r.stderr
           and "Traceback" not in r.stderr and LAST["kind"] is None,
           f"exit {r.returncode} err {r.stderr!r}")
 
@@ -535,15 +547,47 @@ FENCE-MARK
           r.returncode == 0 and "# Kind of" not in r.stdout
           and "already delivered" in r.stderr, f"err {r.stderr!r}")
 
+    # SESSIONSTART ASKS ONE QUESTION, whether the recorded sub-issue is still
+    # OPEN -- and asks it of `gh issue view` and not of the tracker, because the
+    # kind itself is already recorded. Three cases, because the three answers
+    # are three different things to do with the record.
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "compact",
                    "session_id": SID}, agents=NAMED,
                   kind_record=(SID, stamp_kind))
     check("SessionStart source=compact re-emits the recorded kind -- the case "
-          "this record exists for -- with NO gh call",
+          "this record exists for -- over ONE gh call, the state of that "
+          "sub-issue and no tracker call",
           r.returncode == 0 and ANALYSIS_HEAD in r.stdout
           and f"# Kind of {REPO}#{ISSUE}: analysis" in r.stdout
-          and LAST["gh"] == [] and "no tracker call" in r.stderr,
+          and len(LAST["gh"]) == 1 and LAST["gh"][0].startswith("issue view")
+          and ISSUE in LAST["gh"][0] and "no tracker call" in r.stderr
+          and "open" in r.stderr,
           f"out {r.stdout[-200:]!r} gh {LAST['gh']!r} err {r.stderr!r}")
+
+    # A FINISHED SUB-ISSUE IS NOT RE-EMITTED, and the record goes with it: a
+    # session compacted after its sub-issue closed would otherwise be briefed
+    # on work that is over for the rest of its life.
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "compact",
+                   "session_id": SID}, agents=NAMED,
+                  kind_record=(SID, stamp_kind), state="CLOSED")
+    check("...and a CLOSED sub-issue re-emits nothing and deletes the record",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "closed" in r.stderr and "deleted" in r.stderr
+          and LAST["kind"] is None,
+          f"out {r.stdout[-200:]!r} err {r.stderr!r} rec {LAST['kind']!r}")
+
+    # A STATE THAT CANNOT BE READ IS NOT A CLOSE. A compaction mid-work with gh
+    # down must keep the reference, so this branch re-emits and keeps the
+    # record, and says that is what it did.
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "compact",
+                   "session_id": SID}, agents=NAMED,
+                  kind_record=(SID, stamp_kind), gh_fails=True)
+    check("...and a state that could not be read re-emits anyway, keeping the "
+          "record, and says so",
+          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          and "could not read the state" in r.stderr
+          and "kept the record" in r.stderr and LAST["kind"] is not None,
+          f"out {r.stdout[-200:]!r} err {r.stderr!r} rec {LAST['kind']!r}")
 
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
                    "session_id": SID}, agents=NAMED)

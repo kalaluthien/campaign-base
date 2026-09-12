@@ -111,8 +111,8 @@ sig Issue {
 
    A SUB-ISSUE'S KIND is a label of the same shape, `kind:<k>` (rule-check#314):
    one per sub-issue, read by exact name by `campaign-tracker.py kind <N>`,
-   two of them a question no reader may answer, and `check` warns of none
-   because every sub-issue filed before the rule carries none. It is a
+   and two of them a question no reader may answer; what `check` does with
+   none and with two is AGENTS.md § Sub-issues' to state. It is a
    property of the sub-issue and not the campaign, since one campaign mixes
    kinds; what the label selects -- a reference under
    .claude/skills/assuming-role/references/ -- is the procedure's, and like the

@@ -60,7 +60,9 @@ shape and is imported from there, so the writer and the reader cannot drift,
 and the label is read by the TRACKER and never here: two readers of one label
 drift.
 
-It is recorded so a compaction re-emits it, the same reason the role is, and
+It is recorded so a compaction re-emits it while that sub-issue is still open --
+a closed one is work that is over, and SessionStart deletes the record instead
+of briefing a session on it again -- the same reason the role is recorded, and
 THE TWO ARE SEPARATE RECORDS because they change at different moments -- a
 rename moves the role, a new assignment moves the kind, and one stamp holding
 both would re-emit each whenever the other moved. DELIVERY IS INDEPENDENT OF
@@ -284,12 +286,15 @@ def tracker_kind(repo, issue):
     reader of a label set would drift on the very cases the tracker refuses to
     answer -- two `kind:` labels, and a word outside its five.
 
-    Its three answers are three readings and are not folded together: exit 2 is
-    a refusal to answer, exit 1 with `none` is a sub-issue with no kind, and any
-    other status is a reading that never happened. A MISSING TRACKER IS NOT A
-    REFUSAL either, and neither is python's own exit 2 for a file it could not
-    open -- which is why the file is looked for first and the refusal branch
-    wants the tracker's own prefix on the line it quotes."""
+    Its answers are separate readings and are not folded together: exit 1 with
+    `none` is a sub-issue with no kind, and any other status is a reading that
+    never happened. EXIT 2 COVERS TWO THINGS -- a refusal to answer (two
+    `kind:` labels, a word outside the five) and a `gh` read the tracker could
+    not make -- so the line says neither happened rather than calling both a
+    refusal, and the QUOTED FIRST LINE is what tells them apart. A MISSING
+    TRACKER IS NOT EITHER OF THEM, and neither is python's own exit 2 for a file
+    it could not open -- which is why the file is looked for first and that
+    branch wants the tracker's own prefix on the line it quotes."""
     if not TRACKER.is_file():
         return None, f"could not read {TRACKER}: no such file"
     try:
@@ -300,7 +305,8 @@ def tracker_kind(repo, issue):
     word = (r.stdout or "").strip()
     first = ((r.stderr or "").strip().splitlines() or [""])[0]
     if r.returncode == 2 and first.startswith("campaign-tracker"):
-        return None, f"campaign-tracker refused to read the kind: {first}"
+        return None, (f"campaign-tracker would not answer the kind (a refusal, "
+                      f"or a read it could not make): {first}")
     if r.returncode == 1 and word == "none":
         return None, "campaign-tracker said `none`; it carries no `kind:` label"
     if r.returncode != 0 or not word:
@@ -309,14 +315,43 @@ def tracker_kind(repo, issue):
     return word, None
 
 
+def issue_state(repo, issue):
+    """(`OPEN`, `CLOSED`, or None with why not) for one sub-issue.
+
+    THE ONLY QUESTION SESSIONSTART ASKS, and it is asked of `gh` directly: the
+    kind is already in the record, so the tracker -- the one reader of the
+    `kind:` label -- has nothing to add here, and this reads no label. A state
+    that is neither word is the same as a `gh` that failed: a reading never
+    made, which the caller must not take for a close."""
+    try:
+        r = subprocess.run(["gh", "issue", "view", issue, "-R", repo,
+                            "--json", "state", "--jq", ".state"],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"could not run gh issue view ({e.__class__.__name__})"
+    word = (r.stdout or "").strip()
+    if r.returncode != 0:
+        first = ((r.stderr or "").strip().splitlines() or [""])[0]
+        return None, (f"gh issue view exited {r.returncode}, said "
+                      f"{(first or word or 'nothing')!r}")
+    if word not in ("OPEN", "CLOSED"):
+        return None, f"gh issue view said {word!r}, which is neither state"
+    return word, None
+
+
 def deliver_kind(hook, event, session_id):
     """Emit the reference for the kind of the sub-issue this session works.
 
     On UserPromptSubmit the assignment prompt names it, and the tracker is
-    asked exactly then. On SessionStart the record answers instead, with no
-    tracker call: compaction is the case this exists for, and what the label
-    said is already recorded. Prints nothing on stdout unless it delivers, and
-    always one line on stderr saying which branch it took."""
+    asked exactly then. On SessionStart the record answers what the kind is,
+    with no tracker call: compaction is the case this exists for, and what the
+    label said is already recorded. SESSIONSTART ASKS EXACTLY ONE QUESTION AND
+    NO OTHER -- whether the recorded sub-issue is still OPEN, of `gh issue
+    view`. A closed one is work that is over, so its record goes and nothing is
+    emitted; a state that could not be read is NOT a close, so that branch
+    re-emits and keeps the record, because a compaction mid-work with `gh` down
+    must not lose the reference. Prints nothing on stdout unless it delivers,
+    and always one line on stderr saying which branch it took."""
     if not session_id:
         say_kind("could not read a session id from the payload; delivered "
                  "nothing")
@@ -336,6 +371,18 @@ def deliver_kind(hook, event, session_id):
             return
         subject, word = parts[0], parts[1]
         repo, _, issue = subject.partition("#")
+        source = hook.get("source") or "none"
+        state, why = issue_state(repo, issue)
+        if state == "CLOSED":
+            try:
+                record.unlink(missing_ok=True)
+                gone = f"deleted the record at {record}"
+            except OSError as e:
+                gone = (f"could not delete the record at {record} "
+                        f"({e.__class__.__name__}), which therefore stands")
+            say_kind(f"{event} source={source}: {subject} is closed, so this "
+                     f"work is over; {gone} and emitted nothing")
+            return
         ref, path = kind_reference(word)
         if not ref:
             say_kind(f"{subject} is `{word}`, which has no reference at "
@@ -344,8 +391,10 @@ def deliver_kind(hook, event, session_id):
         text = f"# Kind of {repo}#{issue}: {word}\n\n{ref}"
         print(text)
         written = write_record(record, f"{subject} {word} {sha12(text)}")
-        say_kind(f"{event} source={hook.get('source') or 'none'}: re-emitted "
-                 f"{subject} `{word}` from the record with no tracker call "
+        standing = ("is open" if state == "OPEN" else
+                    f"could not read the state ({why}), so kept the record")
+        say_kind(f"{event} source={source}: {subject} {standing}, re-emitted "
+                 f"`{word}` from the record with no tracker call "
                  f"({len(text)} chars); record {record} {written}")
         return
     if event != "UserPromptSubmit":

@@ -35,9 +35,11 @@ open sdlc/system
    Spec by criterion wrote nothing in Docs, Test or Code, and this kind lets
    neither Test nor Code go, so no landing change of it ever skips its scenario
    (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at
-   the same scope). What the profile leaves live is the Docs waiver. The other
-   kinds' profile lines are the procedure's to state, one line each in the
-   kind references, kind-<k>.md, in this vocabulary. */
+   the same scope). What the profile leaves live is the Docs waiver. Every
+   profile line is the procedure's to state, in this vocabulary:
+   `development`'s is the default in the campaign's AGENTS.md, from the
+   template .claude/skills/opening-campaign/assets/AGENTS.md, and the other
+   four kinds' are one line each in their references, kind-<k>.md. */
 pred developmentProfile[c: Change] { c.optional = skippable }
 pred prototypingProfile[c: Change] { c.optional = Spec + Docs }
 

@@ -54,6 +54,9 @@ A sub-issue carries one `kind:<k>` label, read by
 reference on the prompt that assigns the sub-issue, and again after a
 compaction; each holds only what no base rule or role reference states.
 
+The five words are `scripts/campaign-tracker.py`'s `WORK_KINDS`, and this table
+is their one prose home.
+
 | the sub-issue exists to | label | reference |
 | --- | --- | --- |
 | measure or audit something that already runs | `kind:analysis` | [analysis](references/kind-analysis.md) |

@@ -822,7 +822,16 @@ pred R11_HolderThroughAnotherCampaignsDir {
    everything and ignored it.
 
    Delegates only. A session launching an in-process subagent, or working by its
-   own hands, already has the campaign's instructions loaded by its own harness. */
+   own hands, already has the campaign's instructions loaded by its own harness.
+
+   WHAT THE CHANNEL CARRIES narrowed in rule-check#314: the campaign's own
+   additions, not a kind's advice. rule-check#313 measured that the kind file
+   reached a base worker zero times and that 8 of `development`'s 9 claims were
+   stated elsewhere, so the kind moved onto the sub-issue as a `kind:<k>` label
+   and its reference travels with the assignment prompt, through the brief
+   hook, to a delegate and a base worker alike. This rule is unchanged by that:
+   a delegate still reads no ancestor file, so what the campaign adds still has
+   to be in its clone. */
 pred delegateLaunchIsPrincipled {
   always all a: Agent |
     (a not in Launched and a in Launched' and no a.peer)

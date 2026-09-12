@@ -363,12 +363,13 @@ def profile_of(kind, root):
     """(optional stages, the file read, why). A kind with no reference --
     `development` -- and a sub-issue with no label take the template's line."""
     where = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
-    if not (root / where).exists():
+    # HEAD's copy, not the disk's: the tree judged is HEAD's.
+    if run("git", "-C", str(root), "cat-file", "-e", f"HEAD:{where}")[0] != 0:
         where = DEFAULT_PROFILE
-    try:
-        m = PROFILE.search((root / where).read_text())
-    except OSError as e:
-        return None, where, f"{where}: {e}"
+    code, text, err = run("git", "-C", str(root), "show", f"HEAD:{where}")
+    if code != 0:
+        return None, where, f"HEAD:{where}: {err.strip()[:200]}"
+    m = PROFILE.search(text)
     if not m:
         return None, where, f"{where} carries no `optional = ...` line"
     optional = set()

@@ -36,8 +36,8 @@ open sdlc/system
    neither Test nor Code go, so no landing change of it ever skips its scenario
    (`S7_PrototypingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at
    the same scope). What the profile leaves live is the Docs waiver. The other
-   kinds' profile lines are the procedure's to state, one line each in
-   assets/agents/*.md, in this vocabulary. */
+   kinds' profile lines are the procedure's to state, one line each in the
+   kind references, kind-<k>.md, in this vocabulary. */
 pred developmentProfile[c: Change] { c.optional = skippable }
 pred prototypingProfile[c: Change] { c.optional = Spec + Docs }
 

@@ -449,6 +449,39 @@ def check_sections(rel, text, tree, report):
              f"{target} has no heading this name prefixes"))
 
 
+def check_relative(rel, n, tok, shown, based, root, tree, report):
+    """S4: a path relative to the citing skill's root, or to the tree root
+    when `$BASE/` spelled it."""
+    # THE SAME NARROWING S5 GETS, and for the same reason: `$BASE` is
+    # the tree root, so `$BASE/references/x.md` names `<root>/references/`
+    # and resolving it against the CITING SKILL's root is the false
+    # PASS this whole paragraph exists to stop. A based token is asked
+    # at the tree root and the skill is not consulted, so U2 -- which
+    # says the path names no root to resolve against -- cannot apply
+    # to it either.
+    if based:
+        if tree.exists(tok):
+            report.resolved.append((rel, n, shown, "S4, tree root"))
+        else:
+            report.dangling.append(
+                (rel, n, shown,
+                 "S4: nothing at this path under the tree root -- "
+                 "`$BASE/` names the tree root, so the citing skill "
+                 "is not asked"))
+        return
+    if root is None:
+        report.undecided.append(
+            (rel, n, shown, "U2",
+             "a relative skill path in a file inside no skill: it "
+             "names no root to resolve against"))
+        return
+    if tree.exists(f"{root}/{tok}"):
+        report.resolved.append((rel, n, shown, f"S4, under {root}"))
+    else:
+        report.dangling.append(
+            (rel, n, shown, f"S4: nothing at {root}/{tok}"))
+
+
 def check_paths(rel, text, tree, report):
     """S2, S3, S4 and S5: every path-like run in one document."""
     root = skill_root(rel)
@@ -530,34 +563,7 @@ def check_paths(rel, text, tree, report):
             continue
 
         if tok.startswith(RELATIVE_PREFIXES):
-            # THE SAME NARROWING S5 GETS, and for the same reason: `$BASE` is
-            # the tree root, so `$BASE/references/x.md` names `<root>/references/`
-            # and resolving it against the CITING SKILL's root is the false
-            # PASS this whole paragraph exists to stop. A based token is asked
-            # at the tree root and the skill is not consulted, so U2 -- which
-            # says the path names no root to resolve against -- cannot apply
-            # to it either.
-            if based:
-                if tree.exists(tok):
-                    report.resolved.append((rel, n, shown, "S4, tree root"))
-                else:
-                    report.dangling.append(
-                        (rel, n, shown,
-                         "S4: nothing at this path under the tree root -- "
-                         "`$BASE/` names the tree root, so the citing skill "
-                         "is not asked"))
-                continue
-            if root is None:
-                report.undecided.append(
-                    (rel, n, shown, "U2",
-                     "a relative skill path in a file inside no skill: it "
-                     "names no root to resolve against"))
-                continue
-            if tree.exists(f"{root}/{tok}"):
-                report.resolved.append((rel, n, shown, f"S4, under {root}"))
-            else:
-                report.dangling.append(
-                    (rel, n, shown, f"S4: nothing at {root}/{tok}"))
+            check_relative(rel, n, tok, shown, based, root, tree, report)
             continue
 
         report.unshaped.append((rel, n, shown, "no shape rule claims it"))

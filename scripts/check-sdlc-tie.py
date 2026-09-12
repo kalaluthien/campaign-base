@@ -618,56 +618,8 @@ def read_legacy(path):
     return {t for t in (line.split("#", 1)[0].strip() for line in lines) if t}
 
 
-def judge(after_kind, against, legacy_path):
-    global ROOT
-    # Root first, and every git call and disk read under it: run from a
-    # subdirectory, a bare `git ls-files` lists that directory alone, which
-    # reads as a tree with no scripts/ and passes.
-    ROOT = root = git_bytes("rev-parse", "--show-toplevel").decode(
-        "utf-8", "replace").strip()
-    rules = (load_sibling("check-tree-shape.py").in_scripts_dir,)
-    source = "LEGACY" if legacy_path is None else legacy_path
-
-    if after_kind == "commit":
-        # HEAD MUST CONTAIN THE REF, or the two trees are not a change: every
-        # commit the ref has and HEAD has not reads backwards -- a path the ref
-        # tied reads as one HEAD untied, and a branch that committed nothing at
-        # all is refused with a T3 naming a file it never opened. The reading
-        # cannot be made, so it is not made: this permits and says so, the way
-        # every other unreadable input here does. On a pull request GitHub's
-        # merge commit contains the base by construction, and merge condition 3
-        # keeps it so; what this catches is the window where `origin/main` moved
-        # between that merge commit and the fetch.
-        #
-        # THREE OUTCOMES, NOT TWO, and collapsing them is what made this guard
-        # inert in CI for four commits. `--is-ancestor` exits 0 for yes, 1 for
-        # no, and 128 for a question it could not read -- a ref that does not
-        # resolve, or a SHALLOW clone, where HEAD's parents are grafted away and
-        # every ancestry answer is no. `check.yml` cloned shallow, so the gate
-        # fired on every run and the log read like a verdict. A shallow tree is
-        # named as such here, because the remedy is the clone's and not the
-        # branch's.
-        probe = subprocess.run(["git", "-C", ROOT, "merge-base", "--is-ancestor",
-                                against, "HEAD"], capture_output=True, text=True)
-        if probe.returncode not in (0, 1):
-            print(f"check-sdlc-tie: PERMITTING -- the reading itself failed: git "
-                  f"could not say whether HEAD contains {against} "
-                  f"({probe.stderr.strip() or f'exit {probe.returncode}'}); "
-                  f"nothing was judged", file=sys.stderr)
-            return 0
-        if probe.returncode == 1:
-            shallow = git_root_bytes("rev-parse", "--is-shallow-repository"
-                                     ).strip() == b"true"
-            why = ("this clone is SHALLOW, so HEAD's parents are grafted away "
-                   "and no ancestry can be read here -- deepen the clone rather "
-                   "than reading this as a verdict about the branch"
-                   if shallow else
-                   f"HEAD does not contain {against}, so the two trees are not "
-                   f"a change and every commit {against} has and HEAD has not "
-                   f"would read backwards")
-            print(f"check-sdlc-tie: PERMITTING -- {why}. Nothing was judged",
-                  file=sys.stderr)
-            return 0
+def read_trees(after_kind, against, rules):
+    """(the tree before, the tree after, the milliseconds each took to read)."""
     t0 = time.perf_counter()
     before = committed(against, against, rules) if after_kind == "commit" \
         else head_tree(rules)
@@ -675,8 +627,53 @@ def judge(after_kind, against, legacy_path):
     after = {"index": index_tree, "worktree": worktree}.get(
         after_kind, lambda r: committed("HEAD", "HEAD", r))(rules)
     t2 = time.perf_counter()
-    moved, touched = changed(against if after_kind == "commit" else "HEAD",
-                             after_kind)
+    return before, after, ((t1 - t0) * 1000, (t2 - t1) * 1000)
+
+
+def uncontained(against):
+    """Why HEAD and `against` are not a change to judge, or None when HEAD
+    contains the ref."""
+    # HEAD MUST CONTAIN THE REF, or the two trees are not a change: every
+    # commit the ref has and HEAD has not reads backwards -- a path the ref
+    # tied reads as one HEAD untied, and a branch that committed nothing at
+    # all is refused with a T3 naming a file it never opened. The reading
+    # cannot be made, so it is not made: this permits and says so, the way
+    # every other unreadable input here does. On a pull request GitHub's
+    # merge commit contains the base by construction, and merge condition 3
+    # keeps it so; what this catches is the window where `origin/main` moved
+    # between that merge commit and the fetch.
+    #
+    # THREE OUTCOMES, NOT TWO, and collapsing them is what made this guard
+    # inert in CI for four commits. `--is-ancestor` exits 0 for yes, 1 for
+    # no, and 128 for a question it could not read -- a ref that does not
+    # resolve, or a SHALLOW clone, where HEAD's parents are grafted away and
+    # every ancestry answer is no. `check.yml` cloned shallow, so the gate
+    # fired on every run and the log read like a verdict. A shallow tree is
+    # named as such here, because the remedy is the clone's and not the
+    # branch's.
+    probe = subprocess.run(["git", "-C", ROOT, "merge-base", "--is-ancestor",
+                            against, "HEAD"], capture_output=True, text=True)
+    if probe.returncode not in (0, 1):
+        return (f"the reading itself failed: git could not say whether HEAD "
+                f"contains {against} "
+                f"({probe.stderr.strip() or f'exit {probe.returncode}'}); "
+                f"nothing was judged")
+    if probe.returncode == 1:
+        shallow = git_root_bytes("rev-parse", "--is-shallow-repository"
+                                 ).strip() == b"true"
+        why = ("this clone is SHALLOW, so HEAD's parents are grafted away "
+               "and no ancestry can be read here -- deepen the clone rather "
+               "than reading this as a verdict about the branch"
+               if shallow else
+               f"HEAD does not contain {against}, so the two trees are not "
+               f"a change and every commit {against} has and HEAD has not "
+               f"would read backwards")
+        return f"{why}. Nothing was judged"
+    return None
+
+
+def allow_lists(before, after, legacy_path, source):
+    """(the list after, the list before, where each was read from)."""
     # THE LIST AFTER IS THE ONE THE JUDGED TREE HOLDS, not the copy running:
     # under `--staged` the running copy is the worktree's, and a line on disk
     # only would license or refuse a commit that does not carry it. A tree with
@@ -695,66 +692,13 @@ def judge(after_kind, against, legacy_path):
     list_read = (f"the list before read from {before.label}'s {LEGACY_HOME}, "
                  f"{len(held)} entr(ies)" if held is not None else
                  f"{source} stands for the list before too{unread}")
+    return allowed, allowed_before, after_read, list_read
 
-    print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
-          f"{len(after.suites)} suite(s), {len(after.htmls)} html form(s), "
-          f"{len(after.code)} code path(s) from "
-          f"{after.label} under {root}; each judged against {before.label}, "
-          f"{len(moved)} path(s) renamed in between; two trees read in "
-          f"{(t1 - t0) * 1000:.0f} + {(t2 - t1) * 1000:.0f} ms")
 
-    findings, licensed = [], []
-    for k in after.code:
-        if after.tied(k):
-            continue
-        was = moved.get(k, k)                    # its name in the tree before
-        if was not in before.code:
-            why = ("no suite carries its stem" if not after.suites_of(k)
-                   else f"its suite declares no scenario {SNAPSHOT} lists")
-            findings.append(("T1", k, f"added untied: {why}. A code path is "
-                                      f"tied by a `{stem(k)}-test` suite carrying "
-                                      f"a `# witnesses: <Name>` line that names a "
-                                      f"command {SNAPSHOT} lists"))
-            continue
-        if before.tied(was):                     # `was` is in before.code here
-            if not after.suites_of(k):
-                gone = ", ".join(before.suites_of(was))
-                findings.append(("T2", k, f"was tied through {gone}; after this "
-                                          f"commit no suite carries its stem. "
-                                          f"Rename or restore the suite with it"))
-            else:
-                findings.append(("T3", k, f"was tied; its suite "
-                                          f"{', '.join(after.suites_of(k))} "
-                                          f"declares no scenario after this "
-                                          f"commit. Rewrite its `# witnesses:` "
-                                          f"line"))
-            continue
-        if k in allowed and {was, k} & allowed_before:  # the line moved with it
-            licensed.append(k)
-        elif k in allowed:
-            pass                                 # a line this commit added: below
-        elif was in allowed:                     # renamed, its line left behind
-            findings.append(("T4", k, f"renamed from {was}, and the allow-list "
-                                      f"({source}) names only the old path: a "
-                                      f"line moves with its file, in the same "
-                                      f"commit, since a later one would be a "
-                                      f"line the list gains. Move it to {k}, or "
-                                      f"tie it"))
-        elif k not in touched:               # a rename puts both ends in it
-            # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
-            # that the change never opened is not this change's debt, and every
-            # fixture repository under scripts/*-test.py is a tree of copied
-            # guards with no suites -- so an unscoped T4 refused every commit
-            # any of them makes. Scoped, the bite that is left is real: a path a
-            # bypassed hook landed untied is refused the next time anything
-            # opens it, and CI's `--against origin/main` reads the whole pull
-            # request, where the same path is new and T1 has it already.
-            licensed.append(k)
-        else:
-            findings.append(("T4", k, f"untied before this commit and untied "
-                                      f"after it, and the allow-list ({source}) "
-                                      f"does not name it: the debt grew where "
-                                      f"nothing read it. Tie it"))
+def list_findings(allowed, allowed_before, moved, before, after, source):
+    """(the findings on the list's own lines -- a line gained, T4, and a
+    licence spent, T5 -- and how many entries name no code path here)."""
+    findings = []
     for e in sorted(allowed - allowed_before):
         if moved.get(e) in allowed_before:       # the line moved with its file
             continue
@@ -777,6 +721,13 @@ def judge(after_kind, against, legacy_path):
             findings.append(("T5", e, f"the allow-list ({source}) names it and it "
                                       f"is tied now: the licence is spent. Drop "
                                       f"it"))
+    return findings, absent
+
+
+def witness_findings(before, after, touched):
+    """(T6, T7 and T8 findings, dead names left in unopened suites, faults left
+    in unopened forms, what T8 read)."""
+    findings = []
     left = 0
     for s in after.suites:
         dead = after.declared(s) - after.scenarios
@@ -830,6 +781,94 @@ def judge(after_kind, against, legacy_path):
                                               f"witnessed. Keep the declaration, "
                                               f"or retire the scenario in the "
                                               f"same commit"))
+    return findings, left, kept, t8_read
+
+
+def judge(after_kind, against, legacy_path):
+    global ROOT
+    # Root first, and every git call and disk read under it: run from a
+    # subdirectory, a bare `git ls-files` lists that directory alone, which
+    # reads as a tree with no scripts/ and passes.
+    ROOT = root = git_bytes("rev-parse", "--show-toplevel").decode(
+        "utf-8", "replace").strip()
+    rules = (load_sibling("check-tree-shape.py").in_scripts_dir,)
+    source = "LEGACY" if legacy_path is None else legacy_path
+
+    if after_kind == "commit":
+        unjudged = uncontained(against)
+        if unjudged:
+            print(f"check-sdlc-tie: PERMITTING -- {unjudged}", file=sys.stderr)
+            return 0
+    before, after, ms = read_trees(after_kind, against, rules)
+    moved, touched = changed(against if after_kind == "commit" else "HEAD",
+                             after_kind)
+    allowed, allowed_before, after_read, list_read = allow_lists(
+        before, after, legacy_path, source)
+
+    print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
+          f"{len(after.suites)} suite(s), {len(after.htmls)} html form(s), "
+          f"{len(after.code)} code path(s) from "
+          f"{after.label} under {root}; each judged against {before.label}, "
+          f"{len(moved)} path(s) renamed in between; two trees read in "
+          f"{ms[0]:.0f} + {ms[1]:.0f} ms")
+
+    findings, licensed = [], []
+    for k in after.code:
+        if after.tied(k):
+            continue
+        was = moved.get(k, k)                    # its name in the tree before
+        if was not in before.code:
+            why = ("no suite carries its stem" if not after.suites_of(k)
+                   else f"its suite declares no scenario {SNAPSHOT} lists")
+            findings.append(("T1", k, f"added untied: {why}. A code path is "
+                                      f"tied by a `{stem(k)}-test` suite carrying "
+                                      f"a `# witnesses: <Name>` line that names a "
+                                      f"command {SNAPSHOT} lists"))
+            continue
+        if before.tied(was):                     # `was` is in before.code here
+            if not after.suites_of(k):
+                gone = ", ".join(before.suites_of(was))
+                findings.append(("T2", k, f"was tied through {gone}; after this "
+                                          f"commit no suite carries its stem. "
+                                          f"Rename or restore the suite with it"))
+            else:
+                findings.append(("T3", k, f"was tied; its suite "
+                                          f"{', '.join(after.suites_of(k))} "
+                                          f"declares no scenario after this "
+                                          f"commit. Rewrite its `# witnesses:` "
+                                          f"line"))
+            continue
+        if k in allowed and {was, k} & allowed_before:  # the line moved with it
+            licensed.append(k)
+        elif k in allowed:
+            pass                                 # a line this commit added: below
+        elif was in allowed:                     # renamed, its line left behind
+            findings.append(("T4", k, f"renamed from {was}, and the allow-list "
+                                      f"({source}) names only the old path: a "
+                                      f"line moves with its file, in the same "
+                                      f"commit, since a later one would be a "
+                                      f"line the list gains. Move it to {k}, or "
+                                      f"tie it"))
+        elif k not in touched:               # a rename puts both ends in it
+            # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
+            # that the change never opened is not this change's debt, and every
+            # fixture repository under scripts/*-test.py is a tree of copied
+            # guards with no suites -- so an unscoped T4 refused every commit
+            # any of them makes. Scoped, the bite that is left is real: a path a
+            # bypassed hook landed untied is refused the next time anything
+            # opens it, and CI's `--against origin/main` reads the whole pull
+            # request, where the same path is new and T1 has it already.
+            licensed.append(k)
+        else:
+            findings.append(("T4", k, f"untied before this commit and untied "
+                                      f"after it, and the allow-list ({source}) "
+                                      f"does not name it: the debt grew where "
+                                      f"nothing read it. Tie it"))
+    listed, absent = list_findings(allowed, allowed_before, moved, before, after,
+                                   source)
+    findings += listed
+    named, left, kept, t8_read = witness_findings(before, after, touched)
+    findings += named
     for code, path, what in sorted(findings):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "

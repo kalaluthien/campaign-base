@@ -20,6 +20,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[3]
+sys.path.append(str(BASE / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 GUARD = BASE / "scripts" / "check-campaign-claim.py"
 
 
@@ -34,13 +37,6 @@ def load(path, name):
 def main():
     m = load(HERE / "campaign-roles.py", "croles")
     tracker = load(BASE / "scripts" / "campaign-tracker.py", "ctracker")
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}  {detail}".rstrip())
-
     check("the role words are the table's keys, in its order",
           m.ROLE_WORDS == tuple(m.ROLES), m.ROLE_WORDS)
     check("no-role is not a role word, so a nameless session holds no row",
@@ -102,10 +98,7 @@ def main():
           code == 0 and all(f"\n  {r}\n" in out.getvalue() for r in m.ROLES),
           code)
 
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

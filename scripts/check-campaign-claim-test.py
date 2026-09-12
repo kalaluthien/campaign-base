@@ -39,15 +39,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
+
 HERE = Path(__file__).resolve().parent
 GUARD = HERE / "check-campaign-claim.py"
 CLAIM = HERE / "campaign-claim.py"
 
 
-def git(cwd, *args):
-    return subprocess.run(["git", "-C", str(cwd), "-c", "user.email=t@t",
-                           "-c", "user.name=t", *args],
-                          capture_output=True, text=True)
+git = harness.git
 
 
 class Fixture:
@@ -343,13 +343,6 @@ def corpus_issues(mod, rows):
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}\n      {detail}")
-
     def out(r):
         return r.stdout + r.stderr
 
@@ -3307,9 +3300,6 @@ def main():
               and "did not judge this call" not in out(r),
               f"exit {r.returncode}: {out(r)[:300]}")
 
-    if not ran:
-        print("FAIL  the suite ran no case at all")
-        return 1
     # THE EXACT COUNT, because "ran no case at all" is not the only way a case
     # can go missing: one whose body sits behind an `if` that is false, or a
     # loop over an empty sequence, runs nothing and reports nothing. One such
@@ -3321,24 +3311,20 @@ def main():
     # that adds a case; the corpus replay twelve hundred lines up asserts its
     # own count the same way.
     #
-    # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
-    # and swallowed every named failure and the summary line, so a run that
-    # both lost a case and broke one reported only the count.
+    # READ AFTER THE REPORT, NOT BEFORE IT. Returning on the count first printed
+    # it and swallowed every named failure and the summary line, so a run that
+    # both lost a case and broke one reported only the count. The count is not
+    # a case, so it stays out of the tally: folding it in printed
+    # `407/408 cases pass` on a run where all 408 named cases passed.
     EXPECTED = 465
-    counted = []
-    if len(ran) != EXPECTED:
-        counted.append(
-            f"the suite ran {len(ran)} cases, not {EXPECTED}\n"
-            f"      FEWER means a case whose body did not run, which reports "
-            f"nothing; MORE means this number was not raised in the commit "
-            f"that added one")
-    for x in fails + counted:
-        print(f"FAIL  {x}")
-    # `counted` IS NOT A CASE, so it stays out of the tally: folding it in
-    # printed `407/408 cases pass` on a run where all 408 named cases passed.
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails or counted else 0
-
+    status = harness.report()
+    if harness.RAN and len(harness.RAN) != EXPECTED:
+        print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"
+              f"      FEWER means a case whose body did not run, which reports "
+              f"nothing; MORE means this number was not raised in the commit "
+              f"that added one")
+        return 1
+    return status
 
 if __name__ == "__main__":
     sys.exit(main())

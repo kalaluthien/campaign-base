@@ -39,6 +39,7 @@ import tempfile
 from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-sdlc-tie.py"
+harness = importlib.import_module("suite-harness-test")
 
 
 def guard_module():
@@ -334,8 +335,8 @@ def own_list_case(listed_before, listed_after, change=None, copy_before=None,
             "scripts/check-sdlc-tie.py": copy_before or own_guard(listed_before)}
     staged = {"scripts/a.py": CODE + "y\n"} if change is None else dict(change)
     staged["scripts/check-sdlc-tie.py"] = copy_after or own_guard(listed_after)
-    return run_case(base, staged, on_disk=on_disk, legacy=None,
-                    guard="scripts/check-sdlc-tie.py")
+    return tie_in_repo(base, staged, on_disk=on_disk, legacy=None,
+                       guard="scripts/check-sdlc-tie.py")
 
 
 def put(root, rel, body):
@@ -367,9 +368,9 @@ def stage(root, files):
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
 
 
-def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
-             legacy=(), config=(), commits=(), branch_at_head=None,
-             back_to=None, guard=None):
+def tie_in_repo(before, after, args=("--staged",), on_disk=None, cwd="",
+                legacy=(), config=(), commits=(), branch_at_head=None,
+                back_to=None, guard=None):
     """One fixture repository, and the guard run over it.
 
     `legacy` is the allow-list, written to a file OUTSIDE the repository -- a
@@ -419,99 +420,91 @@ def judge(r, code):
 
 
 def main():
-    failed = ran = 0
-
-    def check(name, ok, want, r):
-        nonlocal failed, ran
-        ran += 1
-        if ok:
-            print(f"ok    {name}")
-        else:
-            failed += 1
-            print(f"FAIL  {name}: wanted {want}")
-            print("      " + (r.stdout + r.stderr).strip().replace("\n", "\n      ")[:900])
+    def verdict(name, ok, want, r):
+        harness.check(name, ok, f"wanted {want}\n      "
+                      + (r.stdout + r.stderr).strip().replace("\n", "\n      ")[:900])
 
     for name, before, after, code in CASES:
-        r = run_case(before, after)
+        r = tie_in_repo(before, after)
         ok, want = judge(r, code)
-        check(name, ok, want, r)
+        verdict(name, ok, want, r)
 
     for name, before, after, code in HTML_CASES:
-        r = run_case(before, after)
+        r = tie_in_repo(before, after)
         ok, want = judge(r, code)
         codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
-        check(name, ok and codes <= {code}, want + ", and no other code", r)
+        verdict(name, ok and codes <= {code}, want + ", and no other code", r)
 
     for name, before, after, code in T8_CASES:
-        r = run_case(before, after)
+        r = tie_in_repo(before, after)
         ok, want = judge(r, code)
         codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
-        check(name, ok and codes <= {code}, want + ", and no other code", r)
-    r = run_case(*T8_CASES[0][1:3])
+        verdict(name, ok and codes <= {code}, want + ", and no other code", r)
+    r = tie_in_repo(*T8_CASES[0][1:3])
     line = next((ln for ln in r.stderr.splitlines() if ln.startswith("T8\t")), "")
-    check("T8's line names the suite that declared it and the name it lost",
-          line.startswith("T8\tscripts/a-test.py\t") and "`S1_Other`" in line,
-          "one T8 line naming scripts/a-test.py and `S1_Other`", r)
-    r = run_case(TIED, {"README.md": "r\n"})
-    check("the reading says T8 read the witnessed scenarios",
-          "T8 read 1 witnessed scenario(s) before and 1 after" in r.stdout,
-          "the T8 clause with both counts", r)
-    r = run_case(TIED, {SPEC: snap("S1_FullChain", "S2_New")})
-    check("the reading says T8 stood down when the command names changed",
-          "T8 stood down" in r.stdout, "the T8 stand-down clause", r)
+    verdict("T8's line names the suite that declared it and the name it lost",
+            line.startswith("T8\tscripts/a-test.py\t") and "`S1_Other`" in line,
+            "one T8 line naming scripts/a-test.py and `S1_Other`", r)
+    r = tie_in_repo(TIED, {"README.md": "r\n"})
+    verdict("the reading says T8 read the witnessed scenarios",
+            "T8 read 1 witnessed scenario(s) before and 1 after" in r.stdout,
+            "the T8 clause with both counts", r)
+    r = tie_in_repo(TIED, {SPEC: snap("S1_FullChain", "S2_New")})
+    verdict("the reading says T8 stood down when the command names changed",
+            "T8 stood down" in r.stdout, "the T8 stand-down clause", r)
 
     # ---- the list before the commit, read from the tree that holds it.
     r = own_list_case([], ["scripts/a.py"])
     ok, want = judge(r, "T4")
-    check("T4 DebtNeverGrows_Bites: a code path the commit touches untied, "
-          "licensed by a line the same commit adds: the list does not grow",
-          ok, want, r)
+    verdict("T4 DebtNeverGrows_Bites: a code path the commit touches untied, "
+            "licensed by a line the same commit adds: the list does not grow",
+            ok, want, r)
     r = own_list_case(["scripts/a.py"], ["scripts/a.py"])
     ok, want = judge(r, None)
-    check("allow a code path licensed by a line the list held before the commit",
-          ok, want, r)
+    verdict("allow a code path licensed by a line the list held before the commit",
+            ok, want, r)
     r = own_list_case(["scripts/a.py"], [])
     ok, want = judge(r, "T4")
-    check("T4 a line dropped while the path it licensed is touched and untied",
-          ok, want, r)
+    verdict("T4 a line dropped while the path it licensed is touched and untied",
+            ok, want, r)
     r = own_list_case(["scripts/a.py"], [], change={"README.md": "r\n"})
     ok, want = judge(r, "T4")
-    check("T4 a line dropped while the path it licensed stays untied, the "
-          "commit never touching the path: the line leaves with the tie",
-          ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
+    verdict("T4 a line dropped while the path it licensed stays untied, the "
+            "commit never touching the path: the line leaves with the tie",
+            ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
     r = own_list_case(["scripts/a.py"], [],
                       change={"scripts/a.py": None, "scripts/b.py": CODE})
     ok, want = judge(r, "T4")
-    check("T4 a listed path renamed with its line dropped, still untied: the "
-          "line lost is the old path's",
-          ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
+    verdict("T4 a listed path renamed with its line dropped, still untied: the "
+            "line lost is the old path's",
+            ok and "loses its line" in r.stderr, want + ", naming the line lost", r)
     r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"})
     ok, want = judge(r, "T4")
-    check("T4 a line added for an untied path the commit never touches: the "
-          "list does not grow anywhere", ok and "gains this line" in r.stderr,
-          want + ", naming the line gained", r)
+    verdict("T4 a line added for an untied path the commit never touches: the "
+            "list does not grow anywhere", ok and "gains this line" in r.stderr,
+            want + ", naming the line gained", r)
     r = own_list_case(["scripts/a.py"], ["scripts/b.py"],
                       change={"scripts/a.py": None, "scripts/b.py": CODE})
     ok, want = judge(r, None)
-    check("allow a line moved with the file it names, in the same commit",
-          ok, want, r)
+    verdict("allow a line moved with the file it names, in the same commit",
+            ok, want, r)
     r = own_list_case(["scripts/a.py"], ["scripts/a.py"],
                       change={"scripts/a.py": None, "scripts/b.py": CODE})
     ok, want = judge(r, "T4")
-    check("T4 a listed file renamed with its line left at the old name: no "
-          "later commit could move the line", ok and "names only the old path"
-          in r.stderr, want + ", naming the line left behind", r)
+    verdict("T4 a listed file renamed with its line left at the old name: no "
+            "later commit could move the line", ok and "names only the old path"
+            in r.stderr, want + ", naming the line left behind", r)
     # The list after is the judged tree's, not the copy on disk.
     r = own_list_case([], [], change={"README.md": "r\n"},
                       on_disk={"scripts/check-sdlc-tie.py": own_guard(["scripts/a.py"])})
     ok, want = judge(r, None)
-    check("allow a commit while a line sits unstaged in the copy on disk: the "
-          "index does not carry it", ok and "read from the index's" in r.stdout,
-          want + ", the list after read from the index", r)
+    verdict("allow a commit while a line sits unstaged in the copy on disk: the "
+            "index does not carry it", ok and "read from the index's" in r.stdout,
+            want + ", the list after read from the index", r)
     r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"},
                       on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
     ok, want = judge(r, "T4")
-    check("T4 a line the index gains, reverted on disk only", ok, want, r)
+    verdict("T4 a line the index gains, reverted on disk only", ok, want, r)
     # A list before that cannot be read is not a licence to skip the commit:
     # the running list stands for it, the reading says why, and T1 still bites.
     added = {"scripts/b.py": CODE}
@@ -530,170 +523,170 @@ def main():
             ("chains too long to parse", LONG, "does not parse")):
         r = own_list_case([], [], change=added, copy_before=copy)
         ok, want = judge(r, "T1")
-        check(f"a list before that {name} is named in the reading, and the "
-              f"commit is still judged", ok and why in r.stdout
-              and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
+        verdict(f"a list before that {name} is named in the reading, and the "
+                f"commit is still judged", ok and why in r.stdout
+                and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
     for name, copy in (("nests too deep", DEEP), ("chains too long", LONG)):
         r = own_list_case([], [], change=added, copy_after=copy,
                           on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
         ok, want = judge(r, "T1")
-        check(f"a list after that {name} to parse is named in the reading, "
-              f"and the commit is still judged", ok and "does not parse" in
-              r.stdout and "PERMITTING" not in r.stderr, want + ", `does not "
-              "parse` in the reading", r)
+        verdict(f"a list after that {name} to parse is named in the reading, "
+                f"and the commit is still judged", ok and "does not parse" in
+                r.stdout and "PERMITTING" not in r.stderr, want + ", `does not "
+                "parse` in the reading", r)
     twice = own_guard([]) + '\nLEGACY = ("scripts/a.py",)\n'
     r = own_list_case(None, ["scripts/a.py"], copy_before=twice)
     ok, want = judge(r, None)
-    check("a list before assigned twice is read at its last assignment, as "
-          "Python keeps it", ok, want, r)
+    verdict("a list before assigned twice is read at its last assignment, as "
+            "Python keeps it", ok, want, r)
     annotated = own_guard(["scripts/a.py"]).replace("LEGACY = (", "LEGACY: tuple = (", 1)
     r = own_list_case(None, ["scripts/a.py"], copy_before=annotated)
-    check("an annotated list before is read, not taken for no list",
-          judge(r, None)[0] and "the list before read from HEAD's" in r.stdout,
-          "0 finding(s) and the list-before clause naming HEAD", r)
+    verdict("an annotated list before is read, not taken for no list",
+            judge(r, None)[0] and "the list before read from HEAD's" in r.stdout,
+            "0 finding(s) and the list-before clause naming HEAD", r)
 
     # An unopened form's old fault is counted in the reading, not dropped.
-    r = run_case({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})
-    check("an unopened form's old fault is counted in the reading",
-          judge(r, None)[0] and "1 fault(s) left in html forms" in r.stdout,
-          "0 finding(s) and `1 fault(s) left in html forms` in the reading", r)
+    r = tie_in_repo({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})
+    verdict("an unopened form's old fault is counted in the reading",
+            judge(r, None)[0] and "1 fault(s) left in html forms" in r.stdout,
+            "0 finding(s) and `1 fault(s) left in html forms` in the reading", r)
 
     for name, before, after in T6_CASES:
-        r = run_case(before, after)
+        r = tie_in_repo(before, after)
         ok, want = judge(r, "T6")
         codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
-        check(name, ok and codes == {"T6"}, want + ", and no other code", r)
+        verdict(name, ok and codes == {"T6"}, want + ", and no other code", r)
 
     # T6 names the file, the name and the tree it searched, and only the dead one.
-    r = run_case({SPEC: DECL},
-                 {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"})
+    r = tie_in_repo({SPEC: DECL},
+                    {"scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"})
     line = next((ln for ln in r.stderr.splitlines() if ln.startswith("T6\t")), "")
-    check("T6's line names the suite, the dead name and the tree it searched, "
-          "and not the live name",
-          line.startswith("T6\tscripts/a-test.py\t") and "`S9_Nowhere`" in line
-          and "the index" in line and "S1_FullChain" not in line,
-          "one T6 line naming scripts/a-test.py, `S9_Nowhere` and the index", r)
+    verdict("T6's line names the suite, the dead name and the tree it searched, "
+            "and not the live name",
+            line.startswith("T6\tscripts/a-test.py\t") and "`S9_Nowhere`" in line
+            and "the index" in line and "S1_FullChain" not in line,
+            "one T6 line naming scripts/a-test.py, `S9_Nowhere` and the index", r)
     # One line PER dead name: bd2143d left three of four, and a reader that
     # reported the first would read the same verdict with two names unlisted.
-    r = run_case({SPEC: DECL},
-                 {"scripts/a.py": CODE,
+    r = tie_in_repo({SPEC: DECL},
+                    {"scripts/a.py": CODE,
                   "scripts/a-test.py": "# witnesses: S9_A, S1_FullChain, S9_B, S9_C\n"})
     got = sorted(ln.split(" line declares `")[1].split("`")[0]
                  for ln in r.stderr.splitlines()
                  if ln.startswith("T6\t"))
-    check("T6 names every dead name on its own line, three of four as bd2143d left",
-          got == ["S9_A", "S9_B", "S9_C"], "T6 lines for S9_A, S9_B and S9_C", r)
-    r = run_case(DEBT, {"README.md": "r\n"})
+    verdict("T6 names every dead name on its own line, three of four as bd2143d left",
+            got == ["S9_A", "S9_B", "S9_C"], "T6 lines for S9_A, S9_B and S9_C", r)
+    r = tie_in_repo(DEBT, {"README.md": "r\n"})
     ok, want = judge(r, None)
-    check("a dead name already there, in a suite the change never opened, is not "
-          "this change's debt, and the reading counts it",
-          ok and "1 dead witness name(s) left where the change never opened"
-          in r.stdout, "0 finding(s) and the count of what was left", r)
+    verdict("a dead name already there, in a suite the change never opened, is not "
+            "this change's debt, and the reading counts it",
+            ok and "1 dead witness name(s) left where the change never opened"
+            in r.stdout, "0 finding(s) and the count of what was left", r)
 
     # --staged reads the index and not the disk, both ways round.
-    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE}, on_disk={"scripts/a.py": None})
+    r = tie_in_repo({SPEC: DECL}, {"scripts/a.py": CODE}, on_disk={"scripts/a.py": None})
     ok, want = judge(r, "T1")
-    check("--staged judges the untied code path staged, though it is gone from disk",
-          ok, want, r)
-    r = run_case({SPEC: DECL}, {"README.md": "r\n"}, on_disk={"scripts/a.py": CODE})
+    verdict("--staged judges the untied code path staged, though it is gone from disk",
+            ok, want, r)
+    r = tie_in_repo({SPEC: DECL}, {"README.md": "r\n"}, on_disk={"scripts/a.py": CODE})
     ok, want = judge(r, None)
-    check("--staged ignores an untied code path only the disk has", ok, want, r)
-    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": SUITE},
-                 on_disk={"scripts/a-test.py": "# nothing\n"})
+    verdict("--staged ignores an untied code path only the disk has", ok, want, r)
+    r = tie_in_repo({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": SUITE},
+                    on_disk={"scripts/a-test.py": "# nothing\n"})
     ok, want = judge(r, None)
-    check("--staged reads the suite's staged text, not the disk's emptier one", ok, want, r)
-    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": "# nothing\n"},
-                 on_disk={"scripts/a-test.py": SUITE})
+    verdict("--staged reads the suite's staged text, not the disk's emptier one", ok, want, r)
+    r = tie_in_repo({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": "# nothing\n"},
+                    on_disk={"scripts/a-test.py": SUITE})
     ok, want = judge(r, "T1")
-    check("--staged reads the suite's staged text, not the disk's tied one", ok, want, r)
+    verdict("--staged reads the suite's staged text, not the disk's tied one", ok, want, r)
 
     # Without --staged the working tree is read against HEAD.
-    r = run_case({SPEC: DECL}, {}, args=(), on_disk={"scripts/a.py": CODE})
-    check("without --staged, an untied code path on disk is not read: it is untracked",
-          r.returncode == 0 and "0 finding(s)" in r.stdout, "exit 0", r)
-    r = run_case(TIED, {}, args=(), on_disk={"scripts/a-test.py": "# gone\n"})
-    check("without --staged, a suite edited on disk to name nothing is T3",
-          r.returncode == 1 and "T3\t" in r.stderr, "T3 on stderr, exit 1", r)
-    r = run_case(TIED, {}, args=(), on_disk={"scripts/a-test.py": None})
-    check("without --staged, a suite deleted on disk and not staged is T2, not a permit",
-          r.returncode == 1 and "T2\t" in r.stderr and "PERMITTING" not in r.stderr,
-          "T2 on stderr, exit 1", r)
-    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": SUITE},
-                 args=(), on_disk={"scripts/a-test.py":
+    r = tie_in_repo({SPEC: DECL}, {}, args=(), on_disk={"scripts/a.py": CODE})
+    verdict("without --staged, an untied code path on disk is not read: it is untracked",
+            r.returncode == 0 and "0 finding(s)" in r.stdout, "exit 0", r)
+    r = tie_in_repo(TIED, {}, args=(), on_disk={"scripts/a-test.py": "# gone\n"})
+    verdict("without --staged, a suite edited on disk to name nothing is T3",
+            r.returncode == 1 and "T3\t" in r.stderr, "T3 on stderr, exit 1", r)
+    r = tie_in_repo(TIED, {}, args=(), on_disk={"scripts/a-test.py": None})
+    verdict("without --staged, a suite deleted on disk and not staged is T2, not a permit",
+            r.returncode == 1 and "T2\t" in r.stderr and "PERMITTING" not in r.stderr,
+            "T2 on stderr, exit 1", r)
+    r = tie_in_repo({SPEC: DECL}, {"scripts/a.py": CODE, "scripts/a-test.py": SUITE},
+                    args=(), on_disk={"scripts/a-test.py":
                                    b"# witnesses: S1_FullChain\n# \xff\n"})
     ok, want = judge(r, None)
-    check("without --staged, a byte that is not UTF-8 on disk is replaced, not "
-          "raised", ok, want, r)
-    r = run_case(TIED, {}, args=(), on_disk={SPEC: None})
-    check("without --staged, the snapshot deleted on disk and not staged is T3",
-          r.returncode == 1 and "T3\t" in r.stderr and "PERMITTING" not in r.stderr,
-          "T3 on stderr, exit 1", r)
+    verdict("without --staged, a byte that is not UTF-8 on disk is replaced, not "
+            "raised", ok, want, r)
+    r = tie_in_repo(TIED, {}, args=(), on_disk={SPEC: None})
+    verdict("without --staged, the snapshot deleted on disk and not staged is T3",
+            r.returncode == 1 and "T3\t" in r.stderr and "PERMITTING" not in r.stderr,
+            "T3 on stderr, exit 1", r)
 
     # From a subdirectory the same tree is read.
-    r = run_case({SPEC: DECL}, {"scripts/a.py": CODE}, cwd="spec")
+    r = tie_in_repo({SPEC: DECL}, {"scripts/a.py": CODE}, cwd="spec")
     ok, want = judge(r, "T1")
-    check("run from a subdirectory, the guard reads the whole tree", ok, want, r)
+    verdict("run from a subdirectory, the guard reads the whole tree", ok, want, r)
 
     # ---- the allow-list: what it licenses, and what spends a line.
     edit = ({SPEC: DECL, "scripts/a.py": CODE}, {"scripts/a.py": CODE + "y\n"})
-    r = run_case(*edit, legacy=["scripts/a.py"])
+    r = tie_in_repo(*edit, legacy=["scripts/a.py"])
     ok, want = judge(r, None)
-    check("an allow-list line licenses the code path it names, left untied",
-          ok and "1 code path(s) untied and licensed" in r.stdout,
-          "0 finding(s) and the licensed count", r)
-    r = run_case(*edit, legacy=["scripts/a.py  # why it is still untied"])
+    verdict("an allow-list line licenses the code path it names, left untied",
+            ok and "1 code path(s) untied and licensed" in r.stdout,
+            "0 finding(s) and the licensed count", r)
+    r = tie_in_repo(*edit, legacy=["scripts/a.py  # why it is still untied"])
     ok, want = judge(r, None)
-    check("an allow-list line's trailing `#` comment is not part of the path",
-          ok, want, r)
+    verdict("an allow-list line's trailing `#` comment is not part of the path",
+            ok, want, r)
     rename = ({SPEC: DECL, "scripts/a.py": CODE},
               {"scripts/a.py": None, "scripts/b.py": CODE})
-    r = run_case(*rename, legacy=["scripts/b.py"])
+    r = tie_in_repo(*rename, legacy=["scripts/b.py"])
     ok, want = judge(r, None)
-    check("a rename is licensed by the line's NEW name, so file and line move "
-          "in one commit", ok, want, r)
-    r = run_case(*rename, legacy=["scripts/a.py"])
+    verdict("a rename is licensed by the line's NEW name, so file and line move "
+            "in one commit", ok, want, r)
+    r = tie_in_repo(*rename, legacy=["scripts/a.py"])
     ok, want = judge(r, "T4")
-    check("T4 a rename the line's OLD name alone names: the line moves in the "
-          "same commit, since the commit after would be a line the list gains",
-          ok, want, r)
-    r = run_case(TIED, {"README.md": "r\n"}, legacy=["scripts/a.py"])
+    verdict("T4 a rename the line's OLD name alone names: the line moves in the "
+            "same commit, since the commit after would be a line the list gains",
+            ok, want, r)
+    r = tie_in_repo(TIED, {"README.md": "r\n"}, legacy=["scripts/a.py"])
     ok, want = judge(r, "T5")
-    check("T5 an allow-list line whose code path is tied now", ok, want, r)
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE}, {"scripts/a.py": None},
-                 legacy=["scripts/a.py"])
+    verdict("T5 an allow-list line whose code path is tied now", ok, want, r)
+    r = tie_in_repo({SPEC: DECL, "scripts/a.py": CODE}, {"scripts/a.py": None},
+                    legacy=["scripts/a.py"])
     ok, want = judge(r, None)
-    check("an allow-list line naming no code path here is counted, not refused: "
-          "a deleted path and a tree the list is not about read the same",
-          ok and "1 naming no code path here" in r.stdout,
-          "0 finding(s) and the absent count", r)
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE, "scripts/a-test.py": SUITE},
-                 {"README.md": "r\n"},
-                 legacy=["scripts/a.py", "scripts/gone.py"])
+    verdict("an allow-list line naming no code path here is counted, not refused: "
+            "a deleted path and a tree the list is not about read the same",
+            ok and "1 naming no code path here" in r.stdout,
+            "0 finding(s) and the absent count", r)
+    r = tie_in_repo({SPEC: DECL, "scripts/a.py": CODE, "scripts/a-test.py": SUITE},
+                    {"README.md": "r\n"},
+                    legacy=["scripts/a.py", "scripts/gone.py"])
     ok, want = judge(r, "T5")
-    check("T5 fires on the tied line while a line naming nothing here does not",
-          ok and r.stderr.count("T5\t") == 1
-          and "1 naming no code path here" in r.stdout,
-          "exactly one T5, for the tied path", r)
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE}, {"README.md": "r\n"})
+    verdict("T5 fires on the tied line while a line naming nothing here does not",
+            ok and r.stderr.count("T5\t") == 1
+            and "1 naming no code path here" in r.stdout,
+            "exactly one T5, for the tied path", r)
+    r = tie_in_repo({SPEC: DECL, "scripts/a.py": CODE}, {"README.md": "r\n"})
     ok, want = judge(r, None)
-    check("a code path untied on both sides that the change never touched is "
-          "not this change's debt: an unlisted path is refused only when the "
-          "change opens it",
-          ok, want, r)
-    r = run_case(TIED, {"README.md": "r\n"}, legacy=None)
+    verdict("a code path untied on both sides that the change never touched is "
+            "not this change's debt: an unlisted path is refused only when the "
+            "change opens it",
+            ok, want, r)
+    r = tie_in_repo(TIED, {"README.md": "r\n"}, legacy=None)
     ok, want = judge(r, None)
-    check("with no --legacy the built-in list is read, and a tree that never "
-          "held its paths is not judged to have spent every line",
-          ok and f"(LEGACY, the running copy's: the index holds no "
-          f"scripts/check-sdlc-tie.py; {len(LEGACY)} entr(ies), {len(LEGACY)} "
-          f"naming no code path here; LEGACY stands for the list before too"
-          in r.stdout,
-          "0 finding(s) and a reading naming LEGACY, its size, its absences "
-          "and which list stood for the tree before", r)
+    verdict("with no --legacy the built-in list is read, and a tree that never "
+            "held its paths is not judged to have spent every line",
+            ok and f"(LEGACY, the running copy's: the index holds no "
+            f"scripts/check-sdlc-tie.py; {len(LEGACY)} entr(ies), {len(LEGACY)} "
+            f"naming no code path here; LEGACY stands for the list before too"
+            in r.stdout,
+            "0 finding(s) and a reading naming LEGACY, its size, its absences "
+            "and which list stood for the tree before", r)
     r = own_list_case(["scripts/a.py"], ["scripts/a.py"])
-    check("the reading names the tree the list before was read from",
-          "the list before read from HEAD's scripts/check-sdlc-tie.py, 1 entr(ies)"
-          in r.stdout, "the list-before clause naming HEAD and its size", r)
+    verdict("the reading names the tree the list before was read from",
+            "the list before read from HEAD's scripts/check-sdlc-tie.py, 1 entr(ies)"
+            in r.stdout, "the list-before clause naming HEAD and its size", r)
 
     # ---- --against <ref>: the whole change between two commits, which is what
     # CI has to judge and what judging against HEAD on a merge commit cannot see.
@@ -701,95 +694,95 @@ def main():
     # that varies between the two readings.
     two = dict(before={SPEC: DECL}, after={}, commits=[{"scripts/a.py": CODE}],
                legacy=["scripts/a.py"])
-    r = run_case(two["before"], two["after"], args=(), commits=two["commits"],
-                 legacy=two["legacy"])
+    r = tie_in_repo(two["before"], two["after"], args=(), commits=two["commits"],
+                    legacy=two["legacy"])
     ok, want = judge(r, None)
-    check("against HEAD, a change already committed is nothing left to judge",
-          ok, want, r)
-    r = run_case(two["before"], two["after"], args=("--against", "HEAD~1"),
-                 commits=two["commits"], legacy=two["legacy"])
+    verdict("against HEAD, a change already committed is nothing left to judge",
+            ok, want, r)
+    r = tie_in_repo(two["before"], two["after"], args=("--against", "HEAD~1"),
+                    commits=two["commits"], legacy=two["legacy"])
     ok, want = judge(r, "T1")
-    check("--against a ref, the same change is judged as the commit that made it",
-          ok, want, r)
-    r = run_case(TIED, {}, args=("--against", "HEAD~1"),
-                 commits=[{"scripts/a-test.py": None}])
+    verdict("--against a ref, the same change is judged as the commit that made it",
+            ok, want, r)
+    r = tie_in_repo(TIED, {}, args=("--against", "HEAD~1"),
+                    commits=[{"scripts/a-test.py": None}])
     ok, want = judge(r, "T2")
-    check("--against a ref reads a suite deleted in a later commit", ok, want, r)
-    r = run_case({SPEC: DECL}, {}, args=("--against", "no-such-ref"))
+    verdict("--against a ref reads a suite deleted in a later commit", ok, want, r)
+    r = tie_in_repo({SPEC: DECL}, {}, args=("--against", "no-such-ref"))
     # The phrase is the GATE's, not the last-resort handler's: with the
     # could-not-read branch deleted the 128 falls through to `ls-tree`, whose
     # raise the handler reports as "the reading itself failed" too -- so a case
     # asserting that much passes on the wrong reader.
-    check("--against a ref that does not resolve says the READING failed, not "
-          "that HEAD does not contain it",
-          r.returncode == 0 and "does not contain" not in r.stderr
-          and "git could not say whether HEAD contains" in r.stderr,
-          "exit 0 and the gate's own could-not-read line", r)
-    check("...and git's own message is quoted inside the guard's line rather "
-          "than printed beside it",
-          r.stderr.count("check-sdlc-tie:") == 1
-          and "Not a valid object name" in r.stderr.split("check-sdlc-tie:")[1],
-          "one guard line, carrying git's message", r)
+    verdict("--against a ref that does not resolve says the READING failed, not "
+            "that HEAD does not contain it",
+            r.returncode == 0 and "does not contain" not in r.stderr
+            and "git could not say whether HEAD contains" in r.stderr,
+            "exit 0 and the gate's own could-not-read line", r)
+    verdict("...and git's own message is quoted inside the guard's line rather "
+            "than printed beside it",
+            r.stderr.count("check-sdlc-tie:") == 1
+            and "Not a valid object name" in r.stderr.split("check-sdlc-tie:")[1],
+            "one guard line, carrying git's message", r)
     # A HEAD that does not CONTAIN the ref is not a change: every commit the ref
     # has and HEAD has not reads backwards, so a branch that committed nothing
     # of its own was refused with a T3 naming a file it never opened.
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE,
+    r = tie_in_repo({SPEC: DECL, "scripts/a.py": CODE,
                   "scripts/a-test.py": "#!/usr/bin/env python3\n"},
-                 {}, args=("--against", "ahead"), legacy=["scripts/a.py"],
-                 commits=[{"scripts/a-test.py": SUITE}], branch_at_head="ahead",
-                 back_to="HEAD~1")
-    check("--against a ref HEAD does not contain permits loudly, rather than "
-          "refusing a branch for a commit it never made",
-          r.returncode == 0 and "does not contain" in r.stderr
-          and "T3\t" not in r.stderr, "exit 0 and PERMITTING, no T3", r)
+                    {}, args=("--against", "ahead"), legacy=["scripts/a.py"],
+                    commits=[{"scripts/a-test.py": SUITE}], branch_at_head="ahead",
+                    back_to="HEAD~1")
+    verdict("--against a ref HEAD does not contain permits loudly, rather than "
+            "refusing a branch for a commit it never made",
+            r.returncode == 0 and "does not contain" in r.stderr
+            and "T3\t" not in r.stderr, "exit 0 and PERMITTING, no T3", r)
 
     # ---- a non-ASCII path. `core.quotePath` is git's default and CI's, and a
     # quoted path matches no stem and no suffix, so it leaves every set without
     # a word. The listings are `-z`, which emits the bytes instead.
     quote = (("core.quotePath", "true"),)
-    r = run_case({SPEC: DECL}, {"scripts/캠페인.py": CODE}, config=quote)
+    r = tie_in_repo({SPEC: DECL}, {"scripts/캠페인.py": CODE}, config=quote)
     ok, want = judge(r, "T1")
-    check("a code path at a non-ASCII path is in the code set under quotePath",
-          ok, want, r)
-    r = run_case({SPEC: DECL},
-                 {"scripts/캠페인.py": CODE, "scripts/캠페인-test.py": SUITE},
-                 config=quote)
+    verdict("a code path at a non-ASCII path is in the code set under quotePath",
+            ok, want, r)
+    r = tie_in_repo({SPEC: DECL},
+                    {"scripts/캠페인.py": CODE, "scripts/캠페인-test.py": SUITE},
+                    config=quote)
     ok, want = judge(r, None)
-    check("a suite at a non-ASCII path ties the code path beside it", ok, want, r)
+    verdict("a suite at a non-ASCII path ties the code path beside it", ok, want, r)
     # The committed tree is listed by a different command from the index, so it
     # needs a case of its own: quoted, this reads as T1 -- a path that was never
     # there before -- rather than as the T2 it is.
-    r = run_case({SPEC: DECL, "scripts/캠페인.py": CODE,
+    r = tie_in_repo({SPEC: DECL, "scripts/캠페인.py": CODE,
                   "scripts/캠페인-test.py": SUITE},
-                 {"scripts/캠페인-test.py": None}, config=quote)
+                    {"scripts/캠페인-test.py": None}, config=quote)
     ok, want = judge(r, "T2")
-    check("a code path tied at a non-ASCII path is read from the tree before",
-          ok, want, r)
+    verdict("a code path tied at a non-ASCII path is read from the tree before",
+            ok, want, r)
     # And the working tree is a third listing.
-    r = run_case({SPEC: DECL, "scripts/캠페인.py": CODE,
+    r = tie_in_repo({SPEC: DECL, "scripts/캠페인.py": CODE,
                   "scripts/캠페인-test.py": SUITE},
-                 {}, args=(), on_disk={"scripts/캠페인-test.py": None}, config=quote)
+                    {}, args=(), on_disk={"scripts/캠페인-test.py": None}, config=quote)
     ok, want = judge(r, "T2")
-    check("without --staged, a non-ASCII path on disk is read the same way",
-          ok, want, r)
+    verdict("without --staged, a non-ASCII path on disk is read the same way",
+            ok, want, r)
 
     # ---- an allow-list file that is not there is a reading that could not be
     # made, and permitting on it would license a debt nobody listed.
-    r = run_case({SPEC: DECL, "scripts/a.py": CODE},
-                 {"scripts/a.py": CODE + "y\n"},
-                 args=("--staged", "--legacy", "/nonexistent/legacy.txt"),
-                 legacy=None)
-    check("an allow-list file that is not there permits loudly, and does not "
-          "read as a list of nothing",
-          r.returncode == 0 and "PERMITTING" in r.stderr
-          and "FileNotFoundError" in r.stderr,
-          "exit 0 and PERMITTING naming the exception", r)
+    r = tie_in_repo({SPEC: DECL, "scripts/a.py": CODE},
+                    {"scripts/a.py": CODE + "y\n"},
+                    args=("--staged", "--legacy", "/nonexistent/legacy.txt"),
+                    legacy=None)
+    verdict("an allow-list file that is not there permits loudly, and does not "
+            "read as a list of nothing",
+            r.returncode == 0 and "PERMITTING" in r.stderr
+            and "FileNotFoundError" in r.stderr,
+            "exit 0 and PERMITTING naming the exception", r)
 
-    r = run_case({SPEC: DECL}, {}, args=("--staged", "--against", "HEAD"))
-    check("--staged and --against are exclusive, and saying both is refused "
-          "rather than one being dropped",
-          r.returncode != 0 and "not allowed with" in r.stderr,
-          "a non-zero exit naming the conflict", r)
+    r = tie_in_repo({SPEC: DECL}, {}, args=("--staged", "--against", "HEAD"))
+    verdict("--staged and --against are exclusive, and saying both is refused "
+            "rather than one being dropped",
+            r.returncode != 0 and "not allowed with" in r.stderr,
+            "a non-zero exit naming the conflict", r)
 
     # A SHALLOW clone answers every ancestry question no, because HEAD's parents
     # are grafted away. Collapsed with a real "does not contain" this made the
@@ -818,13 +811,13 @@ def main():
                                 "origin/main", "--legacy", str(allow)],
                                cwd=wd, capture_output=True, text=True)
             if want == "SHALLOW":
-                check("--against in a shallow clone names the clone, not a "
+                verdict("--against in a shallow clone names the clone, not a "
                       "verdict about the branch",
                       r.returncode == 0 and "SHALLOW" in r.stderr
                       and "does not contain" not in r.stderr,
                       "exit 0 and PERMITTING naming the shallow clone", r)
             else:
-                check("--against in the same clone at full depth judges the "
+                verdict("--against in the same clone at full depth judges the "
                       "change, which is what makes the shallow case a defect",
                       r.returncode == 1 and "T1\t" in r.stderr,
                       "T1 on stderr, exit 1", r)
@@ -833,19 +826,18 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         r = subprocess.run([sys.executable, str(GUARD), "--staged"], cwd=d,
                            capture_output=True, text=True)
-    check("outside a git repository the guard permits loudly",
-          r.returncode == 0 and "PERMITTING" in r.stderr
-          and "CalledProcessError" in r.stderr,
-          "exit 0 and PERMITTING naming the exception", r)
+    verdict("outside a git repository the guard permits loudly",
+            r.returncode == 0 and "PERMITTING" in r.stderr
+            and "CalledProcessError" in r.stderr,
+            "exit 0 and PERMITTING naming the exception", r)
 
     # The reading names its counts and its tree.
-    r = run_case(TIED, {"README.md": "r\n"})
+    r = tie_in_repo(TIED, {"README.md": "r\n"})
     want = ("read 1 scenario name(s), 1 suite(s), 0 html form(s), 1 code path(s) "
             "from the index under")
-    check("the reading names what it counted and where", want in r.stdout, want, r)
+    verdict("the reading names what it counted and where", want in r.stdout, want, r)
 
-    print(f"{ran} case(s) ran, {failed} failed")
-    return 1 if failed else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

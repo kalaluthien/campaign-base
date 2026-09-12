@@ -24,6 +24,7 @@ Usage: .claude/skills/assuming-role/scripts/campaign-heartbeat-test.py
 """
 import contextlib
 import datetime as dt
+import importlib
 import io
 import json
 import os
@@ -35,6 +36,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-heartbeat.py"
+sys.path.append(str(HERE.parents[3] / "scripts"))
+harness = importlib.import_module("suite-harness-test")
 
 
 def load(source):
@@ -444,7 +447,7 @@ def _(m):
 HERDR = r'''#!%(py)s
 import json, os, sys
 a = sys.argv[1:]
-d = %(dir)r
+d = os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))
 if a[:2] == ["agent", "list"]:
     print(open(os.path.join(d, "listing.json")).read()); sys.exit(0)
 if a[:2] == ["pane", "read"]:
@@ -460,12 +463,13 @@ sys.exit(1)
 GH = r'''#!%(py)s
 import json, os, sys
 a = sys.argv[1:]
+d = os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))
 T = "repos/kalaluthien/campaign-base"
-with open(os.path.join(%(dir)r, "gh.log"), "a") as fh:
+with open(os.path.join(d, "gh.log"), "a") as fh:
     fh.write(" ".join(a) + "\n")
 if a[:2] == ["api", T + "/issues/7"]:
     print('["campaign", "campaign:tk"]'); sys.exit(0)
-broken = lambda f: os.path.exists(os.path.join(%(dir)r, f))
+broken = lambda f: os.path.exists(os.path.join(d, f))
 if a[:3] == ["issue", "view", "7"] and not broken("repos-broken"):
     print("## Repos\n\n- none\n"); sys.exit(0)
 if broken("gh-broken"):
@@ -585,10 +589,8 @@ def fleet(d, prompt_exit=0, sh=True):
     b = d / "bin"
     b.mkdir(parents=True)
     for name, body in (("herdr", HERDR), ("gh", GH)):
-        (b / name).write_text(body % {"py": sys.executable, "dir": str(d)})
-        (b / name).chmod(0o755)
-    (b / "sleep").write_text("#!/bin/sh\nexit 0\n")
-    (b / "sleep").chmod(0o755)
+        harness.fake(b, name, body % {"py": sys.executable})
+    harness.fake(b, "sleep", "#!/bin/sh\nexit 0\n")
     if sh:
         (b / "sh").symlink_to("/bin/sh")
     (d / "prompt-exit").write_text(str(prompt_exit))
@@ -1658,38 +1660,9 @@ MUTATIONS = [
 ]
 
 
-def run_case(m, name):
-    try:
-        ok, detail = CASES[name](m)
-        return bool(ok), detail
-    except Exception as e:  # noqa: BLE001 -- a crash is reported, not red
-        return None, f"{e.__class__.__name__}: {e}"
-
-
 def main():
-    source = SCRIPT.read_text()
-    real = load(source)
-    failed = []
-    for name in CASES:
-        ok, detail = run_case(real, name)
-        if not ok:
-            failed.append(f"FAIL  {name} -- {str(detail)[:300]}")
-    print(f"{len(CASES) - len(failed)}/{len(CASES)} cases pass")
-    for label, old, new, name in MUTATIONS:
-        count = source.count(old)
-        if count != 1:
-            failed.append(f"MUTATION {label}: the text to break occurs {count} times")
-            continue
-        ok, detail = run_case(load(source.replace(old, new)), name)
-        if ok is None:
-            failed.append(f"MUTATION {label}: {name!r} crashed -- {detail}")
-        elif ok:
-            failed.append(f"MUTATION {label}: {name!r} stayed green")
-    print(f"{len(MUTATIONS)} mutations, "
-          f"{sum(1 for f in failed if f.startswith('MUTATION'))} survived or crashed")
-    for f in failed:
-        print(f)
-    return 1 if failed else 0
+    harness.mutate(SCRIPT.read_text(), load, CASES, MUTATIONS)
+    return harness.report()
 
 
 if __name__ == "__main__":

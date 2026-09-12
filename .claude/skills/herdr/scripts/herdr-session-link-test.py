@@ -17,6 +17,7 @@ stdout, since UserPromptSubmit stdout is injected into the model's context.
 
 Usage: .claude/skills/herdr/scripts/herdr-session-link-test.py
 """
+import importlib
 import json
 import os
 import shutil
@@ -26,6 +27,10 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[4] / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 HOOK = Path(__file__).resolve().parent / "herdr-session-link.py"
 PANE = "w1:p1"
@@ -119,13 +124,6 @@ def run(tmp, payload, hops=("claude",), shell_pid=None, env_extra=None,
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}: {detail}")
-
     def quiet(name, p):
         check(f"{name} -- exits 0 and prints nothing",
               p.returncode == 0 and p.stdout == "",
@@ -215,10 +213,7 @@ def main():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

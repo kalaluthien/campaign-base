@@ -17,6 +17,8 @@ changes it. Nothing here reaches the network.
 Usage: scripts/campaign-claim-test.py
 """
 import contextlib
+import functools
+import importlib
 import io
 import json
 import os
@@ -28,18 +30,11 @@ from pathlib import Path
 
 CLAIM = Path(__file__).resolve().parent / "campaign-claim.py"
 
-RAN, FAILED = [], []
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
-
-
-def git(cwd, *args):
-    return subprocess.run(["git", "-C", str(cwd), *args],
-                          capture_output=True, text=True, check=True)
+git = functools.partial(harness.git, check=True)
 
 
 def a_repo(root, *branches):
@@ -1292,12 +1287,7 @@ def local_sweep_cases(m):
     env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
 
-    def git(root, *a, check=True):
-        r = subprocess.run(["git", "-C", str(root), *a], capture_output=True,
-                           text=True, env=env)
-        if check and r.returncode != 0:
-            raise AssertionError(f"git {' '.join(a)}: {r.stderr}")
-        return r
+    git = functools.partial(harness.git, check=True, env=env)
 
     def a_repo(root, remote):
         root.mkdir(parents=True)
@@ -2167,10 +2157,7 @@ def main():
                robustness_cases,
                root_cases, repos_cases):
         fn(m)
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

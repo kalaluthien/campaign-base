@@ -20,6 +20,7 @@ assertion. A crash fails the mutation. The unmutated run goes first.
 Usage: scripts/campaign-close-test.py
 """
 import contextlib
+import importlib
 import io
 import os
 import shutil
@@ -31,6 +32,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-close.py"
+harness = importlib.import_module("suite-harness-test")
 N, ISSUE, SLUG, SID = "10", "32", "rc", "S1"
 TRACKER = "kalaluthien/campaign-base"
 PANE, OTHER = "w1:p2", "w1:p3"
@@ -1258,45 +1260,15 @@ MUTATIONS = [
 ]
 
 
-def run_case(m, name):
-    try:
-        ok, detail = CASES[name](m)
-        return bool(ok), detail
-    except Exception as e:  # noqa: BLE001 -- a crash is reported, not red
-        return None, f"{e.__class__.__name__}: {e}"
-
-
 def main():
-    source = SCRIPT.read_text()
-    real = load(source)
-    failed = []
-    for name in CASES:
-        ok, detail = run_case(real, name)
-        if not ok:
-            failed.append(f"FAIL  {name} -- {str(detail)[-600:]}")
+    harness.mutate(SCRIPT.read_text(), load, CASES, MUTATIONS)
     help_out = subprocess.run([sys.executable, str(SCRIPT), "--help"],
                               capture_output=True, text=True).stdout
-    if "Holds when:" not in help_out:
-        failed.append("FAIL  --help from the shipped script carries no "
-                      "`Holds when:`")
-    print(f"{len(CASES) + 1 - len(failed)}/{len(CASES) + 1} cases pass")
-    for label, old, new, name in MUTATIONS:
-        count = source.count(old)
-        if count != 1:
-            failed.append(f"MUTATION {label}: the text to break occurs {count} times")
-            continue
-        ok, detail = run_case(load(source.replace(old, new)), name)
-        if ok is None:
-            failed.append(f"MUTATION {label}: {name!r} crashed -- {detail}")
-        elif ok:
-            failed.append(f"MUTATION {label}: {name!r} stayed green")
-    print(f"{len(MUTATIONS)} mutations, "
-          f"{sum(1 for f in failed if f.startswith('MUTATION'))} survived or crashed")
-    for f in failed:
-        print(f)
+    harness.check("--help from the shipped script carries `Holds when:`",
+                  "Holds when:" in help_out)
     for root in TMP:
         shutil.rmtree(root, ignore_errors=True)
-    return 1 if failed else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

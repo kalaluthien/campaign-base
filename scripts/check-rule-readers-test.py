@@ -8,12 +8,15 @@ would be the second reader the guard itself exists to forbid.
 
 Usage: scripts/check-rule-readers-test.py
 """
+import importlib
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-rule-readers.py"
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 def fence(body, lang="sh"):
     return f"# t\n\n```{lang}\n{body}\n```\n"
@@ -409,7 +412,6 @@ def run(body):
 
 
 def main():
-    failures = 0
     for case in CASES:
         name, body, want = case[0], case[1], case[2]
         expect = case[3] if len(case) > 3 else None
@@ -422,10 +424,8 @@ def main():
         # the only way to pin an exemption that silenced exactly one form.
         ok = (code == want and (expect is None or expect in out)
               and (forbid is None or forbid not in out))
-        print(f"{'ok  ' if ok else 'FAIL'}  {name}  (exit {code}, wanted {want})")
-        if not ok:
-            failures += 1
-            print("".join(f"        {l}\n" for l in out.splitlines()))
+        check(name, ok, f"exit {code}, wanted {want}\n"
+                        + "".join(f"        {l}\n" for l in out.splitlines()))
     code, out, blocked_code, blocked_out, blocked_err = announce_case()
     checks = [
         ("a clean run says how many files it examined",
@@ -444,10 +444,7 @@ def main():
          "Traceback" not in blocked_err),
     ]
     for label, ok in checks:
-        print(f"{'ok  ' if ok else 'FAIL'}  {label}")
-        if not ok:
-            failures += 1
-            print("".join(f"        {l}\n" for l in out.splitlines()))
+        check(label, ok, "\n" + "".join(f"        {l}\n" for l in out.splitlines()))
 
     # EVERY FORM'S `path` RESOLVES TO A FILE. The finding tells a reader which
     # script owns the rule, and a reader acts on it by opening that path -- so
@@ -466,11 +463,7 @@ def main():
     spec.loader.exec_module(crr)
     base = GUARD.resolve().parent.parent
     for token, path, _, _ in crr.FORMS:
-        resolves = (base / path).is_file()
-        print(f"{'ok  ' if resolves else 'FAIL'}  the `{token}` form's owner "
-              f"{path} is a file")
-        if not resolves:
-            failures += 1
+        check(f"the `{token}` form's owner {path} is a file", (base / path).is_file())
     # EVERY TOOL OF THE MARKER FORM IS PINNED BY A CASE OF ITS OWN, walked from
     # the two lists rather than restated here -- so a tool ADDED to either one
     # cannot ship the way the ten deleted ones used to, caught by a neighbouring
@@ -503,10 +496,7 @@ def main():
             break
         if not pinned:
             unpinned.append(alt)
-    print(f"{'ok  ' if not unpinned else 'FAIL'}  every marker tool has a case "
-          f"matching it alone{'' if not unpinned else ': ' + ', '.join(unpinned)}")
-    if unpinned:
-        failures += 1
+    check("every marker tool has a case matching it alone", not unpinned, ", ".join(unpinned))
 
     # ...and the printed finding names that path, not a prefixed guess.
     #
@@ -518,31 +508,18 @@ def main():
     code, out = run(fence("herdr agent rename w1:p1 machinery-worker-1"))
     named = ("belongs to .claude/skills/assuming-role/scripts/"
              "campaign-name-session.py" in out)
-    print(f"{'ok  ' if named else 'FAIL'}  the finding names the owner's whole path")
-    if not named:
-        failures += 1
-        print("".join(f"        {l}\n" for l in out.splitlines()))
+    check("the finding names the owner's whole path", named, "\n" + "".join(f"        {l}\n" for l in out.splitlines()))
 
     staged, worktree, staged_out = staged_case()
     # The announcement names its source, and only a --staged run can pin the
     # other half of that sentence: hardcoding "the working tree" passes every
     # working-tree case there is.
     said = "read from the index" in staged_out
-    print(f"{'ok  ' if said else 'FAIL'}  a --staged run says it read the index")
-    if not said:
-        failures += 1
-        print("".join(f"        {l}\n" for l in staged_out.splitlines()))
-    ok = staged == 1 and worktree == 0
-    print(f"{'ok  ' if ok else 'FAIL'}  a staged violation reverted on disk "
-          f"(--staged exit {staged}, wanted 1; working-tree exit {worktree}, wanted 0)")
-    if not ok:
-        failures += 1
-
-    if failures:
-        print(f"\n{failures} of {len(CASES) + 10 + len(crr.FORMS) + 2} cases failed.", file=sys.stderr)
-        return 1
-    print(f"\nall {len(CASES) + 10 + len(crr.FORMS) + 2} cases pass.")
-    return 0
+    check("a --staged run says it read the index", said, "\n" + "".join(f"        {l}\n" for l in staged_out.splitlines()))
+    check("a staged violation reverted on disk is refused under --staged only",
+          staged == 1 and worktree == 0,
+          f"--staged exit {staged}, wanted 1; working-tree exit {worktree}, wanted 0")
+    return harness.report()
 
 
 if __name__ == "__main__":

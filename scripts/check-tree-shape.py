@@ -507,20 +507,8 @@ def code_lines(text):
     return out
 
 
-def main():
-    staged = "--staged" in sys.argv
-    paths = tracked(staged)
-    root = git("rev-parse", "--show-toplevel").strip()
-    # Said before any verdict, and on every run: a clean tree and a tree nobody
-    # looked at both print nothing otherwise, and the second is what a wrong
-    # checkout or an empty file list gives.
-    print(f"check-tree-shape: {len(paths)} tracked path(s) under {root}, "
-          f"read from {'the index' if staged else 'the working tree'}")
-    findings = []
-
-    def note(rule, path, what):
-        findings.append(f"{rule}\t{path}\t{what}")
-
+def top_level(paths, note):
+    """R1 and R2: what spec/ and the root may hold, from the file list alone."""
     # R1
     misfiled = [p for p in paths
                 if p.endswith(".md") and p.split("/")[0] == "spec"]
@@ -544,6 +532,10 @@ def main():
             if t not in allowed:
                 note("R2", t, "tracked but not in .gitignore's allowlist")
 
+
+def calls(paths, staged, root, note):
+    """R3, over what each file's code lines call: (the suites R3a stood down
+    over, the recorded paths R3 stood down over)."""
     # R3
     # ONE READER OF "DOES THIS PATH EXIST HERE", imported rather than restated:
     # `check-cross-references.py`'s `Tree`. When it will not load, R3a stands
@@ -616,7 +608,11 @@ def main():
                         note("R3c", f"{p}:{n}", f"`campaign-claim.py {tok}` is "
                                                 f"not a subcommand it defines: "
                                                 f"{' | '.join(sorted(subs))}")
+    return fixtures, recorded
 
+
+def layout(paths, note):
+    """R4, R5 and R6: where files may sit, from the file list alone."""
     # R4
     for p in paths:
         if p == "repos" or p.startswith("repos/") or "/repos/" in p:
@@ -649,6 +645,9 @@ def main():
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
 
+
+def entities(staged, note):
+    """R8 and R9: what each entity under spec/ holds, and what it opens."""
     # R8. What each entity holds, from the index; which entities are judged,
     # from the change. `--no-renames`, or a rename lists its destination alone
     # and the directory it left goes unjudged.
@@ -713,6 +712,26 @@ def main():
                                for e, o in sorted(opens.items()))))
             for f in faults:
                 note("R9", f"{g}/", f)
+
+
+def main():
+    staged = "--staged" in sys.argv
+    paths = tracked(staged)
+    root = git("rev-parse", "--show-toplevel").strip()
+    # Said before any verdict, and on every run: a clean tree and a tree nobody
+    # looked at both print nothing otherwise, and the second is what a wrong
+    # checkout or an empty file list gives.
+    print(f"check-tree-shape: {len(paths)} tracked path(s) under {root}, "
+          f"read from {'the index' if staged else 'the working tree'}")
+    findings = []
+
+    def note(rule, path, what):
+        findings.append(f"{rule}\t{path}\t{what}")
+
+    top_level(paths, note)
+    fixtures, recorded = calls(paths, staged, root, note)
+    layout(paths, note)
+    entities(staged, note)
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

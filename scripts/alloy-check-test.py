@@ -44,6 +44,7 @@ naming no event over a model whose event is dead.
 
 Usage: scripts/alloy-check-test.py   (needs ~/.local/bin/alloy, as CI installs)
 """
+import importlib
 import subprocess
 import sys
 import tempfile
@@ -52,7 +53,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "alloy-check.py"
 
-FAILURES = []
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 SYSTEM = """module sys/system
 
@@ -88,14 +90,6 @@ check {check} for 2 expect 0
 
 # THE #289 SHAPE: the event's own predicate asks for what every step forbids.
 DEAD = " and some Where.machine"
-
-
-def check(name, ok, detail=""):
-    print(("PASS " if ok else "FAIL ") + name)
-    if not ok:
-        FAILURES.append(name)
-        if detail:
-            print("      " + detail)
 
 
 def run(d, condition=DEAD, witness="", expect=1, check_name="HandNeverOnAMachine",
@@ -579,8 +573,7 @@ def main() -> int:
               and "could not look" in line(out, "RESULT"),
               f"exit {rc}: {out[-4:]}")
 
-    print(f"{len(FAILURES)} failure(s)")
-    return 1 if FAILURES else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

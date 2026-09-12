@@ -12,6 +12,7 @@ heuristic does what its docstring says, not that a pair is a defect.
 
 Usage: scripts/guard-precision-test.py
 """
+import importlib
 import json
 import subprocess
 import sys
@@ -21,13 +22,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PRECISION = HERE / "guard-precision.py"
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 # A REAL SESSION'S ID IS A UUID and the shipped script now counts only those
@@ -224,13 +220,7 @@ def main():
     check("...and it is not folded into the refusals either",
           "0 refusal(s)" in out, out[:400])
 
-    if not RAN:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in FAILED:
-        print(f"FAIL  {f}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

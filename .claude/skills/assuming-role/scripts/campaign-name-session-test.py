@@ -5,6 +5,7 @@ The fake records every call to a log and answers `agent list` with whatever
 status the case asks for, so each case pins one branch: the name rule, the
 one-prompt-per-pane refusal, and the three wordings the pane's status decides.
 """
+import importlib
 import json
 import os
 import subprocess
@@ -15,6 +16,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[3]
 SCRIPT = HERE / "campaign-name-session.py"
+sys.path.append(str(BASE / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -104,13 +108,6 @@ def run(argv, agents=None, list_fails=False, rename_fails=False,
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}  {detail}".rstrip())
-
     def prompts(calls):
         return [c for c in calls if c[:2] == ["agent", "prompt"]]
 
@@ -421,10 +418,7 @@ def main():
               == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

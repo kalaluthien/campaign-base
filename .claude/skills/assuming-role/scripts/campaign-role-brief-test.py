@@ -12,6 +12,7 @@ absence that reads like the others: a session herdr does not name (looked and
 found nothing), a herdr that would not answer (could not look), and a record
 that matched (looked, found, and deliberately said nothing).
 """
+import importlib
 import json
 import os
 import shutil
@@ -22,6 +23,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[3]
+sys.path.append(str(BASE / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 SCRIPT = HERE / "campaign-role-brief.py"
 
 FAKE = r'''#!/usr/bin/env python3
@@ -189,13 +193,6 @@ def assignment(issue=ISSUE, repo=REPO):
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}  {detail}".rstrip())
-
     # ---- the three readings, through --role ----
 
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=NAMED)
@@ -664,10 +661,7 @@ FENCE-MARK
               and not (d / "gh.log").exists(),
               f"exit {r.returncode} err {r.stderr!r}")
 
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

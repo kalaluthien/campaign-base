@@ -30,6 +30,9 @@ import tempfile
 import types
 from pathlib import Path
 
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
+
 HERE = Path(__file__).resolve().parent
 TRACKER = HERE / "campaign-tracker.py"
 
@@ -109,13 +112,6 @@ def settlement(fixture, tmp):
 
 def main():
     m = load()
-    ran, fails = [], []
-
-    def check(name, cond):
-        ran.append(name)
-        if not cond:
-            fails.append(name)
-
     # ------------------------------------------------- campaign issues: two readings
     def iss(n, label=False, parent=False):
         return {"number": n, "title": f"t{n}",
@@ -1067,13 +1063,7 @@ def main():
         check("...and says nothing about a body with no bare reference",
               r.returncode == 0 and "bare reference" not in r.stdout)
 
-    if not ran:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

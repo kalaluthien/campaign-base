@@ -14,6 +14,7 @@ It reddens exactly the resolution kalaluthien/campaign-base#181 round 2 replaced
 
 Usage: scripts/campaign-directory-test.py
 """
+import importlib
 import subprocess
 import sys
 import tempfile
@@ -24,15 +25,8 @@ READER = HERE / "campaign-directory.py"
 GUARD = HERE / "check-campaign-claim.py"
 CLAIM = HERE / "campaign-claim.py"
 
-FAILURES = []
-
-
-def check(name, ok, detail=""):
-    print(("PASS " if ok else "FAIL ") + name)
-    if not ok:
-        FAILURES.append(name)
-        if detail:
-            print("      " + detail)
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 class Fixture:
@@ -153,8 +147,7 @@ def main() -> int:
               and "nowhere to look" in r.stderr,
               f"exit {rc}: {word} / {r.stderr[:200]}")
 
-    print(f"{len(FAILURES)} failing" if FAILURES else "all cases pass")
-    return 1 if FAILURES else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

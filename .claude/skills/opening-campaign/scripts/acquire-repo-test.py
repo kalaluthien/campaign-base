@@ -29,6 +29,7 @@ runs offline.
 
 Usage: .claude/skills/opening-campaign/scripts/acquire-repo-test.py
 """
+import importlib
 import os
 import shutil
 import subprocess
@@ -60,13 +61,9 @@ GATE = BASE / "scripts" / "check-commit-claim.py"
 _M = [l for l in SCRIPT.read_text().splitlines() if l.startswith("SHIM_MARKER=")]
 SHIM_MARKER = _M[0].split("=", 1)[1].strip("'") if len(_M) == 1 else None
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
+sys.path.append(str(BASE / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def install_principles(dest):
@@ -79,10 +76,10 @@ def install_principles(dest):
     src = SCRIPT.read_text()
     body = src[src.index("install_principles() {"):
                src.index("install_commit_guard() {")]
-    harness = ('log() { printf "%s\\n" "$*"; }\n'
+    shell = ('log() { printf "%s\\n" "$*"; }\n'
                'die() { printf "die: %s\\n" "$*" >&2; exit 1; }\n'
                + body + f'\ninstall_principles "{dest}"\n')
-    return subprocess.run(["bash", "-c", harness], capture_output=True,
+    return subprocess.run(["bash", "-c", shell], capture_output=True,
                           text=True, env=GIT_ENV)
 
 
@@ -541,10 +538,7 @@ def main():
           and acquire.index('install_principles "$dest"')
               > acquire.index("clone_into"))
 
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

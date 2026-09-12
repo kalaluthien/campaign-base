@@ -18,6 +18,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
+
 PRIM = Path(__file__).resolve().parent / "campaign-primitives.py"
 
 # Spelled with chr() so this file's own text holds no triple quote of its
@@ -43,13 +46,6 @@ def load():
 
 def main():
     m = load()
-    ran, fails = [], []
-
-    def check(name, cond):
-        ran.append(name)
-        if not cond:
-            fails.append(name)
-
     names = {"check-rule-readers.py", "check-tree-shape.py",
              "campaign-tracker.py", "install-hooks.sh",
              "push-campaign-branch.sh"}
@@ -492,13 +488,7 @@ def main():
     check("the real listing announces the script that lives under a skill",
           "acquire-repo.sh" in r.stdout and r.returncode == 0)
 
-    if not ran:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

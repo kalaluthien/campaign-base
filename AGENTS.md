@@ -158,7 +158,7 @@ a claim, and a launch. Read it before each of those. Only one of the four has a
 machine behind it: `campaign-claim take` reads the binding before it cuts a ref
 and refuses on anything but `here`. The body write, the label, and a launch are
 gated by this rule and the model alone
-(`spec/campaign/session/scenarios.als`, `boundOnly`), so read the word yourself
+(`spec/campaign/session/checks.als`, `boundOnly`), so read the word yourself
 before each. **The sub-issue link is outside it**: any session on any machine
 may file a sub-issue of any campaign, one it is not a session of included,
 because a sub-issue is a record and not a claim — the atomic gate stays

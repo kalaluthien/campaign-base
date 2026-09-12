@@ -27,13 +27,8 @@ SCRIPT = Path(__file__).resolve().parent / "campaign-local-work.py"
 # what is measured is the fixture and not the machine.
 GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 class Rep:
@@ -208,10 +203,7 @@ def main():
         check("...while any other ignored file still counts",
               ("ignored", "build-output") in kinds, str(kinds))
 
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

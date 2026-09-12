@@ -28,6 +28,7 @@ any mutation would make every mutation red for the copy's reason.
 Usage: .claude/skills/assuming-role/scripts/campaign-limit-reset-test.py
 """
 import datetime as dt
+import importlib
 import importlib.util
 import os
 import shutil
@@ -50,13 +51,9 @@ NONE = (FIX / "no-banner.txt").read_text()
 WOKEN_SCREEN = WEEKLY[:WEEKLY.index("You've hit your weekly")].rsplit("\n", 1)[0] + "\n"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
+sys.path.append(str(HERE.parents[3] / "scripts"))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 LOADED = {}
@@ -534,22 +531,15 @@ def copied(old=None, new=None):
 
 def main():
     for case in CASES:
-        try:
-            ok, detail = case(SCRIPT)
-        except Exception as e:  # noqa: BLE001 -- a crashed case is a failed case, named
-            ok, detail = False, f"the case crashed: {e!r}"
-        check(case.__name__, ok, detail)
+        ok, detail = harness.run_case(case, SCRIPT)
+        check(case.__name__, ok, detail if ok is not None else f"the case crashed: {detail}")
     # the control: every case is green on an unmutated copy in the same
     # layout, or a mutation's red would be the layout's and not its own
     control = copied()
     red = []
     try:
         for c in CASES:
-            try:
-                ok, _ = c(control)
-            except Exception as e:  # noqa: BLE001 -- a crashed control is a red control, named
-                ok, _ = False, repr(e)
-            if not ok:
+            if not harness.run_case(c, control)[0]:
                 red.append(c.__name__)
     finally:
         shutil.rmtree(control.parent, ignore_errors=True)
@@ -561,18 +551,14 @@ def main():
             check(name, False, f"anchor not found exactly once: {old!r}")
             continue
         try:
-            ok, _ = case(copy)
-            check(name, not ok, "the case stayed green")
-        except Exception as e:  # noqa: BLE001 -- red by a crash asserted nothing
-            check(name, False, f"the case crashed instead of asserting: {e!r}")
+            ok, detail = harness.run_case(case, copy)
+            check(name, ok is False, "the case stayed green" if ok
+                  else f"the case crashed instead of asserting: {detail}")
         finally:
             shutil.rmtree(copy.parent, ignore_errors=True)
     n_cases, n_mut = len(CASES), len(MUTATIONS)
-    print(f"campaign-limit-reset-test: {len(RAN)} ran ({n_cases} cases, 1 control, {n_mut} mutations), "
-          f"{len(FAILED)} failed, script {SCRIPT}")
-    for f in FAILED:
-        print(f"  FAIL {f}")
-    return 1 if FAILED or len(RAN) != n_cases + n_mut + 1 else 0
+    print(f"campaign-limit-reset-test: {n_cases} cases, 1 control, {n_mut} mutations, script {SCRIPT}")
+    return max(harness.report(), len(harness.RAN) != n_cases + n_mut + 1)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,8 @@ HEAD = "8ca2609f3b1d4e7a9c0b25d8e6f41a3b7c9d0e2f"
 OTHER = "fb1bd4f2a7c3e59018d4b6f0a2c8e1d7b3f9a0c5e"
 BRANCH = "rule-check/274-review-rerun"
 RUN_ID = 34464501480
-RAN, FAILED = [], []
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 FAKE_GH = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -81,12 +82,6 @@ def gate_step():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.GATE_STEP
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
 
 
 def review(sha):
@@ -258,10 +253,7 @@ def main() -> int:
         expect("a re-run GitHub refused is unknown", got, "unknown", 2, True)
         check("...and names the re-run as what was refused", "gh run rerun" in got[2], got[2])
 
-    for name in FAILED:
-        print(f"FAIL {name}")
-    print(f"rerun-check-test: {len(RAN) - len(FAILED)}/{len(RAN)} passed")
-    return 1 if FAILED or not RAN else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ prints, never on the exit status, which they all share.
 
 Usage: scripts/campaign-installed-test.py
 """
+import functools
+import importlib
 import os
 import subprocess
 import sys
@@ -24,13 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 INSTALLED = HERE / "campaign-installed.py"
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def sh(*args, cwd=None):
@@ -38,10 +35,7 @@ def sh(*args, cwd=None):
     return r.returncode, r.stdout, r.stderr
 
 
-def git(path, *args):
-    rc, out, err = sh("git", "-C", path, *args)
-    assert rc == 0, f"git {' '.join(args)} in {path}: {err}"
-    return out.strip()
+git = functools.partial(harness.git, check=True)
 
 
 def run(*args):
@@ -52,9 +46,8 @@ def run(*args):
 def commit(path, name):
     Path(path, name).write_text(name + "\n")
     git(path, "add", name)
-    git(path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
-        "-m", name)
-    return git(path, "rev-parse", "HEAD")
+    git(path, "commit", "-q", "-m", name)
+    return git(path, "rev-parse", "HEAD").stdout.strip()
 
 
 def body(tmp, *entries):
@@ -174,7 +167,7 @@ def main():
 
         rc, out, err = run("reach", body(tmp, marker), "example/thing", merged)
         check("reach fast-forwards the install to the merged sha and runs apply",
-              rc == 0 and git(install, "rev-parse", "HEAD") == merged
+              rc == 0 and git(install, "rev-parse", "HEAD").stdout.strip() == merged
               and Path(install, "applied.txt").exists()
               and f"reached example/thing at {install}: HEAD {merged} contains {merged}; apply `touch applied.txt` ran" in out,
               out + err)
@@ -187,12 +180,12 @@ def main():
                            "example/thing", unmerged)
         check("a failing apply is reported with its exit status after the fast-forward",
               rc == 1 and "apply `false` exited 1" in err
-              and git(install, "rev-parse", "HEAD") == unmerged, err)
+              and git(install, "rev-parse", "HEAD").stdout.strip() == unmerged, err)
         rc, out, err = run("check", body(tmp, marker), "example/thing")
         check("APPLY FAILED IS DURABLE: check reads it after the fast-forward, NOT clear",
               rc == 1 and "-- apply failed" in out and "apply `false` exited 1" in out
               and "1 apply failed, 0 unread -- NOT clear" in out, out + err)
-        mark = Path(git(install, "rev-parse", "--absolute-git-dir"), "APPLY_FAILED")
+        mark = Path(git(install, "rev-parse", "--absolute-git-dir").stdout.strip(), "APPLY_FAILED")
         mark.unlink(); mark.mkdir()          # a mark that cannot be written
         rc, out, err = run("reach", body(tmp, f"example/thing (installed: {install}, apply: false)"),
                            "example/thing", unmerged)
@@ -203,7 +196,7 @@ def main():
         rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
         check("a mark that cannot be removed is said in the merger's line after a real reach",
               rc == 1 and "STALE MARK COULD NOT BE REMOVED" in err and "Traceback" not in err
-              and git(install, "rev-parse", "HEAD") == unmerged, err)
+              and git(install, "rev-parse", "HEAD").stdout.strip() == unmerged, err)
         mark.rmdir(); mark.write_text("apply `false` exited 1:\n")
         rc, out, err = run("reach", body(tmp, marker), "example/thing", unmerged)
         check("a reach whose apply runs through clears the mark",
@@ -216,20 +209,14 @@ def main():
         rc, out, err = run("reach", body(tmp, marker), "example/thing", fourth)
         check("a diverged install cannot be fast-forwarded, and git's words are quoted",
               rc == 1 and "could not fast-forward" in err
-              and git(install, "rev-parse", "HEAD") == local, err)
+              and git(install, "rev-parse", "HEAD").stdout.strip() == local, err)
 
         rc, out, err = run("reach", body(tmp, marker), "example/thing")
         check("reach without a sha prints the usage", rc == 2 and "reach <body>" in err, err)
         rc, out, err = run("nonsense", body(tmp, marker))
         check("an unknown subcommand prints the usage", rc == 2 and "check <body>" in err, err)
 
-    if not RAN:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in FAILED:
-        print(f"FAIL  {f}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

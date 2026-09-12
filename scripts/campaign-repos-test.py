@@ -17,6 +17,7 @@ nobody.
 
 Usage: scripts/campaign-repos-test.py
 """
+import importlib
 import subprocess
 import sys
 import tempfile
@@ -25,13 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPOS = HERE / "campaign-repos.py"
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def read(body):
@@ -244,13 +240,7 @@ def main():
     check("read_repos reads `- none` as an empty row list, not a refusal",
           rows == [] and why is None, f"{rows!r} {why!r}")
 
-    if not RAN:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in FAILED:
-        print(f"FAIL  {f}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

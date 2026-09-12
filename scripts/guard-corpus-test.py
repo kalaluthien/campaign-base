@@ -15,6 +15,7 @@ typed this morning.
 
 Usage: scripts/guard-corpus-test.py
 """
+import importlib
 import json
 import subprocess
 import sys
@@ -24,13 +25,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CORPUS = HERE / "guard-corpus.py"
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{(' -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def call(cwd, name="Bash", uid="t1", **inp):
@@ -155,13 +151,7 @@ def main():
         check("...and nothing was written",
               not (Path(d) / "c.jsonl").exists())
 
-    if not RAN:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for f in FAILED:
-        print(f"FAIL  {f}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

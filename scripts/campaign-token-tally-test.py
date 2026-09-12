@@ -14,19 +14,15 @@ case fail.
 
 Usage: scripts/campaign-token-tally-test.py
 """
+import importlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "campaign-token-tally.py"
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def usage(out, new=100, read=50, settled=True):
@@ -594,10 +590,7 @@ def main():
                   "NO branch is attributed" in r.stdout
                   and "--slug" in r.stdout, r.stdout[:400])
 
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

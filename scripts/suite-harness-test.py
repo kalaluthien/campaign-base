@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""The one harness the suites import: the tally, its verdict, and the fixture helpers.
+
+A suite records each case with `check` and returns `report()` from `main`;
+`run_case` and `mutate` run a table of cases and break a script's branches in
+turn; `git`, `write_tree` and `guard_in_repo` build a fixture repository. Each
+was a copy in every suite that used it, and a copy is what drifts.
+
+It is named as a suite and is one: run, it proves the tally and the helpers
+below. Named as a code path it would owe a scenario, and it is test code that
+no scenario describes. A suite in `scripts/` imports it by name,
+`importlib.import_module("suite-harness-test")`, since the script's own
+directory heads `sys.path`; a skill's suite appends this directory to it.
+
+Usage: scripts/suite-harness-test.py
+"""
+import contextlib
+import io
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+RAN, FAILED = [], []
+
+
+def check(name, ok, detail=""):
+    """Record one case; a false `ok` fails it, and `detail` says what was seen."""
+    RAN.append(name)
+    if not ok:
+        FAILED.append(f"{name}  -- {detail}" if detail else name)
+
+
+def report():
+    """Print each failure and the tally; the exit status `main` returns. A run
+    that recorded no case is a failure too, since an empty run prints green."""
+    for name in FAILED:
+        print(f"FAIL  {name}")
+    if not RAN:
+        print("FAIL  the suite ran no case at all")
+        return 1
+    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
+    return 1 if FAILED else 0
+
+
+def run_case(case, *args):
+    """(ok, detail) from one case, or (None, what crashed): a crash asserted nothing."""
+    try:
+        ok, detail = case(*args)
+        return bool(ok), detail
+    except Exception as e:  # noqa: BLE001 -- a crash is reported, not red
+        return None, f"{e.__class__.__name__}: {e}"
+
+
+def mutate(source, load, cases, mutations):
+    """Every case green on `load(source)`, then each `(label, old, new, case
+    name)` red on the source with `old` replaced, by that case's own assertion."""
+    real = load(source)
+    for name, case in cases.items():
+        ok, detail = run_case(case, real)
+        check(name, ok, str(detail)[-600:])
+    for label, old, new, name in mutations:
+        count = source.count(old)
+        if count != 1:
+            check(f"MUTATION {label}", False, f"the text to break occurs {count} times")
+            continue
+        ok, detail = run_case(cases[name], load(source.replace(old, new)))
+        check(f"MUTATION {label}", ok is False,
+              f"{name!r} crashed -- {detail}" if ok is None else f"{name!r} stayed green")
+
+
+def git(cwd, *args, check=False, **kw):
+    """git in `cwd` under a fixed identity, so a fixture commits on a machine
+    with none. `check` raises on a non-zero exit, carrying what git said."""
+    r = subprocess.run(["git", "-C", str(cwd), "-c", "user.email=t@t",
+                        "-c", "user.name=t", *args],
+                       capture_output=True, text=True, **kw)
+    if check and r.returncode:
+        raise AssertionError(f"git {' '.join(args)} in {cwd}: {r.stderr.strip()}")
+    return r
+
+
+def write_tree(root, files):
+    """Write `{relative path: text or bytes}` under `root`; None is a path left absent."""
+    for rel, body in files.items():
+        if body is None:
+            continue
+        p = Path(root) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(body, bytes):
+            p.write_bytes(body)
+        else:
+            p.write_text(body, encoding="utf-8")
+
+
+def guard_in_repo(guard, files, *args):
+    """`guard` run in a fresh repository holding `files`, every one of them staged."""
+    with tempfile.TemporaryDirectory() as d:
+        write_tree(d, files)
+        git(d, "init", "-q", check=True)
+        git(d, "add", "-Af", check=True)
+        return subprocess.run([sys.executable, str(guard), *args], cwd=d,
+                              capture_output=True, text=True)
+
+
+@contextlib.contextmanager
+def apart():
+    """A tally of its own for the block, the suite's restored after it."""
+    saved = RAN[:], FAILED[:]
+    RAN.clear()
+    FAILED.clear()
+    try:
+        yield
+    finally:
+        RAN[:], FAILED[:] = saved
+
+
+def main():
+    """Each helper against a case whose answer is known, on a tally of its own."""
+    # `check` first and by hand: a `check` that drops a failure drops its own too
+    with apart():
+        check("b", False, "seen")
+        recorded = FAILED == ["b  -- seen"]
+    if not recorded:
+        print("FAIL  check does not record a failing case, so no case here can fail")
+        return 1
+
+    def verdict(*cases):
+        with apart(), contextlib.redirect_stdout(io.StringIO()) as out:
+            for name, ok in cases:
+                check(name, ok, "seen")
+            return report(), out.getvalue(), FAILED[:]
+
+    got = [verdict(("a", True)), verdict(("a", True), ("b", False)), verdict()]
+    check("a passing tally exits 0 and says so", got[0][:2] == (0, "1/1 cases pass\n"), got[0])
+    check("a failing case exits 1, named with its detail",
+          got[1][0] == 1 and "FAIL  b  -- seen" in got[1][1] and got[1][2] == ["b  -- seen"], got[1])
+    check("a run of no case exits 1", got[2][0] == 1 and "ran no case" in got[2][1], got[2])
+
+    def boom():
+        raise ValueError("x")
+    check("run_case passes a case's own verdict through", run_case(lambda: (0, "d")) == (False, "d"))
+    check("run_case reports a crash as None, never red", run_case(boom) == (None, "ValueError: x"))
+
+    def load(text):
+        ns = {}
+        exec(text, ns)
+        return ns
+
+    with apart():
+        mutate("def f():\n    return 1\n", load, {"f is 1": lambda m: (m["f"]() == 1, "")},
+               [("caught", "return 1", "return 2", "f is 1"),
+                ("survives", "def f", "def f", "f is 1"),
+                ("absent", "return 3", "return 4", "f is 1")])
+        seen = RAN[:], FAILED[:]
+    check("mutate runs every case, then each mutation", seen[0] == [
+        "f is 1", "MUTATION caught", "MUTATION survives", "MUTATION absent"], seen)
+    check("a mutation passes only when its case goes red", seen[1] == [
+        "MUTATION survives  -- 'f is 1' stayed green",
+        "MUTATION absent  -- the text to break occurs 0 times"], seen[1])
+
+    with tempfile.TemporaryDirectory() as d:
+        write_tree(d, {"a/b.txt": "t", "c.bin": b"\x00", "gone.txt": None})
+        check("write_tree writes text and bytes, and leaves None absent",
+              (Path(d) / "a/b.txt").read_text() == "t"
+              and (Path(d) / "c.bin").read_bytes() == b"\x00"
+              and not (Path(d) / "gone.txt").exists())
+        git(d, "init", "-q", check=True)
+        git(d, "add", "-A", check=True)
+        r = git(d, "commit", "-qm", "m", env={"PATH": "/usr/bin:/bin", "HOME": d,
+                                              "GIT_CONFIG_NOSYSTEM": "1"})
+        check("git commits under its own identity with none configured",
+              r.returncode == 0 and git(d, "log", "-1", "--format=%ae").stdout == "t@t\n",
+              r.stderr)
+        try:
+            git(d, "rev-parse", "no-such-ref", check=True)
+            raised = ""
+        except AssertionError as e:
+            raised = str(e)
+        check("git with check raises, saying what git said",
+              raised.startswith("git rev-parse no-such-ref in ") and "no-such-ref" in raised[30:],
+              raised)
+
+    with tempfile.TemporaryDirectory() as d:
+        probe = Path(d) / "probe.py"
+        probe.write_text("import subprocess, sys\n"
+                         "print(subprocess.run(['git', 'diff', '--cached', '--name-only'],"
+                         " capture_output=True, text=True).stdout.split(), sys.argv[1:])\n")
+        r = guard_in_repo(probe, {"x.txt": "1", ".gitignore": "x.txt\n"}, "--flag")
+        check("guard_in_repo runs the guard over every file staged, ignored ones too",
+              r.stdout.strip() == "['.gitignore', 'x.txt'] ['--flag']", r.stdout + r.stderr)
+    # read off the tally as well: a broken `report` cannot report itself
+    return max(report(), 1 if FAILED else 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

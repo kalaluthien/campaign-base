@@ -17,6 +17,7 @@ status. How the transcript and the feed are read -- order, forgery, a prefix,
 a tag -- is campaign-heartbeat-test.py's, since those readers are the
 heartbeat's.
 """
+import importlib
 import json
 import os
 import shutil
@@ -28,13 +29,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ASSIGN = HERE / "campaign-assign.py"
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}" + (f" -- {detail}" if detail else ""))
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def said(ts, text):
@@ -374,10 +370,7 @@ def main():
 
     pure_cases(m)
     end_to_end_cases()
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

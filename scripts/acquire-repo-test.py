@@ -28,6 +28,7 @@ runs offline.
 
 Usage: scripts/acquire-repo-test.py
 """
+import importlib
 import os
 import shutil
 import subprocess
@@ -60,13 +61,8 @@ GATE = BASE / "scripts" / "check-commit-claim.py"
 _M = [l for l in SCRIPT.read_text().splitlines() if l.startswith("SHIM_MARKER=")]
 SHIM_MARKER = _M[0].split("=", 1)[1].strip("'") if len(_M) == 1 else None
 
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def install_principles(dest):
@@ -541,10 +537,7 @@ def main():
           and acquire.index('install_principles "$dest"')
               > acquire.index("clone_into"))
 
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

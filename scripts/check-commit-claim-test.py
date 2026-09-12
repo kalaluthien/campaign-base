@@ -20,6 +20,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
+
 HERE = Path(__file__).resolve().parent
 INSTALLER = HERE / "install-hooks.sh"
 
@@ -117,13 +120,6 @@ def commit(f, tree, env=None):
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}\n      {detail}")
-
     def out(r):
         return r.stdout + r.stderr
 
@@ -136,15 +132,12 @@ def main():
         rel = n if "/" in n else f"scripts/{n}"
         check(f"the installer's entry {n} resolves to a file in this tree",
               (HERE.parent / rel).is_file(), f"no {HERE.parent / rel}")
-    if fails:
+    if harness.FAILED:
         # TERMINAL, because every case below copies these files: without this
         # the finding is appended and then buried by the FileNotFoundError the
         # first fixture raises, and the summary that would have named it never
         # prints.
-        for f in fails:
-            print(f"FAIL  {f}")
-        print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-        return 1
+        return harness.report()
 
     # THE GUARD'S OWN IMPORT, MISSING. `claim_match` reads the branch's campaign
     # token through `campaign-name-session.py`; a traceback there exits 1, and a
@@ -421,13 +414,7 @@ def main():
             check(f"--is-claim exits {want} when {why}", r.returncode == want,
                   f"exit {r.returncode}: {out(r)[:300]}")
 
-    if not ran:
-        print("FAIL  the suite ran no case at all")
-        return 1
-    for x in fails:
-        print(f"FAIL  {x}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ They need the solver, as CI installs it, and fail red without one.
 Usage: scripts/check-merge-review-test.py   (needs ~/.local/bin/alloy)
 """
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -38,13 +39,8 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parent / "check-merge-review.py"
 HEAD = "8ca2609f3b1d4e7a9c0b25d8e6f41a3b7c9d0e2f"
 OTHER = "fb1bd4f2a7c3e59018d4b6f0a2c8e1d7b3f9a0c5e"
-RAN, FAILED = [], []
-
-
-def check(name, ok, detail=""):
-    RAN.append(name)
-    if not ok:
-        FAILED.append(f"{name}{('  -- ' + detail) if detail else ''}")
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 
 def comment(body):
@@ -478,10 +474,7 @@ def main() -> int:
                   owed is not None and (word, code) == owed,
                   why or f"model {owed}, reader {word} {code}; {len(bodies)} REVIEW(s)\n{digest}")
 
-    for name in FAILED:
-        print(f"FAIL  {name}")
-    print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
-    return 1 if FAILED else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ The remote is a local bare repo; nothing here reaches the network.
 
 Usage: scripts/install-hooks-test.py
 """
+import importlib
 import json
 import os
 import shutil
@@ -18,6 +19,9 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -69,9 +73,7 @@ NEEDED = _needed()
 IGNORE = "/*\n!/.gitignore\n!/.claude/\n!/scripts/\n!/spec/\n"
 
 
-def git(root, *args, **kw):
-    return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                           *args], cwd=root, capture_output=True, text=True, **kw)
+git = harness.git
 
 
 class Repo:
@@ -151,13 +153,6 @@ def fake_guard(home):
 
 
 def main():
-    ran, fails = [], []
-
-    def check(name, cond, detail=""):
-        ran.append(name)
-        if not cond:
-            fails.append(f"{name}\n      {detail}")
-
     # 1. The whole point: an installed hook stops a real violation.
     with tempfile.TemporaryDirectory() as d:
         r = Repo(d)
@@ -816,10 +811,7 @@ def main():
         check("...and none was created",
               not (empty / ".claude" / "settings.json").exists())
 
-    for f in fails:
-        print(f"FAIL  {f}")
-    print(f"{len(ran) - len(fails)}/{len(ran)} cases pass")
-    return 1 if fails else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

@@ -21,12 +21,15 @@ throwaway version get them wrong:
 
 Usage: scripts/check-cross-references-test.py
 """
+import importlib
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-cross-references.py"
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 SKILL = ".claude/skills/demo"
 
@@ -241,30 +244,11 @@ CASES = [
 ]
 
 
-def build(tmp, files):
-    root = Path(tmp)
-    merged = dict(BASE)
-    merged.update(files)
-    for rel, text in merged.items():
-        p = root / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True,
-                   capture_output=True)
-    return root
+def in_repo(files, args=()):
+    return harness.guard_in_repo(GUARD, {**BASE, **files}, *args)
 
 
-def run_case(files, args=()):
-    with tempfile.TemporaryDirectory() as tmp:
-        root = build(tmp, files)
-        return subprocess.run(
-            [sys.executable, str(GUARD), *args],
-            cwd=str(root), capture_output=True, text=True,
-        )
-
-
-def check(name, r, want):
+def judge(name, r, want):
     """One row's verdict, and the whole message when it is wrong."""
     out = r.stdout + r.stderr
     findings = [ln for ln in r.stdout.splitlines()
@@ -278,57 +262,44 @@ def check(name, r, want):
               and any(ln.startswith(kind) and needle in ln for ln in findings))
         wanted = f"exit {2 if kind == 'DANGLING' else 3} and a {kind} line " \
                  f"holding {needle!r}"
-    if ok:
-        return 0
-    print(f"FAIL  {name}\n      wanted {wanted}, got exit {r.returncode}:\n"
-          f"      {out.strip()[:400] or '(nothing)'}")
-    return 1
+    check(name, ok, f"wanted {wanted}, got exit {r.returncode}:\n"
+                    f"      {out.strip()[:400] or '(nothing)'}")
 
 
 def main():
     if not GUARD.exists():
         print(f"the guard is not at {GUARD}")
         return 1
-    failed = 0
     for name, files, want in CASES:
-        failed += check(name, run_case(files), want)
-
-    extra = 0
+        judge(name, in_repo(files), want)
 
     # --staged reads the index, not the worktree. A violation staged and then
     # reverted on disk must still be refused, or a pre-commit hook judges a tree
     # that is not the one being committed.
-    extra += 1
     with tempfile.TemporaryDirectory() as tmp:
-        root = build(tmp, {"a.md": "See `AGENTS.md` § No Such Section here.\n"})
-        (root / "a.md").write_text("Nothing to see.\n", encoding="utf-8")
+        harness.write_tree(tmp, {**BASE, "a.md": "See `AGENTS.md` § No Such Section here.\n"})
+        harness.git(tmp, "init", "-q", check=True)
+        harness.git(tmp, "add", "-A", check=True)
+        (Path(tmp) / "a.md").write_text("Nothing to see.\n", encoding="utf-8")
         r = subprocess.run([sys.executable, str(GUARD), "--staged"],
-                           cwd=str(root), capture_output=True, text=True)
-        if r.returncode != 2 or "DANGLING" not in r.stdout:
-            failed += 1
-            print("FAIL  --staged judges the index, not the worktree\n"
-                  f"      wanted exit 2, got {r.returncode}: "
-                  f"{(r.stdout + r.stderr).strip()[:300]}")
+                           cwd=tmp, capture_output=True, text=True)
+        check("--staged judges the index, not the worktree",
+              r.returncode == 2 and "DANGLING" in r.stdout,
+              f"wanted exit 2, got {r.returncode}: {(r.stdout + r.stderr).strip()[:300]}")
 
     # The summary is the evidence that the guard ran at all: a bare verdict word
     # is the shape that gets trusted for months while enforcing nothing.
-    extra += 1
-    r = run_case({})
-    if not ("file(s) under" in r.stdout
-            and "reference(s):" in r.stdout
-            and "read from the working tree" in r.stdout):
-        failed += 1
-        print("FAIL  a clean run still says what it read and from where\n"
-              f"      got: {r.stdout.strip()[:300]}")
+    r = in_repo({})
+    check("a clean run still says what it read and from where",
+          "file(s) under" in r.stdout and "reference(s):" in r.stdout
+          and "read from the working tree" in r.stdout,
+          f"got: {r.stdout.strip()[:300]}")
 
     # --list prints the buckets that are not verdicts, so the scope boundary is
     # readable rather than implied.
-    extra += 1
-    r = run_case({"a.md": "Run it over `spec/campaign/*/*.als`.\n"}, args=("--list",))
-    if "template\t" not in r.stdout:
-        failed += 1
-        print("FAIL  --list shows the template bucket\n"
-              f"      got: {r.stdout.strip()[:300]}")
+    r = in_repo({"a.md": "Run it over `spec/campaign/*/*.als`.\n"}, args=("--list",))
+    check("--list shows the template bucket", "template\t" in r.stdout,
+          f"got: {r.stdout.strip()[:300]}")
 
     # EVERY BUCKET PRINTS THE `$BASE/` SPELLING, not only the dangling one.
     # The guard rewrites the token to shape it, and a line naming
@@ -363,20 +334,16 @@ def main():
          "The workflow is `$BASE/.github/workflows/check.yml`.",
          "unshaped", "$BASE/.github/workflows/check.yml"),
     ]:
-        extra += 1
-        r = run_case({"a.md": doc + "\n", **(rest[0] if rest else {})},
-                     args=("--list",))
+        r = in_repo({"a.md": doc + "\n", **(rest[0] if rest else {})},
+                    args=("--list",))
         got = [ln.split("\t") for ln in r.stdout.splitlines()
                if ln.startswith(bucket + "\t")]
-        if not any(f[2] == token for f in got):
-            failed += 1
-            print(f"FAIL  {what} is printed with the prefix the file wrote\n"
-                  f"      wanted a {bucket} line whose token is {token!r}, got: "
-                  f"{[f[2] for f in got] or '(no such line)'}")
+        check(f"{what} is printed with the prefix the file wrote",
+              any(f[2] == token for f in got),
+              f"wanted a {bucket} line whose token is {token!r}, got: "
+              f"{[f[2] for f in got] or '(no such line)'}")
 
-    total = len(CASES) + extra
-    print(f"{total - failed}/{total} cases pass")
-    return 1 if failed else 0
+    return harness.report()
 
 
 if __name__ == "__main__":

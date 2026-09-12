@@ -24,6 +24,7 @@ Usage: .claude/skills/assuming-role/scripts/campaign-heartbeat-test.py
 """
 import contextlib
 import datetime as dt
+import importlib
 import io
 import json
 import os
@@ -35,6 +36,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-heartbeat.py"
+sys.path.append(str(HERE.parents[3] / "scripts"))
+harness = importlib.import_module("suite-harness-test")
 
 
 def load(source):
@@ -1642,38 +1645,9 @@ MUTATIONS = [
 ]
 
 
-def run_case(m, name):
-    try:
-        ok, detail = CASES[name](m)
-        return bool(ok), detail
-    except Exception as e:  # noqa: BLE001 -- a crash is reported, not red
-        return None, f"{e.__class__.__name__}: {e}"
-
-
 def main():
-    source = SCRIPT.read_text()
-    real = load(source)
-    failed = []
-    for name in CASES:
-        ok, detail = run_case(real, name)
-        if not ok:
-            failed.append(f"FAIL  {name} -- {str(detail)[:300]}")
-    print(f"{len(CASES) - len(failed)}/{len(CASES)} cases pass")
-    for label, old, new, name in MUTATIONS:
-        count = source.count(old)
-        if count != 1:
-            failed.append(f"MUTATION {label}: the text to break occurs {count} times")
-            continue
-        ok, detail = run_case(load(source.replace(old, new)), name)
-        if ok is None:
-            failed.append(f"MUTATION {label}: {name!r} crashed -- {detail}")
-        elif ok:
-            failed.append(f"MUTATION {label}: {name!r} stayed green")
-    print(f"{len(MUTATIONS)} mutations, "
-          f"{sum(1 for f in failed if f.startswith('MUTATION'))} survived or crashed")
-    for f in failed:
-        print(f)
-    return 1 if failed else 0
+    harness.mutate(SCRIPT.read_text(), load, CASES, MUTATIONS)
+    return harness.report()
 
 
 if __name__ == "__main__":

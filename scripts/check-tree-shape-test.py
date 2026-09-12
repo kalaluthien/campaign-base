@@ -9,12 +9,15 @@ somebody would otherwise widen the guard straight past.
 
 Usage: scripts/check-tree-shape-test.py
 """
+import importlib
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 GUARD = Path(__file__).resolve().parent / "check-tree-shape.py"
+harness = importlib.import_module("suite-harness-test")
+check = harness.check
 
 IGNORE = "/*\n!/.gitignore\n!/spec/\n!/.claude/\n!/scripts/\n!/AGENTS.md\n"
 
@@ -473,26 +476,6 @@ def run_staged_case(staged_files, worktree_files):
                               capture_output=True, text=True)
 
 
-def run_case(files):
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d)
-        if ".gitignore" not in files:
-            (root / ".gitignore").write_text(IGNORE)
-        for rel, body in files.items():
-            if body is None:      # a file this case wants absent
-                continue
-            p = root / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            if isinstance(body, bytes):
-                p.write_bytes(body)
-            else:
-                p.write_text(body)
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
-        return subprocess.run([sys.executable, str(GUARD)], cwd=root,
-                              capture_output=True, text=True)
-
-
 STAGED_CASES = [
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
     ("--staged judges what is staged, not what is on disk",
@@ -610,17 +593,12 @@ def says_what_it_read():
 
 
 def main():
-    failed = 0
-    for line in says_what_it_read():
-        failed += 1
-        print(f"FAIL  a run says how many paths it read and from where\n      {line}")
+    wrong = says_what_it_read()
+    check("a run says how many paths it read and from where", not wrong, "\n      ".join(wrong))
     r = committed_then_staged()
     ok, want = judge(r, None)
-    if not ok:
-        failed += 1
-        print(f"FAIL  --staged does not judge a violation this commit does not "
-              f"touch\n      wanted {want}, got exit {r.returncode}: "
-              f"{(r.stdout + r.stderr).strip()[:160]}")
+    check("--staged does not judge a violation this commit does not touch", ok,
+          f"wanted {want}, got exit {r.returncode}: {(r.stdout + r.stderr).strip()[:160]}")
     for stage, rule, name in (
             (stage_an_html_form, None, "R8 --staged reads an entity from the "
              "index, not the staged list"),
@@ -630,27 +608,19 @@ def main():
              "staged rename left")):
         r = on_a_committed_entity(stage)
         ok, want = judge(r, rule)
-        if not ok:
-            failed += 1
-            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}: "
-                  f"{(r.stdout + r.stderr).strip()[:160]}")
+        check(name, ok, f"wanted {want}, got exit {r.returncode}: "
+                        f"{(r.stdout + r.stderr).strip()[:160]}")
     for name, staged, worktree, rule in STAGED_CASES:
         r = run_staged_case(staged, worktree)
         ok, want = judge(r, rule)
-        if not ok:
-            failed += 1
-            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
-                  f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
+        check(name, ok, f"wanted {want}, got exit {r.returncode}:\n"
+                        f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
     for name, files, rule in CASES:
-        r = run_case(files)
+        r = harness.guard_in_repo(GUARD, {".gitignore": IGNORE, **files})
         ok, want = judge(r, rule)
-        if not ok:
-            failed += 1
-            print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
-                  f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
-    total = len(CASES) + len(STAGED_CASES) + 5
-    print(f"{total - failed}/{total} cases pass")
-    return 1 if failed else 0
+        check(name, ok, f"wanted {want}, got exit {r.returncode}:\n"
+                        f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
+    return harness.report()
 
 
 if __name__ == "__main__":

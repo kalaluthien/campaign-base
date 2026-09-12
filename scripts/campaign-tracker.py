@@ -7,12 +7,13 @@
     campaign-tracker.py slugs [owner/repo] [--limit N]
     campaign-tracker.py bound <N> [owner/repo]
     campaign-tracker.py standing <N> [owner/repo]
+    campaign-tracker.py kind <issue> [owner/repo]
     campaign-tracker.py bind <N> [owner/repo]
     campaign-tracker.py check <N> [owner/repo] [--plan]
     campaign-tracker.py index <N> [owner/repo]
     campaign-tracker.py settlement <N> [owner/repo]
 
-Nine readings of one plane -- GitHub issues and their labels, plus `hostname -s`
+Ten readings of one plane -- GitHub issues and their labels, plus `hostname -s`
 for `bound`, and the one write that changes what `bound` answers.
 They were four scripts, and every one of them carried the same lesson in its own
 words: a listing that stopped early reads exactly like a complete one, and a
@@ -79,6 +80,20 @@ standing    The one reader of the `standing` LABEL: a campaign a person keeps
             request as consent. Only a person removes the label; nothing here
             can observe that they changed their mind, which is why this reads
             and never writes.
+
+kind        The one reader of a sub-issue's `kind:<k>` LABEL -- the WORK kind,
+            which is not the structural kind `check` reads off the `campaign`
+            label and the parent link. Read like `slug` and for the same
+            reasons: one label, by exact name, with no history to page through
+            and so no latest to pick between two of them. It prints `none` and
+            exits 1 for a sub-issue that carries none, which is a reading and
+            the ordinary state of everything filed before the rule; 2 is the
+            read that failed or the label set that cannot be read as one word.
+
+            THE FIVE WORDS ARE `WORK_KINDS` and nowhere else here. A label whose
+            word is outside them is refused rather than returned: the word names
+            the `assuming-role` reference a worker is briefed from, so returning
+            an unknown one hands out a path nothing resolves.
 
 bind        The write `bound` reads. It adds `bound:<this machine>` and removes
             every other `bound:` label in the same edit, so the refusal above is
@@ -170,6 +185,9 @@ bound                       0 for any verdict, 2 when the reading itself failed
                             -- two `bound:` labels included, since that is a
                             question this refuses to answer, not a verdict.
 standing                    0 for either word, 2 when the labels did not read.
+kind                        0 with the work kind on stdout, 1 for `none`, which
+                            is a reading, and 2 when the reading failed or two
+                            `kind:` labels make the answer unchoosable.
 bind                        0 when the label was set, 1 when it was not.
 check                       0 when the shape holds (a third-kind issue included,
                             which is asked for no SECTION -- both ceilings still
@@ -193,6 +211,17 @@ BOUND_LABEL_PREFIX = "bound:"
 # `campaign` and `campaign:` do not collide -- the plain label has no colon --
 # and `startswith` is not how the kind is decided, `==` is.
 SLUG_LABEL_PREFIX = "campaign:"
+# THE SUB-ISSUE'S WORK KIND, stored the same way the slug and the binding are:
+# one label, read by exact name. It is NOT the structural kind `kind_of` below
+# decides -- that one is the `campaign` label and the parent link, and it names
+# what an issue IS; this names what the work on it is.
+WORK_KIND_LABEL_PREFIX = "kind:"
+# THE FIVE WORDS, stated once, here. The sub-issue template offers them and the
+# `assuming-role` skill's `references/kind-<k>.md` are NAMED by them -- all but
+# `development`, which is the ordinary kind and has no reference -- so a sixth
+# word invented on a label resolves to no reference and no template row, and is
+# refused rather than returned.
+WORK_KINDS = ("research", "analysis", "prototyping", "migration", "development")
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.
@@ -604,6 +633,57 @@ def cmd_slugs(args):
     return 0
 
 
+# ------------------------------------------------------------------- work kind
+
+
+def work_kind_labels(names):
+    """Every `kind:` label on the issue, sorted. A calculation, so none, one and
+    two are each a case with no network in it."""
+    return sorted(n for n in names if n.startswith(WORK_KIND_LABEL_PREFIX))
+
+
+def work_kind_of(names):
+    """(work kind, why_unreadable) from a label list.
+
+    `None, None` is a sub-issue with no work kind -- every one filed before the
+    rule, and the state `check` warns about rather than refusing. `None, <why>`
+    is TWO `kind:` labels, which is not a verdict for the same reason two
+    `bound:` labels is not: a label set has no latest, so nothing here can
+    choose which kind the work is.
+
+    A word outside `WORK_KINDS` is `None, <why>` too, and not a kind that merely
+    reads oddly: the word names the reference a worker is briefed from, so
+    returning an unknown one hands out a brief nothing resolves."""
+    found = work_kind_labels(names)
+    if not found:
+        return None, None
+    if len(found) > 1:
+        return None, (f"the sub-issue carries {len(found)} `kind:` labels "
+                      f"({', '.join(found)}). A label set has no latest, so "
+                      f"which kind the work is is unanswerable from here. "
+                      f"Remove all but one.")
+    kind = found[0][len(WORK_KIND_LABEL_PREFIX):].strip()
+    if kind not in WORK_KINDS:
+        return None, (f"the label is `{found[0]}`, and {kind!r} is not a work "
+                      f"kind: one of {', '.join(WORK_KINDS)}. The word names the "
+                      f"brief a worker is given, so it is refused rather than "
+                      f"returned.")
+    return kind, None
+
+
+def cmd_kind(args):
+    """The sub-issue's work kind, as a word on stdout."""
+    kind, why = work_kind_of(labels_of(args.repo, args.campaign_issue))
+    if why:
+        print(f"campaign-tracker kind: {why}", file=sys.stderr)
+        return 2
+    if kind is None:
+        print("none")
+        return 1
+    print(kind)
+    return 0
+
+
 # ------------------------------------------------------------------------ bind
 
 
@@ -828,13 +908,21 @@ def required_sections(kind, want_plan):
     return ()
 
 
-def shape_findings(kind, title, body, want_plan):
+def shape_findings(kind, title, body, want_plan, names=()):
     """Every way this issue's shape is wrong, as a list of lines; empty when it
     holds. Pure, so each finding has a case that does not spend a request.
 
     IT REPORTS ALL OF THEM, not the first. A body that is both too long and
     missing a section needs two edits, and a checker that names one sends its
-    reader back for the other."""
+    reader back for the other.
+
+    `names` is the issue's LABEL list, and the only thing read off it is the
+    `kind:` label a sub-issue carries: an unreadable one -- two labels, or a
+    word outside `WORK_KINDS` -- is a finding, while a MISSING one is the
+    warning `cmd_check` prints, because every sub-issue filed before the rule
+    has none and `campaign-claim take` gates on these findings. Optional and
+    empty by default, so a caller that has no labels to hand asks for no reading
+    of them rather than being told the label is absent."""
     out = []
     if kind == STRAY:
         return [f"it carries the `{CAMPAIGN_LABEL}` label AND a parent. That is "
@@ -866,6 +954,11 @@ def shape_findings(kind, title, body, want_plan):
         if want not in found:
             out.append(f"no `## {want}` section, which a {kind} requires"
                        + (" at a claim" if want == PLAN_SECTION else ""))
+    if kind == SUB_ISSUE:
+        _work_kind, why = work_kind_of(names)
+        if why:
+            out.append(f"the `{WORK_KIND_LABEL_PREFIX}<k>` label does not read: "
+                       f"{why}")
     return out
 
 
@@ -904,6 +997,20 @@ def cmd_check(args):
     print(f"  sections found: {', '.join(found) or '<none>'}")
     want = required_sections(kind, args.plan)
     print(f"  sections required: {', '.join(want) or '<none: this kind has no shape>'}")
+    # THE WORK KIND, PRINTED WITH THE READING. An unreadable label is a finding
+    # below; an ABSENT one is a warning here and moves no exit status, because
+    # every sub-issue filed before the rule carries none and `campaign-claim
+    # take` refuses on a finding -- a refusal would wall the claim on all of
+    # them at once.
+    if kind == SUB_ISSUE:
+        work_kind, work_why = work_kind_of(names)
+        if work_kind:
+            print(f"  kind   {work_kind}")
+        elif not work_why:
+            print(f"  WARNING no `{WORK_KIND_LABEL_PREFIX}<k>` label, so what "
+                  f"kind of work this is is unrecorded: one of "
+                  f"{', '.join(WORK_KINDS)}. A warning and not a refusal: every "
+                  f"sub-issue filed before the rule carries none.")
     if BACKLOG_LABEL in names:
         print(f"  carries `{BACKLOG_LABEL}`: not worked until the owner removes "
               f"it; `campaign-claim take` refuses a claim on it")
@@ -917,7 +1024,7 @@ def cmd_check(args):
     warning = bare_reference_warning(bare_references(title + "\n" + body))
     if warning:
         print(f"  WARNING {warning}")
-    findings = shape_findings(kind, title, body, args.plan)
+    findings = shape_findings(kind, title, body, args.plan, names=names)
     if not findings:
         print("RESULT   the shape holds" if want else
               "RESULT   no shape to hold: every reader leaves this kind alone")
@@ -1236,6 +1343,7 @@ def main():
             ("bound", cmd_bound, "here | elsewhere <machine> | unbound"),
             ("standing", cmd_standing, "standing | not-standing: the person's "
                                        "hold on the close"),
+            ("kind", cmd_kind, "the sub-issue's work kind, or `none`"),
             ("bind", cmd_bind, "set this machine's `bound:` label, dropping any other"),
             ("check", cmd_check, "an issue's title, body length and sections"),
             ("index", cmd_index, "the sub-issue index"),
@@ -1260,7 +1368,7 @@ def main():
     args = ap.parse_args()
     global READING
     READING = args.cmd
-    if args.cmd in ("slug", "bound", "standing", "bind", "check"):
+    if args.cmd in ("slug", "bound", "standing", "kind", "bind", "check"):
         args.campaign_issue = campaign_issue_number(args.campaign_issue)
     return args.fn(args)
 

@@ -188,6 +188,36 @@ def main():
           read == {3: "other"} and sorted(bad) == [1, 2]
           and "#1, #2" in bad[1])
 
+    # ------------------------------------------------------- the work kind
+    # The `kind:<k>` label is the sub-issue's WORK kind, read off a name list by
+    # exact prefix exactly as the slug and the binding are, so every case here is
+    # a calculation. It is not `kind_of` below, which is the STRUCTURAL kind.
+    work, why = m.work_kind_of(["campaign", "backlog"])
+    check("no kind: label is no work kind, and neither `backlog` nor `campaign` "
+          "is one", work is None and why is None)
+    work, why = m.work_kind_of(["backlog", "kind:analysis"])
+    check("one kind: label names the work kind",
+          work == "analysis" and why is None)
+    check("every one of the five words reads",
+          [m.work_kind_of([f"kind:{k}"])[0] for k in m.WORK_KINDS]
+          == list(m.WORK_KINDS))
+    work, why = m.work_kind_of(["kind:research", "kind:migration"])
+    check("two kind: labels are a refusal, not a verdict",
+          work is None and why and "kind:research" in why
+          and "kind:migration" in why and "no latest" in why)
+    # A WORD OUTSIDE THE FIVE IS NOT A WORK KIND. It names the brief a worker is
+    # given, so returning it hands out a reference nothing resolves.
+    work, why = m.work_kind_of(["kind:spelunking"])
+    check("a word outside WORK_KINDS is a refusal, naming the five",
+          work is None and why and "spelunking" in why
+          and all(k in why for k in m.WORK_KINDS))
+    work, why = m.work_kind_of(["kind:"])
+    check("a bare `kind:` is refused rather than returned as the empty string",
+          work is None and why)
+    check("work_kind_labels ignores a label that merely opens with the letters",
+          m.work_kind_labels(["kindly", "kind", "kind:research"])
+          == ["kind:research"])
+
     # ------------------------------------------------------ index: the parse
     one = json.dumps([{"number": 1}, {"number": 2}])
     items, why = m.parse_index(one)
@@ -679,6 +709,37 @@ def main():
     check("a stray is reported as a stray and not as a heap of missing sections",
           len(stray_found) == 1 and "not a kind" in stray_found[0])
 
+    # THE `kind:<k>` LABEL IS A FINDING ONLY WHEN IT DOES NOT READ. A missing one
+    # is the warning `cmd_check` prints, not a finding, because `campaign-claim
+    # take` gates on findings and every sub-issue filed before the rule has none.
+    found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True,
+                             names=["kind:research", "kind:development"])
+    check("two `kind:` labels on a sub-issue is a finding naming both",
+          len(found) == 1 and "kind:research" in found[0]
+          and "kind:development" in found[0])
+    found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True,
+                             names=["kind:spelunking"])
+    check("a `kind:` word outside the five is a finding naming the five",
+          len(found) == 1 and all(k in found[0] for k in m.WORK_KINDS))
+    check("one good `kind:` label is no finding",
+          m.shape_findings(m.SUB_ISSUE, "t", good_sub, True,
+                           names=["kind:analysis", "backlog"]) == [])
+    check("and a sub-issue with no `kind:` label is no finding either",
+          m.shape_findings(m.SUB_ISSUE, "t", good_sub, True,
+                           names=["backlog"]) == [])
+    # A CAMPAIGN ISSUE IS NOT ASKED FOR ONE: the work kind is a sub-issue's, so
+    # the reading is gated on the structural kind and not applied to every issue.
+    check("a campaign issue with no `kind:` label is no finding",
+          m.shape_findings(m.CAMPAIGN, "t", good_campaign, False,
+                           names=["campaign"]) == [])
+    check("...and a campaign issue is not refused for two of them either",
+          m.shape_findings(m.CAMPAIGN, "t", good_campaign, False,
+                           names=["kind:research", "kind:analysis"]) == [])
+    # THE KEYWORD IS OPTIONAL, so every positional caller here -- `bind`'s report
+    # among them -- keeps reading the same shape it did before.
+    check("shape_findings called positionally reads no labels at all",
+          m.shape_findings(m.SUB_ISSUE, "t", good_sub, True) == [])
+
     with tempfile.TemporaryDirectory() as tmp:
         # THE SHELL HALF: what `check` exits with, and what it prints beside the
         # verdict. A bare exit code is satisfied by every other cause that
@@ -689,7 +750,9 @@ def main():
                    f'"labels": [{{"name": n}} for n in {list(labels)!r}], '
                    f'"parent": {({"number": 1} if parent else None)!r}}}))\n')
             d = Path(tmp) / f"shim{abs(hash(src))}"
-            d.mkdir()
+            # KEYED BY THE SOURCE, so asking twice for the same fixture is the
+            # same directory rewritten rather than a collision.
+            d.mkdir(exist_ok=True)
             (d / "gh").write_text(src)
             (d / "gh").chmod(0o755)
             env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}")
@@ -725,6 +788,33 @@ def main():
                     env=shim(good_sub, labels=("backlog",)))
         check("`backlog` is reported by check and does not fail it",
               r.returncode == 0 and "carries `backlog`" in r.stdout)
+
+        # THE WORK KIND THROUGH THE SHELL: the word is printed with the reading,
+        # its absence is a warning that moves no exit status, and only a label
+        # that cannot be read as one word refuses.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, labels=("kind:analysis",)))
+        check("check prints the work kind it read",
+              r.returncode == 0 and "kind   analysis" in r.stdout
+              and "WARNING no `kind:" not in r.stdout)
+        r = tracker("check", "5", "--plan", env=shim(good_sub))
+        check("a sub-issue with no `kind:` label is warned about and still holds",
+              r.returncode == 0 and "WARNING no `kind:<k>` label" in r.stdout
+              and "analysis" in r.stdout
+              and "RESULT   the shape holds" in r.stdout)
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, labels=("kind:research", "kind:migration")))
+        check("two `kind:` labels exit 1 with the finding on stderr",
+              r.returncode == 1 and "REFUSING" in r.stderr
+              and "kind:research" in r.stderr and "kind:migration" in r.stderr)
+        # A CAMPAIGN ISSUE IS NOT WARNED ABOUT A LABEL IT DOES NOT CARRY. The
+        # control for the branch above: with `parent` gone the same body is a
+        # campaign issue, and the reading says nothing about the work kind.
+        r = tracker("check", "5", env=shim(good_campaign, labels=("campaign",),
+                                          parent=False))
+        check("a campaign issue is not warned about a missing `kind:` label",
+              r.returncode == 0 and "WARNING no `kind:" not in r.stdout
+              and "kind   " not in r.stdout)
 
         # `bind` REPORTS THE SHAPE AND NEVER GATES ON IT, which is the whole
         # reason `check` is its own verb: `bind` is the ONLY repair for the
@@ -878,6 +968,59 @@ def main():
         check("...and the refusal names `standing`, not `bound`",
               "campaign-tracker standing:" in r.stderr)
 
+        # THE `kind` VERB: a word on stdout, and the three statuses kept apart --
+        # a kind, a reading that found none, and a label set it refuses to read
+        # as one word. Asserted on what was printed as well as on the status,
+        # since a crash shares exit 2 with a refusal.
+        r = tracker("kind", "314", env=labels_shim(
+            "kindread", '["backlog", "kind:analysis"]'))
+        check("the kind verb answers with a word on stdout",
+              r.returncode == 0 and r.stdout.strip() == "analysis")
+        r = tracker("kind", "314", env=labels_shim("kindnone", '["backlog"]'))
+        check("a sub-issue with no `kind:` label prints `none` and exits 1",
+              r.returncode == 1 and r.stdout.strip() == "none")
+        r = tracker("kind", "314", env=labels_shim(
+            "kindtwo", '["kind:research", "kind:migration"]'))
+        check("two `kind:` labels exit 2 and print no verdict",
+              r.returncode == 2 and r.stdout.strip() == ""
+              and "kind:research" in r.stderr
+              and "campaign-tracker kind:" in r.stderr)
+        r = tracker("kind", "314", env=labels_shim(
+            "kindbad", '["kind:spelunking"]'))
+        check("a `kind:` word outside the five exits 2, naming the five",
+              r.returncode == 2 and r.stdout.strip() == ""
+              and all(k in r.stderr for k in m.WORK_KINDS))
+        # IT ASKS THE ISSUE FOR ITS LABELS, one request and no page to stop
+        # early on -- the same reading `bound` and `standing` make.
+        d = Path(tmp) / "kindargv"
+        d.mkdir()
+        argv_log = d / "calls"
+        (d / "gh").write_text("#!/usr/bin/env python3\n"
+                              "import sys\n"
+                              f"open({str(argv_log)!r}, 'a').write("
+                              "' '.join(sys.argv[1:]))\n"
+                              "print('[\"kind:analysis\"]')\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("kind", "314",
+                    env=dict(os.environ, PATH=f"{d}:{os.environ['PATH']}"))
+        # A `gh` THAT WAS NEVER RUN LEAVES NO LOG, and reading it would be a
+        # traceback where the suite owes a named failure.
+        argv = argv_log.read_text() if argv_log.exists() else ""
+        check("kind asks the issue endpoint for its labels, not the comments one",
+              r.returncode == 0 and "issues/314" in argv and "labels" in argv
+              and "comments" not in argv)
+        # LABELS THAT DID NOT READ ARE NOT A SUB-ISSUE WITH NO KIND: `none` here
+        # would read as a reading, and a caller would brief a worker on nothing.
+        d = Path(tmp) / "kindunread"
+        d.mkdir()
+        (d / "gh").write_text("#!/bin/sh\necho 'gh: no' >&2\nexit 1\n")
+        (d / "gh").chmod(0o755)
+        r = tracker("kind", "314",
+                    env=dict(os.environ, PATH=f"{d}:{os.environ['PATH']}"))
+        check("labels that did not read exit 2 and print no `none`",
+              r.returncode == 2 and "none" not in r.stdout
+              and "campaign-tracker kind:" in r.stderr)
+
         # THE WARNING RIDES WITH THE READING AND MOVES NO EXIT STATUS.
         good_ref = good_sub.replace("## Intent\n- x\n", "## Intent\n- see #185\n")
         # THE TITLE IS READ BESIDE THE BODY. The rule exempts no field, and a
@@ -891,10 +1034,12 @@ def main():
         check("check warns about a bare reference and still holds",
               r.returncode == 0 and "WARNING" in r.stdout
               and "#185" in r.stdout and "RESULT   the shape holds" in r.stdout)
-        # THE CONTROL: printed unconditionally, the warning says nothing.
+        # THE CONTROL: printed unconditionally, the warning says nothing. Named
+        # for the bare reference and not for the word WARNING, which the missing
+        # `kind:` label also earns on this same body.
         r = tracker("check", "5", "--plan", env=shim(good_sub))
         check("...and says nothing about a body with no bare reference",
-              r.returncode == 0 and "WARNING" not in r.stdout)
+              r.returncode == 0 and "bare reference" not in r.stdout)
 
     if not ran:
         print("FAIL  the suite ran no case at all")

@@ -37,9 +37,8 @@ A subagent of a worker inherits the worker's role, because the guard reads the
 parent's session id. It is briefed by the parent's context and by nothing else:
 no hook reaches it.
 
-**Run only the suite you just changed, batch a file's edits into one write, and
-run one full sweep just before the commit**: re-running everything after each
-edit is what multiplies the cost.
+**Run the full sweep once, just before the commit**: rerunning it after each
+edit multiplies the cost, so batch a file's edits and run the suite they touch.
 
 ## Handing off
 

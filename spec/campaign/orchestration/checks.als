@@ -571,7 +571,8 @@ pred R4c_CheckoutSwitchedUnderAgent {
 }
 
 /* R4e. The issue number separates two sub-issues and there is only ever one of
-   it per sub-issue, so two sessions on the SAME sub-issue still share a branch. */
+   it per sub-issue, so two sessions on the SAME sub-issue still share a branch.
+   R4g, which holds it, is its witness. */
 pred R4e_NumberedBranchStillShared {
   some disj a1, a2: Agent {
     a1.launcher != a2.launcher
@@ -650,13 +651,6 @@ pred R8b_RepairExcludesIt {
   R8_ClaimCutOnAnotherRepo
 }
 
-/* R8c. ...and the repair still admits the ordinary claim, or it would be a
-   rule that forbids everything. */
-pred R8c_RepairAdmitsTheOrdinaryClaim {
-  claimOnTheIssuesRepo and claimAtomic
-  some i: Issue | eventually (Now.event = Claim and Now.issue = i)
-}
-
 /* R14. THE SCOPE DEFECT, without the rule: a sub-issue lands in a member
    repository the campaign issue's `## Repos` never listed, and its ref is cut
    anyway. `claimOnTheIssuesRepo` is asserted, so this is not R8 -- the taker
@@ -676,7 +670,9 @@ pred R14b_RepairExcludesIt {
 }
 
 /* R14c. ...and it still admits the ordinary claim on a listed member, or the
-   rule refuses the only thing a member repository is for. */
+   rule refuses the only thing a member repository is for. It holds
+   `claimOnTheIssuesRepo` too, so it is R8b's control as well: that repair
+   does not forbid every claim. */
 pred R14c_ScopeAdmitsTheListedMember {
   claimWithinScope and claimAtomic and claimOnTheIssuesRepo
   some c: Campaign, i: Issue |
@@ -982,14 +978,14 @@ pred R4h_OwnHandsWorkWithoutClaim {
   }
 }
 
-/* R4i. The guard closes it. */
+/* R4i. The guard closes it. Q5 is its control: `permissionByRole` implies
+   this guard (PermissionImpliesClaimGates), and claimed work still runs under
+   it, so the guard does not forbid working at all. */
 pred R4i_GuardClosesOwnHandsGap {
   claimBeforeWork
   R4h_OwnHandsWorkWithoutClaim
 }
 
-/* R4j. CONTROL for R4i: UNSAT there would mean the guard forbids the session
-   from working at all rather than from working unclaimed. */
 /* R15. THE GUARD THAT JUDGED AND WROTE NOTHING. Work happens and no verdict
    about it is on disk afterwards. */
 pred R15_WorkLeavesNoVerdict {
@@ -1012,14 +1008,6 @@ pred R15c_DurableStillAdmitsTheWork {
                               and i in Judged')
 }
 
-pred R4j_GuardAdmitsClaimedWork {
-  claimBeforeWork
-  some s: Session, a: Agent {
-    a.peer = s
-    eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
-                and eventually (Now.event = Work and Target.agent = a))
-  }
-}
 
 /* ============== permission by role, one witness per table cell ============== */
 
@@ -1154,24 +1142,15 @@ pred Q4b_WorkerClosesUnclaimedSibling {
                 and Now.issue not in s.claimedIssues)
 }
 
-/* Q5. R4j under the discipline: claimed work still runs. */
+/* Q5. Claimed work still runs under the discipline. R4h under it needs no run
+   of its own: `permissionByRole` implies `claimBeforeWork`, which R4i shows
+   closes R4h. */
 pred Q5_WorkerWorksClaimedCheckout {
   permissionByRole
   some s: Session, a: Agent {
     s.role = Worker and a.peer = s
     eventually (Now.event = Claim and Who.session = s and Now.issue = a.task
                 and eventually (Now.event = Work and Target.agent = a))
-  }
-}
-
-/* Q6. R4h under the discipline. UNSAT: the same hole `claimBeforeWork` closes,
-   closed again by the rule that subsumes it. */
-pred Q6_WorkerWorksUnclaimed {
-  permissionByRole
-  some s: Session, a: Agent {
-    s.role = Worker and a.peer = s
-    eventually (Now.event = Work and Target.agent = a)
-    always a.task not in s.claimedIssues
   }
 }
 
@@ -1646,19 +1625,6 @@ pred A8_ReviewRuleAdmitsTheLanding {
   }
 }
 
-/* A16. THE ONE-SESSION LANDING, admitted. Run at exactly one Session so the
-   absence of a second merger is the scope and not an accident. */
-pred A16_AuthorLandsOwnReviewedWork {
-  mergedOnCurrentReview
-  some s: Session, a: Agent {
-    a.peer = s
-    eventually (Now.event = Push and Target.agent = a)
-    eventually (Now.event = Review and Who.session = s and Now.issue = a.task)
-    eventually (Now.event = Confirm and Who.session = s and Target.agent = a)
-    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = a.task)
-  }
-}
-
 /* A16b. The author gets no special door. Letting `push` keep `Reviewed` turns
    this SAT, so the currency half of the rule is `push`'s clearing line. */
 pred A16b_AuthorCannotMergeOnStaleReview {
@@ -1675,7 +1641,7 @@ pred A16b_AuthorCannotMergeOnStaleReview {
 
 /* A18. Hands-on work is no Agent at all. It matters because the confirm
    conjunct ranges over `agentsOf[Now.issue]`, empty here, so it is
-   VACUOUSLY true and the review half holds the rule up alone -- which A16,
+   VACUOUSLY true and the review half holds the rule up alone -- which M2c,
    having an Agent, cannot see. */
 pred A18_AgentLessLandingIsAdmitted {
   mergedOnCurrentReview
@@ -1721,7 +1687,9 @@ pred M2b_TheRuleExcludesTheStalePush {
 }
 
 /* M2c. ...and a review taken AFTER the push still lands, or M2b would be the
-   rule that no pushed branch ever merges. On GitHub the `Review` step is a
+   rule that no pushed branch ever merges. Run at one Session, it is also the
+   author landing its own reviewed work, which A16b refuses once the review
+   is stale. On GitHub the `Review` step is a
    comment, which fires no `check` run; scripts/rerun-check.py, run by
    .github/workflows/review-rerun.yml, re-runs the head's red one so the merge
    this scenario reaches needs no hand step. */
@@ -1837,7 +1805,6 @@ run R3c_GlobalCloseRuleBlocks    for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- an acquire moves a live role's HEAD
 run R4c_CheckoutSwitchedUnderAgent for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 12 steps expect 1
 -- what the numbered branch leaves
-run R4e_NumberedBranchStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a session named for another campaign does not block this campaign's close
 run N1_ForeignNamedSessionDoesNotBlock       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run N2_UnnamedSessionDoesNotBlock            for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
@@ -1867,7 +1834,6 @@ run R4f_ClaimClosesSameSubIssue    for 4 Issue, 1 PullRequest, 1 Campaign, 2 Ses
 run R4g_ClaimWithoutAtomicityStillShared for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R8_ClaimCutOnAnotherRepo for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R8b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run R8c_RepairAdmitsTheOrdinaryClaim for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the scope half: a claim on a repository the campaign is not for
 run R14_ClaimOnARepoOutsideTheScope for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R14b_RepairExcludesIt for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
@@ -1895,7 +1861,6 @@ run R12i_TheCommitsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campa
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the gate leaves a record, and the record does not forbid the work
 run R15_WorkLeavesNoVerdict      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R15b_DurableExcludesIt       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
@@ -1921,9 +1886,8 @@ run Q4_WorkerClosesOtherCampaign        for 4 Issue, 1 PullRequest, 2 Campaign, 
 run Q4b_WorkerClosesUnclaimedSibling    for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q14_WorkerReleasesAnotherCampaignsIssue for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 8 steps expect 0
 run Q14c_WorkerReleasesAnotherCampaignsIssueUnguarded for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 8 steps expect 1
--- R4j and R4h again, under the rule that subsumes claimBeforeWork
+-- claimed work under the rule that subsumes claimBeforeWork
 run Q5_WorkerWorksClaimedCheckout       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run Q6_WorkerWorksUnclaimed             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- the unnamed session, refused, with its control
 run Q7_UnnamedSessionRefused              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run Q7c_UnnamedSessionReachesTheEventUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
@@ -1958,8 +1922,8 @@ run R6_ReleaseUnderRemoteAgent   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 run R6b_ReclaimAfterDeath        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 
 /* A1 and A3 run at two Sessions, so the derived reading is choosing between
-   them. A10-A12 need a CampaignDir to delete mid-trace. A16, A16b, A18 and
-   A18b run at exactly ONE Session, because the absence of a second merger is
+   them. A10-A12 need a CampaignDir to delete mid-trace. A16b, A18 and A18b,
+   and M2c below, run at ONE Session, because the absence of a second merger is
    their subject. */
 -- the holder read off the checkout, with no record anywhere
 run A1_HolderReadFromTheCheckout          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
@@ -1985,7 +1949,6 @@ run A12_LiveGateAdmitsTheDelete   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sess
 -- a push retires a review
 run A13_PushAfterReviewUnReviews             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- the one-session landing
-run A16_AuthorLandsOwnReviewedWork           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- and a push retires that permission
 run A16b_AuthorCannotMergeOnStaleReview      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
 -- the derived reading's one residual gap: live, listed, checkout moved off

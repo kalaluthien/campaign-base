@@ -66,7 +66,7 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    because no atom here carries a person's word; R7c is the ordinary release
    that must stay reachable without it.
 
-   R7c IS WIDER THAN THE SCRIPT, and #187 owns the gap. `Launched` is a fact
+   R7c IS WIDER THAN THE SCRIPT. `Launched` is a fact
    about an agent, and the script has no reader for it: on GitHub R7c's state
    -- launched, dead, nothing pushed -- is a ref 0 ahead of the base whose
    branch was never a merged pull request's head, which is the one shape
@@ -76,10 +76,9 @@ pred localCheckedShutdown { always (Now.event = StandDown implies Target.agent n
    holds the branch and the occupant check refuses before the merge question is
    ever asked -- a refusal `--confirmed-absent` does not lift, since removing a
    worktree is not something a person's word stands in for. So the model's
-   "ordinary release" is, at this sha, a worktree removal and then a release
+   "ordinary release" is a worktree removal and then a release
    that asks a person. What
-   would close the gap is a durable fact saying a holder was launched at all,
-   which is what #187 is deciding. */
+   would close the gap is a durable fact saying a holder was launched at all. */
 pred releaseNeedsAWorker {
   always (Now.event = Release implies
             (settled[Now.issue]
@@ -121,39 +120,32 @@ pred claimOnTheIssuesRepo {
    `baseIssuesAreCampaignIssues` in github/system.als already says a sub-issue
    may land in the base; `R4_RepolessCampaign` already claims one with
    `always no c.reposInBody`. What neither covers is a NON-EMPTY list that does
-   not hold the base -- the shape every campaign with a member repository has --
-   and campaign-claim.py refused exactly that shape from #187 until #203, so
-   every sub-issue of such a campaign was unclaimable. R14d is that world, and
-   it goes UNSAT the moment this disjunct is dropped.
+   not hold the base -- the shape every campaign with a member repository has.
+   R14d is that world, and it goes UNSAT the moment this disjunct is dropped.
 
-   THE READER HAS COME UP TO THIS, and the rule did not move to meet it.
-   `campaignOf[Now.issue]` is the sub-issue's ACTUAL parent. campaign-claim.py
-   used to read the `## Repos` of whatever campaign number the caller typed and
-   never ask GitHub for the parent, so the two agreed exactly when the caller
-   typed the right one; since kalaluthien/campaign-base#206 its `take` reads
-   the parent and refuses a sub-issue whose parent is a campaign other than the
-   one named. Two outcomes it does NOT refuse, and each prints apart: a parent
-   that could not be read (not a parent that disagrees), and an issue with no
-   parent at all, which #1 sitting at GitHub's 100-sub-issue cap keeps
-   producing. `release` and `live` stay keyed on the typed number on purpose --
-   they read refs already cut, so a parentage check there would refuse to reach
-   exactly the mis-cut ref this closes.
+   `campaignOf[Now.issue]` is the sub-issue's ACTUAL parent. campaign-claim.py's
+   `take` reads the parent and refuses a sub-issue whose parent is a campaign
+   other than the one named. Two outcomes it does NOT refuse, and each prints
+   apart: a parent that could not be read (not a parent that disagrees), and an
+   issue with no parent at all, which #1 sitting at GitHub's 100-sub-issue cap
+   keeps producing. `release` and `live` stay keyed on the typed number on
+   purpose -- they read refs already cut, so a parentage check there would
+   refuse to reach exactly the mis-cut ref this closes.
 
    `campaignOf` is NEVER EMPTY at a Claim, so no vacuous branch hides in the
    second disjunct: `claim` in github/system.als already requires
    `i in Campaign.memberIssues`. That is why the membership conjunct in R14 and
    R14c is a statement of the world rather than a constraint, and why removing
    it moves no verdict.
-   Separately, the base's absence from `## Repos` was assumed by R14d's witness
-   and enforced by no reader and no fact until kalaluthien/campaign-base#205.
-   It is now `WellFormed`'s last conjunct in github/system.als, pinned by
+   Separately, the base's absence from `## Repos` is `WellFormed`'s last
+   conjunct in github/system.als, pinned by
    `S20_TheBaseIsNeverListed`, and refused by `campaign-repos.py`. R14d's own
    `Base not in c.reposInBody` is therefore a statement of the world rather
    than a constraint, and removing it moves no verdict -- it is kept because
    the command's comment argues from it.
 
-   A RULE WITH ONE READER IS A RULE WITH ONE ROUTE, and there was a second
-   (kalaluthien/campaign-base#213). `campaign-claim take` is the reader of this
+   A RULE WITH ONE READER IS A RULE WITH ONE ROUTE, and there is a second.
+   `campaign-claim take` is the reader of this
    rule; `gh issue develop --name <slug>/<issue>-<topic>` cuts the same
    ref and reads none of it -- not this scope, not the parent `campaignOf`
    names, not the binding. Nothing in the model separates the two, and nothing
@@ -164,10 +156,9 @@ pred claimOnTheIssuesRepo {
    is and not for the plane it is on -- `Claim` is in `campaignPlaneEvents` in
    system.als, so a plane reading admits it.
 
-   WHAT IS ENFORCED IS THE PLANNER'S ROUTE AND ONLY IT, and the first cut of
-   this paragraph claimed more than the code did. The guard REFUSES the verb in
-   its planner branch; every other session still reaches it through the claim
-   reading, so one already holding a claim on an issue may cut a second,
+   WHAT IS ENFORCED IS THE PLANNER'S ROUTE AND ONLY IT. The guard REFUSES the
+   verb in its planner branch; every other session still reaches it through the
+   claim reading, so one already holding a claim on an issue may cut a second,
    unscoped branch for that issue and this rule does not see it. Narrower --
    it needs a claim on the very issue named -- and unenforced all the same. */
 pred claimWithinScope {
@@ -192,23 +183,21 @@ pred claimWithinScope {
    a stable grammar -- a write to the campaign plane through it has no
    filesystem target at all and is always `Work`, and a `gh` call the guard
    READS AS A CALL and cannot parse is refused, never guessed. The narrower
-   verb is deliberate and was bought twice: a `gh` write can always be hidden
+   verb is deliberate: a `gh` write can always be hidden
    from a bounded reader by a shell that is not read -- a here-string, a pipe
    into a shell, a script file, an interpreter that is not a shell -- so a
    sentence promising that no `gh` write escapes is one the code cannot make
-   true, and it produced a CONTRADICTS on every audit that checked it. What
+   true. What
    the guard does promise: a `gh` TOKEN it can see and cannot resolve to a
    call is refused rather than guessed at. On the other side of that line the
    guard reads the `-c` string of the shells it NAMES, spelled alone or last in
    a cluster -- a named list, not the category, because there is no test for
    "is a shell" and a shell it does not name (`csh`, `tcsh`) is unread like any
    other interpreter. The line is drawn at a list rather than at a category on
-   purpose: a category is a promise about programs this has never seen, and the
-   two previous attempts at this sentence were false in opposite directions --
-   one calling a shell's `-c` unreadable, the next calling every shell's read.
+   purpose: a category is a promise about programs this has never seen.
 
    A shell command is NOT read for a target: an arbitrary shell string is an
-   unbounded language, and every reader of it was one more alternation for the
+   unbounded language, and every reader of it is one more alternation for the
    next bypass. Such a call is
    allowed at the moment it is made, printing that it was unread, and its
    write is `Work` at the moment it LANDS -- `claimBeforeCommit` below, the
@@ -221,12 +210,11 @@ pred claimBeforeWork {
             implies Now.issue in Target.agent.peer.claimedIssues)
 }
 
-/* THE VERDICT IS DURABLE (kalaluthien/campaign-base#196). `claimBeforeWork`
+/* THE VERDICT IS DURABLE. `claimBeforeWork`
    above is the gate; this is the rule that the gate leaves a record of what it
    decided. Without it a guard that judged every call and wrote nothing
-   satisfied the whole model, which is the state `check-campaign-claim.py` was
-   in until #209: its precision could only be reconstructed from the memory of
-   whoever it refused.
+   satisfied the whole model: its precision could only be reconstructed from
+   the memory of whoever it refused.
 
    ON `Work` AND NOT ON EVERY EVENT, and the bound is the reader's: the guard
    is a PreToolUse hook, so what it can log is the calls it is handed. A rule
@@ -240,7 +228,7 @@ pred verdictIsDurable {
   always (Now.event = Work implies Now.issue in Judged')
 }
 
-/* ---------------- discipline: permission by role (#185) ---------------- */
+/* ---------------- discipline: permission by role ---------------- */
 
 /* The events a worker may not reach on the campaign plane whatever it holds.
    `WriteBody` because the campaign issue body changes only at a scope change or
@@ -250,7 +238,7 @@ pred verdictIsDurable {
    precondition on purpose, and any session may file one. */
 fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
 
-/* Whether a session may perform this event on this issue. The table in #185:
+/* Whether a session may perform this event on this issue. The table:
 
      planner    campaign plane, any campaign            code plane: never
      worker     campaign plane, its own campaign and
@@ -259,8 +247,8 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
      no role    refused on both planes
 
    A comment and a reopen are no event here, so the table is silent on them;
-   the guard lets a worker comment on its own campaign's issue (#207), and
-   comment on or reopen any sub-issue of that campaign without a claim (#354).
+   the guard lets a worker comment on its own campaign's issue, and
+   comment on or reopen any sub-issue of that campaign without a claim.
 
    The issue argument is `lone` and the `in` tests are vacuously true when there
    is none, which is the right reading and not an accident: `writeBody` and the
@@ -278,10 +266,8 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
 
    `mayAct` for a planner drops the `worksOn` conjunct, so this discipline
    permits a planner to claim for a delegate on any campaign. `sessionClaim` in
-   session/system.als agrees, and did not always: it pinned every claim to
-   `s.worksOn`, which made AGENTS.md's cross-campaign delegate claim
-   unreachable here for a reason that was NOT this rule. It now splits by role
-   and bounds the planner's by the BINDING instead -- any campaign bound to the
+   session/system.als agrees. It splits by role
+   and bounds the planner's by the BINDING -- any campaign bound to the
    session's own machine -- and Q10/Q10b/Q10c are the three that say which of
    the two rules refuses a worker the same claim. */
 /* WHAT THIS IS NOT. `s.role` is read from the session's own name, and a session
@@ -290,14 +276,12 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    account, so a session that renames itself a planner already holds the power
    the name would grant, and what the rule buys is that the role is explicit and
    the mistake is loud. Stated here because a permission table is the thing a
-   reader is most likely to mistake for a security boundary. The sub-issue for
-   tying the name to something the named session did not choose is #194. */
-/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE, and #207 is the row that follows from
-   that. `memberIssues` excludes it (github/system.als), so `i in
-   s.worksOn.memberIssues` refuses a worker every write to the issue of the
-   campaign it works -- including a comment, which the model has no
-   precondition on. The worker's campaign-plane row therefore admits the
-   campaign issue of its OWN campaign, and `Q11` is the witness.
+   reader is most likely to mistake for a security boundary. */
+/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE. `memberIssues` excludes it
+   (github/system.als), so `i in s.worksOn.memberIssues` refuses a worker every
+   write to the issue of the campaign it works -- including a comment, which
+   the model has no precondition on. The worker's campaign-plane row therefore
+   admits the campaign issue of its OWN campaign, and `Q11` is the witness.
 
    Bounded by the EVENT and not by a claim: the guard admits only a comment
    there, because `WriteBody` is the charter and belongs to the close, and a
@@ -312,19 +296,17 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    campaign issue may start as another campaign's sub-issue (WellFormed bars
    only its own), be claimed there and leave by RemoveMember -- so a worker
    releasing that claim is refused by this conjunct alone, and widening it to
-   `i in Campaign.campaignIssue` turns Q14 SAT (sdlc-alloy#345 U1; pr#368
-   review F1 found the trace). Its two neighbours are pinned too: dropping the
-   disjunct reddens `Q11`, dropping `i not in Campaign.memberIssues` reddens
-   `Q4`. The guard's own bound, `i == own_number`, is tested in
-   check-campaign-claim-test.py.
+   `i in Campaign.campaignIssue` turns Q14 SAT. Its two neighbours are pinned
+   too: dropping the disjunct reddens `Q11`, dropping `i not in
+   Campaign.memberIssues` reddens `Q4`. The guard's own bound, `i ==
+   own_number`, is tested in check-campaign-claim-test.py.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
    forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
    overlap that cannot happen on the tracker, where a campaign issue carries
    the `campaign` label and a sub-issue is somebody's `--parent` -- and without
    the conjunct the carve-out reached it, which Q4 caught. Bounded here rather
-   than by a new fact, because the fact is github/system's to add and adding it
-   would redden commands this branch is not about. */
+   than by a new fact, because the fact is github/system's to add. */
 /* THE BRIEF IS THE SECOND READING, and it is about the CONTEXT rather than the
    session: `some s.role` asks whether the session has a role at all, `s in
    Briefed` asks whether the context it is acting from still states it. A
@@ -372,8 +354,6 @@ pred permissionByRole {
             implies mayAct[Target.agent.peer, Now.event, Now.issue])
 }
 
-/* The rule as written, the honest local reading, and the reading a session
-   can actually perform. */
 /* The commit half of the same gate: scripts/check-commit-claim.py, a
    pre-commit hook refusing a commit on a base tree or under a campaign
    directory whose branch is not a claim. Keyed on `a.peer` for the same
@@ -386,7 +366,7 @@ pred claimBeforeCommit {
 /* The rule as written, and the honest local reading a session can perform.
    There is no third: the close reads `herdr agent list`, which sees every
    live session on this machine, so what it can read and what it can attribute
-   are now the same set. */
+   are the same set. */
 pred closeDisciplineFull[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue) implies closableWithAgents[c])
 }
@@ -395,8 +375,8 @@ pred closeDisciplineLocal[c: Campaign] {
 }
 
 /* Where session/checks.als's R3 is answered: keyed on LIVENESS, which is
-   what `herdr agent list` hands a deleting session directly. It used to be
-   keyed on a record that died with the very tree it was about to delete. */
+   what `herdr agent list` hands a deleting session directly, and not on a
+   record, which would die with the very tree it is about to delete. */
 pred noDeleteUnderLiveAgent {
   always (Now.event = DeleteDir implies
             no a: Agent | a in Live and a.host = Where.machine
@@ -461,12 +441,11 @@ pred SilentAgentStillRetired {
   and (some a: Agent | eventually a in Retired and always a not in Answered)
 }
 
-/* THE POLL INTO THE BANNER (#279). A stopped agent is listed and idle, so a
+/* THE POLL INTO THE BANNER. A stopped agent is listed and idle, so a
    STATUS sent to it queues like any other -- and no answer can follow until
    the window resets, because `answer` guards on Stopped and only `limitReset`
-   clears it. The first is the planner's cron firing into the banner, ~11
-   turns per window over #244's six stops; the second is the one prompt that
-   lands, sent after the reset the banner names. */
+   clears it. The first is the planner's cron firing into the banner; the
+   second is the one prompt that lands, sent after the reset the banner names. */
 pred L1_PollIntoTheBannerGetsNoAnswer {
   some a: Agent | eventually (limitStop[a] and after (status[a] and after answer[a]))
 }
@@ -475,7 +454,7 @@ pred L1b_PromptAfterTheResetIsAnswered {
                    and eventually (limitReset and after (status[a] and after answer[a])))
 }
 
-/* THE HEARTBEAT RETIRES A DONE WORKER (#296, #349). A worker whose
+/* THE HEARTBEAT RETIRES A DONE WORKER. A worker whose
    sub-issue was released, by any session, and which holds nothing is sent
    `/exit`; one holding a claim or a live agent, one with no sub-issue
    released, and a planner are not. The first is reachable; the second is
@@ -492,13 +471,13 @@ pred H1b_HeartbeatRetiresNoHolder {
          or no a: peer.s | once (Now.event = Release and Now.issue = a.task)))
 }
 
-/* THE WATCH READS A LEVEL (#296). An open sub-issue nobody claimed is an
+/* THE WATCH READS A LEVEL. An open sub-issue nobody claimed is an
    `unclaimed` drift until a claim, and a claim on a closed sub-issue is a
    `settled` drift until its release; each stands on every state between, so
    the watch reprints what still stands rather than catching one edge. W1's
    `i not in Backlog` keeps the label from clearing the drift in the claim's
-   place: `Backlog` is unconstrained, so without it W1 stayed SAT with a claim
-   that records nothing (pr#368 review round 2). */
+   place: `Backlog` is unconstrained, so without it W1 stays SAT with a claim
+   that records nothing. */
 pred W1_UnclaimedDriftClearsOnClaim {
   some c: Campaign, i: Issue | eventually (i in unclaimedDrift[c]
     and eventually (Now.event = Claim and Now.issue = i
@@ -619,8 +598,7 @@ pred R4g_ClaimWithoutAtomicityStillShared {
    `Claimed` alone, so a sub-issue stays claimed for ever after it is settled --
    and on GitHub the same thing is literally true, because
    `delete_branch_on_merge` is off on this tracker and a merged branch's ref
-   stands until someone deletes it by hand. Probed 2026-09-04: `take 1 154
-   <topic>` exits 3 `already claimed` though #154 closed as completed via #162.
+   stands until someone deletes it by hand.
    A sub-issue that has been settled can therefore never be re-worked, which is
    not a policy anyone chose.
 
@@ -629,33 +607,30 @@ pred R4g_ClaimWithoutAtomicityStillShared {
    finished work and not a fresh claim -- stated once, here, so `take` and
    `release` cannot drift about when a ref stops meaning "somebody holds this".
 
-   SPELLED ON `Claim` AND NOT ON `CloseIssue`, and the first draft got that
-   wrong in a way worth keeping written down. Written as "a close leaves the
+   SPELLED ON `Claim` AND NOT ON `CloseIssue`. Written as "a close leaves the
    issue unclaimed", and with `closeIssue` framing `Claimed' = Claimed`, it
-   reduced to "no sub-issue may close while it is claimed" -- which FORBIDS THE
+   reduces to "no sub-issue may close while it is claimed" -- which FORBIDS THE
    ORDINARY LANDING the code makes every time: the pull request merges, GitHub
    auto-closes the sub-issue with its ref still standing, and `release` deletes
-   the ref afterwards. The spec said the code's happy path was illegal, and two
-   comments in `campaign-claim.py` cited it as the statement they follow.
+   the ref afterwards.
 
    What the code actually reads is on the TAKE side: a second claim on an
    already-claimed sub-issue is admitted exactly when the first is residue of a
    merged pull request. That is `partition_refs`, and it is what makes
    reopen-then-take work.
 
-   `some ... .pullRequest` IS LOAD-BEARING and was missing. `none in Merged`
-   holds vacuously in Alloy, so without it the rule also admitted a second claim
+   `some ... .pullRequest` IS LOAD-BEARING. `none in Merged`
+   holds vacuously in Alloy, so without it the rule also admits a second claim
    on a sub-issue with NO pull request at all -- which `partition_refs` refuses,
-   since a ref with no merged pull request is a live claim. The comment said
-   "exactly when", and it was not exactly. R9e is the control for that branch;
-   without the conjunct it goes SAT. */
+   since a ref with no merged pull request is a live claim. R9e is the control
+   for that branch; without the conjunct it goes SAT. */
 pred settledLeavesNoClaim {
   always (Now.event = Claim and Now.issue in Claimed
             implies (some Now.issue.pullRequest
                      and Now.issue.pullRequest in Merged))
 }
 
-/* R8. THE DEFECT #187 FIXES, in the smallest world that holds it: one
+/* R8. THE DEFECT, in the smallest world that holds it: one
    sub-issue, and a claim cut on a repository that is not the one its work
    lands in. `claimAtomic` is asserted here, so this is NOT the same defect as
    R4g -- the one-claim-per-issue rule holds throughout and the wrong ref is cut
@@ -669,8 +644,7 @@ pred R8_ClaimCutOnAnotherRepo {
 
 /* R8b. CONTROL: the same trace with the repair, which must be empty. If this
    ever comes back SAT, `claimOnTheIssuesRepo` has stopped constraining
-   anything -- which is what happened the first time it was written, as a
-   conjunct of `claim` itself, where no scenario could violate it. */
+   anything. */
 pred R8b_RepairExcludesIt {
   claimOnTheIssuesRepo
   R8_ClaimCutOnAnotherRepo
@@ -710,15 +684,13 @@ pred R14c_ScopeAdmitsTheListedMember {
                 and i.repo != Base and i.repo in c.reposInBody)
 }
 
-/* R14d. THE LIVE DEFECT #203 IS FOR, and the one command of these four that
-   was missing when the reader shipped. The campaign has a member repository,
+/* R14d. The campaign has a member repository,
    so `## Repos` is NOT empty -- which is what separates this from
    `R4_RepolessCampaign`, whose list is empty and which therefore passes a
    reader that admits the base only by way of `none`. The sub-issue lands in
    the base, the list does not hold the base, and the claim must still be cut.
    Expects 1 WITH the rule asserted: dropping the `Base` disjunct from
-   `claimWithinScope` makes it UNSAT, which is the shape campaign-claim.py was
-   in between #187 and #203. */
+   `claimWithinScope` makes it UNSAT. */
 /* R14e. WHOSE list, pinned. Every command above runs at `1 Campaign`, where
    `campaignOf[Now.issue].reposInBody` and `Campaign.reposInBody` are the same
    relation and the choice between them is free -- so the four of them together
@@ -726,11 +698,7 @@ pred R14c_ScopeAdmitsTheListedMember {
    campaigns, and the sub-issue's OWN parent does not list its repository while
    the other campaign does. Replacing `campaignOf[Now.issue]` with `Campaign`
    in `claimWithinScope` makes this SAT and moves no other verdict, which is
-   the only thing that tells the two readings apart.
-
-   The reader makes exactly this mistake in the other direction -- it judges
-   against the campaign the caller typed, not the parent -- which is
-   kalaluthien/campaign-base#206 and not something this command can fix. */
+   the only thing that tells the two readings apart. */
 pred R14e_TheParentsListIsTheOneThatCounts {
   claimWithinScope and claimAtomic and claimOnTheIssuesRepo
   some c, other: Campaign, i: Issue |
@@ -775,10 +743,9 @@ pred R9c_RepairAdmitsClaimThenSettle {
                               and i.pullRequest in Merged)
 }
 
-/* R7e. CONTROL FOR THE `settled` DISJUNCT #187 Q2 added: a sub-issue DROPPED
+/* R7e. CONTROL FOR THE `settled` DISJUNCT: a sub-issue DROPPED
    as not planned, whose claim nobody was ever launched on, must be releasable.
-   This is the case `--confirmed-absent WHO` used to be the only door for, and
-   it is the door GitHub already answers: an issue closed as not planned says
+   GitHub already answers it: an issue closed as not planned says
    the work is over as plainly as a merged pull request does. Deleting
    `settled` from the rule -- or narrowing it back to `complete` -- turns this
    UNSAT, which is what makes the widening tested rather than merely made. */
@@ -791,18 +758,11 @@ pred R7e_WorkerRuleAdmitsTheDroppedSubIssue {
   }
 }
 
-/* R11. A HOLDER ATTRIBUTED THROUGH ANOTHER CAMPAIGN'S DIRECTORY (#187
-   question 4). `holder` reaches a checkout through `campaignDirAt[campaignOf[i],
+/* R11. A HOLDER ATTRIBUTED THROUGH ANOTHER CAMPAIGN'S DIRECTORY. `holder`
+   reaches a checkout through `campaignDirAt[campaignOf[i],
    host]`, and directory/system.als says that is the one way to reach a
    campaign's directory -- so a sub-issue's holder must stand in ITS OWN
    campaign's directory, never in a neighbour's on the same machine.
-
-   That statement was in the model and pinned by nothing: dropping the campaign
-   filter from `campaignDirAt` left all 162 commands green. The script had
-   drifted the same way for the same reason -- `campaign_clones` walked EVERY
-   campaign directory at the base root, so one with an unreadable `repos/`
-   denied `live` and `release` for every other campaign on the machine, and a
-   clone belonging to a neighbour counted toward this campaign's sweep.
 
    Expect 0, and it goes SAT the moment `campaignDirAt` stops filtering by
    campaign. */
@@ -815,15 +775,13 @@ pred R11_HolderThroughAnotherCampaignsDir {
   }
 }
 
-/* WORK HAPPENS IN A CLONE `acquire-repo.sh` SET UP (#187 question 5, #190).
+/* WORK HAPPENS IN A CLONE `acquire-repo.sh` SET UP.
    Two readings of one set, `acquired` in directory/system.als. A delegate is
    launched into such a clone, because it reads no ancestor instruction file
    and the `CLAUDE.local.md` in its cwd is its whole channel to the campaign's
    principles; and a commit on campaign work is made in one, because that is
-   where the claim gate runs -- a member repository ships no installer, so
-   before #190 a member clone got the no-main-commits shim alone while
-   check-campaign-claim.py went on calling it campaign work. Both were
-   mechanisms that existed only as prose, and neither failure is observable:
+   where the claim gate runs -- a member repository ships no installer.
+   Neither failure is observable:
    a delegate that received nothing looks like one that ignored everything,
    and an ungated commit looks like a gated one that passed.
 
@@ -907,8 +865,7 @@ pred R12d_AcquireIsWhatSetsACloneUp {
    shape that has two. Two machines, one campaign: the directory on the
    agent's own host lacks the repository and the other machine's holds it, and
    the rule must still refuse. Expect 0, and it goes SAT the moment `a.host`
-   stops filtering (measured on the #190 branch at 1836881: without it all 78
-   commands then in this module stayed green).
+   stops filtering.
 
    `some campaignOf[a.task]` is not a conjunct: the last one implies it. An
    expect-0 witness pays for every redundant conjunct, which can make it UNSAT
@@ -926,12 +883,11 @@ pred R12e_TheAgentsOwnHostIsTheOneThatCounts {
 
 /* R12f. AND NOTHING BUT AN ACQUIRE SETS A CLONE UP. R12d says an acquired
    launch is REACHABLE from `no acquired`, which any producer satisfies -- so it
-   rests on `acquired' = acquired` holding in `directoryFrame`, which no command
-   asked for; deleting that line once freed the set on every event outside the
-   directory entity and left every command green. From nothing acquired, with
-   no Acquire ever firing, an acquired launch is IMPOSSIBLE. Expect 0, and it
-   goes SAT the moment the frame stops carrying `acquired`. The rule is not
-   assumed: what is under test is what the transition system can produce. */
+   rests on `acquired' = acquired` holding in `directoryFrame`. From nothing
+   acquired, with no Acquire ever firing, an acquired launch is IMPOSSIBLE.
+   Expect 0, and it goes SAT the moment the frame stops carrying `acquired`.
+   The rule is not assumed: what is under test is what the transition system
+   can produce. */
 pred R12f_NothingButAnAcquireSetsACloneUp {
   no acquired
   always Now.event != Acquire
@@ -941,7 +897,7 @@ pred R12f_NothingButAnAcquireSetsACloneUp {
   }
 }
 
-/* R12g. WHOSE directory, pinned: #203's lesson, and R11's campaign filter
+/* R12g. WHOSE directory, pinned: R11's campaign filter
    inside `campaignDirAt` taken up by this rule. At `1 Campaign`
    `workDir[a].acquired` and `CampaignDir.acquired` are the same relation. Two
    campaigns on one machine: the agent's own campaign's clone is not acquired
@@ -964,10 +920,8 @@ pred R12g_TheAgentsOwnDirIsTheOneThatCounts {
 }
 
 /* R12i. WHICH HOST, for the commit half: R12e's pin on a commit rather than a
-   launch, which the old R13g was. Expect 0, and it goes SAT when the commit
-   half reads any machine's directory -- through `workDir` or around it
-   (pr#368 review F4: with only R12e, a commit half written as
-   `campaignDirsOf[campaignOf[a.task]].acquired` left every command green). */
+   launch. Expect 0, and it goes SAT when the commit
+   half reads any machine's directory -- through `workDir` or around it. */
 pred R12i_TheCommitsOwnHostIsTheOneThatCounts {
   acquiredCloneOnly
   some a: Agent, m: Machine |
@@ -991,12 +945,10 @@ pred R12h_ACommitOnNoCampaignsWorkIsOutsideTheRule {
                               and no campaignOf[a.task])
 }
 
-/* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
-   of `settledLeavesNoClaim` through: claim, merge, and the sub-issue closes
+/* R9d. THE ORDINARY LANDING: claim, merge, and the sub-issue closes
    with its ref still standing, because GitHub auto-closes on merge and
-   `release` runs afterwards. Spelled on CloseIssue, the rule made this UNSAT --
-   the spec forbidding what the code does every time, with two comments in
-   `campaign-claim.py` citing it as what they follow. A discipline needs a
+   `release` runs afterwards. Spelled on CloseIssue, the rule makes this UNSAT --
+   the spec forbidding what the code does every time. A discipline needs a
    witness for the path it must NOT block, not only for the one it must. */
 pred R9d_OrdinaryLandingStillAllowed {
   settledLeavesNoClaim
@@ -1006,11 +958,11 @@ pred R9d_OrdinaryLandingStillAllowed {
                                               and i in Claimed))
 }
 
-/* R9e. THE BRANCH THE FIRST SPELLING LEFT OPEN: a second claim on a sub-issue
+/* R9e. A second claim on a sub-issue
    that is claimed and has NO pull request at all. `none in Merged` is vacuously
-   true, so the rule admitted it and no case said otherwise -- R9's witness asks
+   true -- R9's witness asks
    for `pullRequest not in Merged`, which is FALSE of an empty pullRequest, so
-   R9 and R9b never reached this shape. The code refuses it: a ref with no
+   R9 and R9b never reach this shape. The code refuses it: a ref with no
    merged pull request is a live claim, and `partition_refs` puts it in `held`.
    Expect 0, and it goes SAT the moment the `some` conjunct is dropped. */
 pred R9e_SecondClaimOnAPullRequestLessSubIssue {
@@ -1019,7 +971,7 @@ pred R9e_SecondClaimOnAPullRequestLessSubIssue {
                               and i in Claimed and no i.pullRequest)
 }
 
-/* R4h. THE HOLE, and the one this campaign actually fell into: a session works
+/* R4h. THE HOLE: a session works
    its own sub-issue and no claim of it ever exists, so every peer reading the
    records sees an open sub-issue indistinguishable from one nobody started. */
 pred R4h_OwnHandsWorkWithoutClaim {
@@ -1039,8 +991,7 @@ pred R4i_GuardClosesOwnHandsGap {
 /* R4j. CONTROL for R4i: UNSAT there would mean the guard forbids the session
    from working at all rather than from working unclaimed. */
 /* R15. THE GUARD THAT JUDGED AND WROTE NOTHING. Work happens and no verdict
-   about it is on disk afterwards -- the state every one of this guard's false
-   positives was found in. */
+   about it is on disk afterwards. */
 pred R15_WorkLeavesNoVerdict {
   some i: Issue | eventually (Now.event = Work and Now.issue = i
                               and i not in Judged')
@@ -1072,7 +1023,7 @@ pred R4j_GuardAdmitsClaimedWork {
 
 /* ============== permission by role, one witness per table cell ============== */
 
-/* Q11. #207: a worker writes its OWN campaign's issue, which is no
+/* Q11. A worker writes its OWN campaign's issue, which is no
    sub-issue and which no claim can cover. SAT -- and it is the campaign issue
    that makes it so and not a claim: removing the disjunct from `mayAct` makes
    this command UNSAT against its `expect 1`, which is the whole of what it
@@ -1120,9 +1071,8 @@ pred Q10c_WorkerClaimsOnAnotherBoundCampaignUnguarded {
 }
 
 
-/* Q1. THE CASE THAT PROMPTED #185: a planner of campaign #1 closes an issue no
-   campaign of its own covers -- #116 and #160, closed by hand outside the
-   harness on 2026-09-04 because the claim rule had no passing form for them. */
+/* Q1. A planner closes an issue no
+   campaign of its own covers. */
 pred Q1_PlannerClosesOtherCampaignsIssue {
   permissionByRole
   some s: Session | s.role = Planner and
@@ -1159,10 +1109,9 @@ pred Q3_WorkerClosesOwnClaim {
 /* Q4. A worker of one campaign closes ANOTHER campaign's issue. UNSAT.
 
    Says "belongs to campaign c, and c is not the session's" rather than "not in
-   my memberIssues", which is what it said until #207: the campaign issue of
-   the session's OWN campaign is also outside `memberIssues`, so the old
-   spelling started matching the one write the rule now permits and this
-   command went SAT while measuring nothing it was named for.
+   my memberIssues": the campaign issue of
+   the session's OWN campaign is also outside `memberIssues`, so that
+   spelling would match the one write the rule permits.
 
    `c != s.worksOn` sits INSIDE the `eventually`, as in Q10's trio: `worksOn`
    is var, so a session that differs from `c` at time zero can adopt `c` and
@@ -1425,12 +1374,11 @@ pred R7a_FreshClaimReleasedWithNoAgent {
        needed an Agent atom for and is releasable on purpose -- so R7b came
        back SAT over a legitimate trace and pinned nothing.
 
-       WIDENED FROM `complete` TO `settled` BY #187 Q2, in step with the rule.
-       The moment `releaseNeedsAWorker` admitted a settled sub-issue, the
-       solver satisfied this witness by DROPPING the issue instead of merging
-       it -- the same escape through a different door, and R7b went SAT again.
-       An exclusion has to name the whole disjunct it is excluding, not the
-       half that existed when it was written. */
+       Since `releaseNeedsAWorker` admits a settled sub-issue, excluding only
+       `complete` lets the solver satisfy this witness by DROPPING the issue
+       instead of merging it -- the same escape through a different door, and
+       R7b goes SAT. An exclusion has to name the whole disjunct it is
+       excluding. */
     always not settled[i]
     eventually (Now.event = Claim and Now.issue = i
                 and after eventually (Now.event = Release and Now.issue = i))
@@ -1490,9 +1438,8 @@ pred N1_ForeignNamedSessionDoesNotBlock {
 }
 
 /* N2. A SESSION WHOSE NAME SAYS NOTHING DOES NOT BLOCK, even under the base
-   tree (rule-check#267): the tree is under every campaign here at once, so it
-   tied the session to all of them and closing baseline#1 refused on one the
-   owner judged a false positive. N7 is the control that the gate is not
+   tree: the tree is under every campaign here at once, so it
+   ties the session to all of them. N7 is the control that the gate is not
    emptied by it. Restoring the cwd disjunct in `liveUnderLocally` makes this
    UNSAT. */
 pred N2_UnnamedSessionDoesNotBlock {
@@ -1757,8 +1704,8 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
    scripts/check-merge-review.py refuses on the machine, at the REPORT's post
    through scripts/check-campaign-claim.py.
 
-   The rule it exercises is `mergedOnCurrentReview` and nothing new. #274 asked
-   for a READER of merge condition 1, and a reader is not a fact this vocabulary
+   The rule it exercises is `mergedOnCurrentReview` and nothing new. A READER
+   of merge condition 1 is not a fact this vocabulary
    can hold: nothing here has a sha or a check run to hang one on. SAT without
    the rule, which is what makes M2b a measurement and not a vacuity. */
 pred M2_MergeInTheStateAfterAPush {
@@ -1827,13 +1774,12 @@ pred P2_PlannerLaunchesDelegate {
   }
 }
 
-/* P3. #227 flagged `launch`'s checkout clause as the one that read
-   `Who.session.worksOn` where every other conjunct reads `a.task` -- fixed to
+/* P3. `launch`'s checkout clause reads
    `campaignOf[a.task]`. Two campaigns, one machine: the launching session is
    bound to `c` and the sub-issue is a member of the other, and the checkout
    the launch must find sits in the TASK's own directory, not the launcher's --
    pinned by requiring `c`'s own directory hold something else for that repo.
-   Reverting the fix to `Who.session.worksOn` makes this UNSAT, the same shape
+   Reading `Who.session.worksOn` instead makes this UNSAT, the same shape
    R12g uses for `campaignDirAt` inside `commit`.
 
    `some a.peer` -- a session launching itself onto its own claim -- so
@@ -1950,7 +1896,7 @@ run R12i_TheCommitsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campa
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R4j_GuardAdmitsClaimedWork   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
--- #196: the gate leaves a record, and the record does not forbid the work
+-- the gate leaves a record, and the record does not forbid the work
 run R15_WorkLeavesNoVerdict      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R15b_DurableExcludesIt       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R15c_DurableStillAdmitsTheWork for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
@@ -1963,7 +1909,7 @@ run R4m_GateAdmitsClaimedCommit      for 3 Issue, 1 PullRequest, 1 Campaign, 1 S
    sub-issue to be about an issue the session does not cover, so they run at the
    wider scope; the rest run at R4h's line. Every UNSAT here has a control run
    beside it, and Q2c is the control that is UNSAT ON PURPOSE. */
--- the case that prompted #185: a planner closes another campaign's issue
+-- a planner closes another campaign's issue
 run Q1_PlannerClosesOtherCampaignsIssue   for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 -- a planner never commits, and the CONTROL says which rule forbids it
 run Q2_PlannerCommits                     for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
@@ -1990,7 +1936,7 @@ run Q9_WorkerFilesCampaignIssue         for 3 Issue, 1 PullRequest, 1 Campaign, 
 run Q9c_WorkerFilesCampaignIssueUnguarded for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- a claim is a campaign-plane write: a planner may cut one on any campaign
 -- bound HERE, a worker only on its own, and Q10c says which rule refuses
--- #207: the carve-out is what makes this write reachable at all
+-- the carve-out is what makes this write reachable at all
 run Q11_WorkerWritesItsOwnCampaignIssue    for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q10_PlannerClaimsOnAnotherBoundCampaign  for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run Q10b_WorkerClaimsOnAnotherBoundCampaign for 5 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
@@ -2021,7 +1967,7 @@ run A1_HolderReadFromTheCheckout          for 3 Issue, 1 PullRequest, 1 Campaign
 run A3_HolderRunsTheWholeProtocol         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
 -- the live collision: a self-merge with NO review
 run A4_AgentMergesItsOwnPullRequest                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
--- still caught, by what was missing
+-- still caught
 run A5_ReviewRuleBlocksTheCollision          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 0
 -- the same merge from the other chair
 run A6_UnreviewedMerge                       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
@@ -2049,7 +1995,7 @@ run A18_AgentLessLandingIsAdmitted           for 3 Issue, 1 PullRequest, 1 Campa
 -- and unreviewed it does not land. The pair matters because the confirm conjunct is VACUOUS at `0 Agent`, so the review half holds the rule up alone
 run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 0 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
-/* #274. The tightest case of the currency half. */
+/* The tightest case of the currency half. */
 run M2_MergeInTheStateAfterAPush              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run M2b_TheRuleExcludesTheStalePush           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
@@ -2114,11 +2060,11 @@ assert PlannerIsASession     { all a: plannerAgents | some a.peer }
    lists reddens it. */
 assert DisjointPlanes { no campaignPlaneEvents & codePlaneEvents }
 
-/* #185's rule subsumes #177's: a session permitted to work an issue holds a
-   claim on it, so `claimBeforeWork` needs no separate statement once
-   `permissionByRole` holds. Dropping `i in s.claimedIssues` from `mayAct`'s
-   code-plane row reddens it. Q5 is the control that the subsumption is not by
-   forbidding work altogether. */
+/* The role rule subsumes the claim rule: a session permitted to work an
+   issue holds a claim on it, so `claimBeforeWork` needs no separate statement
+   once `permissionByRole` holds. Dropping `i in s.claimedIssues` from
+   `mayAct`'s code-plane row reddens it. Q5 is the control that the
+   subsumption is not by forbidding work altogether. */
 assert PermissionImpliesClaimGates { permissionByRole implies claimBeforeWork }
 
 /* ATTRIBUTION, AND WHAT DERIVING IT COSTS. `holder` reads the claim's owner
@@ -2135,8 +2081,7 @@ assert AttributionIsSound { always all a: Live | a in holder[a.task] }
    `noDeleteUnderLiveAgent` is the gate A11 already measures. `RemoveMember`
    empties `campaignOf`, so there is no campaign directory left to read a
    checkout in and the holder set goes empty with the checkout untouched.
-   Each conjunct was found by dropping it and reading the counterexample, and
-   deleting any one of the three reddens the check below. */
+   Deleting any one of the three reddens the check below. */
 pred holderStaysAttributed {
   always (Now.event = Acquire implies
             no a: Agent | a in Live and a.host = Where.machine
@@ -2162,7 +2107,7 @@ assert DelegateLaunchedByPlanner {
    it is DERIVED rather than assumed: `launch` spends the bit, only
    `agentRelease` returns it, and `launch` requires it.
 
-   MEASURED 2026-09-05, one clause deleted at a time. Deleting either of
+   Deleting either of
    `launch`'s two clauses reddens THIS command, UNSAT -> SAT. Deleting the
    release's `Compacted' = Compacted + Who.session` does NOT: with nothing to
    return the bit, a session's second launch becomes unreachable and this
@@ -2170,7 +2115,7 @@ assert DelegateLaunchedByPlanner {
    and by nothing here, which is the whole reason P8 exists -- a green assert
    is a rule only while its subject is reachable.
 
-   It is the whole rule #198 lands, read at its two ends: `campaign-claim.py
+   It is the whole rule, read at its two ends: `campaign-claim.py
    release` compacting its own pane, and `scripts/campaign-assign.py` refusing
    a pane that has not. */
 assert SessionCompactsBetweenSubIssues {
@@ -2179,24 +2124,24 @@ assert SessionCompactsBetweenSubIssues {
      and Now.event = Launch and Target.agent = a2 and a1 in Launched)
     /* BETWEEN, not merely BEFORE. The nested `once` is what says "after a1 was
        launched": some past instant held a release by this session, and at that
-       instant a1 had already been launched. A single `once (Release ...)` --
-       which is how this read at 114e71a -- says only that the session released
+       instant a1 had already been launched. A single `once (Release ...)`
+       says only that the session released
        at SOME point, which is a weaker claim than the comment above makes and
        true for a release that happened before a1 ever started. It held only
        because nothing else in the model returns the bit; a later event that
-       did would leave it green and the comment false. Found by review. */
+       did would leave it green and the comment false. */
     /* `a1 in Launched` at the release, and not a nested `once` of a1's
-       `Launch`: since #289 an agent also starts by `handoff`, which is no
+       `Launch`: an agent also starts by `handoff`, which is no
        `Launch`, and the nested form read a successor's heir as never started
        -- so a successor's release could never come after it and the assert
-       went false for a trace doing exactly what it asks -- measured SAT at
+       went false for a trace doing exactly what it asks -- at
        3 Agent, the predecessor, its heir and the successor's next, which is
        why the command below runs at 3. `Launched` only grows, so being in it
        at the release says the release came after. */
     implies once (Now.event = Release and Who.session = a1.peer and a1 in Launched)
 }
 
-/* THE HANDOFF (#289), four claims, each reddened by deleting one clause of
+/* THE HANDOFF, four claims, each reddened by deleting one clause of
    `handoff` or `sessionHandoff`, named beside it. */
 
 /* After it, the predecessor never again holds anything live, and the
@@ -2267,7 +2212,7 @@ pred Cov_AgentDie         { eventually Now.event = AgentDie }
 /* The session limit stops a live agent, and its reset wakes every stopped
    one; a session leaves once a claim of its own agents was released. SessionExit is
    session/system's own event, witnessed here because `exitSession` above is
-   the refinement that constrains it (sdlc-alloy#345 I6). */
+   the refinement that constrains it. */
 pred Cov_LimitStop        { eventually Now.event = LimitStop }
 pred Cov_LimitReset       { eventually Now.event = LimitReset }
 pred Cov_SessionExit      { eventually Now.event = SessionExit }
@@ -2297,7 +2242,7 @@ pred Cov_Handoff          { eventually (Now.event = Handoff and some heldBy[Who.
    Dropping `t->(p.claimedIssues)` from `sessionHandoff` makes this UNSAT,
    since `mayAct` then refuses the heir the code plane. The `until` is the
    whole discriminator: without it the successor claims the sub-issue again
-   after the handoff and the run is SAT either way -- measured. */
+   after the handoff and the run is SAT either way. */
 pred P10_HeirWorksAfterHandoff {
   permissionByRole
   some t: Session, b: Agent | b.peer = t
@@ -2312,7 +2257,7 @@ pred P10_HeirWorksAfterHandoff {
    not an empty set. */
 /* THE CONTROL FOR THE GUARD'S SCOPE, and P8 cannot be it. P8's two launches
    both have `some peer`, so it is satisfied whether the guard binds on every
-   launch or only on a session taking its own claim -- measured, the
+   launch or only on a session taking its own claim -- the
    unconditional form leaves P8 SAT.
 
    This one separates them: a session works a sub-issue itself and LATER
@@ -2328,8 +2273,7 @@ pred P9_DelegateAfterOwnSubIssue {
     own.peer = s and no deleg.peer and deleg.launcher = s
     /* WITH NO RELEASE IN BETWEEN, and that clause is the whole discriminator:
        without it the session simply releases between the two launches and the
-       run is satisfiable either way -- measured, and it is why the first cut
-       of this control caught nothing. Unconditional, the delegate launch needs
+       run is satisfiable either way. Unconditional, the delegate launch needs
        the bit a release alone returns, so forbidding the release makes the
        trace impossible. */
     and eventually (Now.event = Launch and Target.agent = own

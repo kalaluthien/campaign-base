@@ -39,7 +39,7 @@ carrying no comment opening `REVIEW` and no pull-request review at all, and
 nothing on the machine or in CI refused it. This is that reader.
 
 The RULE it reads is `mergedOnCurrentReview` in
-spec/campaign/orchestration/scenarios.als, which the model already stated and
+spec/campaign/orchestration/checks.als, which the model already stated and
 A6, A7 and A16b witness; M2 there is the tightest case of its currency half. A
 reader is not a fact that vocabulary can hold -- nothing in it has a sha or a
 check run -- so the model states the rule and this states the reading.

@@ -172,14 +172,14 @@ pred S14_FollowUpAfterClose {
 }
 
 /* Under the narrow reading the base cannot be a member of its own
-   campaign at all: the model forbade what was about to happen for real. */
+   campaign at all. */
 pred S16a_BaseMemberUnderNarrowReading {
   baseIsCampaignIssueOnly
   some c: Campaign, i: c.memberIssues | i.repo = Base
 }
 
-/* The tracker's third kind. It was UNSAT at any bound while
-   `baseIssuesAreCampaignIssues` was a fact, and no verdict said so. */
+/* The tracker's third kind. It is UNSAT at any bound while
+   `baseIssuesAreCampaignIssues` is a fact. */
 pred S18_PlainBaseIssue {
   some i: Issue | i.repo = Base and always (i not in Campaign.campaignIssue + Campaign.memberIssues)
 }
@@ -190,11 +190,8 @@ pred S18a_PlainBaseIssueUnderClosedWorld {
   baseIssuesAreCampaignIssues and S18_PlainBaseIssue
 }
 
-/* S20. THE BASE IS NEVER IN `## Repos` (kalaluthien/campaign-base#205). The
-   premise `claimWithinScope`'s `Base` disjunct rests on, and until #205 it was
-   prose in three files: `campaign-repos.py` accepted `- kalaluthien/campaign-base`
-   and exited 0, and this model let a trace put `Base` in `reposInBody`. Both
-   have a reader now, and this is the model's.
+/* S20. THE BASE IS NEVER IN `## Repos`. The premise `claimWithinScope`'s
+   `Base` disjunct rests on.
 
    EXPECT 0 WITH THE FACT. Dropping `always Base not in Campaign.reposInBody`
    from `WellFormed` makes it SAT, which is what tells the fact from a comment
@@ -269,7 +266,7 @@ run S16a_BaseMemberUnderNarrowReading for exactly 2 Issue, 1 PullRequest, exactl
 run S18_PlainBaseIssue              for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 1
 -- control: the clause bites
 run S18a_PlainBaseIssueUnderClosedWorld for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Repo, 6 steps expect 0
--- #205: the base is never in `## Repos`, and the list is not thereby empty
+-- the base is never in `## Repos`, and the list is not thereby empty
 run S20_TheBaseIsNeverListed          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
 run S20a_ControlANonBaseRepoIsListed  for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
 
@@ -311,8 +308,8 @@ pred weakFairness { always (progressEnabled implies eventually Now.event in Open
    conclusion is vacuously true at time zero. */
 pred hasWork { some Campaign.memberIssues }
 
-/* This counterexample changed the design: a member closed without a merged
-   pull request never reads complete, so the campaign never becomes closable. */
+/* A member closed without a merged pull request never reads complete, so the
+   campaign never becomes closable. */
 assert TerminationUnderFairness {
   (hasWork
    and (eventually always Now.event != AddMember)

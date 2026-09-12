@@ -37,8 +37,7 @@
  * liveness, deliberately -- every caller applies that itself, `AttributionIsSound`
  * by quantifying over `Live` and `holderStaysAttributed` by guarding on it, so
  * a holder that has died is still the holder of the workspace it left. Nothing
- * writes it and nothing can go stale against it, which is what replaced the
- * record whose `session` field this entity used to defer to.
+ * writes it and nothing can go stale against it.
  * `AttributionIsSound` is what that costs, and R4c is its counterexample.
  *
  * NOT MODELLED: whether an agent is any good; that an agent answers about
@@ -66,7 +65,7 @@ sig Agent {
   peer:     lone Session
 }
 
-/* `Role` is session/system.als's now: it is what a SESSION is for, read from
+/* `Role` is session/system.als's: it is what a SESSION is for, read from
    its name, and an agent inherits it. A Worker works a sub-issue on its
    branch. A Planner is a session's own atom (`some peer`, pinned by
    PlannerIsASession) on a sub-issue it filed and distributes: it never takes
@@ -79,10 +78,9 @@ sig Agent {
    `launch` says so. A third kind is added in session/system.als the same way,
    and takes whatever of the state below it turns out not to share.
 
-   WHAT #185 RETIRED: a planner working a sub-issue by its own hands used to be
-   a Worker atom of the same session. AgentInheritsSessionRole below forbids
-   that, so a planner session reaches `work` along no edge at all, and its code
-   modes are a delegate or a separate worker session. */
+   AgentInheritsSessionRole below forbids a planner working a sub-issue by
+   its own hands, so a planner session reaches `work` along no edge at
+   all, and its code modes are a delegate or a separate worker session. */
 
 /* Which half of the work an event writes. The two are disjoint and do not
    cover: an event on NEITHER plane is one no role rule speaks to.
@@ -123,10 +121,9 @@ fun planeOf[e: Event]: lone Plane {
             or (p = CodePlane      and e in codePlaneEvents) }
 }
 
-/* `Session` also has a `role` field now, so the RELATIONAL spelling `role.Planner`
-   no longer says which entity's -- it resolves to Agent + Session and every
-   reader of it wants agents. This names that set once; the dotted `a.role` form
-   is unambiguous and is left alone. */
+/* `Session` also has a `role` field, so the RELATIONAL spelling `role.Planner`
+   resolves to Agent + Session and every reader of it wants agents. This names
+   that set once; the dotted `a.role` form is unambiguous and is left alone. */
 fun plannerAgents: set Agent { (Agent <: role).Planner }
 
 var sig Launched in Agent {}
@@ -150,12 +147,11 @@ var sig Retired  in Agent {}
    still listed, so it is Live, and it takes no turn of its own until the
    window resets -- `work`, `push`, `report`, `blocked`, `answer` and its
    commit all guard on it. A STATUS sent to it queues (`status` does not
-   guard), which is the poll into the banner #279 measured: ~11 planner turns
-   per window, each reading the banner. The window is the account's, not the
-   agent's, so `limitReset` clears every stopped agent at once: each agent
-   stops at its own next call (`limitStop`, one per event) and all wake at
-   the reset, which is the batch AGENTS.md § Watching and retiring describes.
-   What ends the silence is the reset, a clock the banner names;
+   guard). The window is the account's, not the agent's, so `limitReset`
+   clears every stopped agent at once: each agent stops at its own next call
+   (`limitStop`, one per event) and all wake at the reset, which is the batch
+   AGENTS.md § Watching and retiring describes. What ends the silence is the
+   reset, a clock the banner names;
    `.claude/skills/assuming-role/scripts/campaign-limit-reset.py` reads it off
    the pane and schedules the one prompt that lands after it. */
 var sig Stopped in Agent {}
@@ -176,16 +172,15 @@ var sig Stopped in Agent {}
    back, which is `campaign-claim.py release` enqueueing `/compact` into its own
    pane as its last act.
 
-   WHY RELEASE AND NOT SOME LATER MOMENT: measured 2026-09-05, a compaction run
-   while the release turn's context is still in the prompt cache is cheap, and
-   one run later re-reads the whole transcript uncached and costs more than it
-   saves. The model cannot express a cache, so that reason lives here and the
-   moment is what is modelled.
+   WHY RELEASE AND NOT SOME LATER MOMENT: a compaction run while the release
+   turn's context is still in the prompt cache is cheap, and one run later
+   re-reads the whole transcript uncached and costs more than it saves. The
+   model cannot express a cache, so that reason lives here and the moment is
+   what is modelled.
 
    NOT MODELLED: how much context, that compaction is lossy, and that a
    compacted session forgets a plan it was holding -- the last is why an
-   assignment is a fresh prompt (probed 2026-09-05: a session that compacted
-   came back idle and did not act on the next step it had named). */
+   assignment is a fresh prompt. */
 var sig Compacted in Session {}
 
 /* A bit on the PULL REQUEST, not on the agent: the review outlives the
@@ -193,13 +188,10 @@ var sig Compacted in Session {}
    the review inherits it. */
 var sig Reviewed in PullRequest {}
 
-/* WHAT THE GUARD WROTE DOWN, and the reason there is a signature for it at all
-   (kalaluthien/campaign-base#196). `claimBeforeWork` says the gate refuses
-   unclaimed work; it says nothing about the gate leaving a trace, so a guard
-   that judged every call and recorded none satisfied the model exactly. That
-   is the state the reader was in: every false positive it had was found by
-   whoever it hit, because a refusal left no record, the session retried in
-   another shape, and the next session paid the same refusal again.
+/* WHAT THE GUARD WROTE DOWN, and the reason there is a signature for it at all.
+   `claimBeforeWork` says the gate refuses unclaimed work; it says nothing
+   about the gate leaving a trace, so a guard that judged every call and
+   recorded none satisfied the model exactly.
 
    An issue is in `Judged` once a verdict about work on it is on disk.
    APPEND-ONLY, because a log a later step can unwrite measures nothing -- and
@@ -240,9 +232,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    answer: a claimed branch nobody has checked out is a branch with no holder,
    which is what `campaign-claim live` prints as its second group.
 
-   NOT herdr's cwd, which is what a first cut of this read and what #176's body
-   said before it was corrected. Measured on this machine 2026-09-04: that join
-   found ZERO claims, because herdr reports where a session was STARTED, a base
+   NOT herdr's cwd, because herdr reports where a session was STARTED, a base
    worker works in a worktree, and the repository owning that worktree is not
    even the clone the session sits in. So `campaign-claim live` reads checkouts
    instead -- `git worktree list` over the base root, every campaign clone, and
@@ -252,15 +242,13 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    sweep and as whether an unnamed session is LISTED (never counted) -- but
    never for which branch anyone holds.
 
-   AND THE MODEL STOPS ABOVE `checkedOut`, deliberately -- #187's N2 rider asked
-   for the derivation or the reason. `Claimed` is a fact about GitHub and
-   `checkedOut` is a fact about a workspace, and deriving one from the other
-   would assert a join this machine cannot make: measured 2026-09-04, herdr
-   reports where a session STARTED, a base worker works in a worktree, and the
+   AND THE MODEL STOPS ABOVE `checkedOut`, deliberately. `Claimed` is a fact
+   about GitHub and `checkedOut` is a fact about a workspace, and deriving one
+   from the other would assert a join this machine cannot make: herdr reports
+   where a session STARTED, a base worker works in a worktree, and the
    repository owning that worktree is not even the clone the session sits in.
    So `holder` names a workspace and not a session, and the two facts stay
-   separate because nothing observable connects them. #181 putting the campaign
-   number in the directory name is what would change that. */
+   separate because nothing observable connects them. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
@@ -282,20 +270,15 @@ pred liveUnder[c: Campaign] {
    campaign's close gate read the identical set, so closing one campaign asked
    another's sessions to stand down.
 
-   A NAME THAT SAYS NOTHING IS NO CAMPAIGN'S SESSION (rule-check#267, owner,
-   2026-09-12). It used to block while its cwd sat under the base tree -- and
-   the base tree is under every campaign here at once, so it blocked every
-   close on the machine with no evidence tying it to any one of them; closing
-   baseline#1 refused on exactly that, and the owner judged it a false
-   positive. What such a session could hold is read elsewhere and by nothing
-   that needs its name: a claim it stands in is the first disjunct (in the
-   code, `live`'s occupied checkouts), work only on this machine is
-   `campaign-local-work`, and since #185 the guard refuses a session of no
-   name every campaign write by a file tool or `gh` (a shell write it does not
-   read, and its commit still needs a claim branch, which is a checkout the
-   first disjunct sees). `live` still LISTS one under the base root, as
-   not counted, so it stays findable; N2 is the witness that it does not
-   block. */
+   A NAME THAT SAYS NOTHING IS NO CAMPAIGN'S SESSION. What such a session
+   could hold is read elsewhere and by nothing that needs its name: a claim it
+   stands in is the first disjunct (in the code, `live`'s occupied
+   checkouts), work only on this machine is `campaign-local-work`, and the
+   guard refuses a session of no name every campaign write by a file tool or
+   `gh` (a shell write it does not read, and its commit still needs a claim
+   branch, which is a checkout the first disjunct sees). `live` still LISTS
+   one under the base root, as not counted, so it stays findable; N2 is the
+   witness that it does not block. */
 /* A live agent whose SESSION is named for THIS campaign. The name is the only
    thing that attributes a session to a campaign: the cwd cannot, since a
    session under the tree is under every campaign's tree at once. */
@@ -311,8 +294,8 @@ pred liveUnderLocally[c: Campaign, m: Machine] {
 
 /* github's `closable` is the GitHub half. These two add the half that needs
    an agent: the rule as written, and the honest local reading a session on
-   one machine can actually perform. There is no third, narrower reading any
-   more -- the close reads `herdr agent list` and nothing keyed to a tree. */
+   one machine can actually perform. There is no third, narrower reading --
+   the close reads `herdr agent list` and nothing keyed to a tree. */
 pred closableWithAgents[c: Campaign]          { closable[c] and not liveUnder[c] }
 pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.machine] }
 
@@ -336,18 +319,18 @@ fun orchestrationOwn: set Event {
   + Confirm + ConfirmElsewhere + Review + StandDown + Retire
   + AgentDie + LimitStop + LimitReset
 }
-/* `DeleteDir` is NOT here any more: no bit of this entity has the directory's
+/* `DeleteDir` is NOT here: no bit of this entity has the directory's
    lifetime once attribution is derived, so a delete falls through and frames
    everything. `MergePullRequest` is not here either: session/system.als gives it
    a session and this entity only guards which session that may be, which is a
    discipline over the event rather than a disjunct on it. `CommitLocal` IS
-   here, added by #177: `agentCommitLocal` and `unattendedCommitLocal` are
+   here: `agentCommitLocal` and `unattendedCommitLocal` are
    disjuncts on it, and joining this set is what removes it from the
    fall-through. */
 fun orchestrationActed: set Event { orchestrationOwn + Launch + Release + CommitLocal + Handoff + SessionExit }
 
 /* The bits divide by how long they live: a pull request's, and a process's.
-   None has a directory's any more. */
+   None has a directory's. */
 pred keepMessages     { Reported' = Reported and Asked' = Asked and Answered' = Answered and Waiting' = Waiting }
 pred keepReview   { Reviewed' = Reviewed }
 pred keepStopped  { Stopped' = Stopped }
@@ -366,10 +349,9 @@ pred launch[a: Agent] {
   a.host = Where.machine
   Now.issue = a.task
   /* Only a DELEGATE's launch waits on the ref, and the asymmetry is a hole
-     measured rather than a shortcut. Every claim is a ref now -- the record
-     that used to stand in for one where no commit would land is gone, and a
-     repo-less sub-issue cuts its ref on the base -- so the ref is what a
-     session working its own claim ought to hold too. That it can reach `work`
+     measured rather than a shortcut. Every claim is a ref -- a repo-less
+     sub-issue cuts its ref on the base -- so the ref is what a session
+     working its own claim ought to hold too. That it can reach `work`
      without one is R4h, and `claimBeforeWork` is the discipline that closes
      it. DO NOT strengthen this to require the ref unconditionally: it would
      close R4h here, where nothing runs, and hide the gap the guard exists
@@ -379,16 +361,15 @@ pred launch[a: Agent] {
      Planner atom on this sub-issue, the one that filed and distributes it. A
      session working its own claim needs none -- the one-worker shape. */
   no a.peer implies (some p: plannerAgents | p.peer = Who.session and p.task = a.task and p in Live)
-  /* THE SUB-ISSUE'S OWN CAMPAIGN, not the launcher's `worksOn`. #227 flagged
-     this clause as the one that did not fit the rest of the predicate: every
-     other read of a.task goes through the sub-issue itself, and this one alone
-     read the launching session's campaign, which is only the same campaign by
-     the binding discipline holding -- a fact this predicate does not assume
-     anywhere else. `campaignOf[i]` is `memberIssues.i`, the function every
-     other checkout read in this file (line 252) and throughout checks.als
-     uses for a sub-issue; `campaignIssueOf[i]` is `campaignIssue.i` and is
-     `lone` empty on a memberIssue, since `campaignIssue` and `memberIssues`
-     are disjoint (`github/system.als` line 156) -- so a literal
+  /* THE SUB-ISSUE'S OWN CAMPAIGN, not the launcher's `worksOn`: every other
+     read of a.task goes through the sub-issue itself, and the launching
+     session's campaign is only the same campaign by the binding discipline
+     holding -- a fact this predicate does not assume anywhere else.
+     `campaignOf[i]` is `memberIssues.i`, the function every other checkout
+     read in this file (`holder`) and throughout checks.als uses for a
+     sub-issue; `campaignIssueOf[i]` is `campaignIssue.i` and is `lone` empty
+     on a memberIssue, since `campaignIssue` and `memberIssues` are disjoint
+     (`WellFormed` in `github/system.als`) -- so a literal
      `campaignIssueOf[a.task]` would leave `campaignDirAt[...]` with no
      Campaign to look up and make this clause unsatisfiable for a.branch. */
   campaignDirAt[campaignOf[a.task], a.host].checkedOut[a.task.repo] = a.branch
@@ -403,9 +384,8 @@ pred launch[a: Agent] {
      A DELEGATE LAUNCH IS NOT GUARDED, and that is the code's shape rather than
      an omission: `scripts/campaign-assign.py` reads the PANE of the session
      being assigned, and a delegate has no pane until the launch makes one.
-     Stated unconditionally -- which is how this read at 2468517 -- the model
-     required the PLANNER to be compacted before every delegate launch, a
-     precondition no reader checks and no session was ever told about. A
+     Stated unconditionally, the model would require the PLANNER to be compacted
+     before every delegate launch, a precondition no reader checks. A
      precondition nothing enforces is worse than none, because a later reader
      believes it.
 
@@ -424,9 +404,9 @@ pred launch[a: Agent] {
 }
 
 /* Clears an earlier confirmation here rather than at the point it is read.
-   The worker's edge: no Planner atom is ever LocalOnly, and after #185 no
-   Planner SESSION reaches this edge either -- AgentInheritsSessionRole leaves it
-   no Worker atom to take it with. */
+   The worker's edge: no Planner atom is ever LocalOnly, and no Planner
+   SESSION reaches this edge either -- AgentInheritsSessionRole leaves it no
+   Worker atom to take it with. */
 pred work[a: Agent] {
   a in Live and a not in Waiting and a not in Stopped and a.role = Worker
   LocalOnly' = LocalOnly + a
@@ -674,7 +654,7 @@ pred handoff[p, t: Session] {
     /* Cleared on the heir and not merely kept: `confirm` has no liveness
        guard, so an heir can be Confirmed before it is launched, and keeping
        that bit let `retire` destroy the work the heir inherited on a stale
-       confirmation. Found by TwoStepCoLocatedSuffices going SAT. */
+       confirmation, which TwoStepCoLocatedSuffices shows. */
     Confirmed'      = Confirmed - olds.h
     Asked'          = Asked - olds.h
     Answered'       = Answered - olds.h
@@ -709,7 +689,7 @@ pred agentRelease {
 /* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: a
    sub-issue the worker took was released, BY ANY SESSION, and it holds no
    live agent. On the base the planner releases, so a release by the worker
-   itself left every base worker unretirable (rule-check#349).
+   itself left every base worker unretirable.
    `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads the
    first as GitHub has it -- the sub-issue its last assignment prompt names
    has no ref standing, and the events feed says when the last went -- and
@@ -722,7 +702,7 @@ pred exitSession[s: Session] {
   agentFrame and no Target.agent
 }
 
-/* THE WATCH'S DRIFT (#296), what `campaign-heartbeat.py --watch` prints as
+/* THE WATCH'S DRIFT, what `campaign-heartbeat.py --watch` prints as
    `drift <rule> <subject>` on every poll. The watch is a reader and no event:
    it changes nothing, and the planner acts on what it prints by running the
    heartbeat with `--apply`. Two of its rules are state this model holds, and
@@ -742,7 +722,7 @@ pred exitSession[s: Session] {
    `stuck` is a clock, `context` a size, and `install` is `unreached` in
    directory/system.als read for the base.
 
-   `quiet <slug>` (#339) is the watch's one exit: no session of the campaign
+   `quiet <slug>` is the watch's one exit: no session of the campaign
    listed but the planner's own, no open sub-issue without `backlog`, and no
    claim -- on two polls running, each read that poll, since a last reading
    standing is not one.

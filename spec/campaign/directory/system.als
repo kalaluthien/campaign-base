@@ -18,9 +18,7 @@
  *
  * An installed repository has two checkouts on a machine -- the install, where
  * it is used, and the clone under the campaign directory, where it is worked --
- * and a merge is not finished until the install shows it (#239). Before #239 the
- * base alone had that rule, as prose, and `~/.claude` (dotclaude) had none:
- * carrying a merge into the install was each worker's improvisation. `current`
+ * and a merge is not finished until the install shows it. `current`
  * below is the set of installed repositories whose install contains everything
  * merged; a MergePullRequest on a repository empties it for that repository on
  * every machine, and a Reach on one machine refills it. The `## Repos` marker
@@ -29,8 +27,8 @@
  * `current` off this machine's disk and `reach` is the event.
  *
  * A campaign directory holds no fact another machine reads, which is what lets
- * it be optional. Its name is `campaign-<slug>-<date>`, or the bare `<slug>`
- * that form replaced for one window, and what makes a directory one is a
+ * it be optional. Its name is `campaign-<slug>-<date>`, or the bare `<slug>`,
+ * and what makes a directory one is a
  * `.campaign` marker inside it naming the campaign -- neither name is read,
  * because no shape can tell a slug from the base's own `scripts/`.
  * The marker is derived from the campaign issue and re-derivable, so it is
@@ -71,13 +69,13 @@ sig CampaignDir {
   /* THE CLONES HERE THAT `acquire-repo.sh` SET UP, and what that buys: each
      carries the campaign's principles, a `CLAUDE.local.md` in the delegate's
      own clone -- a file on disk in its cwd, so there is nothing to prove
-     arrived (#176, #187 question 5) -- and a pre-commit that runs the claim
+     arrived -- and a pre-commit that runs the claim
      gate, reached through the BASE because a member clone holds no copy of
-     `check-commit-claim.py` (#190). One set and not two: one step writes both
+     `check-commit-claim.py`. One set and not two: one step writes both
      and one step removes both, so a delegate's launch and its commits are
      judged against the same clones. Modelled as repositories rather than
      files, because what a launch or a commit needs is that its clone is one
-     of these; WHICH bytes is the script's. Since rule-check#314 the principles
+     of these; WHICH bytes is the script's. The principles
      are the campaign's own additions only; a sub-issue's kind travels on the
      assignment prompt, per sub-issue, and is no fact about a clone. */
   var acquired:    set Repo
@@ -137,7 +135,7 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    escaped that way -- with no directory its installed step reads the campaign
    issue body, on the machine it runs on -- but which machine closes is a
    session's fact, one entity up, and `once m in machinesHolding[c]` would bind
-   machines the script never reads (pr#368 review F2). */
+   machines the script never reads. */
 pred reachDiscipline[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue)
           implies all m: machinesHolding[c] | no unreached[c, m])
@@ -178,9 +176,8 @@ pred deleteDir[t: CampaignDir] {
    installer (scripts/install-hooks.sh), and otherwise a shim carrying the machine-wide
    no-main-commits guard AND the claim gate; acquire-repo.sh verifies the guard is chained on
    both paths, and refuses to install a gate it cannot run. That the shim also carries the gate
-   is #190, and it is half of what `acquired` below is: until then it was the guard alone, so this sentence
-   said "the machine-wide no-main-commits guard alone otherwise" and the two halves of this file
-   would now disagree. For a repository shipping this base's installer, one writer owns the slot
+   is half of what `acquired` below is. For a repository shipping this base's installer, one
+   writer owns the slot
    -- the installer, which adopts the shim in either of its shapes and refuses anything else --
    because two writers left every delegate clone with no hook of the repository's own, and a
    commit there was never auto-pushed. */
@@ -272,7 +269,7 @@ fact DirectoryTrace { directoryInit and always directoryStep }
 /* The OUTER base checkout a campaign session runs from. */
 var sig BaseBehind   in Machine {}
 /* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push
-   (`push-campaign-branch.sh`); before PushBase it only grew (sdlc-alloy#345 I1). */
+   (`push-campaign-branch.sh`). */
 var sig BaseUnpushed in Machine {}
 /* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
    because the two are cleared by different acts: a clone is cut fresh from

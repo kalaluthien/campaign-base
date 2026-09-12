@@ -38,7 +38,8 @@ goes without; the criterion decides the rest, per change.
 
 The order reads `maySkip` for each absent stage when you write past it
 (`orderDiscipline`), and the merge reads it again against the change as it
-finally stands (`landDiscipline`). The second is not the first restated:
+finally stands (`landDiscipline`, which `scripts/check-merge-review.py --land`
+reads in `check`). The second is not the first restated:
 `criterion` reads `writtenOf`, which grows, so a skip licensed when you wrote
 past the stage can be stale by the merge — `S5b_WithoutTheLandingCheck` is a
 chain that keeps the first reading and still lands wrong. The remedy is to

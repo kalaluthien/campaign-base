@@ -155,10 +155,11 @@ fact SdlcWellFormed {
   /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
-  witnesses in stage.Test -> stage.Spec
+  witnesses in stage.Test -> (stage.Spec - Html)
   drives    in stage.Test -> stage.Code
   /* An html form is a Spec artifact that refines scenarios, never another
-     form. */
+     form; and a test witnesses a scenario, never a form, so no code path is
+     tied through a form alone. */
   Html in stage.Spec
   refines in Html -> (stage.Spec - Html)
 }

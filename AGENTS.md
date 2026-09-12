@@ -28,8 +28,10 @@ Settle this before anything else. Most of what arrives here loads no skill.
 **The session a request arrives at reads it here**; which shape the work then
 takes, and whether that session is its planner, is § The binding.
 
-**A person saying a campaign is over is routed before anything is read.** Load
-`closing-campaign` and stop, or the readings below take the close for a sub-issue.
+**A person saying a campaign is over is routed before anything is read**, to
+`.claude/skills/close-campaign/SKILL.md`: its one call is
+`scripts/campaign-close.py campaign <N>`. Run that and stop, or the readings
+below take the close for a sub-issue.
 
 Otherwise, two readings, in this order.
 

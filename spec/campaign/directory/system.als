@@ -138,8 +138,9 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
 
 /* A CAMPAIGN DOES NOT CLOSE WHILE A MERGE HAS NOT REACHED ITS INSTALL on a
    machine holding it. Assumed by a scenario and never a fact, the shape
-   github/system.als's `closeDiscipline` takes: `closing-campaign` step 2 is
-   the reader, and a check that assumed it as a fact could not exhibit its
+   github/system.als's `closeDiscipline` takes: `scripts/campaign-close.py`'s
+   `campaign` scope, step 6 (`installed`), is the reader, and a check that
+   assumed it as a fact could not exhibit its
    absence. Scoped to `machinesHolding` because that is where the check runs --
    the bound machine's disk -- and a machine that installed the repository but
    never held the campaign is one no session of it can read. */

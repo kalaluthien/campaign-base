@@ -13,11 +13,12 @@ and, on a claim, the code the sub-issue names.
 3. **Work in the checkout the claim names** — a worktree for the base, the
    clone for a member repository. The stages inside this step, what each
    produces and when one may be skipped, are
-   [landing a change](references/landing-a-change.md).
+   [landing a change](landing-a-change.md).
 4. **Sort each choice into one of four routes** before you act on it:
    - **decide it**: what a check settles, and how to build what the
      Definition of done names;
-   - **the review**, step 7: whether work already written is right;
+   - **the review**, step 7: whether work already written is right, a
+     trade-off inside the Definition of done included;
    - **ask the planner**: the brief is silent, or reads two ways, on what it
      asks of you -- which step is next, what a line means, whether a file is in
      scope;
@@ -26,14 +27,17 @@ and, on a claim, the code the sub-issue names.
      found two ways, an off-limits file or target, a destructive step, a
      Definition of done you cannot meet, a pick the Plan reserves.
 
-   A question and a hand-up take one channel: a `BLOCKED` on the sub-issue,
-   its first line saying which, then the message -- not a NOTE, a question in
-   the pane, or a DECISION of your own.
+   A question and a hand-up take one channel: a `BLOCKED` on the sub-issue
+   whose `BLOCKED <name>:` line says which of the two it is, then the message
+   -- not a NOTE, a question in the pane, or a DECISION of your own.
 5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.
 6. **Post a `REPORT` once per round**, on the pull request, pinning the sha.
    A verdict or a fix report that does not pin its sha is unactionable.
+   After it the next move is the planner's -- the review, the next pull
+   request of a multi-PR Plan, or the next assignment -- so wait for its
+   prompt and launch nothing, step 7 included, until a prompt hands it to you.
 7. **Launch the review** as `references/reviewing.md` says.
 8. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
    **Then reach the install**, when the

@@ -7,70 +7,68 @@
  * github/system does not model, and a tie is between files in one tree, which
  * no entity of spec/campaign holds. Composing `Change` with `Issue` and `Land`
  * with `MergePullRequest` is a layer above this one, and the whole of
- * spec/campaign folds this entity's six stages into its one `Launch` event --
+ * spec/campaign folds this entity's five stages into its one `Launch` event --
  * which is the gap this entity fills, from beside it and not from inside it.
  *
- *   Stage       the six stages, and `feeds`, the order they owe each other in
+ *   Stage       the five stages, and `feeds`, the order they owe each other in
  *   Change      one unit of work -- a sub-issue -- and the stages its
  *               sub-issue's kind lets it skip
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
- *   AddsShape   the spec artifacts that add a shape a person has to understand
- *   Written     the artifacts that exist; Landed, the changes that merged
+ *   Written     the artifacts that exist; Landed, the changes that merged;
+ *               Licensed, the code paths the tie guard's allow-list exempts
  *   Step        the observer: which event, on which artifact or change
  *
  * ORIENTATION
  *
- * Three modules, split as spec/campaign splits every entity:
+ * Two modules:
  *
  *   sdlc/system.als     signatures, the tie, the skip rule, events, frame, trace
- *   sdlc/scenarios.als  the disciplines, and every witness `run`
- *   sdlc/checks.als     every `assert` and `check`, and the floor that says
- *                       each event is reachable at all
+ *   sdlc/checks.als     the disciplines, every witness `run`, every `assert`
+ *                       and `check`, and the floor that says each event is
+ *                       reachable at all
  *
- * The same reading rules hold: every command carries its own `expect`, the
- * solver is the one reader of a verdict, and the command list is stated a
- * second time in spec/commands.snapshot.json -- one snapshot over the whole
- * of spec/, so a command deleted from either entity is one line gone:
+ * The reading rules are spec/campaign's: every command carries its own
+ * `expect`, the solver is the one reader of a verdict, and the command list is
+ * stated a second time in spec/commands.snapshot.json -- one snapshot over the
+ * whole of spec/, so a command deleted from either entity is one line gone:
  *
  *   scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc
  *   scripts/alloy-check.py --commands spec        -- and --write to update
  *
  * THE THREE MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
- * `tieDiscipline` and `landDiscipline` in scenarios.als are each assumed by a
+ * `tieDiscipline` and `landDiscipline` in checks.als are each assumed by a
  * check and dropped by its `_Bites`, the shape github/system.als's
  * `closeDiscipline` takes, because a rule written into an event is true in
  * every world the model admits and no command can exhibit its absence. The
- * events below are therefore LOOSE: `write` does not read the order or the
- * tie, `land` does not read the skip rule.
+ * events below are therefore LOOSE: `write` does not read the order, the tie
+ * or the allow-list, `land` does not read the skip rule.
  */
 module sdlc/system
 
-/* THE SIX STAGES. Two names are what a stage is called and what its artifact
+/* THE FIVE STAGES. Two names are what a stage is called and what its artifact
    is at this base: intent and plan are the sub-issue's `## Intent` and
-   `## Plan`; spec is a scenario or check in spec/; test is a case in a
-   scripts/*-test.* suite; code is a path in scripts/ or .claude/ that a test
-   drives. Docs is a view a person reads beside the model, at
-   docs/<model>.html, whose shape is check-tree-shape's R7. A member
-   repository maps the last four onto its own tree, and the profile line of
-   its sub-issue's kind says which of them it has at all. */
+   `## Plan`; spec is a `run` or `check` command under spec/, by the name
+   spec/commands.snapshot.json records; test is a case in a scripts/*-test.*
+   suite; code is a path in scripts/ or .claude/ that a test drives. A member
+   repository maps the last three onto its own tree, and the profile line of
+   its sub-issue's kind says which of them it has at all.
+
+   A view drawn for a reader, docs/<model>.html, is no stage: check-tree-shape
+   shapes one and nothing requires one, and this base keeps none. */
 abstract sig Stage {}
-one sig Intent, Plan, Spec, Docs, Test, Code extends Stage {}
+one sig Intent, Plan, Spec, Test, Code extends Stage {}
 
 /* WHAT EACH STAGE OWES THE NEXT: its artifact, or an absence the skip rule
-   licenses, before the next stage's artifact is written. Docs and Test both
-   follow Spec and both precede Code -- "spec, docs or test, code" -- so a
-   change with a view and a test writes them in either order and its code
-   after both. The relation is read by `orderDiscipline` and by nothing
-   structural: a `write` out of order is what `OrderedByFeeds_Bites` shows. */
-fun feeds: Stage -> Stage {
-  Intent->Plan + Plan->Spec + Spec->Docs + Spec->Test + Docs->Code + Test->Code
-}
+   licenses, before the next stage's artifact is written. The relation is read
+   by `orderDiscipline` and by nothing structural: a `write` out of order is
+   what `OrderedByFeeds_Bites` shows. */
+fun feeds: Stage -> Stage { Intent->Plan + Plan->Spec + Spec->Test + Test->Code }
 
 /* THE STAGES A CHANGE MAY EVER SKIP. Intent and Plan are not among them: a
    change with no intent cannot be judged for anything below it, and
    `campaign-claim take` already refuses a sub-issue without `## Plan`. */
-fun skippable: set Stage { Spec + Docs + Test + Code }
+fun skippable: set Stage { Spec + Test + Code }
 
 /* A CHANGE CARRIES ITS KIND'S PROFILE: `optional`, the skippable stages the
    sub-issue's kind lets it skip at all. One input to `maySkip`, the criterion
@@ -78,7 +76,7 @@ fun skippable: set Stage { Spec + Docs + Test + Code }
    on the sub-issue (rule-check#314), and its reference under
    .claude/skills/assuming-role/references/, kind-<k>.md, states this set in
    one line; `development` has no reference, and its line is the default in the
-   campaign's AGENTS.md. The two witnesses in scenarios.als (`developmentProfile`,
+   campaign's AGENTS.md. The two profiles in checks.als (`developmentProfile`,
    `prototypingProfile`) are what those lines derive from -- the second being
    the only one that narrows anything, and so the only one that witnesses
    this half of `maySkip`. No kind is an atom here: the model owns how a
@@ -102,13 +100,13 @@ sig Change { optional: set Stage }
    own text -- `t -> s` says t's text declares s by s's name -- and `drives` is
    a PAIRING OF TWO NAMES, `t -> k` holding where the test's name and the code
    path's name answer to each other. Both are static, because an atom is one
-   text under one name: a commit that changes a name or a text puts a new atom
-   in the old one's place (`rename`, `rewrite`), and the arrows into the old
-   atom stay on it, outside Written. So renaming a scenario leaves every text
-   declaring it pointing at nothing unless the same commit replaces those
-   texts, while renaming a test carries its text
-   along -- `rename` copies `witnesses` and leaves `drives` to the new name --
-   which is the asymmetry `S4c_TestRenameBreak` and `S4d` pin.
+   text under one name: a commit that renames puts a new atom in the old
+   one's place (`rename`), and the arrows into the old atom stay on it,
+   outside Written. So renaming a scenario leaves every text declaring it
+   pointing at nothing unless the same commit replaces those texts, while
+   renaming a test carries its text along -- `rename` copies `witnesses` and
+   leaves `drives` to the new name -- which is the asymmetry
+   `S4c_TestRenameBreak` and `S4d` pin.
 
    Neither arrow is a fact about its target being written: a test declares
    the code path it will drive before that path exists, which is the order
@@ -119,19 +117,28 @@ sig Artifact {
   witnesses: set Artifact,
   drives:    set Artifact
 }
-/* THE SPEC ARTIFACTS THAT ADD A SHAPE: a signature, a relation or an event
-   a person has to understand. Static, because a scenario either declares one
-   or does not, and readable off a diff -- a `sig`, a `var` or a `one sig ...
-   extends Event` added under spec/ -- which is what makes the docs criterion
-   the check's to decide rather than a worker's. */
-sig AddsShape in Artifact {}
 
 var sig Written in Artifact {}
 var sig Landed  in Change {}
 
+/* THE CODE PATHS THE ALLOW-LIST EXEMPTS from the tie: `LEGACY` in
+   scripts/check-sdlc-tie.py, the paths the tree held untied when the guard
+   was written. A var, so that a list which GROWS is a trace the model can
+   show (`DebtNeverGrows_Bites`); `licenceNeverGrows` in checks.als is what
+   keeps it from growing, and a commit may move it where no discipline is
+   assumed.
+
+   The trace starts from an empty tree, so the list as it stands at the start
+   is the model's stand-in for the debt the tree held before the guard: a
+   name on it that the trace writes later is such a path. The guard is
+   stricter at two points and looser at one. It refuses a path a commit adds
+   whether or not the list names it, and a tied path a commit unties, before
+   it reads the list at all; and it licenses a renamed path by EITHER name,
+   where here the new name must already be on the list. */
+var sig Licensed in Artifact {}
+
 fact SdlcWellFormed {
   all c: Change | c.optional in skippable
-  AddsShape in stage.Spec
   /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
@@ -158,9 +165,10 @@ fun tie: Artifact -> Artifact -> Artifact {
       t->s in witnesses and t->k in drives }
 }
 pred tied[k: Artifact] { some tie.k }
-/* EVERY CODE PATH IN THE TREE WALKS BACK TO A SCENARIO. The invariant
-   `tieDiscipline` keeps and `TreeStaysTied_Bites` breaks. */
-pred everyCodeHasScenario { all k: Written & stage.Code | tied[k] }
+/* EVERY CODE PATH IN THE TREE THE LIST DOES NOT EXEMPT WALKS BACK TO A
+   SCENARIO. The invariant `tieDiscipline` keeps and `TreeStaysTied_Bites`
+   breaks. */
+pred everyCodeHasScenario { all k: Written & stage.Code - Licensed | tied[k] }
 /* EVERY DECLARED WITNESS NAMES A WRITTEN SCENARIO: no test in the tree
    declares an atom a rename took out of it. Not implied by
    `everyCodeHasScenario`, which asks for SOME scenario per code path: a
@@ -170,31 +178,21 @@ pred everyCodeHasScenario { all k: Written & stage.Code | tied[k] }
 pred everyWitnessExists { all t: Written | t.witnesses in Written }
 
 /* THE SKIP RULE. A stage may be skipped when the kind's profile lets it be
-   AND the stage's own criterion holds of the change -- one criterion per
-   skippable stage, each a fact about the change's artifacts and none a
-   judgement:
+   AND the criterion holds of the change: it has written no test and no code
+   path -- nothing runs. One criterion serves all three skippable stages, a
+   fact about the change's artifacts and not a judgement: Spec because
+   nothing below it exists to formalise, and Test and Code together because
+   a test with no code path witnesses nothing and a code path with no test is
+   unchecked, so a change has both or neither.
 
-     Spec   nothing below it exists: the change has written no view, no
-            test and no code path, so there is nothing to formalise and
-            nothing drawn for a model that is not there.
-     Docs   the model added no shape: no spec artifact of the change is in
-            AddsShape, so there is nothing a person has to be shown.
-     Test   nothing runs: the change has written no test and no code path.
-     Code   nothing runs. Test and Code share a criterion on purpose: a test
-            with no code path witnesses nothing, and a code path with no test
-            is unchecked, so a change has both or neither.
-
-   The criteria read `writtenOf[c]`, WHICH CHANGES AS THE CHANGE IS WRITTEN,
-   and that is the whole of `SkipReadAtTheTimeIsNotEnough` in checks.als: an
-   absence licensed when a later stage was written is stale by landing if a
-   still later artifact of the same change turned its criterion false. The
-   moment that decides is `land`, under `landDiscipline`. */
-pred criterion[c: Change, s: Stage] {
-  s = Spec          implies no writtenOf[c] & stage.(Docs + Test + Code)
-  s = Docs          implies no writtenOf[c] & AddsShape
-  s in Test + Code  implies no writtenOf[c] & stage.(Test + Code)
-}
-pred maySkip[c: Change, s: Stage] { s in c.optional and criterion[c, s] }
+   The criterion reads `writtenOf[c]`, WHICH GROWS AS THE CHANGE IS WRITTEN:
+   an absence licensed at one write is stale by landing if a later artifact
+   of the same change turned the criterion false -- a scenario skipped at the
+   change's first test, and a code path written after it, which is
+   `S5b_WithoutTheLandingCheck`. The moment that decides is `land`, under
+   `landDiscipline`. */
+pred criterion[c: Change] { no writtenOf[c] & stage.(Test + Code) }
+pred maySkip[c: Change, s: Stage] { s in c.optional and criterion[c] }
 
 /* ---------------- observable events ---------------- */
 
@@ -209,11 +207,13 @@ one sig Step {
   var subject:  lone Change
 }
 
-pred sdlcFrame { Written' = Written and Landed' = Landed }
+/* A commit is the one step that may move the allow-list, so every other step
+   holds it where it was. */
+pred sdlcFrame { Written' = Written and Landed' = Landed and Licensed' = Licensed }
 
-/* ONE COMMIT WRITING ONE NEW TEXT. Loose on the order (`orderDiscipline`)
-   and on the tie (`tieDiscipline`). What the artifact witnesses and drives
-   came with its text. */
+/* ONE COMMIT WRITING ONE NEW TEXT. Loose on the order (`orderDiscipline`),
+   on the tie and on the allow-list (`tieDiscipline`). What the artifact
+   witnesses and drives came with its text. */
 pred write[a: Artifact] {
   a.change not in Landed
   a not in Written
@@ -221,47 +221,27 @@ pred write[a: Artifact] {
   Step.event = Write and Step.artifact = a and no Step.subject
 }
 
-/* ONE ATOM PUT IN ANOTHER'S PLACE: the same change, the same stage. The
-   arrows into `a` stay on `a`, which leaves the tree; the arrows out of `b`
-   are `b`'s own. */
-pred replace[a, b: Artifact] {
-  a in Written and b not in Written
-  b.change = a.change and b.stage = a.stage
-  Written' = Written - a + b and Landed' = Landed
-}
-
-/* A COMMIT THAT REWRITES A TEXT UNDER ITS NAME: a write, so it is read as
-   one, and what the new text witnesses and drives is its own. It is how a
-   test takes a renamed scenario's new name in a later commit; `rename` is how
-   it takes it in the same one. */
-pred rewrite[a, b: Artifact] {
-  a.change not in Landed
-  replace[a, b]
-  Step.event = Write and Step.artifact = b and no Step.subject
-}
-
 /* A COMMIT THAT RENAMES AN ARTIFACT. The text moves: `b` declares what `a`
-   declared, and adds a shape exactly when `a` did. The name does not: what
-   `b` drives, and what drives `b`, is whatever answers to the new name. So a
-   test's `witnesses` survive its rename, a scenario's inbound `witnesses` do
-   not survive its own, and `drives` may break at either end.
+   declared. The name does not: what `b` drives, and what drives `b`, is
+   whatever answers to the new name. So a test's `witnesses` survive its
+   rename, a scenario's inbound `witnesses` do not survive its own, and
+   `drives` may break at either end.
 
-   It can remove a tie by moving a name alone, where a rewrite removes one by
-   changing a text, and a check must refuse either when what it drops was
-   load-bearing. The rename's breaks: `S4_CodeRenameBreak` at the code
-   path's end, `S4b` at the scenario's, `S4c` at the test's. After landing a
-   change writes nothing more, but what it wrote can still be renamed: a
-   rename is a later commit on the tree, and the check that reads it is the
-   commit's, not the landing's.
+   It can remove a tie by moving a name alone, and a check must refuse that
+   when what it drops was load-bearing. The rename's breaks:
+   `S4_CodeRenameBreak` at the code path's end, `S4b` at the scenario's, `S4c`
+   at the test's. After landing a change writes nothing more, but what it
+   wrote can still be renamed: a rename is a later commit on the tree, and the
+   check that reads it is the commit's, not the landing's.
 
    The same commit may replace the tests that declare `a`: any of them may
    leave the tree and fresh tests may enter it, so a scenario and the texts
    naming it move together (`S4e`). A test that enters is a new text, so it
    may tie otherwise than the one it replaced, and the commit check reads it
-   as it reads a rewrite. Nothing else moves, and the tests that
-   enter belong to the changes whose tests left, so a rename adds no stage to
-   a change, takes none away, and turns no criterion: what `AbsenceLicensed`
-   and `OrderedByFeeds` rest on, since neither discipline reads a rename. */
+   as it reads a write. Nothing else moves, and the tests that enter belong to
+   the changes whose tests left, so a rename adds no stage to a change, takes
+   none away, and turns no criterion: what `AbsenceLicensed` and
+   `OrderedByFeeds` rest on, since neither discipline reads a rename. */
 pred rename[a, b: Artifact] {
   a in Written and b not in Written
   b.change = a.change and b.stage = a.stage
@@ -271,7 +251,6 @@ pred rename[a, b: Artifact] {
   Written' - Written - b in stage.Test
   (Written - Written' - a).change = (Written' - Written - b).change
   b.witnesses = a.witnesses
-  b in AddsShape iff a in AddsShape
   Step.event = Rename and Step.artifact = a and no Step.subject
 }
 
@@ -280,7 +259,7 @@ pred rename[a, b: Artifact] {
    is `tieDiscipline`'s. */
 pred land[c: Change] {
   c not in Landed
-  Landed' = Landed + c and Written' = Written
+  Landed' = Landed + c and Written' = Written and Licensed' = Licensed
   Step.event = Land and no Step.artifact and Step.subject = c
 }
 
@@ -294,7 +273,7 @@ pred sdlcInit { no Written and no Landed }
 pred sdlcStep {
   stutter
   or (some a: Artifact | write[a])
-  or (some a, b: Artifact | rewrite[a, b] or rename[a, b])
+  or (some a, b: Artifact | rename[a, b])
   or (some c: Change | land[c])
 }
 

@@ -33,6 +33,7 @@ unit test over a mock, not a description of what would happen.
 
 ## SDLC profile
 
-`optional = Spec + Docs` -- the test and the code path it drives are the claim,
-so neither is ever waived; what the profile leaves live is the Docs waiver
-(`prototypingProfile` in `spec/sdlc/scenarios.als`).
+`optional = Spec` -- the test and the code path it drives are the claim, so
+neither is ever waived, and a change that writes them cannot skip its scenario
+either: the profile licenses nothing a landing change can use
+(`prototypingProfile` in `spec/sdlc/checks.als`).

@@ -146,7 +146,9 @@ var sig Filed  in Campaign {}
    sub-issue's own `## Lands in` section and `--repo` may only confirm it.
 
    `## Lands in` is one heading holding one entry, `- owner/repo` or `- none`,
-   read through the same slug reader `## Repos` uses. `- none` and the base's
+   read through the same slug reader `## Repos` uses, because one purpose in
+   two shapes -- a keyword line on a sub-issue, a heading on a campaign issue
+   -- needs two readers that agree only by both being exact. `- none` and the base's
    own slug are the same destination, which is why `campaign-repos.py` may
    refuse the base in `## Repos` and admit it here: the two sections ask
    different questions -- which repositories to CLONE, and where ONE

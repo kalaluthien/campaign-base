@@ -78,8 +78,8 @@ sig Agent {
    `launch` says so. A third kind is added in session/system.als the same way,
    and takes whatever of the state below it turns out not to share.
 
-   A planner working a sub-issue by its own hands: AgentInheritsSessionRole
-   below forbids that, so a planner session reaches `work` along no edge at
+   AgentInheritsSessionRole below forbids a planner working a sub-issue by
+   its own hands, so a planner session reaches `work` along no edge at
    all, and its code modes are a delegate or a separate worker session. */
 
 /* Which half of the work an event writes. The two are disjoint and do not
@@ -248,8 +248,7 @@ pred coLocated[s: Session, a: Agent] { s.machine = a.host }
    where a session STARTED, a base worker works in a worktree, and the
    repository owning that worktree is not even the clone the session sits in.
    So `holder` names a workspace and not a session, and the two facts stay
-   separate because nothing observable connects them. Putting the campaign
-   number in the directory name is what would change that. */
+   separate because nothing observable connects them. */
 fun holder[i: Issue]: set Agent {
   { a: Agent | a.task = i
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
@@ -385,7 +384,7 @@ pred launch[a: Agent] {
      A DELEGATE LAUNCH IS NOT GUARDED, and that is the code's shape rather than
      an omission: `scripts/campaign-assign.py` reads the PANE of the session
      being assigned, and a delegate has no pane until the launch makes one.
-     Stated unconditionally, the model required the PLANNER to be compacted
+     Stated unconditionally, the model would require the PLANNER to be compacted
      before every delegate launch, a precondition no reader checks. A
      precondition nothing enforces is worse than none, because a later reader
      believes it.
@@ -655,7 +654,7 @@ pred handoff[p, t: Session] {
     /* Cleared on the heir and not merely kept: `confirm` has no liveness
        guard, so an heir can be Confirmed before it is launched, and keeping
        that bit let `retire` destroy the work the heir inherited on a stale
-       confirmation. Found by TwoStepCoLocatedSuffices going SAT. */
+       confirmation, which TwoStepCoLocatedSuffices shows. */
     Confirmed'      = Confirmed - olds.h
     Asked'          = Asked - olds.h
     Answered'       = Answered - olds.h

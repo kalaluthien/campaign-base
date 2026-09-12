@@ -178,7 +178,8 @@ pred S16a_BaseMemberUnderNarrowReading {
   some c: Campaign, i: c.memberIssues | i.repo = Base
 }
 
-/* The tracker's third kind. */
+/* The tracker's third kind. It is UNSAT at any bound while
+   `baseIssuesAreCampaignIssues` is a fact. */
 pred S18_PlainBaseIssue {
   some i: Issue | i.repo = Base and always (i not in Campaign.campaignIssue + Campaign.memberIssues)
 }

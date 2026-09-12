@@ -421,7 +421,8 @@ pred sessionCreateDir[s: Session] {
 }
 
 /* `runtime/` goes with the directory, and nothing above has a bit with that
-   lifetime: orchestration/system.als frames straight through a delete. */
+   lifetime: since the claim is a ref and attribution a checkout,
+   orchestration/system.als frames straight through a delete. */
 pred sessionDeleteDir[s: Session] {
   Now.event = DeleteDir
   some s.worksOn
@@ -447,7 +448,7 @@ pred sessionAcquire[s: Session] {
 /* Which session created it is what `claimedIssues` records; that the ref exists at
    all is github/system.als's `Claimed`.
 
-   A CLAIM IS A CAMPAIGN-PLANE WRITE, so #185's rule reaches it: a planner writes
+   A CLAIM IS A CAMPAIGN-PLANE WRITE, so the role rule reaches it: a planner writes
    the campaign plane of any campaign, and the claim it cuts for a delegate may
    name a sub-issue of any campaign BOUND TO ITS OWN MACHINE -- the delegate then
    works that campaign under that campaign's name. A worker's claim stays

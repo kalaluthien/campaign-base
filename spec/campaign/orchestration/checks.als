@@ -197,7 +197,8 @@ pred claimWithinScope {
    purpose: a category is a promise about programs this has never seen.
 
    A shell command is NOT read for a target: an arbitrary shell string is an
-   unbounded language. Such a call is
+   unbounded language, and every reader of it is one more alternation for the
+   next bypass. Such a call is
    allowed at the moment it is made, printing that it was unread, and its
    write is `Work` at the moment it LANDS -- `claimBeforeCommit` below, the
    pre-commit gate. R4k states the gap that leaves open until the commit. No
@@ -275,8 +276,7 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    account, so a session that renames itself a planner already holds the power
    the name would grant, and what the rule buys is that the role is explicit and
    the mistake is loud. Stated here because a permission table is the thing a
-   reader is most likely to mistake for a security boundary. The sub-issue for
-   tying the name to something the named session did not choose is #194. */
+   reader is most likely to mistake for a security boundary. */
 /* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE. `memberIssues` excludes it
    (github/system.als), so `i in s.worksOn.memberIssues` refuses a worker every
    write to the issue of the campaign it works -- including a comment, which
@@ -375,7 +375,8 @@ pred closeDisciplineLocal[c: Campaign] {
 }
 
 /* Where session/checks.als's R3 is answered: keyed on LIVENESS, which is
-   what `herdr agent list` hands a deleting session directly. */
+   what `herdr agent list` hands a deleting session directly, and not on a
+   record, which would die with the very tree it is about to delete. */
 pred noDeleteUnderLiveAgent {
   always (Now.event = DeleteDir implies
             no a: Agent | a in Live and a.host = Where.machine
@@ -683,7 +684,7 @@ pred R14c_ScopeAdmitsTheListedMember {
                 and i.repo != Base and i.repo in c.reposInBody)
 }
 
-/* R14d. THE LIVE DEFECT. The campaign has a member repository,
+/* R14d. The campaign has a member repository,
    so `## Repos` is NOT empty -- which is what separates this from
    `R4_RepolessCampaign`, whose list is empty and which therefore passes a
    reader that admits the base only by way of `none`. The sub-issue lands in
@@ -744,7 +745,7 @@ pred R9c_RepairAdmitsClaimThenSettle {
 
 /* R7e. CONTROL FOR THE `settled` DISJUNCT: a sub-issue DROPPED
    as not planned, whose claim nobody was ever launched on, must be releasable.
-   It is the door GitHub already answers: an issue closed as not planned says
+   GitHub already answers it: an issue closed as not planned says
    the work is over as plainly as a merged pull request does. Deleting
    `settled` from the rule -- or narrowing it back to `complete` -- turns this
    UNSAT, which is what makes the widening tested rather than merely made. */
@@ -1373,7 +1374,11 @@ pred R7a_FreshClaimReleasedWithNoAgent {
        needed an Agent atom for and is releasable on purpose -- so R7b came
        back SAT over a legitimate trace and pinned nothing.
 
-       An exclusion has to name the whole disjunct it is excluding. */
+       Since `releaseNeedsAWorker` admits a settled sub-issue, excluding only
+       `complete` lets the solver satisfy this witness by DROPPING the issue
+       instead of merging it -- the same escape through a different door, and
+       R7b goes SAT. An exclusion has to name the whole disjunct it is
+       excluding. */
     always not settled[i]
     eventually (Now.event = Claim and Now.issue = i
                 and after eventually (Now.event = Release and Now.issue = i))

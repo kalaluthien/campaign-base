@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# witnesses: Cov_Acquire
 """Prove `acquire-repo.sh` leaves a clone with what a delegate needs: the principles, and a commit gate.
 
 Two defects, one shape. #187 question 5: #176 wrote the principles channel down

@@ -232,11 +232,20 @@ WITNESSES = re.compile(r"^[ \t]*#[ \t]*witnesses:[ \t]*(.*)$")
 # WHAT AN HTML FORM DECLARES IT REFINES: a `<section>` tag carrying
 # `data-scenario` and `data-refines="<Name>[, <Name>...]"`, the names split on
 # commas and matched exactly, as WITNESSES's are. A tag without `data-scenario`
-# declares nothing, so a section that only mentions a name is prose.
+# declares nothing, so a section that only mentions a name is prose. The tag's
+# attributes are read one by one, name then value, so `data-scenario-id` is not
+# `data-scenario` and a `data-refines` inside another attribute's value is text.
 SECTION = re.compile(r"<section\b([^>]*)>", re.IGNORECASE)
-SCENARIO_ATTR = re.compile(r"\sdata-scenario\b", re.IGNORECASE)
-REFINES_ATTR = re.compile(r"\sdata-refines\s*=\s*(?:\"([^\"]*)\"|'([^']*)')",
-                          re.IGNORECASE)
+ATTR = re.compile(r"""([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?""")
+
+
+def attributes(text):
+    """{lowercased name: value, or None for a bare attribute} of one tag."""
+    found = {}
+    for m in ATTR.finditer(text):
+        value = next((v for v in m.groups()[1:] if v is not None), None)
+        found.setdefault(m.group(1).lower(), value)
+    return found
 
 
 def html_form(path):
@@ -404,10 +413,9 @@ class Tree:
         """The names an html form's `data-scenario` sections declare."""
         names = set()
         for m in SECTION.finditer(self.texts.get(html, "")):
-            attrs = m.group(1)
-            r = REFINES_ATTR.search(attrs)
-            if SCENARIO_ATTR.search(attrs) and r:
-                names |= {n.strip() for n in (r.group(1) or r.group(2) or "").split(",")
+            attrs = attributes(m.group(1))
+            if "data-scenario" in attrs and attrs.get("data-refines"):
+                names |= {n.strip() for n in attrs["data-refines"].split(",")
                           if n.strip()}
         return names
 
@@ -674,13 +682,15 @@ def judge(after_kind, against, legacy_path):
                                       f"no such command. Rename it to the "
                                       f"scenario it witnesses, or drop it, or "
                                       f"regenerate the snapshot"))
+    kept = 0
     for h in after.htmls:
         dead, lacks = after.html_faults(h)
         if h not in touched:                     # T6's scope, for a form
-            was = moved.get(h, h)
-            old_dead, old_lacks = (before.html_faults(was) if was in before.htmls
+            # Untouched is unrenamed too: a rename puts both ends in `touched`.
+            old_dead, old_lacks = (before.html_faults(h) if h in before.htmls
                                    else ([], []))
-            left += len(set(dead) & set(old_dead))
+            kept += (sum(n in old_dead for n in dead)
+                     + sum(w in old_lacks for w in lacks))
             dead = [n for n in dead if n not in old_dead]
             lacks = [w for w in lacks if w not in old_lacks]
         for n in dead:
@@ -696,7 +706,7 @@ def judge(after_kind, against, legacy_path):
           f"path(s) untied and licensed by the allow-list ({source}, "
           f"{len(allowed)} entr(ies), {absent} naming no code path here); "
           f"{left} dead witness name(s) left where the change never opened "
-          f"the suite")
+          f"the suite, {kept} fault(s) left in html forms it never opened")
     return 1 if findings else 0
 
 

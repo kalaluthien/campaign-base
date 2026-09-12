@@ -245,6 +245,14 @@ HTML_CASES = [
      TIED, {FORM: "<section><p>S1_FullChain</p></section>\n"}, "T7"),
     ("T7 a data-refines on a section without data-scenario declares nothing",
      TIED, {FORM: form("S1_FullChain", attrs="class=x")}, "T7"),
+    ("T7 data-scenario-id is not data-scenario",
+     TIED, {FORM: form("S1_FullChain", attrs="data-scenario-id=k")}, "T7"),
+    ("T7 a data-refines inside another attribute's value is text",
+     TIED, {FORM: "<section data-scenario title=\"see data-refines='S1_FullChain'\">"
+                  "</section>\n"}, "T7"),
+    ("allow data-scenario after data-refines, and in capitals",
+     TIED, {FORM: '<SECTION DATA-REFINES="S1_FullChain" DATA-SCENARIO></SECTION>\n'},
+     None),
     ("T7 an html form refining a scenario no suite witnesses",
      dict(TIED, **{SPEC: TWO}), {FORM: form("S1_Other")}, "T7"),
     ("T6 an html form refining a name the snapshot does not list",
@@ -364,6 +372,12 @@ def main():
         ok, want = judge(r, code)
         codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
         check(name, ok and codes <= {code}, want + ", and no other code", r)
+
+    # An unopened form's old fault is counted in the reading, not dropped.
+    r = run_case({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})
+    check("an unopened form's old fault is counted in the reading",
+          judge(r, None)[0] and "1 fault(s) left in html forms" in r.stdout,
+          "0 finding(s) and `1 fault(s) left in html forms` in the reading", r)
 
     for name, before, after in T6_CASES:
         r = run_case(before, after)

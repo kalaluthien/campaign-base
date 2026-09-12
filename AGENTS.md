@@ -73,10 +73,8 @@ is `system.als`, the model, and `checks.als`, every command over it, plus any
 `.html` form of a scenario, tied to a command by name; no markdown.
 `check-tree-shape`'s R8 refuses any other shape, `alloy-check --commands` a
 command in a `system.als`, and `check-sdlc-tie`'s T6 and T7 an `.html` that
-is not tied. Two `pre-commit`
-guards refuse a commit that breaks the shape — `check-tree-shape` and
-`check-rule-readers`, whose header gives the syntax exempting a block that must
-hold a guarded form. **Do not write a second reader of a rule a script owns**:
+is not tied. All of them run in `pre-commit`, beside `check-rule-readers`,
+whose header gives the syntax exempting a block that must hold a guarded form. **Do not write a second reader of a rule a script owns**:
 two of them drift.
 
 The campaign directory holds no plane of its own: git-ignored scratch, and

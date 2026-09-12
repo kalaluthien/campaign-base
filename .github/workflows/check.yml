@@ -133,9 +133,9 @@ jobs:
       # would report only indirectly, and a system module declares no command
       # -- `alloy-check.py --commands` refuses one -- so running it costs one
       # trivial `Default`. `find`, not a
-      # depth-2 glob: the step above inventories to any depth, and a module the
-      # inventory sees but this list misses is one whose commands nothing here
-      # runs. A plan that finds no module fails, since an empty matrix is green.
+      # depth-2 glob: `alloy-check.py --commands` in the guards step inventories
+      # to any depth, and a module the inventory sees but this list misses is
+      # one whose commands nothing here runs. A plan that finds no module fails, since an empty matrix is green.
       #
       # THE KEY is everything a module's verdict reads, and nothing else: the
       # jar, alloy-check.py (its dead-event refusal is part of every verdict),

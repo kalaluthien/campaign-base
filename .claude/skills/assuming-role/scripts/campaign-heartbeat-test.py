@@ -485,7 +485,8 @@ if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
         {"number": 5, "state": "open", "labels": []},
         {"number": 6, "state": "open", "labels": [{"name": "backlog"}]},
         {"number": 8, "state": "closed", "labels": [{"name": "bug"}]},
-        {"number": 9, "state": "open", "labels": [{"name": "kind:maintenance"}]}]))
+        {"number": 9, "state": "open", "labels": [{"name": "standing"}]},
+        {"number": 10, "state": "open", "labels": [{"name": "kind:maintenance"}]}]))
     sys.exit(0)
 if a[:2] == ["pr", "list"]:
     pr = lambda n, head, k, st="OPEN": {
@@ -618,7 +619,7 @@ def quiet_fleet(d, *markers):
 
 
 QUIET_LINE = ("quiet tk: herdr 1 session(s), 0 but the own pane; the index 2 "
-              "sub-issue(s), 0 open without backlog or kind:maintenance; the "
+              "sub-issue(s), 0 open without backlog or standing; the "
               "refs 0 claim(s)")
 
 
@@ -936,9 +937,9 @@ def _(m):
     return drifts(out, "unclaimed") == ["+ drift unclaimed tk#6"], out
 
 
-@case("watch: an unclaimed kind:maintenance sub-issue is not unclaimed")
+@case("watch: an unclaimed standing sub-issue is not unclaimed")
 def _(m):
-    # rule-check#354: a standing sub-issue with no claim between tidies.
+    # rule-check#369: a standing sub-issue with no claim between tidies.
     [out] = polls(m, (0, readings(
         claims={"tk/5-a": 5},
         issues={5: ("open", False, True), 6: ("open", False, True),
@@ -1147,12 +1148,24 @@ def _(m):
     return (got["claims"] == ({"tk/5-a": 5, "tk/6-b": 6}, None)
             and got["issues"] == ({5: ("open", False, False), 6: ("open", True, False),
                                    8: ("closed", False, False),
-                                   9: ("open", False, True)}, None)
+                                   9: ("open", False, True),
+                                   10: ("open", False, False)}, None)
             and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3),
                                 "tk/5-old": (4, "merged", "abc1234", 1),
                                 "tk/13-z": (20, "merged", "abc1234", 1),
                                 "tk/14-a": (21, "merged", "abc1234", 1),
                                 "tk/14-b": (22, "merged", "abc1234", 1)}, None)), got
+
+
+@case("watch reader: the standing label exempts a sub-issue, kind:maintenance alone does not")
+def _(m):
+    got = watch_read(m)
+    if isinstance(got, Exception):
+        return False, f"the reader raised {got!r}"
+    issues = got["issues"][0] or {}
+    return (issues.get(9) == ("open", False, True)
+            and issues.get(10) == ("open", False, False)
+            and 10 in m.workable(issues) and 9 not in m.workable(issues)), got
 
 
 @case("watch reader: an unreadable or garbled source is a why, not a raise")
@@ -1311,7 +1324,7 @@ def _(m):
     return got == [], got
 
 
-@case("quiet: an open kind:maintenance sub-issue with no claim is quiet")
+@case("quiet: an open standing sub-issue with no claim is quiet")
 def _(m):
     got = said_quiet(m, issues={6: ("open", False, True),
                                 8: ("closed", False, False)})
@@ -1511,16 +1524,19 @@ MUTATIONS = [
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
     ("unclaimed skips backlog", 'if state == "open" and not backlog\n', 'if state == "open"\n',
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
-    ("unclaimed skips an unclaimed maintenance one", "and not maintenance)", ")",
-     "watch: an unclaimed kind:maintenance sub-issue is not unclaimed"),
-    ("the index reads kind:maintenance", "tracker.work_kind_of(names)[0] == tracker.STANDING_KIND)", "False)",
-     "watch reader: claims, sub-issues and pull requests of this slug"),
+    ("unclaimed skips an unclaimed standing one", "and not standing)", ")",
+     "watch: an unclaimed standing sub-issue is not unclaimed"),
+    ("the index reads the standing label", "tracker.is_standing(names))", "False)",
+     "watch reader: the standing label exempts a sub-issue, kind:maintenance alone does not"),
+    ("the index does not read the kind", "tracker.is_standing(names))",
+     'tracker.work_kind_of(names)[0] == "maintenance")',
+     "watch reader: the standing label exempts a sub-issue, kind:maintenance alone does not"),
     ("unclaimed skips a claimed one", "if n not in claimed:", "if True:",
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
     ("quiet skips a backlog sub-issue", 'if state == "open" and not backlog\n', 'if state == "open"\n',
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
-    ("quiet skips an unclaimed maintenance one", "and not maintenance)", ")",
-     "quiet: an open kind:maintenance sub-issue with no claim is quiet"),
+    ("quiet skips an unclaimed standing one", "and not standing)", ")",
+     "quiet: an open standing sub-issue with no claim is quiet"),
     ("quiet ends the watch", "            if watch.quiet:\n                return 0\n", "",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("quiet prints its line", "([self.quiet] if ends else []))", "[])",

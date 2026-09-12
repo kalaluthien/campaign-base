@@ -20,7 +20,7 @@ verdict first, then what it read and from where:
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
              listed but the own pane (herdr), no open sub-issue without
-             `backlog` or `kind:maintenance` (the index, as `drift unclaimed`
+             `backlog` or `standing` (the index, as `drift unclaimed`
              reads it), no claim
              ref standing (the refs). One not made is not quiet, and the own
              pane is judged as any other.
@@ -93,8 +93,8 @@ now, so a run repeated with nothing changed says the same thing.
 killed or quiet and prints only what changed, so a Monitor over it wakes the
 planner on an event, and the planner runs this with --apply. Keyed by N and
 its slug, which the planner holds at launch; a pull request that appears later
-is one more line. Each poll builds a snapshot and prints `+ line` for a line that
-appeared and `- line` for one that went; a drift still standing after 30m
+is one more line. Each poll builds a snapshot and prints `+ line` for a line
+that appeared and `- line` for one that went; a drift still standing after 30m
 reprints as `= line`. The first poll prints `watching <slug>` and every drift
 and limit.
 
@@ -106,12 +106,12 @@ and read quiet print `quiet <slug>: <the three readings>` and exit 0.
                             calls a mid-turn pause idle; the own pane has none
   limit <pane> <banner>     limit-reset's first line, on a non-working pane
   claim <branch>            campaign-claim's refs, in the tracker and ## Repos
-  issue <n> <state> [backlog] [maintenance]   the campaign's sub-issue index
+  issue <n> <state> [backlog] [standing]   the campaign's sub-issue index
   pr <n> <branch> <state> <sha> comments=<k>   a claim's pull request;
                             k counts comments and reviews, so a REPORT or a
                             REVIEW moves it
   drift <rule> <subject>    a desired state that does not hold:
-    unclaimed    an open sub-issue without `backlog` or `kind:maintenance`
+    unclaimed    an open sub-issue without `backlog` or `standing`
                  has no claim
     unworked     more claims than workers
     stuck        a claim with no pull request change for 30m while no worker
@@ -444,17 +444,18 @@ QUIET_POLLS = 2
 
 def workable(issues):
     """The open sub-issues without `backlog`, over the index as
-    {n: (state, backlog, maintenance)}: what `drift unclaimed` and `quiet`
+    {n: (state, backlog, standing)}: what `drift unclaimed` and `quiet`
     both ask.
 
-    NOR A `kind:maintenance` ONE (rule-check#354). That kind may stand open
-    with no deliverable, a claim cut per tidy and released after it, so
-    between tidies it would drift `unclaimed` every heartbeat and keep the
-    campaign from ever reading quiet. While it holds a claim it is read like
-    any other: the claim is what `stuck`, `settled` and `quiet` read."""
-    return sorted(n for n, (state, backlog, maintenance) in issues.items()
+    NOR A `standing` ONE (rule-check#369). A person keeps it open with no
+    deliverable, a claim cut per tidy and released after it, so between
+    tidies it would drift `unclaimed` every heartbeat and keep the campaign
+    from ever reading quiet. The label decides and not `kind:maintenance`,
+    which one-off work wears too. While it holds a claim it is read like any
+    other: the claim is what `stuck`, `settled` and `quiet` read."""
+    return sorted(n for n, (state, backlog, standing) in issues.items()
                   if state == "open" and not backlog
-                  and not maintenance)
+                  and not standing)
 
 
 def quiet_reading(own, panes, claims, issues):
@@ -473,7 +474,7 @@ def quiet_reading(own, panes, claims, issues):
     return not (others or todo or claims), (
         f"herdr {len(panes)} session(s), {len(others)} but the own pane; "
         f"the index {len(issues)} sub-issue(s), {len(todo)} open without "
-        f"backlog or kind:maintenance; the refs {len(claims)} claim(s)")
+        f"backlog or standing; the refs {len(claims)} claim(s)")
 
 
 class Watch:
@@ -579,8 +580,8 @@ class Watch:
                 lines.add(f"drift context {name} {s['context'] // 1000}k")
         lines |= {f"claim {b}" for b in claims}
         lines |= {f"issue {n} {st}{' backlog' if bl else ''}"
-                  f"{' maintenance' if mt else ''}"
-                  for n, (st, bl, mt) in issues.items()}
+                  f"{' standing' if sd else ''}"
+                  for n, (st, bl, sd) in issues.items()}
         lines |= {f"pr {p[0]} {b} {p[1]} {p[2]} comments={p[3]}"
                   for b, p in prs.items() if b in claims}
         lines |= self.drift(claims, issues, prs, workers, now)
@@ -925,7 +926,7 @@ def watch_readers(issue, slug, own, claim, names, cache):
             names = [lb.get("name") for lb in i.get("labels") or []]
             out[i["number"]] = (
                 i["state"], tracker.BACKLOG_LABEL in names,
-                tracker.work_kind_of(names)[0] == tracker.STANDING_KIND)
+                tracker.is_standing(names))
         return out, None
 
     def prs():

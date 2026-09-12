@@ -293,7 +293,7 @@ def listed(text):
         body = ast.parse(text).body
     except SyntaxError as e:
         return None, f"it does not parse (SyntaxError: {e.msg}, line {e.lineno})"
-    except (ValueError, MemoryError, RecursionError) as e:   # nesting too deep
+    except (MemoryError, RecursionError) as e:   # nesting past the parser's depth
         return None, f"it does not parse ({type(e).__name__}: {e})"
     value = None
     for node in body:

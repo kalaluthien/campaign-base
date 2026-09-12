@@ -504,7 +504,8 @@ def main():
     # A list before that cannot be read is not a licence to skip the commit:
     # the running list stands for it, the reading says why, and T1 still bites.
     added = {"scripts/b.py": CODE}
-    DEEP = own_guard([]) + "\nX = " + "-" * 200000 + "1\n"   # past the parser's depth
+    DEEP = own_guard([]) + "\nX = " + "-" * 200000 + "1\n"   # MemoryError at the parse
+    LONG = own_guard([]) + "\nX = a" + ".b" * 300000 + "\n"  # RecursionError at the parse
     for name, copy, why in (
             ("does not parse", "#!/bin/sh\necho not python\n", "does not parse"),
             ("is no literal", own_guard([]).replace("LEGACY = (\n", "LEGACY = tuple((\n")
@@ -514,19 +515,21 @@ def main():
               for v in ("None", "0", '(["x"],)', '"scripts/a.py"')),
             ("assigns an unhashable set", own_guard([]) + '\nLEGACY = {["x"]}\n',
              "is no literal (TypeError"),
-            ("nests too deep to parse", DEEP, "does not parse")):
+            ("nests too deep to parse", DEEP, "does not parse"),
+            ("chains too long to parse", LONG, "does not parse")):
         r = own_list_case([], [], change=added, copy_before=copy)
         ok, want = judge(r, "T1")
         check(f"a list before that {name} is named in the reading, and the "
               f"commit is still judged", ok and why in r.stdout
               and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
-    r = own_list_case([], [], change=added, copy_after=DEEP,
-                      on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
-    ok, want = judge(r, "T1")
-    check("a list after that nests too deep to parse is named in the reading, "
-          "and the commit is still judged", ok and "does not parse" in r.stdout
-          and "PERMITTING" not in r.stderr, want + ", `does not parse` in the "
-          "reading", r)
+    for name, copy in (("nests too deep", DEEP), ("chains too long", LONG)):
+        r = own_list_case([], [], change=added, copy_after=copy,
+                          on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
+        ok, want = judge(r, "T1")
+        check(f"a list after that {name} to parse is named in the reading, "
+              f"and the commit is still judged", ok and "does not parse" in
+              r.stdout and "PERMITTING" not in r.stderr, want + ", `does not "
+              "parse` in the reading", r)
     twice = own_guard([]) + '\nLEGACY = ("scripts/a.py",)\n'
     r = own_list_case(None, ["scripts/a.py"], copy_before=twice)
     ok, want = judge(r, None)

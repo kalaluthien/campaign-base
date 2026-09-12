@@ -14,6 +14,8 @@
                         asks for a review at a revision nobody is going to
                         merge. The first word is `pinned`, `stale` or
                         `unknown`, and the status agrees: 0, 1, 2.
+                        check-campaign-claim.py calls it on every REPORT a
+                        `gh pr` verb posts, and refuses the post on `stale`.
 
 `--head` IS THE SHA A CHECK RUN IS RECORDED AGAINST, and the branch's live tip
 is a different question. They come apart: a run queued for sha A while the

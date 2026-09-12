@@ -205,6 +205,23 @@ def gh_stub(d, env, parents):
     return {"PATH": f"{bindir}:{env['PATH']}"}
 
 
+def pr_stub(d, env, heads):
+    """`env` with a `gh` first on PATH answering `gh pr view <n> -R <repo>` from
+    `heads` -- {"owner/repo#n": head sha}; anything else exits 1, the could-not-
+    read case. The REPORT pin's one network read, made by check-merge-review.py."""
+    bindir = Path(d) / f"ghpr-{abs(hash(repr(sorted(heads.items())))) % 10**8}"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "gh").write_text(
+        f"#!/usr/bin/env python3\nimport json, sys\n"
+        f"heads = {heads!r}\na = sys.argv[1:]\n"
+        f"key = (a[a.index('-R') + 1] if '-R' in a else '') + '#' + a[2]\n"
+        f"if a[:2] != ['pr', 'view'] or key not in heads:\n"
+        f"    sys.exit('gh stub: no answer for ' + ' '.join(a))\n"
+        f"print(json.dumps({{'headRefOid': heads[key], 'headRefName': 'demo/7-x'}}))\n")
+    (bindir / "gh").chmod(0o755)
+    return {"PATH": f"{bindir}:{env['PATH']}"}
+
+
 def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
         tool_input=None, env=None, session="sid-1", run_cwd=None, guard=None):
     """`cwd` is what the PAYLOAD says; `run_cwd` is where the process runs.
@@ -1615,6 +1632,74 @@ def main():
         check("ALLOW beside it: the file half admits the same session",
               r.returncode == 0, out(r)[:400])
 
+    # ---------------------------------------------------------------- #274
+    # A REPORT ON A PULL REQUEST PINS ITS HEAD. The sha is check-merge-review
+    # --report's reading, reached through a `gh` stub; each branch the guard
+    # takes on its answer is one case, and the controls say the read is made
+    # for a REPORT posted by a `gh pr` verb and for nothing else.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        head = "5a5a5a5" + "0" * 33
+        env = pr_stub(d, herdr_stub(d, {"sid-1": "demo-worker-1"}),
+                      {"o/r#5": head, "kalaluthien/campaign-base#6": head})
+        wt = f.trees["demo/7-x"]
+        PIN_READ = re.compile(r"REPORT sha checked|sha NOT checked")
+
+        def post(cmd, cwd=wt, e=env):
+            return ask(cwd, tool="Bash", command=cmd, env=e)
+
+        r = post("gh pr comment 5 -R o/r -b 'REPORT demo-worker-1: at abcdef1'")
+        check("REFUSE a REPORT pinning a sha that is not the head, naming the "
+              "head, the sha it read and the branch taken",
+              r.returncode == 2 and "does not pin the head" in r.stderr
+              and head in r.stderr and "abcdef1" in r.stderr
+              and "`stale` branch" in r.stderr, out(r)[:600])
+        r = post("gh pr comment 5 -R o/r -b 'REPORT demo-worker-1: round done'")
+        check("REFUSE a REPORT on a pull request that names no sha at all",
+              r.returncode == 2 and "names no sha" in r.stderr, out(r)[:600])
+        r = post("gh pr comment https://github.com/o/r/pull/5 "
+                 "-b 'REPORT demo-worker-1: at abcdef1'")
+        check("...and one naming its pull request by URL, the repository "
+              "read from the URL",
+              r.returncode == 2 and "does not pin the head" in r.stderr,
+              out(r)[:600])
+        r = post("gh pr review 5 -R o/r --comment "
+                 "-b 'REPORT demo-worker-1: at abcdef1'")
+        check("...and one posted as a review comment",
+              r.returncode == 2 and "does not pin the head" in r.stderr,
+              out(r)[:600])
+        r = post("gh pr comment 5 -R o/r -b 'REPORT demo-worker-1: at 5a5a5a5'")
+        check("ALLOW a REPORT pinning the head, saying it was checked",
+              r.returncode == 0 and "REPORT sha checked: pinned" in r.stdout,
+              out(r)[:600])
+        r = post("gh pr comment 6 -b 'REPORT demo-worker-1: at 5a5a5a5'")
+        check("ALLOW with no `-R` from the base's checkout: the tracker's pull "
+              "request is read",
+              r.returncode == 0 and "REPORT sha checked: pinned" in r.stdout,
+              out(r)[:600])
+        r = post("gh pr comment 9 -R o/r -b 'REPORT demo-worker-1: at abcdef1'")
+        check("ALLOW unjudged when the head could not be read, saying so",
+              r.returncode == 0 and "sha NOT checked" in r.stdout
+              and "unknown check-merge-review" in r.stdout, out(r)[:600])
+        r = post("gh pr comment demo/7-x -b 'REPORT demo-worker-1: at abcdef1'")
+        check("ALLOW unjudged a pull request named by branch, which only `gh` "
+              "resolves",
+              r.returncode == 0 and "only `gh` resolves" in r.stdout,
+              out(r)[:600])
+        r = post("gh pr comment 6 -b 'REPORT demo-worker-1: at abcdef1'",
+                 cwd=f.member(branch="demo/7-x"))
+        check("ALLOW unjudged from a member clone with no `-R`, whose `gh` "
+              "names its own repository",
+              r.returncode == 0 and "not the base's checkout" in r.stdout,
+              out(r)[:600])
+        r = post("gh pr comment 5 -R o/r -b 'REVIEW demo-worker-1: at abcdef1'")
+        check("CONTROL: a REVIEW naming another sha is not a REPORT and is not "
+              "read for one",
+              r.returncode == 0 and not PIN_READ.search(r.stdout), out(r)[:600])
+        r = post("gh issue comment 7 -b 'REPORT demo-worker-1: at abcdef1'")
+        check("CONTROL: a REPORT on an issue has no head to pin and is not read",
+              r.returncode == 0 and not PIN_READ.search(r.stdout), out(r)[:600])
+
     # ---------------------------------------------------------------- #193
     # A HEREDOC BODY IS DATA. Reproduced 2026-09-05 on
     # demo/187-claim-identity: `git commit -F - <<'MSG'` whose message
@@ -2853,7 +2938,10 @@ def main():
             wt = f.worktree("209", "demo/909-corpus",
                             under=f.camp / "worktrees")
             member = f.member(branch="demo/7-x")
-            env = herdr_stub(d, {"sid-1": "demo-worker-1"})
+            # A `gh` ANSWERING NOTHING, so no row reaches the network: three
+            # rows post a kinded REPORT on a pull request, which the REPORT pin
+            # (#274) would otherwise read live from GitHub.
+            env = pr_stub(d, herdr_stub(d, {"sid-1": "demo-worker-1"}), {})
             # FOUR SLOTS, AND TODAY'S CORPUS FILLS TWO. Every file entry in it
             # is `campaign` or `worktree`, because that is where this
             # campaign's sessions wrote; `base` and `member` are exercised by
@@ -3235,7 +3323,7 @@ def main():
     # APPENDED TO `fails`, NOT RETURNED ON. Returning here printed the count
     # and swallowed every named failure and the summary line, so a run that
     # both lost a case and broke one reported only the count.
-    EXPECTED = 454
+    EXPECTED = 465
     counted = []
     if len(ran) != EXPECTED:
         counted.append(

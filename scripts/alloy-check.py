@@ -91,7 +91,8 @@ repeats every static signature in every state, which buries the handful of
 relations a scenario is actually about; the digest prints the event, its
 arguments, and the varying relations only, one line per state. The relations
 it knows are the two tables below, spec/campaign's and spec/sdlc's. The
-five entities in spec/campaign/ are layered and open one another, so a composed trace names
+entities in spec/campaign/ open one another in the chain check-tree-shape.py's
+R9 reads, so a composed trace names
 every relation and every atom by its module path -- the chain of `system`
 modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It

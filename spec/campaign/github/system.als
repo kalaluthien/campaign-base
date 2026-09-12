@@ -22,8 +22,9 @@
  *
  * ORIENTATION
  *
- * Four entities, each opening the one below, so the composed model is the top
- * one and there is no fifth integration module:
+ * Four entities, each opening the one below in the chain that
+ * scripts/check-tree-shape.py's R9 reads and prints, so the composed model is
+ * the top one and there is no fifth integration module:
  *
  *   github/          issues, pull requests, the sub-issue index, the campaign
  *                    issue body, and the claim

@@ -145,8 +145,8 @@ from pathlib import Path
 # A path-like run: at least one slash, and the class carries `<`, `>` and `*` on
 # purpose so a template is *seen and classified* rather than silently truncated
 # to the real-looking prefix in front of its placeholder. Without them
-# `assets/agents/<kind>.md` would tokenize as `assets/agents/`, which exists,
-# and the guard would report a resolved reference nobody wrote.
+# `references/kind-<k>.md` would tokenize as `references/kind-`, and the guard
+# would judge a path nobody wrote, resolved or dangling by luck of the prefix.
 RUN = re.compile(r"[A-Za-z0-9._<>*-]*/[A-Za-z0-9._/<>*-]*")
 
 # Trailing sentence punctuation is not part of a path. `/` is kept: it is how a

@@ -304,17 +304,19 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    claim on some other sub-issue makes an irreversible write no safer. The
    guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
 
-   WHICH CAMPAIGN'S issue is not this rule's to say. `sessionCloseIssue` in
-   session/system.als ties every campaign-issue close to the acting session's
-   own campaign, for every role, and every other campaign-plane event a worker
-   takes excludes a campaign issue by its own precondition: `addMember` refuses
-   one, `claim` wants a sub-issue, `release` wants a claim. So this row read
-   `i = s.worksOn.campaignIssue` as a second copy of that bound, and no
-   command could make it fail -- widening it to what it says now left the
-   model green (sdlc-alloy#345 U1). The bound is stated once, in the event;
-   the guard's own `i == campaign` is tested in check-campaign-claim-test.py.
-   The row's two conjuncts are pinned: dropping the disjunct reddens `Q11`,
-   dropping `i not in Campaign.memberIssues` reddens `Q4`.
+   WHICH CAMPAIGN'S issue this rule holds -- `i = s.worksOn.campaignIssue`,
+   the session's own and no other -- is pinned by Q14, through Release. Not
+   through CloseIssue: `sessionCloseIssue` in session/system.als already ties
+   every campaign-issue close to the acting session's own campaign, for every
+   role. `sessionRelease` has no such tie and no claim precondition, and a
+   campaign issue may start as another campaign's sub-issue (WellFormed bars
+   only its own), be claimed there and leave by RemoveMember -- so a worker
+   releasing that claim is refused by this conjunct alone, and widening it to
+   `i in Campaign.campaignIssue` turns Q14 SAT (sdlc-alloy#345 U1; pr#368
+   review F1 found the trace). Its two neighbours are pinned too: dropping the
+   disjunct reddens `Q11`, dropping `i not in Campaign.memberIssues` reddens
+   `Q4`. The guard's own `i == campaign` is tested in
+   check-campaign-claim-test.py.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
    forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
@@ -350,7 +352,7 @@ pred mayAct[s: Session, e: Event, i: lone Issue] {
                             and (e = Release implies no claimedIssues.i))
   s.role = Worker implies (
     (planeOf[e] = CampaignPlane implies (e not in plannerOnlyEvents
-                                         and ((i in Campaign.campaignIssue
+                                         and ((i = s.worksOn.campaignIssue
                                                and i not in Campaign.memberIssues)
                                               or (i in s.worksOn.memberIssues
                                                   and (e != Claim implies i in s.claimedIssues)))))
@@ -832,8 +834,8 @@ pred R11_HolderThroughAnotherCampaignsDir {
    does not carry, so "no campaign" and "outside every base tree" are two
    readings the model cannot show coincide; R12h is this narrowing's witness.
 
-   `workDir` is the one navigation both halves take, so the commands
-   pinning its campaign filter (R12g) and its host filter (R12e) pin both.
+   `workDir` is the one navigation both halves take; R12g pins its campaign
+   filter, and R12e and R12i its host filter for each half.
    Those two spell the navigation out rather than call `workDir`: a witness
    reading the rule's own helper moves with any change to it and pins
    nothing. */
@@ -956,6 +958,21 @@ pred R12g_TheAgentsOwnDirIsTheOneThatCounts {
                 and c != campaignOf[a.task]
                 and a.task.repo not in campaignDirAt[campaignOf[a.task], a.host].acquired
                 and a.task.repo in campaignDirAt[c, a.host].acquired)
+}
+
+/* R12i. WHICH HOST, for the commit half: R12e's pin on a commit rather than a
+   launch, which the old R13g was. Expect 0, and it goes SAT when the commit
+   half reads any machine's directory -- through `workDir` or around it
+   (pr#368 review F4: with only R12e, a commit half written as
+   `campaignDirsOf[campaignOf[a.task]].acquired` left every command green). */
+pred R12i_TheCommitsOwnHostIsTheOneThatCounts {
+  acquiredCloneOnly
+  some a: Agent, m: Machine |
+    eventually (Now.event = CommitLocal and Target.agent = a
+                and some campaignOf[a.task]
+                and m != a.host
+                and a.task.repo not in campaignDirAt[campaignOf[a.task], a.host].acquired
+                and a.task.repo in campaignDirAt[campaignOf[a.task], m].acquired)
 }
 
 /* R12h. THE CASE THE COMMIT HALF DOES NOT COVER, stated rather than left to
@@ -1157,6 +1174,23 @@ pred Q4_WorkerClosesOtherCampaign {
                     and c != s.worksOn
                     and Now.issue in c.memberIssues + c.campaignIssue)
 }
+
+/* Q14. A worker releases a claim ANOTHER session holds, on another campaign's
+   issue: one that started as a sub-issue of the worker's campaign, was
+   claimed there, and left it. The worker holds no claim on it, so only the
+   carve-out could admit the write. UNSAT, and the command that pins the carve-out's
+   `i = s.worksOn.campaignIssue`: widened to `i in Campaign.campaignIssue` it
+   goes SAT. Q14c is the same trace with the rule dropped, SAT, so the UNSAT
+   is the rule's and not the model's. */
+pred releaseOfAnotherCampaignsIssue {
+  Filed = Campaign
+  some disj s, t: Session | s.role = Worker and some s.worksOn and
+    eventually (Now.event = Release and Who.session = s
+                and Now.issue in Campaign.campaignIssue - s.worksOn.campaignIssue
+                and Now.issue in t.claimedIssues and Now.issue not in s.claimedIssues)
+}
+pred Q14_WorkerReleasesAnotherCampaignsIssue { permissionByRole and releaseOfAnotherCampaignsIssue }
+pred Q14c_WorkerReleasesAnotherCampaignsIssueUnguarded { releaseOfAnotherCampaignsIssue }
 
 /* Q4b. Its own campaign, a sibling sub-issue it never claimed. UNSAT, and the
    one that separates the two halves of the worker's campaign-plane row. */
@@ -1907,6 +1941,7 @@ run R12e_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campai
 run R12f_NothingButAnAcquireSetsACloneUp for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R12g_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run R12h_ACommitOnNoCampaignsWorkIsOutsideTheRule for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R12i_TheCommitsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
@@ -1934,6 +1969,8 @@ run Q3_WorkerClosesOwnClaim             for 3 Issue, 1 PullRequest, 1 Campaign, 
 -- and not on another campaign's, nor on an unclaimed sibling
 run Q4_WorkerClosesOtherCampaign        for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run Q4b_WorkerClosesUnclaimedSibling    for 4 Issue, 1 PullRequest, 2 Campaign, 1 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run Q14_WorkerReleasesAnotherCampaignsIssue for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 8 steps expect 0
+run Q14c_WorkerReleasesAnotherCampaignsIssueUnguarded for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 8 steps expect 1
 -- R4j and R4h again, under the rule that subsumes claimBeforeWork
 run Q5_WorkerWorksClaimedCheckout       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run Q6_WorkerWorksUnclaimed             for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

@@ -300,25 +300,17 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    claim on some other sub-issue makes an irreversible write no safer. The
    guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
 
-   WHICH CAMPAIGN'S issue this rule DOES hold -- `i = s.worksOn.campaignIssue`
-   is the session's own and no other -- but NO COMMAND HERE CAN SHOW IT, and
-   that gap is the thing to know before touching the conjunct. Widening it to
-   `i in Campaign.campaignIssue` leaves every command in this file green, so
-   the conjunct is load-bearing and unpinned at once: delete it on the
-   suite's word and nothing goes red. Its two neighbours are not like that --
-   dropping the disjunct reddens `Q11`, dropping `i not in
-   Campaign.memberIssues` reddens `Q4`.
-
-   The reason no command can reach it: `sessionCloseIssue` in
-   session/system.als already pins every campaign-issue close to the acting session's own campaign, for
-   every role and independently of `mayAct` -- so a scenario asserting a
-   worker cannot close ANOTHER campaign's issue comes out UNSAT whatever this
-   predicate says, and one was written and deleted for exactly that reason: it
-   survived widening the carve-out to every campaign issue, with the whole
-   model still green. `Q11` is the honest half, and measures that the carve-out
-   is what makes the write reachable AT ALL. The campaign bound itself is
-   tested where it CAN fail, in check-campaign-claim-test.py: dropping
-   `i == campaign` from the guard's carve-out fails two named cases there.
+   WHICH CAMPAIGN'S issue is not this rule's to say. `sessionCloseIssue` in
+   session/system.als ties every campaign-issue close to the acting session's
+   own campaign, for every role, and every other campaign-plane event a worker
+   takes excludes a campaign issue by its own precondition: `addMember` refuses
+   one, `claim` wants a sub-issue, `release` wants a claim. So this row read
+   `i = s.worksOn.campaignIssue` as a second copy of that bound, and no
+   command could make it fail -- widening it to what it says now left the
+   model green (sdlc-alloy#345 U1). The bound is stated once, in the event;
+   the guard's own `i == campaign` is tested in check-campaign-claim-test.py.
+   The row's two conjuncts are pinned: dropping the disjunct reddens `Q11`,
+   dropping `i not in Campaign.memberIssues` reddens `Q4`.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system
    forbids one campaign's ISSUE from being another campaign's SUB-ISSUE -- an
@@ -354,7 +346,7 @@ pred mayAct[s: Session, e: Event, i: lone Issue] {
                             and (e = Release implies no claimedIssues.i))
   s.role = Worker implies (
     (planeOf[e] = CampaignPlane implies (e not in plannerOnlyEvents
-                                         and ((i = s.worksOn.campaignIssue
+                                         and ((i in Campaign.campaignIssue
                                                and i not in Campaign.memberIssues)
                                               or (i in s.worksOn.memberIssues
                                                   and (e != Claim implies i in s.claimedIssues)))))

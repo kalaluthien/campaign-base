@@ -495,11 +495,14 @@ pred H1b_HeartbeatRetiresNoHolder {
 /* THE WATCH READS A LEVEL (#296). An open sub-issue nobody claimed is an
    `unclaimed` drift until a claim, and a claim on a closed sub-issue is a
    `settled` drift until its release; each stands on every state between, so
-   the watch reprints what still stands rather than catching one edge. */
+   the watch reprints what still stands rather than catching one edge. W1's
+   `i not in Backlog` keeps the label from clearing the drift in the claim's
+   place: `Backlog` is unconstrained, so without it W1 stayed SAT with a claim
+   that records nothing (pr#368 review round 2). */
 pred W1_UnclaimedDriftClearsOnClaim {
   some c: Campaign, i: Issue | eventually (i in unclaimedDrift[c]
     and eventually (Now.event = Claim and Now.issue = i
-                    and after i not in unclaimedDrift[c]))
+                    and after (i not in unclaimedDrift[c] and i not in Backlog)))
 }
 pred W1b_SettledDriftClearsOnRelease {
   some c: Campaign, i: Issue | eventually (Now.event = CloseIssue and Now.issue = i

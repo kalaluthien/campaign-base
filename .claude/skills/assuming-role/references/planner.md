@@ -38,21 +38,21 @@ session of its own on this machine, or a delegate on a claim.
 
 ## Decomposing and assigning
 
-**Cut by mechanism, and count landings**: a review and a reconciliation are
-paid per landing whatever its diff (`AGENTS.md` § Sub-issues), so everything
-one mechanism changes is one sub-issue, however many rows or files. Steps it
-must land in order stay under that number, a pull request per step on its own
-topic ref, and only the last carries `Closes`, since GitHub closes the issue
-on the first merge of any pull request carrying the keyword.
+**Group by repository, then cut by mechanism**: a review is paid per landing
+whatever its diff (`AGENTS.md` § Sub-issues), so all one mechanism changes is
+one sub-issue. Ordered steps stay under it, one pull request at a time, each
+topic ref taken once the previous is released; only the final one carries
+`Closes`, since GitHub closes on the first merge of a pull request carrying it.
 
 **Order the landings first**: a merge deletes a symptom a stacked branch only
 shows and settles two sub-issues meeting in one file, where re-scoping costs a
-worker its context, and absorbing it retires any review commissioned before.
+worker its context. **Commission no review while `main` still has moves to
+absorb**: absorbing one is a push, and a push retires the review.
 
 **Brief a chosen mechanism whole and an open one a step at a time** (measure,
-probe, choose), each decision yours from the worker's NOTE. A large design ends
-in one `DECISION` superseding every earlier plan, and a defect is handed to a
-worker the turn it is routed: a note nobody works is never read again.
+probe, choose), each decision yours from the worker's NOTE; run a large design
+as design NOTE, adversarial NOTE, one superseding `DECISION`. Route, claim and
+hand a defect to a worker in one turn: a note nobody works is never read again.
 
 ## The planner's clock
 

@@ -156,6 +156,13 @@ herdr agent start <name> --kind claude --pane <pane_id> -- <claude args...>
   `rename` and `prompt`; and `agent read --lines` refuses a `working` pane
   (`agent_not_idle`, probed 2026-09-05) — a not-yet, not a no. `--source
   visible` reads a working pane but only its visible screen.
+- **`agent read` and `pane read` answer different lengths for one window**
+  (2026-09-09): `agent read` scopes to the agent's own turn, which a
+  compaction resets, while `pane read` reads the terminal's raw scrollback,
+  which compaction does not clear — right after a release and compaction,
+  `agent read --lines 1000` gave 62 lines without the release line and
+  `pane read` 530+ with it. To find what printed before the last compaction,
+  use `pane read`.
 - **A failed `pane read` looks exactly like a faded screen**: the CLI prints
   its error as JSON on stdout, so a classifier sees text holding none of its
   markers. Check the exit status before trusting a no-marker verdict, and

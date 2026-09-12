@@ -76,8 +76,9 @@ one sig Worker  extends Role {}
 
    NOT a fact about any campaign: a session under the tree is under EVERY
    campaign's tree here, which is exactly why the cwd cannot attribute a
-   session and the name has to. */
-var sig UnderBase in Session {}
+   session and the name has to. Static: no event moves a session in or out
+   of the tree, so there is nothing to frame. */
+sig UnderBase in Session {}
 
 /* WHETHER THIS SESSION'S CURRENT CONTEXT HOLDS ITS ROLE'S BRIEF, which is a
    different question from what its role IS. The role is a fact about the
@@ -224,7 +225,7 @@ pred brief[s: Session] {
   Briefed' = Briefed + s
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
-  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   bound' = bound
   Now.event = Brief and no Now.issue and Who.session = s
 }
@@ -235,7 +236,7 @@ pred contextReset[s: Session] {
   Briefed' = Briefed - s
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues
-  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   bound' = bound
   Now.event = ContextReset and no Now.issue and Who.session = s
 }
@@ -255,7 +256,7 @@ pred unstamp[s: Session] {
 pred sessionFrame {
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Surveyed' = Surveyed
   and Briefed' = Briefed and bound' = bound
 }
 
@@ -301,7 +302,7 @@ pred sessionHandoff[t, p: Session] {
   claimedIssues' = claimedIssues - p->Issue + t->(p.claimedIssues)
   surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
-  and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
 }
 
@@ -321,7 +322,7 @@ pred survey[s: Session] {
   let X = { c: Campaign | c in Filed and c.campaignIssue in Open and c in Request.covers } |
     surveyResult' = surveyResult - s->Campaign + s->X
   Surveyed' = Surveyed + s
-  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  worksOn' = worksOn and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
   Now.event = Survey and no Now.issue and Who.session = s
 }
@@ -335,7 +336,7 @@ pred adopt[s: Session, c: Campaign] {
   worksOn'      = worksOn  - s->Campaign + s->c
   reposInReadme'     = reposInReadme - s->Repo + s->(c.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(c.reposInBody)
-  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
   Now.event = Adopt and no Now.issue and Who.session = s
 }
@@ -344,7 +345,7 @@ pred readBody[s: Session] {
   some s.worksOn
   reposInReadme'     = reposInReadme - s->Repo + s->(s.worksOn.reposInBody)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.worksOn.reposInBody)
-  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  worksOn' = worksOn and surveyResult' = surveyResult and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
   Now.event = ReadBody and no Now.issue and Who.session = s
 }
@@ -354,7 +355,7 @@ pred editReadme[s: Session, r: Repo] {
   r not in s.reposInReadme
   reposInReadme' = reposInReadme + s->r
   worksOn' = worksOn and surveyResult' = surveyResult and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
   Now.event = EditReadme and no Now.issue and Who.session = s
 }
@@ -372,7 +373,7 @@ pred sessionFileCampaignIssue[s: Session] {
   bound' = bound - Binding->campaignIssueOf[Now.issue]->Machine
            + Binding->campaignIssueOf[Now.issue]->s.machine
   surveyResult' = surveyResult and reposInReadme' = reposInReadme and reposInBodyAsRead' = reposInBodyAsRead
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   Who.session = s
 }
 
@@ -400,7 +401,7 @@ pred sessionWriteBody[s: Session] {
   reposInBody' = reposInBody - s.worksOn->Repo + s.worksOn->(s.reposInReadme)
   reposInBodyAsRead' = reposInBodyAsRead - s->Repo + s->(s.reposInReadme)
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
-  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  and Surveyed' = Surveyed and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
   Who.session = s
 }
@@ -415,7 +416,7 @@ pred sessionCreateDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed and Surveyed' = Surveyed
   Who.session = s
 }
 
@@ -430,7 +431,7 @@ pred sessionDeleteDir[s: Session] {
   bound' = bound
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead
-  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed and Surveyed' = Surveyed
+  and claimedIssues' = claimedIssues and campaignNamed' = campaignNamed and Briefed' = Briefed and Surveyed' = Surveyed
   Who.session = s
 }
 
@@ -462,7 +463,7 @@ pred sessionClaim[s: Session] {
   s.role = Planner  implies s.machine in machinesHolding[campaignOf[Now.issue]]
   s.role != Planner implies Now.issue in s.worksOn.memberIssues
   claimedIssues' = claimedIssues + s->Now.issue
-  campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  campaignNamed' = campaignNamed and Briefed' = Briefed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound
@@ -474,7 +475,7 @@ pred sessionClaim[s: Session] {
 pred sessionRelease[s: Session] {
   Now.event = Release
   claimedIssues' = claimedIssues - Session->Now.issue
-  campaignNamed' = campaignNamed and UnderBase' = UnderBase and Briefed' = Briefed
+  campaignNamed' = campaignNamed and Briefed' = Briefed
   worksOn' = worksOn and surveyResult' = surveyResult and reposInReadme' = reposInReadme
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   bound' = bound

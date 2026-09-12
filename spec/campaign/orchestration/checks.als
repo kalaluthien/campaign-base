@@ -1468,7 +1468,7 @@ pred N2_UnnamedSessionDoesNotBlock {
     always no s.campaignNamed
     /* UNDER THE TREE, which is the case the old rule counted; outside it was
        never counted. */
-    always s in UnderBase
+    s in UnderBase
     /* `a.task not in c.memberIssues` is load-bearing: an agent on a sub-issue
        of this campaign blocks whatever it is called, through the first
        disjunct, and that is not what is exempted here. */

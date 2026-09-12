@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush
+# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush, M2c_AFreshReviewAfterThePushLands
 """Prove check-merge-review refuses on every branch it claims to refuse on.
 
 One case per refusal, each named after the branch it exercises, and each one
@@ -15,10 +15,21 @@ and not GitHub's mood. Every case runs the real script end to end, because the
 word and the exit status are the whole interface and a case calling the inner
 functions would pass with `main`'s wiring cut.
 
-Usage: scripts/check-merge-review-test.py
+TWO CASES RUN THE MODEL'S OWN SITUATION rather than a hand-written one
+(sdlc-alloy#342): alloy solves each of WITNESSES, `alloy-check.py --digest`
+prints its instance, and `instance_fixture` turns that into the canned `gh`
+answer and the word the model says the reader owes. M2 merges on a push with
+no review, M2c on a review taken after the push, so the REVIEW body and the sha
+it names reach the verdict. The revision a `Push` advances reaches no verdict
+yet: head and REVIEW shift together until a witness reviews before a push.
+They need the solver, as CI installs it, and fail red without one.
+
+Usage: scripts/check-merge-review-test.py   (needs ~/.local/bin/alloy)
 """
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -83,6 +94,66 @@ def call(bindir, *args, stdin=None):
                        env=env, input=stdin)
     text = (p.stdout or "") + (p.stderr or "")
     return (text.split(" ", 1)[0].strip() if text else ""), p.returncode, text
+
+
+MODEL = SCRIPT.parent.parent / "spec" / "campaign" / "orchestration" / "checks.als"
+WITNESSES = ("M2_MergeInTheStateAfterAPush", "M2c_AFreshReviewAfterThePushLands")
+ALLOY = Path.home() / ".local" / "bin" / "alloy"
+STATE = re.compile(r"\s*S\d+(?: \(loop\))?  (.*)")
+
+
+def witness_digest(d, witness):
+    """(the digest of <witness>'s instance, or None, and what went wrong)."""
+    out = Path(d) / witness
+    try:
+        subprocess.run([str(ALLOY), "exec", "-f", "-t", "text", "-c", witness,
+                        "-o", str(out), str(MODEL)], capture_output=True, text=True)
+    except OSError as e:
+        return None, f"alloy could not run: {e}"
+    trace = out / f"{witness}-solution-0.txt"
+    if not trace.exists():
+        return None, f"alloy wrote no instance of {witness} under {out}"
+    r = subprocess.run([sys.executable, str(SCRIPT.parent / "alloy-check.py"),
+                        "--digest", str(MODEL), str(trace)], capture_output=True, text=True)
+    return (r.stdout, "") if r.returncode == 0 else (None, r.stdout + r.stderr)
+
+
+def sha(revision):
+    """The model has no sha, so each revision of the pull request is given one."""
+    return hashlib.sha1(f"revision {revision}".encode()).hexdigest()
+
+
+def instance_fixture(digest):
+    """(head, REVIEW bodies, (word, status) the model owes) for one digest.
+
+    THE SHA RULE, stated here once: the pull request opens at revision 0, each
+    `Push` of the merged issue makes the next revision the head, and each
+    `Review` of it is a REVIEW naming the head in force in its state, signed by
+    a session name the reader admits (`S0` is an atom, not one). The word
+    is the model's own: `reviewed` exactly when the merged pull request is in
+    `Reviewed` in the state whose event is `MergePullRequest`. The `Push` half
+    reaches no verdict until a witness reviews before a push: the suite passes
+    with it deleted, since M2 and M2c move head and REVIEW together."""
+    lines = digest.splitlines()
+    if "Reviewed" not in next((l for l in lines if l.startswith("var (")), ""):
+        raise LookupError("the digest read no `Reviewed`, so the model's word is unknown")
+    rows = [dict(c.split("=", 1) for c in m.group(1).split("  "))
+            for m in map(STATE.fullmatch, lines) if m]
+    merge = next((i for i, r in enumerate(rows) if r.get("ev") == "MergePullRequest"), None)
+    if merge is None:
+        raise LookupError("the instance merges nothing")
+    issue = rows[merge]["arg"]
+    pr = dict(p.split("->") for p in rows[merge]["pr"].split(", "))[issue]
+    revision, bodies = 0, []
+    for row in rows[:merge]:
+        if row.get("arg") != issue:
+            continue
+        if row.get("ev") == "Push":
+            revision += 1
+        if row.get("ev") == "Review":
+            bodies.append(f"REVIEW upkeep-worker-{row['by'][1:]}: at {sha(revision)[:7]}")
+    reviewed = pr in rows[merge].get("Reviewed", "").split(", ")
+    return sha(revision), bodies, ("reviewed", 0) if reviewed else ("unreviewed", 1)
 
 
 def main() -> int:
@@ -256,6 +327,21 @@ def main() -> int:
         word, code, text = call(bindir, "not-a-number")
         check("a call this reader does not take answers unknown, word first",
               (word, code) == ("unknown", 2), f"{word} {code} {text}")
+
+        # ---- the model's own situation --------------------------------------
+
+        for witness in WITNESSES:
+            digest, why = witness_digest(d, witness)
+            try:
+                head, bodies, owed = instance_fixture(digest) if digest else (None, [], None)
+            except LookupError as e:
+                head, owed, why = None, None, f"{e}\n{digest}"
+            if owed:
+                fake_gh(bindir, head=head, comments=[comment(b) for b in bodies])
+                word, code, text = call(bindir, "1", "--repo", "o/r")
+            check(f"{witness}'s instance gets the word the model gives it",
+                  owed is not None and (word, code) == owed,
+                  why or f"model {owed}, reader {word} {code}; {len(bodies)} REVIEW(s)\n{digest}")
 
     for name in FAILED:
         print(f"FAIL  {name}")

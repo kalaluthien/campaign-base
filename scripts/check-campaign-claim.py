@@ -105,6 +105,13 @@ BEFORE the role and the claim, since it is a different question and its
 diagnosis names one edit where the claim's names a claim. `gh api ... -f body=`
 posts a comment and is NOT read; that ceiling is stated in the refusal itself.
 
+A REPORT ON A PULL REQUEST PINS ITS HEAD (kalaluthien/campaign-base#274). A
+comment opening `REPORT` that a `gh pr` verb posts is handed to
+`check-merge-review.py --report`, which owns that reading, and refused when it
+answers `stale`; its lines -- the head, the shas the body names, the word --
+ride in the refusal. `unknown`, a timeout, and a pull request named by branch
+or not at all, which only `gh` resolves, are allowed with the sha NOT checked.
+
 A BARE `#N` IS WARNED ABOUT AND NEVER REFUSED. An issue is `<slug>#N` and a
 pull request `pr#N`, since five campaigns file onto one tracker and a bare
 number names no campaign. The form and its sentence are
@@ -1819,8 +1826,9 @@ def parent_of(issue):
     """(the campaign issue the tracker's `issue` hangs from as a string, or
     None; the sentence saying what was read). Asked of campaign-tracker.py's
     `issue_shape`, the one reader of an issue's parent, and only by the
-    sub-issue carve-out -- the one network read this guard makes, so it is
-    reached only after every local reading has failed to cover the write.
+    sub-issue carve-out -- one of the two network reads this guard makes,
+    beside `report_pin`'s, so it is reached only after every local reading has
+    failed to cover the write.
     None is "could not say" as well as "not a sub-issue", and both leave the
     write to the claim reading, the narrower gate.
 
@@ -2107,6 +2115,53 @@ def comment_findings(text):
     if len(text) > COMMENT_CEILING:
         out.append(f"it is {len(text)} characters, over {COMMENT_CEILING}")
     return out, (None if pattern is not None else FIRST_LINE_UNREADABLE)
+
+
+# THE REPORT'S SHA IS check-merge-review.py's TO READ, and it is asked as a
+# subprocess, not imported: it imports this file for the first-line pattern, and
+# its `gh` must not print into this hook's verdict. Bounded, because this runs
+# before a tool call and a `gh` that hangs would hang the session.
+MERGE_REVIEW = HERE / "check-merge-review.py"
+REPORT_READ_TIMEOUT = 10
+PULL_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
+
+
+def report_pin(tokens, text, cwd, root):
+    """(refusal lines or None, note) for a REPORT this `gh pr` segment posts.
+
+    The pull request is the verb's first word -- a number or a URL; a branch
+    name, or none, is resolved by `gh` alone, so it is unjudged. With no `-R`
+    the repository is the one `gh` takes from the checkout, so the tracker's
+    only when the checkout is the base's, as `off_tracker` reads it; anywhere
+    else it is unjudged too."""
+    words = gh_words(tokens)
+    pick = words[2] if len(words) > 2 else None
+    url = PULL_URL.search(pick or "")
+    repo = repo_named(tokens) or (url.group(1) if url else None)
+    pr = url.group(2) if url else (pick or "").lstrip("#")
+    if not pr.isdigit():
+        return None, (f"sha NOT checked: the REPORT names its pull request as "
+                      f"{pick!r}, which only `gh` resolves")
+    if repo is None and checkout_of(cwd)[0] != root:
+        return None, (f"sha NOT checked: `gh` names no repository for pr#{pr} "
+                      f"from {cwd}, which is not the base's checkout")
+    args = [sys.executable, str(MERGE_REVIEW), pr, "--report", "-"]
+    if repo:
+        args += ["--repo", repo]
+    try:
+        p = subprocess.run(args, input=text, capture_output=True, text=True,
+                           timeout=REPORT_READ_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, (f"sha NOT checked: {MERGE_REVIEW.name} did not answer "
+                      f"({e.__class__.__name__})")
+    lines = [x for x in (p.stdout + p.stderr).splitlines() if x.strip()]
+    word = lines[0].split(" ", 1)[0] if lines else ""
+    if word == "stale":
+        return lines, None
+    if word == "pinned":
+        return None, f"REPORT sha checked: {lines[0]}"
+    return None, (f"sha NOT checked: {MERGE_REVIEW.name} answered "
+                  f"{(lines[0] if lines else 'nothing')[:200]!r}")
 
 
 def issue_target(tokens):
@@ -2404,7 +2459,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # write whose CONTENT this guard can read. Refused here so the diagnosis is
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
-    shape, unread, unjudged, warnings = [], [], [], []
+    shape, unread, unjudged, warnings, stale, pins = [], [], [], [], [], []
     for tokens, heredocs, _outer in pairs:
         word, rest = head(tokens)
         if word != "gh":
@@ -2419,6 +2474,13 @@ def bash_call(command, cwd: Path, session_id=""):
             shape += found
             if why_shape:
                 unjudged.append(why_shape)
+            # THE REPORT'S SHA, only once its shape holds: a REPORT refused for
+            # its first line is not also sent to the network.
+            elif (not found and gh_words(rest)[:1] == ["pr"]
+                  and text.lstrip().startswith("REPORT ")):
+                refusal, note = report_pin(rest, text, cwd, root)
+                stale += refusal or []
+                pins += [note] if note else []
             # THE REFERENCE FORM, WARNED AND NEVER REFUSED. Collected here and
             # put into `NOTES` below, which `refuse` and `allow` print beside
             # every verdict -- so a comment refused for its first line still
@@ -2438,6 +2500,14 @@ def bash_call(command, cwd: Path, session_id=""):
                        f"A `gh api ... -f body=` posts a comment and is NOT "
                        f"read here, which is this check's stated ceiling and "
                        f"not a route around it."])
+    if stale:
+        return refuse([f"{what}: a REPORT that does not pin the head of the "
+                       f"pull request it is posted on.",
+                       *[f"  {x}" for x in stale],
+                       f"{MERGE_REVIEW.name} --report took the `stale` branch. "
+                       f"Name the head the pull request sits at -- after a "
+                       f"merge too, beside the merge sha; a push since needs a "
+                       f"fresh REPORT."])
     # CARRIED PAST THE CLAIM READING, not returned here: an unjudged comment is
     # still a campaign-plane write and still needs its claim. Folded into
     # `what`, which is the one string EVERY exit below prints -- three of them
@@ -2447,6 +2517,8 @@ def bash_call(command, cwd: Path, session_id=""):
     if unjudged:
         what += " [" + "; ".join(
             f"shape NOT checked: {u}" for u in unjudged) + "]"
+    if pins:
+        what += " [" + "; ".join(pins) + "]"
     campaign, role, how_role = role_of(session_id)
     # Computed before the first exit that can use it: every exit of this
     # half that fell back says so, allows included. The allows used to be

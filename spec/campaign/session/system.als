@@ -307,8 +307,8 @@ pred sessionHandoff[t, p: Session] {
 
 /* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
    holds no claim. The session half; orchestration/system.als's `exitSession`
-   adds that it is compacted and holds no live agent. A planner is never
-   retired: it is the one running the heartbeat. */
+   adds that a sub-issue it took was released and it holds no live agent. A
+   planner is never retired: it is the one running the heartbeat. */
 pred sessionExit[s: Session] {
   Now.event = SessionExit and no Now.issue and Who.session = s
   s.role = Worker

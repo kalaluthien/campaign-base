@@ -24,17 +24,18 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
   (not idle)        a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.
-  `unknown`         the session's transcript holds no release of this pane.
-                    That is a session that never released -- or one whose
-                    release sits in an earlier file a resume left behind, and
-                    nothing here tells the two apart. --assume-fresh assigns
-                    anyway and says what it overrode.
-  `stale`           the pane released a sub-issue and has not compacted since,
-                    so the next sub-issue would re-read the last one's whole
+  `unknown`         no time the claim of the pane's last assigned sub-issue
+                    went: no assignment prompt in its transcript (a first
+                    assignment, or one in an earlier file a resume left
+                    behind), its ref still standing, or GitHub not read.
+                    --assume-fresh assigns anyway and says what it overrode.
+  `stale`           that claim went and the pane has not compacted since, so
+                    the next sub-issue would re-read the last one's whole
                     transcript on every turn. `campaign-claim.py release`
-                    enqueues that compaction; this is the reader that says
-                    whether it happened. --force is the way past, and it prints
-                    what it is overriding.
+                    enqueues that compaction in the releasing pane, which on
+                    the base is often the planner's; this is the reader that
+                    says whether this pane's happened. --force is the way
+                    past, and it prints what it is overriding.
   (unread)          the transcript could not be found or read. Either flag
                     gets past it, since it is a reading not made rather than
                     one that came back bad.
@@ -44,16 +45,14 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
   not compacted. One flag for both made bypassing the single case this guard
   exists for the same keystroke as the routine first assignment.
 
-IT READS THE TRANSCRIPT, NOT THE PANE. The release and the compaction come from
-the session's own transcript, through `campaign-heartbeat.py`'s
-`transcript_reading`, the one reader of them. The pane's scrollback was the
-source until kalaluthien/campaign-base#296, and it failed both ways: `herdr
-pane read` caps at 1000 lines and a compaction clears the release line, so a
-pane that released and compacted read `unknown` (#293, twice on 2026-09-10);
-and a compaction marker is harness text with no pane in it, so one read out of
-another pane could answer for this one (#220). In the transcript the release is
-a tool result of this session's own, naming its pane, and the compaction is a
-`compact_boundary` record that no printed text can forge.
+IT READS THE TRANSCRIPT AND GITHUB, NOT THE PANE. The last assignment prompt
+and the compaction come from the session's own transcript, through
+`campaign-heartbeat.py`'s `transcript_reading`; when the claim went comes from
+GitHub, through the heartbeat's `ref_went`, which its `retire` asks too. The
+pane's scrollback was the source until kalaluthien/campaign-base#296, and it
+failed both ways (#293, #220). The release line in the releasing pane's
+transcript was the source until rule-check#349, and on the base the planner
+releases, so a worker read `unknown` for good.
 
 WHAT IT CANNOT DO IS SAID, NEVER SKIPPED
 
@@ -136,8 +135,8 @@ def idle_verdict(row):
 
 def heartbeat_module():
     """campaign-heartbeat.py, imported for its reader of a session's
-    transcript -- the one reader of the release and the compaction, which the
-    heartbeat asks too. Loaded by path from the `assuming-role` skill."""
+    transcript and of when a claim went, which its `retire` asks too. Loaded
+    by path from the `assuming-role` skill."""
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
         __file__))), ".claude", "skills", "assuming-role", "scripts",
         "campaign-heartbeat.py")
@@ -145,6 +144,17 @@ def heartbeat_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def refs_of(m, hb, issue):
+    """The heartbeat's reader of claim refs and their deletion, over the
+    campaign the sub-issue being assigned hangs from: the pane's last
+    sub-issue is of that campaign too, since a worker is named for one."""
+    parent, note, _ = m.issue_parent(issue)
+    slug, note = m.campaign_slug(parent) if parent else (None, note)
+    if slug is None:
+        return lambda n: (None, note)
+    return hb.refs_reader(hb.claim_reading(parent, slug, m), slug)
 
 
 # THE ONE HOME OF THE ASSIGNMENT SENTENCE'S SHAPE, written by `prompt_for`
@@ -213,8 +223,7 @@ def main():
         return 1
 
     hb = heartbeat_module()
-    reading, where, why_unread = hb.read_transcript(row["sid"], m.RELEASED,
-                                                    args.pane)
+    reading, where, why_unread = hb.read_transcript(row["sid"])
     if reading is None:
         # I COULD NOT LOOK, which is neither a yes nor a no. It refuses, and
         # `--assume-fresh` is the way past: an unreadable transcript is a
@@ -222,29 +231,31 @@ def main():
         # `--force` reaches it too, because it implies --assume-fresh.
         if not (args.assume_fresh or args.force):
             print(f"refusing: {where}: {why_unread}\n  Whether {args.pane} "
-                  f"compacted since its last release is unknown, and an "
-                  f"unknown is not\n  a compaction. Pass --assume-fresh to "
+                  f"compacted since its last sub-issue ended is unknown, and "
+                  f"an unknown is not\n  a compaction. Pass --assume-fresh to "
                   f"assign anyway.", file=sys.stderr)
             return 1
         verdict, why = "unread", f"{where}: {why_unread}"
     else:
-        verdict, why = hb.compacted_since_release(reading)
+        verdict, why = hb.compacted_since_ref(reading,
+                                              refs_of(m, hb, issue))
         print(f"{verdict}: {why} (read {where})")
     # ONE REMEDY LIST PER VERDICT: `/compact and retry` changes nothing for
     # `unknown`, and --assume-fresh does not reach `stale`.
     waived = args.force or (verdict != "stale" and args.assume_fresh)
     if verdict != "compacted" and not waived:
         if verdict == "stale":
-            print(f"refusing: {args.pane} has not compacted since its last "
-                  f"release.\n  {why}\n  Every turn of {args.repo}#{issue} "
-                  f"would re-read the sub-issue before it. Prompt the pane "
-                  f"with\n  /compact and retry, or pass --force.",
-                  file=sys.stderr)
+            print(f"refusing: {args.pane} has not compacted since the claim "
+                  f"of its last sub-issue went.\n  {why}\n  Every turn of "
+                  f"{args.repo}#{issue} would re-read the sub-issue before "
+                  f"it. Prompt the pane with\n  /compact and retry, or pass "
+                  f"--force.", file=sys.stderr)
         else:
-            print(f"refusing: {args.pane} shows no release in its transcript, "
-                  f"which is not evidence\n  it never released: {why}.\n"
-                  f"  Pass --assume-fresh if this session genuinely has not "
-                  f"worked a sub-issue yet.", file=sys.stderr)
+            print(f"refusing: nothing read says when {args.pane}'s last "
+                  f"sub-issue ended, which is not evidence\n  it never "
+                  f"worked one: {why}.\n  Pass --assume-fresh if this "
+                  f"session genuinely has not worked a sub-issue yet.",
+                  file=sys.stderr)
         return 1
     if verdict != "compacted":
         # `--force` names itself whenever it was passed, and it is the ONLY

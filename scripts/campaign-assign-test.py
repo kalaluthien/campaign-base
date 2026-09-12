@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 # witnesses: SessionCompactsBetweenSubIssues
-"""Cases for campaign-assign.py, over a stubbed `herdr` on PATH and a fake
-HOME holding the session's transcript.
+"""Cases for campaign-assign.py, over a stubbed `herdr` and `gh` on PATH and
+a fake HOME holding the session's transcript.
 
 AN ALLOW CASE BESIDE EVERY REFUSAL. A guard is only worth its refusals if the
 thing it admits still gets through, and a refusing check with no allow case
 reads identically to one that refuses everything.
 
-The stub answers `agent list` and `agent prompt`, logs every prompt, and
+The herdr stub answers `agent list` and `agent prompt`, logs every prompt, and
 refuses everything else -- so a case passes only if the reading came from
-the transcript and never from the pane. "The assignment was sent" is
-asserted on what herdr was ASKED, never on an exit status. How the
-transcript is read -- order, forgery, another pane's release -- is
-campaign-heartbeat-test.py's, since that reader is the heartbeat's.
+the transcript and GitHub and never from the pane. The gh stub answers the
+sub-issue's parent, the campaign's slug and `## Repos`, its claim refs and
+the events feed, where the pane's last sub-issue's ref went at T1. "The
+assignment was sent" is asserted on what herdr was ASKED, never on an exit
+status. How the transcript and the feed are read -- order, forgery, a prefix,
+a tag -- is campaign-heartbeat-test.py's, since those readers are the
+heartbeat's.
 """
 import json
 import os
@@ -34,16 +37,8 @@ def check(name, ok, detail=""):
         FAILED.append(f"{name}" + (f" -- {detail}" if detail else ""))
 
 
-# The anchor as `campaign-claim.py` prints it, PANE AND ALL. Spelled here
-# rather than imported so that a case fails if the two ever disagree.
-RELEASED = "campaign-claim: released machinery/195-token-tally in w1:p2"
-
-
-def released(ts):
-    """A tool result carrying this session's release, as the transcript
-    records the Bash call that ran `campaign-claim.py release`."""
-    return {"type": "user", "timestamp": ts, "message": {"content": [
-        {"type": "tool_result", "content": f"sent /compact\n{RELEASED}"}]}}
+def said(ts, text):
+    return {"type": "user", "timestamp": ts, "message": {"content": text}}
 
 
 def compacted(ts):
@@ -51,10 +46,14 @@ def compacted(ts):
             "compactMetadata": {"postTokens": 9000}}
 
 
-T1, T2 = "2026-09-10T10:00:00.000Z", "2026-09-10T10:01:00.000Z"
-COMPACTED = [released(T1), compacted(T2)]
-STALE = [released(T1)]
-FRESH = [{"type": "user", "timestamp": T1, "message": {"content": "hello"}}]
+# Assigned rc#9 at T0; its ref rc/9-x went at T1, as the stub's feed says.
+T0, T2 = "2026-09-10T10:00:00.000Z", "2026-09-10T10:02:00.000Z"
+T1 = "2026-09-10T10:01:00Z"
+WORK9 = said(T0, "Work sub-issue kalaluthien/campaign-base#9 now: its body "
+                 "is the whole brief")
+COMPACTED = [WORK9, compacted(T2)]
+STALE = [WORK9]
+FRESH = [said(T0, "hello")]
 
 
 def agent(sid, name, pane, status="idle"):
@@ -77,13 +76,32 @@ esac
 echo "herdr shim: refusing $*" >&2
 exit 1
 """
+GH = r'''#!%s
+import json, sys
+a, T = sys.argv[1:], "repos/kalaluthien/campaign-base"
+standing = %r
+if a[:2] == ["issue", "view"] and "parent" in a:
+    print("7"); sys.exit(0)
+if a[:2] == ["api", T + "/issues/7"]:
+    print('["campaign", "campaign:rc"]'); sys.exit(0)
+if a[:3] == ["issue", "view", "7"]:
+    print("## Repos\n\n- none\n"); sys.exit(0)
+if a[:2] == ["api", T + "/git/matching-refs/heads/rc/"]:
+    print(json.dumps(["refs/heads/rc/9-y"] if standing else [])); sys.exit(0)
+if a[:2] == ["api", T + "/events?per_page=100&page=1"]:
+    print(json.dumps([{"type": "DeleteEvent", "created_at": %r,
+                       "payload": {"ref": "rc/9-x", "ref_type": "branch"}}]))
+    sys.exit(0)
+sys.stderr.write("gh shim: refusing %%s\n" %% a); sys.exit(1)
+'''
 
 
-def shims(d, rows, records=None, prompt_exit=0, sid="S2"):
-    """A PATH holding only the stub, and a HOME whose transcript for `sid`
+def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False):
+    """A PATH holding only the stubs, and a HOME whose transcript for `sid`
     holds `records` (no file at all when None). PATH is this directory ALONE,
-    so a call that escaped the stub would run nothing rather than silently
-    reaching the real herdr and driving somebody's pane."""
+    so a call that escaped the stubs would run nothing rather than silently
+    reaching the real herdr and driving somebody's pane. `standing` leaves
+    a ref of rc#9 on the remote."""
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True, exist_ok=True)
@@ -91,6 +109,8 @@ def shims(d, rows, records=None, prompt_exit=0, sid="S2"):
     (b / "herdr").write_text(
         HERDR % (str(d / "prompts.log"), listing, prompt_exit))
     (b / "herdr").chmod(0o755)
+    (b / "gh").write_text(GH % (sys.executable, standing, T1))
+    (b / "gh").chmod(0o755)
     for tool in ("sh", "cat", "printf", "python3", "git"):
         found = shutil.which(tool)
         if found and not (b / tool).exists():
@@ -151,10 +171,6 @@ def pure_cases(m):
     check("a status this does not recognise is not evidence of rest",
           not ok and "unheard-of" in why, why)
 
-    cm = m.claim_module()
-    check("the anchor this suite fixtures is the line campaign-claim prints",
-          RELEASED.startswith(cm.RELEASED), f"{cm.RELEASED!r} vs {RELEASED!r}")
-
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
           "kalaluthien/campaign-base#42" in sentence
@@ -179,14 +195,14 @@ def end_to_end_cases():
             agent("S2", "machinery-worker-2", "w1:p2")]
 
     with tempfile.TemporaryDirectory() as d:
-        # ALLOW: idle, compacted since its last release. This is #293's first
-        # item: the pane's scrollback lost the release line to the
-        # compaction and read `unknown`; the transcript keeps both.
+        # ALLOW: idle, compacted since its last sub-issue's ref went. On the
+        # base the planner releases, so the release line was never in this
+        # transcript and the pane read `unknown` for good (rule-check#349).
         ok = shims(Path(d) / "ok", rows, COMPACTED)
         r = assign(["w1:p2", "198"], ok)
         out = r.stdout + r.stderr
         sent = prompts(ok)
-        check("a session that released and then compacted is assigned",
+        check("a session compacted since its last sub-issue's ref went is assigned",
               r.returncode == 0 and "assigned kalaluthien/campaign-base#198"
               in out, f"exit {r.returncode}: {out[:300]}")
         check("...by exactly one guarded prompt to the pane named",
@@ -195,7 +211,9 @@ def end_to_end_cases():
         check("...and never to the other pane",
               not any("pane=w1:p1" in ln for ln in sent), repr(sent))
         check("...saying what it read and from where",
-              "compacted: released" in out and "S2.jsonl" in out, out[:400])
+              "compacted: assigned #9; no ref standing, the last went "
+              f"{T1} (rc/9-* on kalaluthien/campaign-base" in out
+              and "S2.jsonl" in out, out[:400])
         # A CLEAN PATH SAYS NOTHING ABOUT OVERRIDING.
         check("...and says nothing about overriding anything",
               "assigning anyway" not in out and "--force" not in out
@@ -211,14 +229,24 @@ def end_to_end_cases():
               r.returncode == 1 and prompts(other) == [],
               f"exit {r.returncode}: {(r.stdout + r.stderr)[:250]}")
 
-        # REFUSE: no release in the transcript. A first assignment takes
-        # --assume-fresh, which says what it overrode.
+        # REFUSE: no assignment prompt in the transcript. A first assignment
+        # takes --assume-fresh, which says what it overrode.
         fresh = shims(Path(d) / "fresh", rows, FRESH)
         r = assign(["w1:p2", "198"], fresh)
         out = r.stdout + r.stderr
-        check("a transcript with no release is refused",
-              r.returncode == 1 and "unknown" in out
+        check("a transcript with no assignment prompt is refused",
+              r.returncode == 1 and "unknown: no assignment prompt" in out
               and prompts(fresh) == [], f"exit {r.returncode}: {out[:300]}")
+
+        # REFUSE: the last sub-issue's ref still stands, compaction or not.
+        held = shims(Path(d) / "held", rows, COMPACTED, standing=True)
+        r = assign(["w1:p2", "198"], held)
+        out = r.stdout + r.stderr
+        check("a pane whose last sub-issue's ref still stands is unknown, "
+              "compacted or not",
+              r.returncode == 1 and "unknown: assigned #9; rc/9-y standing" in out
+              and "--assume-fresh" in out and prompts(held) == [],
+              f"exit {r.returncode}: {out[:300]}")
         check("...and the refusal offers --assume-fresh, not --force",
               "--assume-fresh" in out and "pass --force" not in out, out[:500])
         fresh_a = shims(Path(d) / "fresha", rows, FRESH)
@@ -234,13 +262,15 @@ def end_to_end_cases():
               r.returncode == 0 and "--force: assigning anyway" in out
               and "--assume-fresh:" not in out, out[:400])
 
-        # REFUSE: released and not compacted since.
+        # REFUSE: the ref went and no compaction since.
         stale = shims(Path(d) / "stale", rows, STALE)
         r = assign(["w1:p2", "198"], stale)
         out = r.stdout + r.stderr
-        check("a pane that has not compacted since its release is refused",
-              r.returncode == 1 and "has not compacted since its last release"
-              in out and prompts(stale) == [], f"exit {r.returncode}: {out[:300]}")
+        check("a pane that has not compacted since its last sub-issue's ref "
+              "went is refused",
+              r.returncode == 1 and "has not compacted since the claim of its "
+              "last sub-issue went" in out and prompts(stale) == [],
+              f"exit {r.returncode}: {out[:300]}")
         # THE SPLIT. `--assume-fresh` reaches what a reading cannot; it must
         # NOT reach the one case the guard exists for.
         af_stale = shims(Path(d) / "afstale", rows, STALE)

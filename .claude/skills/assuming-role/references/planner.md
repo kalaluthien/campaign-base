@@ -40,22 +40,21 @@ How to launch and to review: `references/launching.md`, `references/reviewing.md
 
 ## Decomposing and assigning
 
-- **File one sub-issue per landing**, grouped by repository and then by the
-  one ordering the work cannot fold, for the cost `AGENTS.md` § Sub-issues
-  prices.
-- **Decide the landing order first**, and leave alone a symptom a merge will
-  remove, since the merge deletes it for free; two sub-issues meeting in one
-  file are kept apart by that order, not by re-scoping.
-- **Commission no review while `main` still has moves to absorb**, for the
-  reason `AGENTS.md` § Merge conditions gives.
-- **Drive a sub-issue whose mechanism is not chosen one step at a time** —
-  measure, probe, choose — deciding each step yourself from the worker's NOTE:
-  a whole-body brief fits only a fixed plan.
-- **Run a large design as a design NOTE, an adversarial NOTE, then one
-  `DECISION`** that is the worker's whole brief, marking the earlier plan
-  `NOTE` superseded, so the worker reads one comment.
-- **Route, claim and hand a recorded defect to a worker in the same turn**: a
-  note with no worker is never read again.
+**Group by repository, then cut by mechanism**: a review is paid per landing
+whatever its diff (`AGENTS.md` § Sub-issues), so all one mechanism changes is
+one sub-issue. Ordered steps stay under it, one pull request at a time, each
+topic ref taken once the previous is released; only the final one carries
+`Closes`, since GitHub closes on the first merge of a pull request carrying it.
+
+**Order the landings first**: a merge deletes a symptom a stacked branch only
+shows and settles two sub-issues meeting in one file, where re-scoping costs a
+worker its context. **Commission no review while `main` still has moves to
+absorb**: absorbing one is a push, and a push retires the review.
+
+**Brief a chosen mechanism whole and an open one a step at a time** (measure,
+probe, choose), each decision yours from the worker's NOTE; run a large design
+as design NOTE, adversarial NOTE, one superseding `DECISION`. Route, claim and
+hand a defect to a worker in one turn: a note nobody works is never read again.
 
 ## The planner's clock
 

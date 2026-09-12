@@ -1,9 +1,10 @@
 /*
  * The disciplines over sdlc/system and the witnesses -- a full chain, a
  * prose-only change with nothing below its plan, the tie broken by a rename at
- * each of its three ends, and each half of the skip rule -- then what must
- * hold under each discipline, the counterexample each one's absence admits,
- * and the floor that says every event is reachable at all.
+ * each of its three ends, each input of the skip rule, reuse being a change
+ * that adds no feature -- then what must hold under each discipline, the
+ * counterexample each one's absence admits, and the floor that says every
+ * event is reachable at all.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/checks
@@ -16,13 +17,14 @@ open sdlc/system
    own kind: the model before the code, and a test that failed first. Neither
    is a stage the KIND forbids skipping, because each is already refused by
    the criterion wherever there is anything to refuse -- a change that wrote a
-   code path may skip neither Spec nor Test. So its profile is every skippable
-   stage, each still gated by the criterion: all three go for a change that
-   writes nothing that runs (`S2a_ProseOnlyChange`), and Test and Code for one
-   that wrote only its scenario (`S6a_DevelopmentTestWaiver`). `research`
-   and `maintenance` state the same profile and differ only in what their
-   changes write, which no command here separates, so they have no witness of
-   their own.
+   code path may skip neither Spec nor Test, and Spec only by reuse -- its own
+   test witnessing a scenario already written. So its profile is every
+   skippable stage, each still gated by the criterion: all three go for a
+   change that writes nothing that runs (`S2a_ProseOnlyChange`), and Test and
+   Code for one that wrote only its scenario (`S6a_DevelopmentTestWaiver`).
+   `research` and `maintenance` state the same profile and differ only in what
+   their changes write, which no command here separates, so they have no
+   witness of their own.
 
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and no kind
    narrows anything. `narrowingProfile` is kept as a witness, because without
@@ -30,12 +32,13 @@ open sdlc/system
    `S6_NarrowingTestWaiver` is the profile half on its own. Its one optional
    stage, Spec, is dead as a waiver rather than narrow: a change the criterion
    lets skip Spec wrote nothing that runs, and this profile lets neither Test
-   nor Code go, so no landing change under it ever skips its scenario
-   (`S7_NarrowingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at the
-   same scope). Every profile line is the procedure's to state, in this
-   vocabulary: `development`'s is the default in the campaign's AGENTS.md,
-   from the template .claude/skills/opening-campaign/assets/AGENTS.md, and the
-   other kinds' are one line each in their references, kind-<k>.md. */
+   nor Code go, so no landing change under it skips its scenario by the
+   profile (`S7_NarrowingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at
+   the same scope); reusing one is not a skip the profile grants. Every
+   profile line is the procedure's to state, in this vocabulary:
+   `development`'s is the default in the campaign's AGENTS.md, from the
+   template .claude/skills/opening-campaign/assets/AGENTS.md, and the other
+   kinds' are one line each in their references, kind-<k>.md. */
 pred developmentProfile[c: Change] { c.optional = skippable }
 pred narrowingProfile[c: Change] { c.optional = Spec }
 
@@ -87,7 +90,19 @@ pred landDiscipline {
   always (Step.event = Land implies all s: absentStages[Step.subject] | maySkip[Step.subject, s])
 }
 
-pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline }
+/* A CHANGE THAT ADDS NO FEATURE TAKES NO SCENARIO AWAY: no commit of a
+   change with no scenario of its own moves one out of the tree. A write never
+   removes, so a rename is the step it bites. Read by names, as
+   scripts/check-sdlc-tie.py reads it, a commit that leaves the command list as
+   it was keeps every scenario by definition; what the guard refuses, as T8,
+   is the consequence, `FeaturelessKeeps`, over an edit this model has no step
+   for -- a suite's declaration rewritten, or a suite deleted, in place. */
+pred keepDiscipline {
+  always ((Step.event in Write + Rename and featureless[Step.subject])
+          implies Written & (stage.Spec - Html) in Written')
+}
+
+pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline and keepDiscipline }
 
 /* ---------------- witnesses ---------------- */
 
@@ -210,11 +225,12 @@ pred S4d_TestRenameWitnessLoss {
    scope holds two changes because the tie reads the TREE, so a scenario and
    a test of another change could reach the path. The tie does not widen the
    licence either: `criterion` reads what the CHANGE wrote, never what the
-   tree ties. */
+   tree ties. "No scenario" is read at the landing and counts a reused one,
+   which a later rename can take away from a change that landed with it. */
 pred codeWithoutSpec[c: Change] {
-  eventually (c in Landed
+  eventually (Step.event = Land and Step.subject = c
               and some writtenOf[c] & stage.Code
-              and no writtenOf[c] & stage.Spec)
+              and Spec not in writtenStages[c] + reusedStages[c])
 }
 pred S5_CodeWithoutSpec         { allDisciplines and some c: Change | codeWithoutSpec[c] }
 pred S5a_WithoutTheCommitCheck  { orderDiscipline and landDiscipline
@@ -245,13 +261,16 @@ pred S6a_DevelopmentTestWaiver {
   }
 }
 
-/* `narrowingProfile` LICENSES NOTHING A LANDING CHANGE CAN USE, which is
-   not the same as being narrow. The criterion lets a change skip Spec only
-   when it wrote nothing that runs; this profile lets neither Test nor Code go, so
-   such a change cannot land, and one that does land wrote a code path and is
-   refused Spec by the criterion (`S5_CodeWithoutSpec`). `S7a` is the same
-   question under a kind that narrows nothing, so neither the shape nor the
-   scope is what refuses `S7`. */
+/* `narrowingProfile` GRANTS A LANDING CHANGE NO SPEC SKIP, which is not the
+   same as being narrow. The criterion lets a change skip Spec only when it
+   wrote nothing that runs; this profile lets neither Test nor Code go, so a
+   lone change under it that lands wrote a code path and is refused Spec by
+   the criterion (`S5_CodeWithoutSpec`). The scope is one change because a
+   second is what reuse needs: at two, a change under it lands with its Spec
+   and Code reused (`S8_FeaturelessChange`'s shape), an absence reuse
+   licenses and the profile does not. `S7a` lands at the same one-change
+   scope under a kind that narrows nothing, so one change is enough for a
+   waiver, and what refuses `S7` there is the profile. */
 pred S7_NarrowingSpecWaiver {
   allDisciplines
   one c: Change { narrowingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
@@ -259,6 +278,22 @@ pred S7_NarrowingSpecWaiver {
 pred S7a_DevelopmentSpecWaiver {
   allDisciplines
   one c: Change { developmentProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }
+}
+
+/* A CHANGE THAT ADDS NO FEATURE: a stronger suite over a scenario and a code
+   path already in the tree. It writes its intent, its plan and a test and
+   nothing else; the test witnesses a scenario another change wrote and drives
+   that change's code path, so its Spec and its Code are reused, and it lands
+   under every discipline. Its test turns the criterion false, so reuse is the
+   one input of `maySkip` that licenses both absences. */
+pred S8_FeaturelessChange {
+  allDisciplines
+  some c: Change {
+    developmentProfile[c]
+    change.c.stage = Intent + Plan + Test
+    eventually (c in Landed and featureless[c] and reusedStages[c] = Spec + Code
+                and everyCodeHasScenario)
+  }
 }
 
 /* ---------------- the order ---------------- */
@@ -339,15 +374,39 @@ assert FormsTieNothing {
 /* ---------------- the skip rule ---------------- */
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
-   was licensed, and stays so: a landed change writes nothing more, a rename
-   keeps its stages, and its profile is static. Without it: a change lands
-   with an absence its kind or the criterion refuses. */
+   is licensed by its kind and the criterion, which stays so -- a landed
+   change writes nothing more, a rename keeps its stages, and its profile is
+   static -- or was reused when it landed. Reuse is read with `once` because it
+   does not stay: a later rename can take the reused scenario away. Without
+   the discipline: a change lands with an absence nothing licenses. */
 assert AbsenceLicensed {
-  landDiscipline implies always all c: Landed, s: absentStages[c] | maySkip[c, s]
+  landDiscipline implies always all c: Landed, s: absentStages[c] |
+    (s in c.optional and criterion[c])
+    or once (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 pred AbsenceLicensed_Bites {
   not landDiscipline
-  eventually some c: Landed, s: absentStages[c] | not maySkip[c, s]
+  eventually some c: Landed, s: absentStages[c] |
+    not (s in c.optional and criterion[c])
+    and historically not (Step.event = Land and Step.subject = c and s in reusedStages[c])
+}
+
+/* ---------------- the keep rule ---------------- */
+
+/* Under `keepDiscipline`, no commit of a change that adds no feature
+   shrinks the witnessed set either, though the discipline names only the
+   scenarios: a test leaves the tree only beside the scenario it witnesses,
+   renamed in the same commit, and a renamed test keeps its declaration.
+   Without it: such a change renames a scenario with the texts witnessing it,
+   and the scenario they witnessed is gone. */
+assert FeaturelessKeeps {
+  keepDiscipline implies always
+    ((Step.event in Write + Rename and featureless[Step.subject]) implies witnessed in witnessed')
+}
+pred FeaturelessKeeps_Bites {
+  orderDiscipline and tieDiscipline and landDiscipline
+  eventually (Step.event in Write + Rename and featureless[Step.subject]
+              and witnessed not in witnessed')
 }
 
 /* ---------------- reachability floor ----------------
@@ -358,6 +417,8 @@ pred AbsenceLicensed_Bites {
 pred Cov_Write  { eventually Step.event = Write }
 pred Cov_Rename { eventually Step.event = Rename }
 pred Cov_Land   { eventually Step.event = Land }
+/* The keep rule's antecedent: a change with no scenario commits a rename. */
+pred Cov_FeaturelessRename { eventually (Step.event = Rename and featureless[Step.subject]) }
 
 /* ---------------- commands ---------------- */
 
@@ -377,6 +438,9 @@ run S6_NarrowingTestWaiver     for exactly 1 Change, exactly 3 Artifact, 10 step
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
 run S7_NarrowingSpecWaiver     for exactly 1 Change, 6 Artifact, 12 steps expect 0
 run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect 1
+-- S8 needs eight commits, so no trace shorter than nine states holds it; the
+-- floor spares the solver refuting each shorter length, past ten minutes without it
+run S8_FeaturelessChange       for 2 Change, 7 Artifact, 9..10 steps expect 1
 
 -- the order: holds under the discipline, and has a counterexample without it.
 -- One change: every term of the order is one change's, so a second adds only
@@ -398,7 +462,12 @@ check FormsTieNothing          for 1 Change, 6 Artifact, 10 steps expect 0
 check AbsenceLicensed          for 2 Change, 6 Artifact, 10 steps expect 0
 run   AbsenceLicensed_Bites    for 2 Change, 6 Artifact, 10 steps expect 1
 
+-- the keep rule: a change that adds no feature keeps what is witnessed, and not without it
+check FeaturelessKeeps         for 2 Change, 6 Artifact, 10 steps expect 0
+run   FeaturelessKeeps_Bites   for 2 Change, 6 Artifact, 10 steps expect 1
+
 -- every own event fires in some trace
 run Cov_Write   for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_Rename  for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_Land    for 2 Change, 4 Artifact, 8 steps expect 1
+run Cov_FeaturelessRename for 2 Change, 4 Artifact, 8 steps expect 1

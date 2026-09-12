@@ -99,7 +99,7 @@ was live that day.
 `src/protocol/wire.rs` declares `PROTOCOL_VERSION`: 19 at v0.8.0, 20 at v0.8.2.
 The number is in no release note and it decides whether an upgrade costs a
 restart, so it has to be read per tag before upgrading. That read is now a
-script: `just herdr-preflight <tag>` in `machine-setup`, which prints the
+script: `just herdr-preflight <tag>` in `~/homeops`, which prints the
 running server's protocol, the tag's, and the verdict. Match on the
 declaration's `= <n>`, never on the name alone — the `u32` in
 `pub const PROTOCOL_VERSION: u32 = 20;` is a number too, so a name-only grep

@@ -589,10 +589,12 @@ def main():
                           "add .py or .sh, or move the file out of scripts/")
 
     # R8. What each entity holds, from the index; which entities are judged,
-    # from the change.
+    # from the change. `--no-renames`, or a rename lists its destination alone
+    # and the directory it left goes unjudged.
     index = tracked(False)
     touched = ({str(Path(p).parent) for p in
-                git("diff", "--cached", "--name-only").splitlines() if p}
+                git("diff", "--cached", "--name-only", "--no-renames").splitlines()
+                if p}
                if staged else None)
     held = {}
     for a in index:

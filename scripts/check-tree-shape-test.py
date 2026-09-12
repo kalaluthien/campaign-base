@@ -515,6 +515,16 @@ def stage_a_deleted_module(root):
     subprocess.run(["git", "rm", "-q", "spec/m/checks.als"], cwd=root, check=True)
 
 
+def stage_a_module_moved_out(root):
+    """The module leaves for a directory that holds the other: git pairs the
+    two paths as one rename, and only the directory left behind is broken."""
+    (root / "spec" / "n").mkdir()
+    (root / "spec" / "n" / "system.als").write_text("sig T {}\n")
+    subprocess.run(["git", "add", "spec/n/system.als"], cwd=root, check=True)
+    subprocess.run(["git", "mv", "spec/m/checks.als", "spec/n/checks.als"],
+                   cwd=root, check=True)
+
+
 def judge(r, rule):
     """(ok, what was wanted). A clean run is not silence: every run says how
     many paths it read and from where, so a clean verdict is `0 finding(s)`
@@ -570,7 +580,9 @@ def main():
             (stage_an_html_form, None, "R8 --staged reads an entity from the "
              "index, not the staged list"),
             (stage_a_deleted_module, "R8", "R8 --staged judges an entity a "
-             "staged deletion touched")):
+             "staged deletion touched"),
+            (stage_a_module_moved_out, "R8", "R8 --staged judges the entity a "
+             "staged rename left")):
         r = on_a_committed_entity(stage)
         ok, want = judge(r, rule)
         if not ok:
@@ -591,7 +603,7 @@ def main():
             failed += 1
             print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
                   f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
-    total = len(CASES) + len(STAGED_CASES) + 4
+    total = len(CASES) + len(STAGED_CASES) + 5
     print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 

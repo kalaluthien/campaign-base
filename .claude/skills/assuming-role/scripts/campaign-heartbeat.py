@@ -80,9 +80,9 @@ appeared and `- line` for one that went; a drift still standing after 30m
 reprints as `= line`. The first poll prints `watching <slug>` and every drift
 and limit.
 
-A QUIET CAMPAIGN ENDS THE WATCH: a poll whose sessions, claims and sub-issues
-were each read THAT poll -- a last reading standing is not one -- and read
-quiet prints `quiet <slug>: <the three readings>` and exits 0.
+A QUIET CAMPAIGN ENDS THE WATCH: two polls running whose sessions, claims and
+sub-issues were each read THAT poll -- a last reading standing is not one --
+and read quiet print `quiet <slug>: <the three readings>` and exit 0.
 
   session <name> <status>   herdr, counted after two equal polls, since herdr
                             calls a mid-turn pause idle; the own pane has none
@@ -399,6 +399,9 @@ IDLE_AFTER = 10 * 60
 REPRINT_AFTER = 30 * 60
 UNREAD_POLLS = 3       # a source failing this many polls running prints `error`
 POLL_CEILING = 300     # one poll past this exits 1, so a hung watch is loud
+# Quiet polls running before the watch ends: an index or refs read that
+# succeeds empty on a `gh` hiccup is one poll, and the exit is for good.
+QUIET_POLLS = 2
 
 
 def workable(issues):
@@ -441,7 +444,8 @@ class Watch:
         self.moved = {}      # claim -> (its pull request as last read, since)
         self.shown = None    # the last snapshot; None before the first poll
         self.printed = {}    # drift line -> when it was last printed
-        self.quiet = None    # the `quiet` line, once a poll read it
+        self.calm_polls = 0  # polls running that read quiet
+        self.quiet = None    # the `quiet` line, once QUIET_POLLS read it
 
     def poll(self, readings, now):
         out = []
@@ -488,9 +492,12 @@ class Watch:
             if ln.startswith("drift "):
                 self.printed[ln] = now
         self.shown = lines
-        self.quiet = f"quiet {self.slug}: {what}" if calm else None
+        self.calm_polls = self.calm_polls + 1 if calm else 0
+        ends = self.calm_polls >= QUIET_POLLS
+        if ends:
+            self.quiet = f"quiet {self.slug}: {what}"
         return (out + [f"- {ln}" for ln in removed] + [f"+ {ln}" for ln in added]
-                + [f"= {ln}" for ln in reprint] + [self.quiet] * calm)
+                + [f"= {ln}" for ln in reprint] + ([self.quiet] if ends else []))
 
     def settle(self, sessions):
         """A status counts only after two equal polls: herdr calls a mid-turn

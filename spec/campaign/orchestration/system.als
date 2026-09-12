@@ -750,7 +750,8 @@ pred exitSession[s: Session] {
 
    `quiet <slug>` (#339) is the watch's one exit: no session of the campaign
    listed but the planner's own, no open sub-issue without `backlog`, and no
-   claim -- each read that poll, since a last reading standing is not one.
+   claim -- on two polls running, each read that poll, since a last reading
+   standing is not one.
    Its act is a compaction of the planner and never `sessionExit`: a planner
    releases nothing, so `exitSession`'s `once Release` never holds of it. */
 fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }

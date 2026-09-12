@@ -1131,9 +1131,16 @@ QUIET = {"sessions": {"tk-planner-1": sess(pane="w1:p1")},
 
 
 def said_quiet(m, **change):
-    """The `quiet` lines of one poll over QUIET with `change` applied."""
-    [out] = polls(m, (0, readings(**dict(QUIET, **change))))
-    return [ln for ln in out if ln.startswith("quiet")]
+    """The `quiet` lines of two polls running over QUIET with `change`
+    applied: two, since one calm poll does not end the watch."""
+    r = readings(**dict(QUIET, **change))
+    return [ln for out in polls(m, (0, r), (1, r)) for ln in out
+            if ln.startswith("quiet")]
+
+
+def quiet_counts(m, *steps):
+    """How many `quiet` lines each poll printed over (minute, readings)."""
+    return [sum(ln.startswith("quiet") for ln in o) for o in polls(m, *steps)]
 
 
 @case("watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it")
@@ -1146,7 +1153,7 @@ def _(m):
     with contextlib.redirect_stdout(out):
         code = m.run_watch(m.Watch("tk", "w1:p1"), read, 60, polls=3,
                            clock=lambda: 0, sleep=lambda s: None)
-    return (code == 0 and len(reads) == 1
+    return (code == 0 and len(reads) == 2
             and out.getvalue().splitlines()[-1] == QUIET_LINE), (reads, out.getvalue())
 
 
@@ -1173,9 +1180,18 @@ def _(m):
 def _(m):
     busy = dict(QUIET, sessions={"tk-planner-1": sess(pane="w1:p1"),
                                  "tk-worker-2": sess()})
-    outs = polls(m, (0, readings(**busy)),
-                 (1, readings(**QUIET, fail=("claims",))), (2, readings(**QUIET)))
-    return [sum(ln.startswith("quiet") for ln in o) for o in outs] == [0, 0, 1], outs
+    got = quiet_counts(m, (0, readings(**busy)), (1, readings(**QUIET, fail=("claims",))),
+                       (2, readings(**QUIET)), (3, readings(**QUIET)))
+    return got == [0, 0, 0, 1], got
+
+
+@case("quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count")
+def _(m):
+    q = readings(**QUIET)
+    busy = readings(**dict(QUIET, claims={"tk/9-z": 9}))
+    twice = quiet_counts(m, (0, q), (1, q))
+    broken = quiet_counts(m, (0, q), (1, busy), (2, q))
+    return twice == [0, 1] and broken == [0, 0, 0], (twice, broken)
 
 # ------------------------------------------------------------- mutations
 
@@ -1322,10 +1338,15 @@ MUTATIONS = [
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("quiet ends the watch", "            if watch.quiet:\n                return 0\n", "",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
-    ("quiet prints its line", "[self.quiet] * calm)", "[])",
+    ("quiet prints its line", "([self.quiet] if ends else []))", "[])",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("the own pane is no other session", "others = [p for p in panes if p != own]", "others = list(panes)",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("quiet needs two calm polls", "ends = self.calm_polls >= QUIET_POLLS", "ends = calm",
+     "quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count"),
+    ("the calm polls run unbroken", "self.calm_polls = self.calm_polls + 1 if calm else 0",
+     "self.calm_polls = self.calm_polls + calm",
+     "quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count"),
     ("quiet needs no other session", "return not (others or todo or claims)", "return not (todo or claims)",
      "quiet: another session of the campaign listed is not quiet"),
     ("quiet needs no workable sub-issue", "return not (others or todo or claims)", "return not (others or claims)",

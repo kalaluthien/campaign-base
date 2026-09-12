@@ -68,10 +68,9 @@ body from the campaign issue, and skip the rest of step 3, which exists only to
 mint an ID it already has. The directory holds no claim and no brief since #176,
 so it is a cache and not a precondition; scaffold it anyway, because `repos/` and
 the README copy live there. **The slug is recoverable** — `campaign-tracker.py
-slug <N>` reads it off the campaign issue's label — so step 2 runs only for the
-kind, which is not; say which kind you picked.
+slug <N>` reads it off the campaign issue's label — so step 2 is skipped too.
 
-### 2. Name it and pick its kind
+### 2. Name it
 
 - **Slug** — the campaign's name, and every session name, claim branch and
   directory is built from it (`AGENTS.md` § ID, slug, directory, branch).
@@ -82,20 +81,13 @@ kind, which is not; say which kind you picked.
   will not admit, which is the cheapest way to try one before it reaches a
   label. The owner vetoes by renaming the label, before any session is named.
 - **Title** — the display name, in the requester's own words, not yours.
-- **Kind** — which `assets/agents/*.md` becomes the campaign's `AGENTS.md`.
 
-| the campaign exists to | kind |
-| --- | --- |
-| answer an open question | `research` |
-| measure or audit something that already runs | `analysis` |
-| find out whether an approach can work at all | `prototyping` |
-| move a working system from one form to another | `migration` |
-| build something new under a specification | `development` |
-
-With a person in the conversation, propose all three in one message and wait;
-from a sub-issue with nobody waiting, read all three from its body. Either
-way state them in the reply, so each costs one line to veto — an unstated kind is
-a wrong set of principles for every delegate.
+A campaign has no kind of its own: each sub-issue carries one as its
+`kind:<k>` label, which `assets/sub-issue.md` explains, since one campaign
+mixes analysis, development and migration. With a person in the conversation,
+propose both in one message and wait; from a sub-issue with nobody waiting,
+read both from its body. Either way state them in the reply, so each costs one
+line to veto.
 
 ### 3. File the campaign issue
 
@@ -241,7 +233,9 @@ campaign, or unreadable — stop and ask.
 
 Then finish it:
 
-- Move the chosen `agents/<kind>.md` to `AGENTS.md` and delete `agents/`.
+- `AGENTS.md` is the campaign's own principles: a default SDLC profile line
+  and the three role sections `campaign-role-brief.py` reads, empty until the
+  campaign has something to add. A sub-issue's kind is not in it.
 - Delete `sub-issue.md`. It is filled once *per sub-issue* from the skill's own
   copy, so the top-level copy has no reader and a stale one could be filled long
   after.

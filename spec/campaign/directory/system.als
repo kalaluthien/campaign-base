@@ -72,7 +72,12 @@ sig CampaignDir {
      the mechanism existed only as prose and a delegate launched by the book got
      nothing. Modelled as a set of repositories rather than a file, because what
      a launch needs is that the clone it launches into carries them; WHICH bytes
-     is `acquire-repo.sh`'s. */
+     is `acquire-repo.sh`'s. Since rule-check#314 those bytes are the campaign's
+     own additions only -- a default SDLC profile line and the three role
+     sections -- because a sub-issue's kind is a `kind:<k>` label on the
+     sub-issue, whose reference the brief hook emits on the assignment prompt;
+     that second channel is per sub-issue and per prompt, so it is not a fact
+     about a clone and is not modelled here. */
   var principled:  set Repo,
   /* THE CLONES HERE WHOSE COMMITS SOMETHING REFUSES. `claimBeforeCommit` in
      orchestration/scenarios.als is the rule -- a commit on a sub-issue names a

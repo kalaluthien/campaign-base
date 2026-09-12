@@ -31,10 +31,11 @@ is only half of `maySkip`; the other half is the next section.
 ## The two readings of a skip
 
 `maySkip` is the kind's profile and the stage's own `criterion` together;
-neither alone licenses a skip. The profile is one line in the campaign's
-`AGENTS.md`, seeded from `.claude/skills/opening-campaign/assets/agents/`, and
-says what the kind never goes without. The criterion decides the rest, per
-change.
+neither alone licenses a skip. The kind is the sub-issue's `kind:<k>` label,
+and the profile is one line in that kind's reference beside this one,
+`kind-<k>.md`; a sub-issue with no label takes the line in the campaign's
+`AGENTS.md`, which is `development`'s. The profile says what the kind never
+goes without; the criterion decides the rest, per change.
 
 The order reads `maySkip` for each absent stage when you write past it
 (`orderDiscipline`), and the merge reads it again against the change as it

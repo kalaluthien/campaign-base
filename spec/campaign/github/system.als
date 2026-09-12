@@ -109,6 +109,15 @@ sig Issue {
    reader may answer. `campaign-tracker.py`'s `slug`, `issue` and `slugs` are
    the readers; `campaign-issues` refuses an open campaign that has none.
 
+   A SUB-ISSUE'S KIND is a label of the same shape, `kind:<k>` (rule-check#314):
+   one per sub-issue, read by exact name by `campaign-tracker.py kind <N>`,
+   and two of them a question no reader may answer; what `check` does with
+   none and with two is AGENTS.md § Sub-issues' to state. It is a
+   property of the sub-issue and not the campaign, since one campaign mixes
+   kinds; what the label selects -- a reference under
+   .claude/skills/assuming-role/references/ -- is the procedure's, and like the
+   slug it is not modelled as a value.
+
    `campaignIssue` stays `one`, and the slug hangs off nothing: adding it as a
    field would put an atom per campaign into the composed universe, which the
    note on `CampaignDir` in directory/system.als says is exactly what this model

@@ -223,6 +223,10 @@ is_guard_shim() {
 # spec/campaign/orchestration/scenarios.als.
 # Leave the campaign's principles where a delegate in this clone will read
 # them: `CLAUDE.local.md` in its own cwd, excluded from the clone's index.
+# Since rule-check#314 that file is the campaign's own additions only -- a
+# default SDLC profile line and the three role sections; a sub-issue's kind
+# reference reaches the delegate through the brief hook on its assignment
+# prompt, not through this copy.
 #
 # #176 replaced `--append-system-prompt-file` with this file and wrote the
 # instruction as prose; #187 question 5 is that no command anywhere wrote one,

@@ -160,6 +160,19 @@ def pure_cases(m):
           "kalaluthien/campaign-base#42" in sentence
           and "whole brief" in sentence, sentence)
 
+    # THE WRITER AND THE READER OF THE SENTENCE CANNOT DRIFT. `campaign-role-
+    # brief.py` imports `ASSIGNMENT` from this script to find the sub-issue a
+    # prompt assigns; this case is what fails if `prompt_for`'s wording moves
+    # out from under the pattern, on either side.
+    hit = m.ASSIGNMENT.search(sentence)
+    check("the sentence `prompt_for` writes is matched by ASSIGNMENT, which "
+          "the brief hook reads it back with",
+          hit is not None, sentence)
+    check("...and yields the same repository and sub-issue it was given",
+          hit is not None and hit.group("repo") == "kalaluthien/campaign-base"
+          and hit.group("issue") == "42",
+          repr(hit.groupdict()) if hit else sentence)
+
 
 def end_to_end_cases():
     rows = [agent("S1", "machinery-worker-1", "w1:p1"),

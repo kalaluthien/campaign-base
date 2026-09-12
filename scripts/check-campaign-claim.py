@@ -2667,7 +2667,7 @@ def skill_call(tool_input, cwd: Path):
                f"cannot fan out but satisfies no merge condition, or a plain "
                f"brief -- `review PR <N> at <level>`, then what to check -- "
                f"which is the review a merge waits on. "
-               f".claude/skills/opening-campaign/references/reviewing.md "
+               f".claude/skills/assuming-role/references/reviewing.md "
                f"§ The call keeps both figures.")
     root, how = session_root(cwd)
     if root is None or not (root / BASE_MARKER).is_file():

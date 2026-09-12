@@ -36,6 +36,8 @@ Contents: the moments below, then
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.
 
+How to launch and to review: `references/launching.md`, `references/reviewing.md`.
+
 ## Decomposing and assigning
 
 - **File one sub-issue per landing**, grouped by repository and then by the

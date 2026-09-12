@@ -176,8 +176,8 @@ def main():
         r = Repo(d)
         installer(r.root)
         (r.root / "spec").mkdir()
-        (r.root / "spec" / "x.als").write_text("sig X {}\n")
-        git(r.root, "add", "spec/x.als")
+        (r.root / "spec" / "x.txt").write_text("sig X {}\n")
+        git(r.root, "add", "spec/x.txt")
         c = r.commit()
         check("a clean commit is not blocked", c.returncode == 0,
               (c.stdout + c.stderr)[:160])
@@ -313,8 +313,8 @@ def main():
         # with its own words, so a clean commit going through would mean the
         # adopted slot lost the guard the shim carried.
         (r.root / "spec").mkdir()
-        (r.root / "spec" / "x.als").write_text("sig X {}\n")
-        git(r.root, "add", "spec/x.als")
+        (r.root / "spec" / "x.txt").write_text("sig X {}\n")
+        git(r.root, "add", "spec/x.txt")
         c = r.commit(env={"HOME": str(home)})
         # Pinned to the hook install-hooks wrote: the un-adopted shim also
         # prints the fake guard's words, so the `# runs:` line is what
@@ -583,8 +583,8 @@ def main():
         r = Repo(d)
         installer(r.root)
         (r.root / "spec").mkdir()
-        (r.root / "spec" / "a.als").write_text("sig A {}\n")
-        git(r.root, "add", "spec/a.als")
+        (r.root / "spec" / "a.txt").write_text("sig A {}\n")
+        git(r.root, "add", "spec/a.txt")
         c = r.commit()
         # The hook's own verdict line, not its name: a pre-commit guard may
         # NAME the script in its reading (check-sdlc-tie lists it among the
@@ -598,8 +598,8 @@ def main():
         # name with no ref behind it is not one.
         git(r.root, "switch", "-qc", "demo/1-x")
         git(r.root, "push", "-q", "origin", "demo/1-x")
-        (r.root / "spec" / "b.als").write_text("sig B {}\n")
-        git(r.root, "add", "spec/b.als")
+        (r.root / "spec" / "b.txt").write_text("sig B {}\n")
+        git(r.root, "add", "spec/b.txt")
         c = r.commit()
         check("a campaign branch is pushed by the hook",
               "pushed demo/1-x" in c.stdout + c.stderr,
@@ -631,8 +631,8 @@ def main():
         # any branch a person happened to name that way was published by a
         # commit. Nothing here is a claim, so nothing is pushed.
         git(r.root, "switch", "-qc", "demo/2-unclaimed")
-        (r.root / "spec" / "d.als").write_text("sig D {}\n")
-        git(r.root, "add", "spec/d.als")
+        (r.root / "spec" / "d.txt").write_text("sig D {}\n")
+        git(r.root, "add", "spec/d.txt")
         c = r.commit()
         ls2 = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
                               "demo/2-unclaimed"],
@@ -658,8 +658,8 @@ def main():
               "mktemp failed" in p.stdout + p.stderr, (p.stdout + p.stderr)[:160])
 
         (r.root / "scripts" / "push-campaign-branch.sh").chmod(0o644)
-        (r.root / "spec" / "c.als").write_text("sig C {}\n")
-        git(r.root, "add", "spec/c.als")
+        (r.root / "spec" / "c.txt").write_text("sig C {}\n")
+        git(r.root, "add", "spec/c.txt")
         c = r.commit()
         check("a missing push script says the commit was not pushed",
               "NOT pushed" in c.stdout + c.stderr, (c.stdout + c.stderr)[:200])

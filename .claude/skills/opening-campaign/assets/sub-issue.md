@@ -30,7 +30,20 @@
      before the rule carries them.
 
      THE `backlog` LABEL, not a section: a sub-issue carrying it is not worked
-     until the owner takes it off, and `take` refuses a claim on it. -->
+     until the owner takes it off, and `take` refuses a claim on it.
+
+     THE `kind:<k>` LABEL, one per sub-issue, given at `gh issue create` as
+     `--label kind:<k>`. It says what the work is, and the session assigned
+     the sub-issue is handed that kind's reference from
+     `assuming-role/references/kind-<k>.md` by the brief hook; a campaign mixes
+     kinds, so the label is the sub-issue's and not the campaign's.
+     `campaign-tracker.py check` warns when it is missing and refuses two, and
+     `campaign-tracker.py kind <N>` reads it back. The five words, by what the
+     sub-issue exists to do: `research` answers an open question; `analysis`
+     measures or audits something that already runs; `prototyping` finds out
+     whether an approach can work at all; `migration` moves a working system
+     from one form to another; `development` builds something new under a
+     specification, and has no reference, its rules being the base's own. -->
 
 ## Intent
 

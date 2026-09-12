@@ -346,6 +346,13 @@ owner takes the label off — nothing here can observe that they changed their
 mind. `take` refuses a claim on one. A sub-issue **without** the label is worked
 as soon as it is filed or reopened.
 
+**A sub-issue carries its kind as one `kind:<k>` label**, the shape
+`campaign:<slug>` has, because one campaign mixes kinds. `campaign-tracker
+kind <N>` reads it, `check` warns when it is missing and refuses two, and the
+brief hook hands the assigned session the kind's reference from
+`.claude/skills/assuming-role/references/` — the `assuming-role` skill's
+catalogue names the five.
+
 **Every comment carries its kind on its first line**, `KIND <session
 name|owner>: <one line>`, one intent per comment, under the comment ceiling, and
 the guard reads it. **The three ceilings are numbers in two scripts and nowhere

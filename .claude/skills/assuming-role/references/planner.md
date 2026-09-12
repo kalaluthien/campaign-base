@@ -10,7 +10,8 @@ through a subagent, which carries the planner's session id and so its role.
    claim, or a launch. Only `campaign-tracker bound <N>` answers it, and only
    the word it prints counts.
 2. **File each sub-issue** against the campaign issue with `--parent`, from
-   `opening-campaign/assets/sub-issue.md`. That flag is the whole index.
+   `opening-campaign/assets/sub-issue.md`, with its `kind:<k>` label. That
+   flag is the whole index; the label is what the worker's brief hook reads.
 3. **Look for an existing sub-issue first.** Where one covers the same
    mechanism, reopen it with the observation as a comment rather than minting a
    number: a parent holds at most 100, closed ones included.

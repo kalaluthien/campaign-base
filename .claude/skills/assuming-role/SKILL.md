@@ -46,3 +46,18 @@ statement of that; anything restating it in prose has already drifted.
 A session that turns out to be the other role renames itself and reads the
 other reference. Nothing durable carries the old name: a claim is a ref and a
 checkout, and a rename touches neither.
+
+## The kind of a sub-issue
+
+A sub-issue carries one `kind:<k>` label, read by
+`scripts/campaign-tracker.py kind <N>`. The brief hook emits the kind's
+reference on the prompt that assigns the sub-issue, and again after a
+compaction; each holds only what no base rule or role reference states.
+
+| the sub-issue exists to | label | reference |
+| --- | --- | --- |
+| measure or audit something that already runs | `kind:analysis` | [analysis](references/kind-analysis.md) |
+| answer an open question | `kind:research` | [research](references/kind-research.md) |
+| find out whether an approach can work at all | `kind:prototyping` | [prototyping](references/kind-prototyping.md) |
+| move a working system from one form to another | `kind:migration` | [migration](references/kind-migration.md) |
+| build something new under a specification | `kind:development` | none: its rules are the base's own |

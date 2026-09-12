@@ -91,7 +91,11 @@ interactive shell prompt and creates no layout.
 **`acquire-repo.sh` writes them**, into `<campaign>/repos/<repo>/CLAUDE.local.md`
 and the clone's `.git/info/exclude`, on every checkout it leaves. A file on disk
 in the delegate's own cwd, loaded because it is there — so there is nothing to
-prove arrived, and no canary.
+prove arrived, and no canary. Since rule-check#314 the file holds only what the
+campaign adds — a default SDLC profile line and the three role sections; a
+sub-issue's kind is its `kind:<k>` label, and `campaign-role-brief.py` emits
+that kind's reference on the prompt that assigns the sub-issue, to a delegate
+and a base worker alike.
 
 Written by the script and not by hand since #187: this section said "write them"
 and **no command anywhere did**, so a delegate launched by this procedure got no

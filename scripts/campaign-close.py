@@ -46,7 +46,8 @@ SCOPE sub-issue <N> <issue> --not-planned "<why>"
                   no counted row names a claim branch of <issue>. A row of
                   another sub-issue is that sub-issue's business.
   4. author       Holds when: the comment's first line can name who wrote it
-                  -- this session's herdr name, or `owner` with no session id.
+                  -- this session's herdr name, which must be of THIS
+                  campaign's slug, or `owner` with no session id.
   5. close        `gh issue close --reason "not planned"` with the comment
                   `DECISION <author>: closed not planned -- <why>`.
                   Holds when: gh exited 0 (skipped on a `dropped` row).
@@ -63,10 +64,10 @@ SCOPE worker <N> <pane>
                   herdr command that drives a pane.
   3. exit         `herdr agent prompt <pane> /exit`, the heartbeat's own
                   action text. Holds when: herdr exited 0.
-  4. gone         `herdr agent list`, through campaign-claim's reader, every
-                  WAIT_EVERY seconds for WAIT_POLLS polls. Holds when: no row
-                  names <pane>. Still listed at the end is reported, and the
-                  session is never killed.
+  4. gone         `herdr agent list`, through campaign-claim's reader,
+                  WAIT_POLLS polls WAIT_EVERY seconds apart. Holds when: no row
+                  names <pane>. Still listed at the end is reported with the
+                  time measured, and the session is never killed.
 
 WHAT IT NEVER DOES: kill a session, touch the `standing` label, skip a gate,
 or take a --force. A run that stops halfway is re-run: every gate is read
@@ -193,11 +194,18 @@ def live_reading(text, n, slug):
     session rows as (name, status, pane). A row is a row only if its first
     word is a claim branch or a session name of this campaign, so the notes
     printed under each group are never read as one."""
-    out = {"read": False, "occupied": [], "vacant": [], "sessions": []}
+    out = {"read": False, "occupied": [], "vacant": [], "sessions": [],
+           "unread": []}
     group = None
     for line in text.splitlines():
         if line.startswith("all three readings were made."):
             out["read"] = True
+        # What `live` could not read, named by its own `!!` and `FAILED:`
+        # lines; the `!!` ones print twice, so they are kept once.
+        said = line.strip()
+        if (said.startswith("!!") or "-- FAILED:" in said) \
+                and said not in out["unread"]:
+            out["unread"].append(said)
         head = next((k for h, k in LIVE_GROUPS if line.startswith(h)), False)
         if head is not False:
             group = head
@@ -279,7 +287,9 @@ def gate_live(n, slug, issue):
     reading = live_reading(script(CLAIM_SCRIPT, "live", n), n, slug)
     if not reading["read"]:
         raise Refused("live", "`campaign-claim live` did not make all three "
-                              "readings, so no count from it is safe")
+                              "readings, so no count from it is safe: "
+                              + (" | ".join(reading["unread"])
+                                 or "it named nothing it could not read"))
     here, away = claims_of(reading, issue)
     who = reading["sessions"]
     if here or (away and who):
@@ -327,8 +337,8 @@ def gate_author(slug):
         return "owner"
     sessions, why = CLAIM.herdr_sessions()
     name = ((sessions or {}).get(sid) or {}).get("name")
-    if not name or NAMES.campaign_of(name) is None:
-        raise Refused("author", f"session {sid} has no campaign name in herdr "
+    if not name or NAMES.campaign_of(name) != slug:
+        raise Refused("author", f"session {sid} has no name of {slug} in herdr "
                                 f"({why or name or 'no row'})")
     holds("author", name)
     return name
@@ -425,10 +435,11 @@ def worker(args):
         raise Refused("exit", f"herdr exited {r.returncode}: "
                               f"{(r.stderr or '').strip()[:200]}")
     holds("exit", f"sent {EXIT_TEXT} to {pane}")
+    began = time.monotonic()
     gone, note = wait_gone(pane)
     if not gone:
-        raise Refused("gone", f"{note} after {WAIT_POLLS * WAIT_EVERY}s: say "
-                              f"so on the sub-issue it worked, and ask",
+        raise Refused("gone", f"{note} after {time.monotonic() - began:.0f}s: "
+                              f"say so on the sub-issue it worked, and ask",
                       changed=f"{EXIT_TEXT} was sent to {pane}")
     holds("gone", note)
 

@@ -54,8 +54,13 @@ def settlement(word="open", issue=ISSUE):
 SETTLEMENT_CUT = f"campaign issue {TRACKER}#{N}  [OPEN]  Title\n"
 
 
+UNSWEPT = "!! /c/repos/x: git worktree list failed"
+
+
 def live(occupied=(), vacant=(), sessions=(), read=True):
-    out = [f"scoped to campaign-{SLUG}", "reading 1  refs -- 1 claim(s)", "",
+    out = [f"scoped to campaign-{SLUG}", "reading 1  refs -- 1 claim(s)"]
+    out += [] if read else [f"           {UNSWEPT}"]
+    out += ["",
            f"claims checked out on this machine ({len(occupied)}) -- joined"]
     out += [f"  {b:<34} {p}" for b, p in occupied]
     out += ["", f"claims checked out nowhere on this machine ({len(vacant)})"]
@@ -71,7 +76,8 @@ def live(occupied=(), vacant=(), sessions=(), read=True):
         out += ["  WHICH of these holds which claim above is not derivable."]
     out += ["", "sessions named for no campaign under the base root (0)", ""]
     out += (["all three readings were made. 0 occupied."] if read
-            else ["NOT all readings were made: 1 repository could not be swept"])
+            else ["NOT all readings were made: 1 repository could not be swept",
+                  f"  {UNSWEPT}"])
     return "\n".join(out) + "\n"
 
 
@@ -155,7 +161,12 @@ def drive(m, argv, w):
     polls = iter(w.get("polls", []))
     m.CLAIM.herdr_sessions = ((lambda: next(polls, (None, "no more polls")))
                               if "polls" in w else (lambda: (w["sessions"], None)))
-    m.time = types.SimpleNamespace(sleep=sleeps.append)
+    clock = [0.0]
+
+    def sleep(s):
+        sleeps.append(s)
+        clock[0] += s
+    m.time = types.SimpleNamespace(sleep=sleep, monotonic=lambda: clock[0])
     saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID",
                                                   "HERDR_ENV")}
     os.environ.update(w["env"])
@@ -309,9 +320,11 @@ def case_status_asked(m):
 
 
 def case_no_kill(m):
+    # THE CEILING IS A LITERAL: 12 polls 5s apart is 11 sleeps, 55s measured.
+    # Built from the script's own constants, the case moved with them.
     ok, asked, out = refused(m, RETIRE, world(polls=[
-        ({SID: dict(ROW, pane=PANE)}, None)] * m.WAIT_POLLS), "gone",
-        f"poll {m.WAIT_POLLS}: {PANE} is still listed",
+        ({SID: dict(ROW, pane=PANE)}, None)] * 12), "gone",
+        f"poll 12: {PANE} is still listed after 55s",
         "/exit was sent to w1:p2")
     return (ok and len(prompts(asked)) == 1
             and not any(a[0] in ("kill", "pkill", "killall")
@@ -346,10 +359,13 @@ CASES = {
     "refuse: the sub-issue is not in the index": refusal(
         "settlement", "is not in the campaign's sub-issue index",
         settlement=settlement(issue="33")),
+    "refuse: a #320 row is not #32's": refusal(
+        "settlement", "is not in the campaign's sub-issue index",
+        settlement=settlement(issue=ISSUE + "0")),
     "refuse: a complete row is not open": refusal(
         "settlement", "reads `complete`", settlement=settlement("complete")),
-    "refuse: live did not make every reading": refusal(
-        "live", "did not make all three", live=live(read=False)),
+    "refuse: live did not make every reading, and names what it could not": refusal(
+        "live", f"no count from it is safe: {UNSWEPT}\n", live=live(read=False)),
     "refuse: this sub-issue's claim is checked out here": refusal(
         "live", f"rc/{ISSUE}-drop is checked out at /c/wt/32",
         live=live(occupied=[(f"rc/{ISSUE}-drop", "/c/wt/32")])),
@@ -365,7 +381,9 @@ CASES = {
         "local-work", f"rc/{ISSUE}-drop", local=local(
             rows=[(True, f"rc/{ISSUE}-drop")], verdict="counted")),
     "refuse: the comment's author cannot be named": refusal(
-        "author", "has no campaign name", sessions={}),
+        "author", "has no name of rc in herdr (no row)", sessions={}),
+    "refuse: a session of another campaign is not this campaign's author": refusal(
+        "author", "has no name of rc", sessions={SID: dict(ROW, name="zz-planner-1")}),
     "refuse: gh could not close the sub-issue": refusal(
         "close", "gh exited 1", gh=1, acted=True),
     "refuse: release refused, and the closed issue is said": refusal(
@@ -400,7 +418,11 @@ MUTATIONS = [
      'if True:\n        step_close',
      "drop: a dropped row resumes at the release without closing again"),
     ("live unread", 'if not reading["read"]:', 'if False:',
-     "refuse: live did not make every reading"),
+     "refuse: live did not make every reading, and names what it could not"),
+    ("live names the unswept", 'out["unread"].append(said)', "pass",
+     "refuse: live did not make every reading, and names what it could not"),
+    ("the row is this issue's exactly", "if len(t) >= 2 and t[0] == ref:",
+     "if len(t) >= 2 and ref in t[0]:", "refuse: a #320 row is not #32's"),
     ("checked out here", "if here or (away and who):", "if (away and who):",
      "refuse: this sub-issue's claim is checked out here"),
     ("listed sessions", "if here or (away and who):", "if here:",
@@ -425,8 +447,11 @@ MUTATIONS = [
     ("local row is this issue's",
      "for tok in line.split())]", "for tok in line.split()) or True]",
      "drop: a counted local row of another branch does not refuse"),
-    ("author", "if not name or NAMES.campaign_of(name) is None:", "if False:",
+    ("author", "if not name or NAMES.campaign_of(name) != slug:", "if False:",
      "refuse: the comment's author cannot be named"),
+    ("the author is of this campaign", "NAMES.campaign_of(name) != slug:",
+     "NAMES.campaign_of(name) is None:",
+     "refuse: a session of another campaign is not this campaign's author"),
     ("close status", 'if r.returncode != 0:\n        raise Refused("close"',
      'if False:\n        raise Refused("close"',
      "refuse: gh could not close the sub-issue"),
@@ -444,6 +469,13 @@ MUTATIONS = [
     ("exit status", 'if r.returncode != 0:\n        raise Refused("exit"',
      'if False:\n        raise Refused("exit"', "refuse: herdr could not send /exit"),
     ("gone", "if not gone:", "if False:",
+     "refuse: still listed after the wait, and never killed"),
+    ("the poll ceiling", "WAIT_POLLS = 12", "WAIT_POLLS = 36",
+     "refuse: still listed after the wait, and never killed"),
+    ("the poll spacing", "WAIT_EVERY = 5", "WAIT_EVERY = 6",
+     "refuse: still listed after the wait, and never killed"),
+    ("the wait is measured", 'after {time.monotonic() - began:.0f}s',
+     'after {WAIT_POLLS * WAIT_EVERY}s',
      "refuse: still listed after the wait, and never killed"),
     ("unread is not gone", 'note = f"poll {k + 1}: {why}"',
      'return True, f"poll {k + 1}: {why}"',

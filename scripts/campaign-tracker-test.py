@@ -766,6 +766,14 @@ def main():
               and "sections found: Intent, Definition of done, Plan, Lands in" in r.stdout)
         check("...and names what it did NOT check",
               "NOT checked:" in r.stdout and "verb-first" in r.stdout)
+        # THE PARENT BY NUMBER: `campaign-close.py` closes a sub-issue as one
+        # of that campaign, read off this line.
+        check("...and names its parent by number",
+              "sub-issue (label `campaign`: no, parent: #1)" in r.stdout)
+        r = tracker("check", "5", env=shim(good_campaign, labels=("campaign",),
+                                           parent=False))
+        check("...and a campaign issue reads `parent: no`",
+              "campaign issue (label `campaign`: yes, parent: no)" in r.stdout)
         r = tracker("check", "5", "--plan", env=shim(no_plan))
         check("check exits 1 and puts the finding on stderr",
               r.returncode == 1 and "REFUSING" in r.stderr

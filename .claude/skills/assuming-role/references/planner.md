@@ -38,22 +38,21 @@ session of its own on this machine, or a delegate on a claim.
 
 ## Decomposing and assigning
 
-- **File one sub-issue per landing**, grouped by repository and then by the
-  one ordering the work cannot fold, for the cost `AGENTS.md` § Sub-issues
-  prices.
-- **Decide the landing order first**, and leave alone a symptom a merge will
-  remove, since the merge deletes it for free; two sub-issues meeting in one
-  file are kept apart by that order, not by re-scoping.
-- **Commission no review while `main` still has moves to absorb**, for the
-  reason `AGENTS.md` § Merge conditions gives.
-- **Drive a sub-issue whose mechanism is not chosen one step at a time** —
-  measure, probe, choose — deciding each step yourself from the worker's NOTE:
-  a whole-body brief fits only a fixed plan.
-- **Run a large design as a design NOTE, an adversarial NOTE, then one
-  `DECISION`** that is the worker's whole brief, marking the earlier plan
-  `NOTE` superseded, so the worker reads one comment.
-- **Route, claim and hand a recorded defect to a worker in the same turn**: a
-  note with no worker is never read again.
+**Cut by mechanism, and count landings**: a review and a reconciliation are
+paid per landing whatever its diff (`AGENTS.md` § Sub-issues), so everything
+one mechanism changes is one sub-issue, however many rows or files. Steps it
+must land in order stay under that number, a pull request per step on its own
+topic ref, and only the last carries `Closes`, since GitHub closes the issue
+on the first merge of any pull request carrying the keyword.
+
+**Order the landings first**: a merge deletes a symptom a stacked branch only
+shows and settles two sub-issues meeting in one file, where re-scoping costs a
+worker its context, and absorbing it retires any review commissioned before.
+
+**Brief a chosen mechanism whole and an open one a step at a time** (measure,
+probe, choose), each decision yours from the worker's NOTE. A large design ends
+in one `DECISION` superseding every earlier plan, and a defect is handed to a
+worker the turn it is routed: a note nobody works is never read again.
 
 ## The planner's clock
 

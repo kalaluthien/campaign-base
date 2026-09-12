@@ -15,6 +15,8 @@
  *               sub-issue's kind lets it skip
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
+ *   Html        a Spec artifact drawn for a reader, and the scenarios it
+ *               REFINES
  *   Written     the artifacts that exist; Landed, the changes that merged;
  *               Licensed, the code paths the tie guard's allow-list exempts
  *   Step        the observer: which event, on which artifact or change
@@ -54,8 +56,8 @@ module sdlc/system
    repository maps the last three onto its own tree, and the profile line of
    its sub-issue's kind says which of them it has at all.
 
-   A view drawn for a reader, docs/<model>.html, is no stage: check-tree-shape
-   shapes one and nothing requires one, and this base keeps none. */
+   An html form of a scenario, `Html` below, is a Spec artifact and no stage
+   of its own; nothing requires one, and this base keeps none. */
 abstract sig Stage {}
 one sig Intent, Plan, Spec, Test, Code extends Stage {}
 
@@ -111,12 +113,23 @@ sig Change { optional: set Stage }
    Neither arrow is a fact about its target being written: a test declares
    the code path it will drive before that path exists, which is the order
    `feeds` asks for. */
+-- A file one stage of a change writes; not a Claude Artifact (a claude.ai page).
 sig Artifact {
   change:    one Change,
   stage:     one Stage,
   witnesses: set Artifact,
   drives:    set Artifact
 }
+
+/* AN HTML FORM OF A SCENARIO, drawn for a reader: an `.html` beside an
+   entity's system.als and checks.als, which check-tree-shape's R8 admits
+   there and nowhere else. It is a Spec artifact, and `refines` names the
+   scenarios it draws -- `h -> s` read off its `<section data-scenario
+   data-refines>` tags by scripts/check-sdlc-tie.py, as `witnesses` is read
+   off a suite's `# witnesses:` line. That guard's T6 refuses a name that is
+   no command of the form's own entity, and T7 a form refining nothing or a
+   scenario no test witnesses. This base holds none. */
+sig Html in Artifact { refines: some Artifact }
 
 var sig Written in Artifact {}
 var sig Landed  in Change {}
@@ -142,8 +155,13 @@ fact SdlcWellFormed {
   /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
-  witnesses in stage.Test -> stage.Spec
+  witnesses in stage.Test -> (stage.Spec - Html)
   drives    in stage.Test -> stage.Code
+  /* An html form is a Spec artifact that refines scenarios, never another
+     form; and a test witnesses a scenario, never a form, so no code path is
+     tied through a form alone. */
+  Html in stage.Spec
+  refines in Html -> (stage.Spec - Html)
 }
 
 fun writtenOf[c: Change]:     set Artifact { change.c & Written }

@@ -339,17 +339,16 @@ assert TerminationUnderSettlement {
 /* ---------------- reachability floor ----------------
  * An event no trace can reach silently removes a whole question from the
  * commands above, and an over-tight frame is the cheapest way to cause it
- * without any command turning red.
+ * without any command turning red. The floor here is the events the checks
+ * above name. FileCampaignIssue, WriteBody, Claim and Release fire in
+ * orchestration/checks.als, whose composition holds this one, so a frame here
+ * that made one unreachable reddens it there.
  */
-pred Cov_FileCampaignIssue   { eventually Now.event = FileCampaignIssue }
 pred Cov_AddMember    { eventually Now.event = AddMember }
 pred Cov_RemoveMember { eventually Now.event = RemoveMember }
 pred Cov_OpenPullRequest       { eventually Now.event = OpenPullRequest }
 pred Cov_MergePullRequest      { eventually Now.event = MergePullRequest }
 pred Cov_CloseIssue   { eventually Now.event = CloseIssue }
-pred Cov_WriteBody    { eventually Now.event = WriteBody }
-pred Cov_Claim        { eventually Now.event = Claim }
-pred Cov_Release      { eventually Now.event = Release }
 
 /* ---------------- commands ---------------- */
 
@@ -365,13 +364,9 @@ check TerminationDisciplined       for 3 Issue, 2 PullRequest, 1 Campaign, 2 Rep
 -- the reading AGENTS.md adopted
 check TerminationUnderSettlement   for 3 Issue, 2 PullRequest, 1 Campaign, 2 Repo, 10 steps expect 0
 
--- every own event fires in some trace
-run Cov_FileCampaignIssue   for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
+-- every event the checks above name fires in some trace
 run Cov_AddMember    for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_RemoveMember for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_OpenPullRequest       for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_MergePullRequest      for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
 run Cov_CloseIssue   for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
-run Cov_WriteBody    for 4 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
-run Cov_Claim         for 3 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1
-run Cov_Release       for 3 Issue, 2 PullRequest, 2 Campaign, 3 Repo, 8 steps expect 1

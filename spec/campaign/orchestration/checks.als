@@ -2218,20 +2218,22 @@ pred Cov_LimitReset       { eventually Now.event = LimitReset }
 pred Cov_SessionExit      { eventually Now.event = SessionExit }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
 /* Lower entities' events the checks above name, directly or through a
-   helper. Their own floor is in their own entity, which does not see what
-   this one refines, so the witness has to fire in this composition too. */
-pred Cov_DeleteDir        { eventually Now.event = DeleteDir }
-pred Cov_RemoveMember     { eventually Now.event = RemoveMember }
+   helper. A lower entity does not see what this one refines, so the witness
+   has to fire in this composition too. Where a lower entity's own checks name
+   the event as well, its witness there keeps the bare name and this one
+   carries this entity's. */
+pred Cov_DeleteDirInOrchestration        { eventually Now.event = DeleteDir }
+pred Cov_RemoveMemberInOrchestration     { eventually Now.event = RemoveMember }
 pred Cov_Claim            { eventually Now.event = Claim }
 pred Cov_Acquire          { eventually Now.event = Acquire }
 /* The campaign- and code-plane events the role rule gates, which the plane
    lists behind DisjointPlanes and PermissionImpliesClaimGates name. */
 pred Cov_FileCampaignIssue    { eventually Now.event = FileCampaignIssue }
-pred Cov_AddMember            { eventually Now.event = AddMember }
-pred Cov_CloseIssue           { eventually Now.event = CloseIssue }
+pred Cov_AddMemberInOrchestration            { eventually Now.event = AddMember }
+pred Cov_CloseIssueInOrchestration           { eventually Now.event = CloseIssue }
 pred Cov_WriteBody            { eventually Now.event = WriteBody }
 pred Cov_CreateDir            { eventually Now.event = CreateDir }
-pred Cov_OpenPullRequest      { eventually Now.event = OpenPullRequest }
+pred Cov_OpenPullRequestInOrchestration      { eventually Now.event = OpenPullRequest }
 pred Cov_CommitLocal          { eventually Now.event = CommitLocal }
 /* A handoff that moves work, so the four checks above are not green over a
    handoff of an empty session. */
@@ -2343,18 +2345,18 @@ run Cov_SessionExit      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- and the lower events NoLostWork and NoOrphanIfGuarded name: DeleteDir at the
 -- first's scope, which is the wider, and RemoveMember at the second's
-run Cov_DeleteDir        for 3 Issue, 2 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
-run Cov_RemoveMember     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_DeleteDirInOrchestration        for 3 Issue, 2 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_RemoveMemberInOrchestration     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- and the two PermissionImpliesClaimGates and AttributionIsSoundIfCheckoutHeld reach through helpers, at theirs
 run Cov_Claim            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_Acquire          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 1
 -- and the events the plane lists name, at PermissionImpliesClaimGates' scope
 run Cov_FileCampaignIssue    for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run Cov_AddMember            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run Cov_CloseIssue           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run Cov_AddMemberInOrchestration            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run Cov_CloseIssueInOrchestration           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_WriteBody            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_CreateDir            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run Cov_OpenPullRequest      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run Cov_OpenPullRequestInOrchestration      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_CommitLocal          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 
 -- a release compacts, a launch spends it, so two sub-issues need a release between them

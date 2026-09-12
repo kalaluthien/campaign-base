@@ -258,6 +258,10 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
                                                         sub-issue it has claimed
      no role    refused on both planes
 
+   A comment and a reopen are no event here, so the table is silent on them;
+   the guard lets a worker comment on its own campaign's issue (#207), and
+   comment on or reopen any sub-issue of that campaign without a claim (#354).
+
    The issue argument is `lone` and the `in` tests are vacuously true when there
    is none, which is the right reading and not an accident: `writeBody` and the
    directory events name no issue, and for those the rule is the plane and the
@@ -477,21 +481,21 @@ pred L1b_PromptAfterTheResetIsAnswered {
                    and eventually (limitReset and after (status[a] and after answer[a])))
 }
 
-/* THE HEARTBEAT RETIRES A DONE WORKER (#296). A worker that released its
-   sub-issue, compacted with the release, and took nothing since is sent
-   `/exit`; one holding a claim or a live agent, one that launched since its
-   release, one that never released, and a planner are not. The first is reachable; the second is
-   UNSAT, and dropping any one guard of `sessionExit` or `exitSession` makes it
-   SAT. */
+/* THE HEARTBEAT RETIRES A DONE WORKER (#296, #349). A worker whose
+   sub-issue was released, by any session, and which holds nothing is sent
+   `/exit`; one holding a claim or a live agent, one with no sub-issue
+   released, and a planner are not. The first is reachable; the second is
+   UNSAT, and dropping any one of the four guards on `s` -- its role, its
+   claims, a released sub-issue, its live agents -- makes it SAT
+   (`no Target.agent` is a frame, and dropping it leaves this UNSAT). */
 pred H1_HeartbeatRetiresADoneWorker {
   some s: Session | eventually (Now.event = Release and Who.session = s
                      and eventually (Now.event = SessionExit and Who.session = s))
 }
 pred H1b_HeartbeatRetiresNoHolder {
   some s: Session | eventually (Now.event = SessionExit and Who.session = s
-    and (some s.claimedIssues or some heldBy[s] or s not in Compacted
-         or s.role = Planner
-         or not once (Now.event = Release and Who.session = s)))
+    and (some s.claimedIssues or some heldBy[s] or s.role = Planner
+         or no a: peer.s | once (Now.event = Release and Now.issue = a.task)))
 }
 
 /* THE WATCH READS A LEVEL (#296). An open sub-issue nobody claimed is an

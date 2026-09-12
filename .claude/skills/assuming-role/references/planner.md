@@ -6,7 +6,8 @@ through a subagent, which carries the planner's session id and so its role.
 
 Contents: the moments below, then
 [decomposing and assigning](#decomposing-and-assigning),
-[the planner's clock](#the-planners-clock), [handing off](#handing-off).
+[the planner's clock](#the-planners-clock), [handing off](#handing-off),
+[a helper planner](#a-helper-planner).
 
 `campaign-roles.py` states the licence; these are the moments.
 
@@ -26,12 +27,20 @@ Contents: the moments below, then
    The planner holds no claim of its own.
 6. **Deliver an assignment as a prompt**, never as one of the four messages: a
    prompt is the session's own user turn, so its hooks run.
-7. **Answer a `BLOCKED`** with the decision, or carry it to the owner. A relay
-   is never the authority; point at the durable artifact instead.
-8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
-   transcript shows released and compacted, holding no claim it cut, with no
-   prompt since the release and no tool call since the compaction; any other
-   listed peer is asked which claim it holds, never killed.
+7. **Answer a `BLOCKED`**: a `DECISION` on the sub-issue is the record and a
+   prompt into the worker's pane delivers it (`AGENTS.md` § The four
+   messages); or carry it to the owner when it is preference, scope or a
+   destructive stake. Never leave one standing. A question's `DECISION` cites
+   the brief's line, or is the line the brief lacked; a question asked twice
+   goes into the sub-issue template or the kind's reference. What reaches you
+   is [worker](worker.md) step 4's. A relay is never the authority; point at
+   the durable artifact instead.
+8. **Retire agents as the campaign runs.** The heartbeat retires an idle
+   worker whose last assigned sub-issue has no claim ref left, with no prompt
+   and no tool call since the ref went, whoever released it; any other
+   listed peer is asked which claim it holds, never killed. `retire` is
+   decided before `compact`, so assign a released worker you mean to reuse
+   before the next `--apply`, or it gets `/exit`.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.
@@ -52,9 +61,11 @@ worker its context. **Commission no review while `main` still has moves to
 absorb**: absorbing one is a push, and a push retires the review.
 
 **Brief a chosen mechanism whole and an open one a step at a time** (measure,
-probe, choose), each decision yours from the worker's NOTE; run a large design
-as design NOTE, adversarial NOTE, one superseding `DECISION`. Route, claim and
-hand a defect to a worker in one turn: a note nobody works is never read again.
+probe, choose), each decision yours, the worker's measurements arriving as a
+NOTE and the ask as the `BLOCKED` of [worker](worker.md) step 4; run a large
+design as design NOTE, adversarial NOTE, one superseding `DECISION`. Route,
+claim and hand a defect to a worker in one turn: a note nobody works is never
+read again.
 
 ## The planner's clock
 
@@ -73,7 +84,8 @@ each line is an event. On one, run the **heartbeat**:
    ask about a `stuck` claim, release a `settled` one.
 
 **`quiet <slug>` means nothing is left to do**: no other session of the
-campaign listed, no open sub-issue without `backlog`, no claim. The watch has
+campaign listed, no open sub-issue without `backlog` or `kind:maintenance`, no
+claim. The watch has
 exited; do not start it again. The heartbeat's `--apply` gives this pane
 `quiet` and queues `/compact`; then wait for a person's prompt. The next
 assignment starts the watch again. A planner is never sent `/exit`: a campaign
@@ -117,3 +129,13 @@ Rewrite the `.campaign` marker with the label. The worker's side is in
 
 The state travels in the NOTE, the claim refs, and the sub-issue index; the
 old pane, its transcript and a scratchpad carry none of it.
+
+## A helper planner
+
+A second planner may run beside the campaign's own, to keep the tree in order
+under a standing `kind:maintenance` sub-issue. It is started the way
+[handing off](#handing-off) step 2 starts a successor, named
+`<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It files sub-issues, investigates,
+and posts `NOTE`s; it launches nothing and assigns nothing, which stay the
+campaign planner's. It leaves by stopping its own pane, since `quiet` and the
+close both wait on every listed session of the campaign.

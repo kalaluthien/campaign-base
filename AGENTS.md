@@ -64,18 +64,17 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `docs/<model>.html`, `scripts/`, `.github/` | this repository |
+| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `scripts/`, `.github/` | this repository |
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 
-`spec/` is normative and is Alloy whose comments are the spec; it holds no
-markdown and no HTML, and that is the part a guard refuses. A view drawn for
-a reader is `docs/<model>.html`, whose shape is `check-tree-shape`'s R7;
-neither directory inherits the other's rules, and the directory appears with
-its first view. Two `pre-commit`
-guards refuse a commit that breaks the shape — `check-tree-shape` and
-`check-rule-readers`, whose header gives the syntax exempting a block that must
-hold a guarded form. **Do not write a second reader of a rule a script owns**:
+`spec/` is normative and is Alloy whose comments are the spec. Each entity
+is `system.als`, the model, and `checks.als`, every command over it, plus any
+`.html` form of a scenario, tied to a command by name; no markdown.
+`check-tree-shape`'s R8 refuses any other shape, `alloy-check --commands` a
+command in a `system.als`, and `check-sdlc-tie`'s T6 and T7 an `.html` that
+is not tied. All of them run in `pre-commit`, beside `check-rule-readers`,
+whose header gives the syntax exempting a block that must hold a guarded form. **Do not write a second reader of a rule a script owns**:
 two of them drift.
 
 The campaign directory holds no plane of its own: git-ignored scratch, and
@@ -356,7 +355,7 @@ as soon as it is filed or reopened.
 kind <N>` reads it, `check` warns when it is missing and refuses two, and the
 brief hook hands the assigned session the kind's reference from
 `.claude/skills/assuming-role/references/` — the `assuming-role` skill's
-catalogue names the five.
+catalogue names them.
 
 **Every comment carries its kind on its first line**, `KIND <session
 name|owner>: <one line>`, one intent per comment, under the comment ceiling, and
@@ -568,7 +567,7 @@ form. `ListAgents` resolves the address; herdr's pane label is not one.
 | --- | --- | --- |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
-| `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
+| `BLOCKED` | agent → campaign | a decision that is not the agent's to make, or a question about its brief |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
 Four messages between sessions, carrying **only what the agent alone knows**:
@@ -699,7 +698,8 @@ claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
 can say which claim it holds — except a worker the planner's heartbeat reads
-as released, compacted and idle since, which it sends `/exit`.
+as done, its last assigned sub-issue's ref gone and idle since, which it
+sends `/exit`.
 `scripts/check-campaign-claim.py` refuses
 `herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
 matching it, which is the incident's shape. It reads the verb and not the

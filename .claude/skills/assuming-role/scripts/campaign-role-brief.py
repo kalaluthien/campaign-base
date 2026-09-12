@@ -284,12 +284,12 @@ def tracker_kind(repo, issue):
     THE TRACKER IS THE ONE READER of the `kind:` label (AGENTS.md § Sub-issues),
     so this asks it as a subprocess rather than reading labels itself: a second
     reader of a label set would drift on the very cases the tracker refuses to
-    answer -- two `kind:` labels, and a word outside its five.
+    answer -- two `kind:` labels, and a word outside its `WORK_KINDS`.
 
     Its answers are separate readings and are not folded together: exit 1 with
     `none` is a sub-issue with no kind, and any other status is a reading that
     never happened. EXIT 2 COVERS TWO THINGS -- a refusal to answer (two
-    `kind:` labels, a word outside the five) and a `gh` read the tracker could
+    `kind:` labels, a word outside `WORK_KINDS`) and a `gh` read the tracker could
     not make -- so the line says neither happened rather than calling both a
     refusal, and the QUOTED FIRST LINE is what tells them apart. A MISSING
     TRACKER IS NOT EITHER OF THEM, and neither is python's own exit 2 for a file

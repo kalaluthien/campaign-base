@@ -53,7 +53,9 @@ one sig Request { covers: set Campaign }
    role, and that is the last row of #185's table -- refused on both planes,
    which `mayAct` in orchestration/checks.als states. A worker is bounded
    to its own campaign's sub-issues it has claimed, PLUS that campaign's own
-   issue, which is no sub-issue and which no claim can cover (#207).
+   issue, which is no sub-issue and which no claim can cover (#207), and a
+   comment or a reopen on any sub-issue of that campaign, claimed or not
+   (rule-check#354).
 
    It lives HERE and not in orchestration/system.als, where `Role` used to be a
    property of an Agent: the role is per SESSION and per its whole life, where an
@@ -307,8 +309,8 @@ pred sessionHandoff[t, p: Session] {
 
 /* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
    holds no claim. The session half; orchestration/system.als's `exitSession`
-   adds that it is compacted and holds no live agent. A planner is never
-   retired: it is the one running the heartbeat. */
+   adds that a sub-issue it took was released and it holds no live agent. A
+   planner is never retired: it is the one running the heartbeat. */
 pred sessionExit[s: Session] {
   Now.event = SessionExit and no Now.issue and Who.session = s
   s.role = Worker

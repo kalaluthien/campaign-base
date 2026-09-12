@@ -90,7 +90,7 @@ kind        The one reader of a sub-issue's `kind:<k>` LABEL -- the WORK kind,
             the ordinary state of everything filed before the rule; 2 is the
             read that failed or the label set that cannot be read as one word.
 
-            THE FIVE WORDS ARE `WORK_KINDS` and nowhere else here. A label whose
+            THE WORDS ARE `WORK_KINDS` and nowhere else here. A label whose
             word is outside them is refused rather than returned: the word names
             the `assuming-role` reference a worker is briefed from, so returning
             an unknown one hands out a path nothing resolves.
@@ -216,12 +216,18 @@ SLUG_LABEL_PREFIX = "campaign:"
 # decides -- that one is the `campaign` label and the parent link, and it names
 # what an issue IS; this names what the work on it is.
 WORK_KIND_LABEL_PREFIX = "kind:"
-# THE FIVE WORDS, stated once, here. The sub-issue template offers them and the
+# THE WORDS, stated once, here. The sub-issue template offers them and the
 # `assuming-role` skill's `references/kind-<k>.md` are NAMED by them -- all but
-# `development`, which is the ordinary kind and has no reference -- so a sixth
+# `development`, which is the ordinary kind and has no reference -- so a
 # word invented on a label resolves to no reference and no template row, and is
 # refused rather than returned.
-WORK_KINDS = ("research", "analysis", "prototyping", "migration", "development")
+# rule-check#354 folded five into these: `analysis` into `research`,
+# `prototyping` into `development`, `migration` into `maintenance`.
+WORK_KINDS = ("research", "development", "maintenance")
+# THE KIND WHOSE SUB-ISSUE MAY STAND OPEN WITH NO CLAIM (rule-check#354). The
+# heartbeat reads an unclaimed one as neither `drift unclaimed` nor a reason
+# the campaign is not quiet; its claims, one per tidy, are read like any other.
+STANDING_KIND = "maintenance"
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.
@@ -233,16 +239,22 @@ STANDING_LABEL = "standing"
 NOT_EMPTY = "An index that did not read is not an empty campaign."
 
 
-def gh_read(cmd):
+def gh_read(cmd, timeout=None):
     """Run a `gh` invocation for its stdout. Returns (text, why_unreadable).
 
     A `gh` that is not installed comes back as a failed run rather than a
     traceback: "I could not look" is the case every reader here is written to
-    report, and a stack trace loses the reason the caller was about to print."""
+    report, and a stack trace loses the reason the caller was about to print.
+
+    `timeout` is seconds, None for none. A caller on a hook's path passes one
+    (check-campaign-claim.py, rule-check#354): a `gh` that hangs there hangs
+    every tool call. A timeout is a read that did not happen, like any other."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (FileNotFoundError, PermissionError) as e:
         return None, f"could not run gh ({e.__class__.__name__})"
+    except subprocess.TimeoutExpired:
+        return None, f"gh did not answer within {timeout}s"
     if r.returncode != 0:
         return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
     return r.stdout, None
@@ -962,13 +974,13 @@ def shape_findings(kind, title, body, want_plan, names=()):
     return out
 
 
-def issue_shape(repo, number):
+def issue_shape(repo, number, timeout=None):
     """(title, body, labels, the parent's number or None, why_unreadable).
     The number and not a bool, because `check` prints it: a sub-issue is
     closed as a sub-issue OF its parent, and `campaign-close.py` reads which
     one off that line rather than asking GitHub a second time."""
     text, why = gh_read(["gh", "issue", "view", str(number), "-R", repo,
-                         "--json", "title,body,labels,parent"])
+                         "--json", "title,body,labels,parent"], timeout)
     if why:
         return None, None, None, None, why
     try:

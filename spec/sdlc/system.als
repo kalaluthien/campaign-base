@@ -118,6 +118,16 @@ sig Artifact {
   drives:    set Artifact
 }
 
+/* AN HTML FORM OF A SCENARIO, drawn for a reader: an `.html` beside an
+   entity's system.als and checks.als, which check-tree-shape's R8 admits
+   there and nowhere else. It is a Spec artifact, and `refines` names the
+   scenarios it draws -- `h -> s` read off its `<section data-scenario
+   data-refines>` tags by scripts/check-sdlc-tie.py, as `witnesses` is read
+   off a suite's `# witnesses:` line. That guard's T6 refuses a name that is
+   no command of the form's own entity, and T7 a form refining nothing or a
+   scenario no test witnesses. This base holds none. */
+sig Html in Artifact { refines: some Artifact }
+
 var sig Written in Artifact {}
 var sig Landed  in Change {}
 
@@ -144,6 +154,10 @@ fact SdlcWellFormed {
      carries either arrow, which is what makes `tie` a fact about tests. */
   witnesses in stage.Test -> stage.Spec
   drives    in stage.Test -> stage.Code
+  /* An html form is a Spec artifact that refines scenarios, never another
+     form. */
+  Html in stage.Spec
+  refines in Html -> (stage.Spec - Html)
 }
 
 fun writtenOf[c: Change]:     set Artifact { change.c & Written }

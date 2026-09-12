@@ -84,7 +84,7 @@ pred tieDiscipline { commitCheck and licenceNeverGrows }
    is when it lands. A landing is a merge, so this reading belongs where the
    merge is gated -- the pull request's `check` -- and not to the commit,
    where a test written before its code path would read as an unlicensed
-   absence of Code. */
+   absence of Code. scripts/check-merge-review.py --land is that reading. */
 pred landDiscipline {
   always (Step.event = Land implies all s: absentStages[Step.subject] | maySkip[Step.subject, s])
 }

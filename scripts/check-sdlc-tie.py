@@ -150,7 +150,8 @@ that writes a code path therefore has no skip to declare to this check --
 the criterion is false by the fact this check reads -- and a change that
 writes none is judged on nothing here, which IS its skip of Test and Code,
 declared by the absence and by no syntax. Whether that absence was licensed
-is `landDiscipline`'s, read where the merge is gated, and not the commit's.
+is `landDiscipline`'s, which check-merge-review.py --land reads where the
+merge is gated, and not the commit's.
 
 WHAT IT DOES NOT CATCH
 

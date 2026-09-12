@@ -567,7 +567,7 @@ form. `ListAgents` resolves the address; herdr's pane label is not one.
 | --- | --- | --- |
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
-| `BLOCKED` | agent → campaign | a decision that is not the agent's to make |
+| `BLOCKED` | agent → campaign | a decision that is not the agent's to make, or a question about its brief |
 | `STAND DOWN` | campaign → agent | finish the turn and stop |
 
 Four messages between sessions, carrying **only what the agent alone knows**:

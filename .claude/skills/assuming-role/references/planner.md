@@ -4,6 +4,10 @@ A planner decides what work exists and in what order. It writes the campaign
 plane of any campaign and changes no code — not by its own hands, and not
 through a subagent, which carries the planner's session id and so its role.
 
+Contents: the moments below, then
+[decomposing and assigning](#decomposing-and-assigning),
+[the planner's clock](#the-planners-clock), [handing off](#handing-off).
+
 `campaign-roles.py` states the licence; these are the moments.
 
 1. **Read the binding** before the campaign issue body, the `bound:` label, a
@@ -30,6 +34,24 @@ through a subagent, which carries the planner's session id and so its role.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.
+
+## Decomposing and assigning
+
+- **File one sub-issue per landing**, grouped by repository and then by the
+  one ordering the work cannot fold: each costs a review and a reconciliation
+  whatever its diff.
+- **Decide the landing order first**, and leave alone a symptom a merge will
+  remove: two sub-issues meeting in one file are kept apart by that order, not
+  by re-scoping.
+- **Commission no review while `main` still has moves to absorb**: each push
+  retires the review read before it.
+- **Drive a sub-issue whose mechanism is not chosen one step at a time** —
+  measure, probe, choose — deciding each step yourself from the worker's NOTE:
+  a whole-body brief fits only a fixed plan.
+- **Run a large design as a design NOTE, an adversarial NOTE, then one
+  `DECISION`** that is the worker's whole brief, so it reads one comment.
+- **Route, claim and hand a recorded defect to a worker in the same turn**: a
+  note with no worker is never read again.
 
 ## The planner's clock
 

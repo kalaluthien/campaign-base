@@ -2652,7 +2652,7 @@ def main():
         check("...and the refusal names both ways down, `low` and a plain brief",
               "`low`" in out(r) and "review PR <N> at <level>" in out(r),
               out(r)[:400])
-        # THE BASELINE LEVEL IS NOT AN EXEMPTION. `medium` is § Review's
+        # THE BASELINE LEVEL IS NOT AN EXEMPTION. `medium` is reviewing.md's
         # working baseline for a plain brief, and it is 21 of the 36 recorded
         # calls here -- the shape this refusal exists to catch, not an edge.
         r = ask(wt, tool="Skill",

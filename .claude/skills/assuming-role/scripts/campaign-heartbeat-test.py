@@ -509,6 +509,10 @@ if a[:1] == ["api"] and a[1].startswith(T + "/events?per_page=100&page="):
     at = [deep[k] for k in deep if broken(k)]
     if at:
         print(json.dumps(feed if page == at[0] else push)); sys.exit(0)
+    if broken("events-unordered"):
+        # As measured: page 1 holds an older deletion than page 3's.
+        pages = {1: [gone("tk/9-a", 1)] + push[:99], 2: push, 3: feed}
+        print(json.dumps(pages.get(page, []))); sys.exit(0)
     if page == 1:
         print(json.dumps(feed)); sys.exit(0)
 sys.exit(1)
@@ -675,14 +679,25 @@ def _(m):
             and "tk/5-a standing" in line_of(out, "w1:pB")), out
 
 
-@case("the feed is asked only for an idle worker's sub-issue with no ref standing")
+@case("the feed is read once a run, however many idle workers ask")
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         d = fleet(d)
         heartbeat(m, d, "7")
         asked = [ln for ln in (d / "gh.log").read_text().splitlines()
                  if "/events?" in ln]
-    return len(asked) == 2, asked
+    return len(asked) == 1, asked
+
+
+@case("a later deletion on a later page wins over an older one on page 1")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        (d / "events-unordered").write_text("")
+        _, out, _ = heartbeat(m, d, "7")
+    got = line_of(out, "w1:p2")
+    return (got.startswith("retire") and "went 2026-09-10T10:03:00Z" in got
+            and "207 event(s)" in got), out
 
 
 @case("a deletion on the feed's third page is read, and no page past it")
@@ -1309,22 +1324,27 @@ MUTATIONS = [
      "if False:", "an assignment in a summary, a harness note or a tool result is none"),
     ("the feed only when no ref stands", "        if standing:\n            return (standing, None, read), None\n", "",
      "the run gives one verdict per session of the campaign, and no other"),
-    ("a deletion under the prefix", 'and str(e["payload"].get("ref")).startswith(prefix)]', "]",
+    ("a deletion under the prefix", 'and str(e["payload"].get("ref")).startswith(prefix)', "and True",
      "the run gives one verdict per session of the campaign, and no other"),
     ("the prefix ends at the number", 'prefix = f"{slug}/{n}-"', 'prefix = f"{slug}/{n}"',
      "the run gives one verdict per session of the campaign, and no other"),
     ("a branch, not a tag", '.get("ref_type") == "branch"', '.get("ref_type") is not None',
      "the run gives one verdict per session of the campaign, and no other"),
-    ("the latest in a page", "top = max(hits, key=when)", "top = hits[-1]",
-     "the run gives one verdict per session of the campaign, and no other"),
-    ("a short page ends the feed", "            if len(events) < 100:\n                break\n", "",
-     "the feed is asked only for an idle worker's sub-issue with no ref standing"),
+    ("the latest over every page", 'and (latest is None\n                         or when(e["created_at"]) > when(latest))):',
+     "and latest is None):", "a later deletion on a later page wins over an older one on page 1"),
+    ("no hit ends the feed", "        events += got\n",
+     "        events += got\n        if any(e.get('type') == 'DeleteEvent' for e in got):\n            break\n",
+     "a later deletion on a later page wins over an older one on page 1"),
+    ("a short page ends the feed", "        if len(got) < 100:\n            break\n", "",
+     "the feed is read once a run, however many idle workers ask"),
+    ("the feed once per repository", "            if repo not in feeds:\n", "            if True:\n",
+     "the feed is read once a run, however many idle workers ask"),
     ("the feed's later pages", "for page in range(1, EVENT_PAGES + 1):", "for page in range(1, 2):",
      "a deletion on the feed's third page is read, and no page past it"),
     ("the feed's bound", "EVENT_PAGES = 3", "EVENT_PAGES = 4",
      "a deletion on the feed's third page is read, and no page past it"),
-    ("a feed unread says so", "            if r.returncode != 0:\n                return None, f\"gh api {path}:",
-     "            if False:\n                return None, f\"gh api {path}:",
+    ("a feed unread says so", "        if r.returncode != 0:\n            return None, f\"gh api {path}:",
+     "        if False:\n            return None, f\"gh api {path}:",
      "a feed that would not read keeps the worker and says so"),
     ("the run gives verdict the refs", "refs = refs_reader(claims, slug)",
      'refs = refs_reader((None, "x"), slug)', "the run retires off the refs and the feed, and names N and what it read"),

@@ -69,8 +69,8 @@ WHAT `retire` CANNOT SEE, both ways. Who released the ref is not read, and
 neither is which checkout a session stands in (AGENTS.md § Completion): a
 worker that took another claim before its assigned one's ref went, and has
 been idle since, reads as done. The rest err the safe way, `keep`: the feed
-holds a repository's last 300 events (11.5h of this base's, 2026-09-12) and
-may lag the delete, so a deletion out of it or not yet in it reads as none;
+holds a repository's last 300 events, however long that is, and may lag the
+delete, so a deletion out of it or not yet in it reads as none;
 a sub-issue given in a prompt of another shape is no assignment, and one
 whose prompt sits in an earlier file a resume left behind is none; and a
 done worker that answers a peer's message with a tool call after the ref
@@ -712,36 +712,44 @@ def claim_reading(issue, slug, claim, repos=None):
     return (out, repos), None
 
 
-def deletion_of(repos, prefix):
+def events_feed(repo):
+    """(events, None), or (None, why): a repository's events feed, every page
+    to EVENT_PAGES, or to a short one. UNORDERED ACROSS PAGES, measured
+    2026-09-13: 29 inversions over pages 1-3, page 1 holding an event two days
+    older than page 2's newest. So every page is read, and no hit ends it."""
+    events = []
+    for page in range(1, EVENT_PAGES + 1):
+        path = f"repos/{repo}/events?per_page=100&page={page}"
+        r = run("gh", "api", path)
+        if r.returncode != 0:
+            return None, f"gh api {path}: {r.stderr.strip()[:160]}"
+        try:
+            got = json.loads(r.stdout or "[]")
+        except ValueError as e:
+            return None, f"gh api {path}: {e.__class__.__name__}"
+        events += got
+        if len(got) < 100:
+            break
+    return events, None
+
+
+def deletion_of(feeds, prefix):
     """((when or None, what was read), None), or (None, why): the latest
-    DeleteEvent of a branch under `prefix` in the events feed of any of
-    `repos`. The feed is newest first, so a repository's first hit is its
-    latest and its later pages are not asked."""
+    DeleteEvent of a branch under `prefix` in `feeds`, {repo: `events_feed`'s
+    answer}. Pure; the latest by time over every event, since the feed is
+    not in order."""
     latest, read = None, []
-    for repo in repos:
-        seen = 0
-        for page in range(1, EVENT_PAGES + 1):
-            path = f"repos/{repo}/events?per_page=100&page={page}"
-            r = run("gh", "api", path)
-            if r.returncode != 0:
-                return None, f"gh api {path}: {r.stderr.strip()[:160]}"
-            try:
-                events = json.loads(r.stdout or "[]")
-            except ValueError as e:
-                return None, f"gh api {path}: {e.__class__.__name__}"
-            seen += len(events)
-            hits = [e["created_at"] for e in events
-                    if e.get("type") == "DeleteEvent"
+    for repo, (events, why) in feeds.items():
+        if events is None:
+            return None, f"{repo}: {why}"
+        for e in events:
+            if (e.get("type") == "DeleteEvent"
                     and (e.get("payload") or {}).get("ref_type") == "branch"
-                    and str(e["payload"].get("ref")).startswith(prefix)]
-            if hits:
-                top = max(hits, key=when)
-                if latest is None or when(top) > when(latest):
-                    latest = top
-                break
-            if len(events) < 100:
-                break
-        read.append(f"{repo} {seen} event(s)")
+                    and str(e["payload"].get("ref")).startswith(prefix)
+                    and (latest is None
+                         or when(e["created_at"]) > when(latest))):
+                latest = e["created_at"]
+        read.append(f"{repo} {len(events)} event(s)")
     return (latest, "; ".join(read)), None
 
 
@@ -749,7 +757,9 @@ def refs_reader(claims, slug):
     """A function from a sub-issue n to ((the `<slug>/<n>-` refs standing,
     when the last went or None, what was read), None) or (None, why), over
     `claims`, `claim_reading`'s answer. The feed is asked only when no ref
-    stands."""
+    stands, and once per repository however many workers ask."""
+    feeds = {}
+
     def of(n):
         got, why = claims
         if got is None:
@@ -760,7 +770,10 @@ def refs_reader(claims, slug):
         standing = sorted(b for b, m in branches.items() if m == n)
         if standing:
             return (standing, None, read), None
-        found, why = deletion_of(repos, prefix)
+        for repo in repos:
+            if repo not in feeds:
+                feeds[repo] = events_feed(repo)
+        found, why = deletion_of({r: feeds[r] for r in repos}, prefix)
         if found is None:
             return None, f"{read}: no ref standing; the feed not read: {why}"
         return ([], found[0], f"{read}; the feed: {found[1]}"), None

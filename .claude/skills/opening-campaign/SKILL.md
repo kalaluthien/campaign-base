@@ -84,7 +84,7 @@ slug <N>` reads it off the campaign issue's label — so step 2 is skipped too.
 
 A campaign has no kind of its own: each sub-issue carries one as its
 `kind:<k>` label, which `assets/sub-issue.md` explains, since one campaign
-mixes analysis, development and migration. With a person in the conversation,
+mixes research, development and maintenance. With a person in the conversation,
 propose both in one message and wait; from a sub-issue with nobody waiting,
 read both from its body. Either way state them in the reply, so each costs one
 line to veto.

@@ -172,7 +172,7 @@ NAMED = row(SID)
 REPO, ISSUE = "kalaluthien/campaign-base", "314"
 # The real reference's first line, so a case measures the SHIPPED text and not
 # a fixture standing in for it.
-ANALYSIS_HEAD = "# Kind: analysis"
+MAINTENANCE_HEAD = "# Kind: maintenance"
 
 
 def assignment(issue=ISSUE, repo=REPO):
@@ -468,23 +468,23 @@ FENCE-MARK
 
     prompt = {"hook_event_name": "UserPromptSubmit", "session_id": SID,
               "prompt": assignment()}
-    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"])
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:maintenance"])
     stamp_kind = LAST["kind"]
-    check("an assignment prompt for a `kind:analysis` sub-issue emits that "
+    check("an assignment prompt for a `kind:maintenance` sub-issue emits that "
           "kind's own reference, headed with the sub-issue it is for",
-          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
-          and f"# Kind of {REPO}#{ISSUE}: analysis" in r.stdout,
+          r.returncode == 0 and MAINTENANCE_HEAD in r.stdout
+          and f"# Kind of {REPO}#{ISSUE}: maintenance" in r.stdout,
           f"out {r.stdout[-400:]!r} err {r.stderr!r}")
     check("...recorded as `<repo>#<issue> <kind> <sha>`, read back",
           stamp_kind is not None
-          and stamp_kind.startswith(f"{REPO}#{ISSUE} analysis ")
+          and stamp_kind.startswith(f"{REPO}#{ISSUE} maintenance ")
           and len(stamp_kind.split()) == 3
           and "written and read back" in r.stderr,
           f"rec {stamp_kind!r} err {r.stderr!r}")
     check("...and the role brief comes FIRST, so a session reads who it is "
           "before what the work is",
           "WORKER-MARK" in r.stdout
-          and r.stdout.index("WORKER-MARK") < r.stdout.index(ANALYSIS_HEAD),
+          and r.stdout.index("WORKER-MARK") < r.stdout.index(MAINTENANCE_HEAD),
           f"out {r.stdout[:80]!r}")
     check("...over exactly one gh call, for that issue",
           len(LAST["gh"]) == 1 and f"issues/{ISSUE}" in LAST["gh"][0],
@@ -507,7 +507,7 @@ FENCE-MARK
           f"err {r.stderr!r}")
 
     r, _, _ = run(prompt, agents=NAMED,
-                  labels=["kind:analysis", "kind:migration"])
+                  labels=["kind:maintenance", "kind:development"])
     check("two `kind:` labels are the tracker's REFUSAL, quoted, and not a "
           "kind this picked one of",
           r.returncode == 0 and "# Kind of" not in r.stdout
@@ -518,7 +518,7 @@ FENCE-MARK
     # THE TRACKER EXITS 2 FOR BOTH: a refusal to answer, and a `gh` read it
     # could not make -- so the line may not call this one a refusal. What
     # separates them is the quoted first line, which here is gh's own failure.
-    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"],
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:maintenance"],
                   gh_fails=True)
     check("a gh that will not answer is a reading never made, named as such, "
           "and still exit 0 with nothing emitted",
@@ -532,7 +532,7 @@ FENCE-MARK
     r, _, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID,
                    "prompt": "please look at the sub-issue list and tell me "
                              "what is open"},
-                  agents=NAMED, labels=["kind:analysis"])
+                  agents=NAMED, labels=["kind:maintenance"])
     check("a prompt that assigns nothing asks the tracker NOTHING -- no gh "
           "call at all -- and emits no kind",
           r.returncode == 0 and LAST["gh"] == []
@@ -540,7 +540,7 @@ FENCE-MARK
           and "no assignment sentence in the prompt" in r.stderr,
           f"gh {LAST['gh']!r} err {r.stderr!r}")
 
-    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"],
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:maintenance"],
                   kind_record=(SID, stamp_kind))
     check("the same assignment on a later prompt, the record matching, emits "
           "nothing and says it already delivered",
@@ -557,8 +557,8 @@ FENCE-MARK
     check("SessionStart source=compact re-emits the recorded kind -- the case "
           "this record exists for -- over ONE gh call, the state of that "
           "sub-issue and no tracker call",
-          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
-          and f"# Kind of {REPO}#{ISSUE}: analysis" in r.stdout
+          r.returncode == 0 and MAINTENANCE_HEAD in r.stdout
+          and f"# Kind of {REPO}#{ISSUE}: maintenance" in r.stdout
           and len(LAST["gh"]) == 1 and LAST["gh"][0].startswith("issue view")
           and ISSUE in LAST["gh"][0] and "no tracker call" in r.stderr
           and "open" in r.stderr,
@@ -584,7 +584,7 @@ FENCE-MARK
                   kind_record=(SID, stamp_kind), gh_fails=True)
     check("...and a state that could not be read re-emits anyway, keeping the "
           "record, and says so",
-          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          r.returncode == 0 and MAINTENANCE_HEAD in r.stdout
           and "could not read the state" in r.stderr
           and "kept the record" in r.stderr and LAST["kind"] is not None,
           f"out {r.stdout[-200:]!r} err {r.stderr!r} rec {LAST['kind']!r}")
@@ -599,16 +599,16 @@ FENCE-MARK
 
     # DELIVERY IS NOT THE ROLE'S. A `claude -p` probe and a session not yet
     # renamed both read as NO ROLE, and both are working a sub-issue.
-    r, rec, _ = run(prompt, agents=[], labels=["kind:analysis"])
+    r, rec, _ = run(prompt, agents=[], labels=["kind:maintenance"])
     check("a session herdr does not name gets the kind reference all the same, "
           "and still no role brief",
-          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          r.returncode == 0 and MAINTENANCE_HEAD in r.stdout
           and "WORKER-MARK" not in r.stdout and "no role read for" in r.stderr
           and rec is None and LAST["kind"] is not None,
           f"out {r.stdout[:120]!r} err {r.stderr!r}")
 
     r, rec, _ = run(dict(prompt, agent_id="sub-1"), agents=NAMED,
-                    labels=["kind:analysis"])
+                    labels=["kind:maintenance"])
     check("a subagent gets NEITHER, and asks the tracker nothing",
           r.returncode == 0 and r.stdout == "" and rec is None
           and LAST["kind"] is None and LAST["gh"] == []
@@ -630,7 +630,7 @@ FENCE-MARK
         plain.mkdir()
         env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                    FAKE_AGENTS=json.dumps(NAMED),
-                   FAKE_LABELS=json.dumps(["kind:analysis"]),
+                   FAKE_LABELS=json.dumps(["kind:maintenance"]),
                    FAKE_GH_LOG=str(d / "gh.log"), CLAUDE_PROJECT_DIR=str(plain))
 
         def run_copy():

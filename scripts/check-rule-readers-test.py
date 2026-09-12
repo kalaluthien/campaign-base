@@ -54,6 +54,27 @@ FORM_CASES = [
      fence('gh api "repos/o/r/git/matching-refs/heads/campaign-$N/" --jq ".[].ref"'), 1),
     ("claim refs: the slug-form listing",
      fence('gh api "repos/o/r/git/matching-refs/heads/$SLUG/" --jq ".[].ref"'), 1),
+    # Merge condition 1's reading, hand-rolled three ways: a line tool, jq's
+    # `startswith`, and jq's `test(` past the `|` that cuts `--jq` short.
+    ("merge review: a grep for REVIEW comments",
+     fence("gh pr view 5 --json comments --jq '.comments[].body' | grep -c '^REVIEW'"), 1),
+    ("merge review: a jq startswith on the kind",
+     fence("gh pr view 5 --json comments --jq '.comments[].body | select(startswith(\"REVIEW\"))'"), 1),
+    ("merge review: a jq test past the pipe inside the filter",
+     fence("gh api repos/o/r/issues/5/comments --jq '.[] | select(.body|test(\"^REVIEW\"))'"), 1),
+    ("merge review: posting a REVIEW is a write and not a reading",
+     fence('gh pr comment 5 --body "REVIEW x-worker-1: full review at abc1234"'), 0),
+    # THE `[^|;&]*` BOUND, one allow per separator: a tool in one command and
+    # the kind in the next is two commands, not a reading of REVIEW comments.
+    # Widened to `.*`, each of these is refused (pr#355's review).
+    ("merge review: a tool before `;` does not reach a REVIEW after it",
+     fence('grep -n sha AGENTS.md; gh pr comment 5 -b "REVIEW x: at abc1234"'), 0),
+    ("merge review: a tool before `|` does not reach a REVIEW after it",
+     fence('grep -c x f | xargs gh pr comment 5 -b "REVIEW x: at abc1234"'), 0),
+    ("merge review: a tool before `&&` does not reach a REVIEW after it",
+     fence('grep -q x f && gh pr comment 5 -b "REVIEW x: at abc1234"'), 0),
+    ("merge review: the kind named in prose is a mention",
+     "# t\n\nA comment opening `REVIEW` is read by `grep`-free code.\n", 0),
     # The campaign-directory reading. The REFUSALS first, the retired line this
     # form exists for at the head of them, then the three rewrites a tool
     # alternation alone would have missed.

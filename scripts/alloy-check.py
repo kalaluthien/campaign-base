@@ -3,7 +3,7 @@
 
     scripts/alloy-check.py <file.als> [-o <dir>]
     scripts/alloy-check.py --commands spec [--write]
-    scripts/alloy-check.py --digest <solution-0.txt> [...]
+    scripts/alloy-check.py --digest <file.als> <solution-0.txt> [...]
     scripts/alloy-check.py --closure <file.als>
 
 Every command under spec/, whatever entity it belongs to, carries its own verdict, in the `expect`
@@ -85,6 +85,16 @@ modules, `system/system/system/system/system/Now<:event`. The path is stripped:
 which entity declared a relation is the model's business, not a reader's. It
 reads the run's output rather than the model, so it is the same command's
 second half rather than a second script.
+
+Beside the two tables, the digest prints every `var` sig and field that
+<file.als>'s own entity declares -- the modules of its closure in its own
+directory -- as a column of its own name, so a relation the tables never
+listed still reaches a reader: `Reviewed`, which merge condition 1 is about,
+was one (sdlc-alloy#342). They are read from the model because the trace does
+not mark them: a `var` relation that stays empty looks like a static one. The
+`var:` line names what was read, so a relation declared and empty in a state
+is told apart from one never read; a declared relation the trace does not hold
+at all means the trace is not that model's, and is `could not look`, exit 2.
 
 `--closure` prints <file> and every file its `open`s reach, one path per line
 relative to the working directory, in the order they are reached -- the same
@@ -478,7 +488,54 @@ def short(text):
     return ATOM.sub(rep, unqualify(text))
 
 
-def parse_trace(path):
+# `var sig A, B in C {`, `one sig Target {`: the qualifiers, the names, and the
+# brace that opens the field list.
+SIG = re.compile(r"\b((?:(?:abstract|one|lone|some|var|private)\s+)*)sig\s+"
+                 r"([\w\s,]+?)\s*(?:\b(?:extends|in)\s[^{]*)?\{")
+
+
+def own_vars(path):
+    """(the entity's directory, [every `var` relation its modules declare, as
+    the trace names it once unqualified]): `Reviewed` for a sig, `Target<:agent`
+    for a field. The entity is the modules of <path>'s closure in its own
+    directory; a module another entity owns is that entity's to show."""
+    here = os.path.dirname(os.path.abspath(path))
+    keys = []
+    for p, text in composed(path).items():
+        if os.path.dirname(p) != here:
+            continue
+        for m in SIG.finditer(text):
+            names = [n.strip() for n in m.group(2).split(",")]
+            if "var" in m.group(1).split():
+                keys += names
+            # The field list: split at top-level commas, and a piece with no
+            # `:` is a name sharing the next piece's type -- `var a, b: T`.
+            depth, i, piece, pieces = 1, m.end(), "", []
+            while depth:
+                c = text[i]
+                depth += (c in "([{") - (c in ")]}")
+                if depth == 1 and c == ",":
+                    pieces.append(piece)
+                    piece = ""
+                elif depth:
+                    piece += c
+                i += 1
+            pieces.append(piece)
+            decl = ""
+            for piece in pieces:
+                decl += piece
+                if ":" not in piece:
+                    decl += ","
+                    continue
+                head = decl.split(":")[0].split()
+                if head and head[0] == "var":
+                    fields = " ".join(head[1:]).split(",")
+                    keys += [f"{s}<:{f.strip()}" for s in names for f in fields if f.strip()]
+                decl = ""
+    return here, keys
+
+
+def parse_trace(path, wanted=WANTED):
     states = []
     cur = None
     for line in open(path):
@@ -495,22 +552,31 @@ def parse_trace(path):
         # module with its path; both reduce to the bare name, and anything that
         # is not a relation this digest shows is dropped here.
         name = unqualify(key)
-        if name in WANTED:
+        if name in wanted:
             cur["rel"][name] = val.strip("{}")
     return states
 
 
-def render(path):
-    states = parse_trace(path)
+def render(model, path):
+    """The digest of one trace, or raise LookupError when the trace does not
+    hold a relation <model>'s entity declares."""
+    here, own = own_vars(model)
+    columns = VARYING + [(key, key) for key in own if key not in dict(VARYING)]
+    states = parse_trace(path, WANTED | set(own))
     if not states:
         return f"{path}: no trace\n"
+    absent = [key for key in own if key not in states[0]["rel"]]
+    if absent:
+        raise LookupError(f"{path} holds no {', '.join(absent)}, which "
+                          f"{os.path.relpath(here)}/ declares var: it is not that model's trace")
     out = [f"# {path.split('/')[-1]}"]
     fixed = states[0]["rel"]
     facts = [f"{label}={short(fixed[label]) or '-'}" for label in STATIC if fixed.get(label)]
     out.append("static: " + "; ".join(facts))
+    out.append(f"var ({os.path.relpath(here)}/): " + ", ".join(own))
     for s in states:
         parts = []
-        for key, label in VARYING:
+        for key, label in columns:
             val = s["rel"].get(key, "")
             if not val:
                 continue
@@ -529,12 +595,16 @@ def main(argv):
         print(__doc__.strip())
         return 0
     if argv[0] == "--digest":
-        if len(argv) < 2:
-            print("alloy-check --digest: name at least one trace file",
-                  file=sys.stderr)
+        if len(argv) < 3 or not argv[1].endswith(".als"):
+            print("alloy-check --digest: name the model, then at least one "
+                  "trace file it wrote", file=sys.stderr)
             return 1
-        for arg in argv[1:]:
-            print(render(arg))
+        for arg in argv[2:]:
+            try:
+                print(render(argv[1], arg))
+            except (OSError, LookupError) as e:
+                print(f"could not look: {e}", file=sys.stderr)
+                return 2
         return 0
     if argv[0] == "--commands":
         rest = [a for a in argv[1:] if a != "--write"]

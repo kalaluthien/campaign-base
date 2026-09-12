@@ -91,8 +91,9 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 `AGENTS.md` for the rules. `spec/campaign/github/system.als` for why they are
 those rules, what was rejected, and which risks are still open — it is the entry
-point to `spec/`, which is Alloy models, with no markdown and no HTML;
-each model's comments carry the part of the spec it checks. `spec/campaign/` is
+point to `spec/`, which is Alloy models, with no markdown and HTML only as
+a scenario's form beside its entity; each model's comments carry the part of
+the spec it checks. `spec/campaign/` is
 one module in four entities, each `open`ing the one below — `github`,
 `directory`, `session`, `orchestration` — so the top one is the whole composed
 model. Each entity is two files: `system.als` is the signatures, events and

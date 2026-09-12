@@ -15,6 +15,8 @@
  *               sub-issue's kind lets it skip
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
+ *   Html        a Spec artifact drawn for a reader, and the scenarios it
+ *               REFINES
  *   Written     the artifacts that exist; Landed, the changes that merged;
  *               Licensed, the code paths the tie guard's allow-list exempts
  *   Step        the observer: which event, on which artifact or change
@@ -54,8 +56,8 @@ module sdlc/system
    repository maps the last three onto its own tree, and the profile line of
    its sub-issue's kind says which of them it has at all.
 
-   A view drawn for a reader, docs/<model>.html, is no stage: check-tree-shape
-   shapes one and nothing requires one, and this base keeps none. */
+   An html form of a scenario, `Html` below, is a Spec artifact and no stage
+   of its own; nothing requires one, and this base keeps none. */
 abstract sig Stage {}
 one sig Intent, Plan, Spec, Test, Code extends Stage {}
 
@@ -111,6 +113,7 @@ sig Change { optional: set Stage }
    Neither arrow is a fact about its target being written: a test declares
    the code path it will drive before that path exists, which is the order
    `feeds` asks for. */
+-- A file one stage of a change writes; not a Claude Artifact (a claude.ai page).
 sig Artifact {
   change:    one Change,
   stage:     one Stage,

@@ -269,15 +269,6 @@ fun holder[i: Issue]: set Agent {
 pred liveUnder[c: Campaign] {
   some a: Agent | a in Live and (a.task in c.memberIssues or a.host in machinesHolding[c])
 }
-/* What one session can actually read: `herdr agent list` on its own machine. */
-/* A live agent whose SESSION's name says it belongs to some other campaign.
-   The name is evidence about whose work it is and nothing else is: with the
-   record gone, a close reading `herdr agent list` has the name, the cwd, and
-   no third thing. A delegate has no session to be named, so it is never this. */
-pred namedForAnother[a: Agent, c: Campaign] {
-  some a.peer and some a.peer.campaignNamed and a.peer.campaignNamed != c
-}
-
 /* What one session can actually read: `herdr agent list` on its own machine.
 
    TWO DISJUNCTS, AND THEY ARE NOT THE SAME CLAIM. The first is an agent on a

@@ -50,17 +50,16 @@ one sig Request { covers: set Campaign }
    about its own caller.
 
    `lone`, not `one`: a session with no name, or a name of another shape, has no
-   role, and that is the last row of #185's table -- refused on both planes,
-   which `mayAct` in orchestration/checks.als states. A worker is bounded
-   to its own campaign's sub-issues it has claimed, PLUS that campaign's own
-   issue, which is no sub-issue and which no claim can cover (#207), and a
-   comment or a reopen on any sub-issue of that campaign, claimed or not
-   (rule-check#354).
+   role -- refused on both planes, which `mayAct` in orchestration/checks.als
+   states. A worker is bounded to its own campaign's sub-issues it has claimed,
+   PLUS that campaign's own issue, which is no sub-issue and which no claim can
+   cover, and a comment or a reopen on any sub-issue of that campaign, claimed
+   or not.
 
-   It lives HERE and not in orchestration/system.als, where `Role` used to be a
-   property of an Agent: the role is per SESSION and per its whole life, where an
-   agent is per sub-issue, and a guard reading a tool call has a session and no
-   agent. `Agent.role` stays, pinned to its session's by AgentWellFormed.
+   It lives HERE and not in orchestration/system.als: the role is per SESSION
+   and per its whole life, where an agent is per sub-issue, and a guard reading
+   a tool call has a session and no agent. `Agent.role` stays, pinned to its
+   session's by AgentWellFormed.
 
    Not `var`. A session that renames itself is out of scope here: nothing in this
    model reads a rename, and the records already written keep the old name. */
@@ -68,10 +67,9 @@ abstract sig Role {}
 one sig Planner extends Role {}
 one sig Worker  extends Role {}
 
-/* WHETHER A SESSION SITS UNDER THE BASE TREE, and nothing more. Added by #187
-   question 6, when a close gate counted an unnamed session by herdr's `cwd`
-   column. Since rule-check#267 no gate reads it: `campaign-claim live` only
-   lists an unnamed session under the tree as not counted, and N2 is the
+/* WHETHER A SESSION SITS UNDER THE BASE TREE, and nothing more. No gate
+   reads it: `campaign-claim live` only lists an unnamed session under the
+   tree as not counted, and N2 is the
    witness that such a session does not block. The PATH is not modelled --
    `under(cwd, root)` in `campaign-claim.py` owns that, whole segments and
    both sides resolved.
@@ -183,7 +181,7 @@ fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Han
    holding nothing (`SessionExit`). Grown only by those two and never shrunk,
    and a closed session performs nothing again -- without this the predecessor
    kept `worksOn` and could claim, launch and stand the heir down after
-   handing off (review of pr#290). One fact rather than a frame clause in
+   handing off. One fact rather than a frame clause in
    every event, as `Judged` is. */
 var sig Exited in Session {}
 
@@ -423,8 +421,7 @@ pred sessionCreateDir[s: Session] {
 }
 
 /* `runtime/` goes with the directory, and nothing above has a bit with that
-   lifetime any more: since the claim became a ref and attribution a checkout,
-   orchestration/system.als frames straight through a delete. */
+   lifetime: orchestration/system.als frames straight through a delete. */
 pred sessionDeleteDir[s: Session] {
   Now.event = DeleteDir
   some s.worksOn
@@ -498,7 +495,7 @@ pred sessionLaunch[s: Session] {
   /* Same split as `sessionClaim`: a planner launches a delegate onto any
      sub-issue of a campaign bound to its own machine, its own campaign
      included -- filing is not a claim, so the sub-issue a planner distributes
-     may already belong to another campaign (#227). A worker's launch (onto
+     may already belong to another campaign. A worker's launch (onto
      its own claim, the peer shape in orchestration/system.als's `launch`)
      stays pinned to the campaign it works on -- and since a worker's
      `s.worksOn` and `campaignOf[Now.issue]` then coincide, the machine-holds-
@@ -518,8 +515,7 @@ pred sessionLaunch[s: Session] {
 pred sessionInit {
   no Surveyed
   /* A session at time zero has just started, and startup is a SessionStart:
-     the hook has run. Every scenario written before this bit existed therefore
-     stays in the trace space, and only a `ContextReset` leaves it. */
+     the hook has run. Only a `ContextReset` leaves it. */
   Briefed = Session
   all s: Session {
     s.worksOn in Filed

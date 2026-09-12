@@ -488,8 +488,7 @@ class Watch:
             if ln.startswith("drift "):
                 self.printed[ln] = now
         self.shown = lines
-        if calm:
-            self.quiet = f"quiet {self.slug}: {what}"
+        self.quiet = f"quiet {self.slug}: {what}" if calm else None
         return (out + [f"- {ln}" for ln in removed] + [f"+ {ln}" for ln in added]
                 + [f"= {ln}" for ln in reprint] + [self.quiet] * calm)
 

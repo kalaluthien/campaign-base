@@ -25,10 +25,8 @@ open sdlc/system
    their own.
 
    THE PROFILE IS WHAT A KIND NARROWS BELOW THE CRITERION, and no kind
-   narrows anything since rule-check#354 folded `prototyping`, the one that
-   did, into `development`. `narrowingProfile` is that retired kind's profile
-   kept as a witness, because without one the profile half of `maySkip` is
-   tested by nothing. It keeps the running thing, and
+   narrows anything. `narrowingProfile` is kept as a witness, because without
+   one the profile half of `maySkip` is tested by nothing. It keeps the running thing, and
    `S6_NarrowingTestWaiver` is the profile half on its own. Its one optional
    stage, Spec, is dead as a waiver rather than narrow: a change the criterion
    lets skip Spec wrote nothing that runs, and this profile lets neither Test
@@ -317,8 +315,7 @@ pred DebtNeverGrows_Bites {
    every state, for the same reason. Without its second half the tree can stay
    tied at every state and still carry a dead name: a test declares two
    scenarios, one is renamed and the text is not rewritten, and the code path
-   stays tied through the other -- bd2143d's shape, which a check reading
-   `everyCodeHasScenario` alone passed. The last conjunct pins that shape:
+   stays tied through the other. The last conjunct pins that shape:
    the test the rename left declaring a dead name still ties a written code
    path, so it declared two. */
 assert WitnessesResolve {
@@ -383,7 +380,7 @@ run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect
 
 -- the order: holds under the discipline, and has a counterexample without it.
 -- One change: every term of the order is one change's, so a second adds only
--- interleaving, and at 2 Change the check ran past ten minutes.
+-- interleaving.
 check OrderedByFeeds           for exactly 1 Change, 6 Artifact, 10 steps expect 0
 run   OrderedByFeeds_Bites     for exactly 1 Change, 6 Artifact, 10 steps expect 1
 

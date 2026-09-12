@@ -160,9 +160,7 @@ jobs:
           set -euo pipefail
           floors='spec/sdlc/checks.als 1310
           spec/sdlc/scenarios.als 679
-          spec/campaign/orchestration/scenarios.als 546
-          spec/campaign/orchestration/checks.als 242
-          spec/campaign/session/scenarios.als 79'
+          spec/campaign/orchestration/checks.als 242'
           for r in $(awk '{print $1}' <<< "$floors"); do
             [ -f "$r" ] || echo "::warning title=solver budget::a floor row in check.yml names $r, which is not a module"
           done

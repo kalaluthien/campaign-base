@@ -1,7 +1,7 @@
 /*
  * A campaign session: what makes a session one, and what it may do. It opens
- * synchronization/system because a session runs from a base checkout and
- * cares how far behind it is.
+ * directory/system because a session runs from a base checkout and cares how
+ * far behind it is.
  *
  * A SESSION is one harness session -- the `claude` process a herdr pane runs,
  * and the thing a campaign session name names. That name's shape is not
@@ -36,7 +36,7 @@
  */
 module session/system
 
-open synchronization/system
+open directory/system
 
 /* `covers` hangs off a `one sig` because Campaign is github/system's signature and an
    entity above it may not add a field to it. */
@@ -51,7 +51,7 @@ one sig Request { covers: set Campaign }
 
    `lone`, not `one`: a session with no name, or a name of another shape, has no
    role, and that is the last row of #185's table -- refused on both planes,
-   which `mayAct` in orchestration/scenarios.als states. A worker is bounded
+   which `mayAct` in orchestration/checks.als states. A worker is bounded
    to its own campaign's sub-issues it has claimed, PLUS that campaign's own
    issue, which is no sub-issue and which no claim can cover (#207).
 
@@ -197,14 +197,14 @@ fun working: set Session { { s: Session | some s.worksOn and s.machine in machin
 /* ---------------- observable events ---------------- */
 
 /* `Handoff` is declared here and not in orchestration/system.als, where the
-   agents it moves live, for the reason `Launch` sits in synchronization: this
+   agents it moves live, for the reason `Launch` sits in directory: this
    is the lowest entity holding a field it moves -- the claims. */
 one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit, Stamp, Unstamp extends Event {}
 
 fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit + Stamp + Unstamp }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
-   is somebody's act, and naming whose is what lets orchestration/scenarios.als's
+   is somebody's act, and naming whose is what lets orchestration/checks.als's
    `mergedOnCurrentReview` hold the merger to a current review. */
 fun sessionActed: set Event {
   sessionOwn + FileCampaignIssue + AddMember + CloseIssue + WriteBody + MergePullRequest
@@ -470,7 +470,7 @@ pred sessionClaim[s: Session] {
 }
 
 /* Dropped by whoever reads the branch as dangling, not only by its maker.
-   What may be released is orchestration/scenarios.als's guard. */
+   What may be released is orchestration/checks.als's guard. */
 pred sessionRelease[s: Session] {
   Now.event = Release
   claimedIssues' = claimedIssues - Session->Now.issue

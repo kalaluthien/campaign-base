@@ -31,6 +31,8 @@ and, on a claim, the code the sub-issue names.
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.
 
+How to review and to launch: `references/reviewing.md`, `references/launching.md`.
+
 A subagent of a worker inherits the worker's role, because the guard reads the
 parent's session id. It is briefed by the parent's context and by nothing else:
 no hook reaches it.
@@ -56,7 +58,7 @@ first run.
    sits at, the round it is in, and the pane to close. It writes nothing after
    it, and does not release the claim.
 2. **It starts the successor** at the base root, or in the same clone for a
-   delegate (`opening-campaign/references/launching.md`), named
+   delegate (`references/launching.md`), named
    `<slug>-worker-<n>` by `campaign-name-session.py`. The first prompt is one
    sentence: take over `<slug>#N` from `<old>`, read its NOTE.
 3. **The successor reads that NOTE on GitHub**, confirms the ref with

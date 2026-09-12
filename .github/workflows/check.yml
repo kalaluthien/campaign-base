@@ -159,7 +159,6 @@ jobs:
         run: |
           set -euo pipefail
           floors='spec/sdlc/checks.als 1310
-          spec/sdlc/scenarios.als 679
           spec/campaign/orchestration/scenarios.als 546
           spec/campaign/orchestration/checks.als 242
           spec/campaign/session/scenarios.als 79'

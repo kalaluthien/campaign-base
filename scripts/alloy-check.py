@@ -393,6 +393,7 @@ VARYING = [
     ("Step<:subject", "change"),
     ("Written", "written"),
     ("Landed", "landed"),
+    ("Licensed", "licensed"),
     # github
     ("Open", "open"),
     ("Merged", "merged"),
@@ -435,10 +436,9 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
           "Agent<:branch",
           # sdlc: which change an artifact is of and at which stage, what
-          # it witnesses and drives, what the change's kind lets it skip,
-          # and which spec artifacts add a shape
+          # it witnesses and drives, and what the change's kind lets it skip
           "Artifact<:change", "Artifact<:stage", "Artifact<:witnesses",
-          "Artifact<:drives", "Change<:optional", "AddsShape"]
+          "Artifact<:drives", "Change<:optional"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 

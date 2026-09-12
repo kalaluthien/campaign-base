@@ -37,7 +37,7 @@ and, on a claim, the code the sub-issue names.
    A verdict or a fix report that does not pin its sha is unactionable.
    After it the next move is the planner's -- the review, the next pull
    request of a multi-PR Plan, or the next assignment -- so wait for its
-   prompt and launch nothing, step 7 included, until a prompt hands it to you.
+   prompt and launch nothing.
 7. **Launch the review** as `references/reviewing.md` says.
 8. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
    **Then reach the install**, when the

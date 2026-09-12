@@ -2219,6 +2219,13 @@ pred Cov_Review           { eventually Now.event = Review }
 pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
+/* The session limit stops a live agent, and its reset wakes every stopped
+   one; a session leaves once it released and was compacted. SessionExit is
+   session/system's own event, witnessed here because `exitSession` above is
+   the refinement that constrains it (sdlc-alloy#345 I6). */
+pred Cov_LimitStop        { eventually Now.event = LimitStop }
+pred Cov_LimitReset       { eventually Now.event = LimitReset }
+pred Cov_SessionExit      { eventually Now.event = SessionExit }
 pred Cov_GuardedRelease   { eventually Now.event = Release }
 /* Lower entities' events the checks above name, directly or through a
    helper. Their own floor is in their own entity, which does not see what
@@ -2341,6 +2348,9 @@ run Cov_Review           for 3 Issue, 2 PullRequest, 1 Campaign, 2 Session, 1 Ag
 run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_AgentDie         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_LimitStop        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_LimitReset       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_SessionExit      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_GuardedRelease   for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 -- and the lower events NoLostWork and NoOrphanIfGuarded name: DeleteDir at the
 -- first's scope, which is the wider, and RemoveMember at the second's

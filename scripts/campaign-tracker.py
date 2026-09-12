@@ -1207,7 +1207,7 @@ def claim_column(repo, campaign_issue):
             f"in {', '.join(repos)} -- {len(branches)} claim(s)")
 
     def word(number):
-        found = module.refs_for_issue(branches, campaign_issue, number)
+        found = module.refs_for_issue(branches, campaign_issue, number, slug)
         if not found:
             return "unclaimed"
         return f"claimed: {', '.join(found)}"

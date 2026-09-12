@@ -297,4 +297,3 @@ pred sdlcStep {
 }
 
 fact SdlcTrace { sdlcInit and always sdlcStep }
--- probe for #310: a spec/sdlc/system.als touch, reverted in the next commit

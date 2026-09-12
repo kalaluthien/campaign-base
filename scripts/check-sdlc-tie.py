@@ -44,9 +44,8 @@ THE THREE NAMES, as the tree carries them today
              is not a code path here either, and what it refuses (no
              extension) is not one until it has one.
 
-The suite may sit in a different scripts/ directory from its code path --
-scripts/acquire-repo-test.py drives a skill's acquire-repo.sh -- so the pair is
-made on the stem alone, tree-wide. The stem pairs on the name and not the
+The suite may sit in a different scripts/ directory from its code path, so
+the pair is made on the stem alone, tree-wide. The stem pairs on the name and not the
 extension, since a Python suite drives a shell script.
 
 A DECLARATION, NOT A MENTION. Until #268 the tie was any whole-word occurrence

@@ -36,7 +36,7 @@ pred S15_NoLocalDirectory {
 }
 
 /* An installed repository is merged into, reached, and the campaign closes:
-   the post-merge step exists and a close can follow it (#239). One machine,
+   the post-merge step exists and a close can follow it. One machine,
    holding the campaign, with the sub-issue's repository installed. */
 pred S16_MergeReachesInstall {
   one c: Campaign | one i: c.memberIssues | one m: Machine {
@@ -54,7 +54,7 @@ pred S16_MergeReachesInstall {
    campaign deletes its directory, and the campaign issue closes, under the
    discipline, with that machine's install behind a merge. Expect 1: the
    discipline reads the machines holding the campaign at the close, and after
-   the delete that is none (sdlc-alloy#345 I5). What closes it outside the
+   the delete that is none. What closes it outside the
    model is its reader in directory/system.als's comment. */
 pred deleteThenCloseBehind[c: Campaign, m: Machine] {
   eventually (Now.event = DeleteDir and Where.machine = m and m in machinesHolding[c]
@@ -240,7 +240,7 @@ assert MachineIndependence {
 
 pred Cov_PullBase { eventually Now.event = PullBase }
 pred Cov_PullClone     { eventually Now.event = PullClone }
-/* A push empties what a commit filled: BaseUnpushed can shrink (I1). */
+/* A push empties what a commit filled: BaseUnpushed can shrink. */
 pred Cov_PushBase     { eventually (Now.event = PushBase and Where.machine in BaseUnpushed
                                     and after Where.machine not in BaseUnpushed) }
 pred Cov_CommitLocal   { eventually Now.event = CommitLocal }

@@ -228,8 +228,7 @@ def run(script, args, screen, env=None, herdr=True, until=None):
         d = Path(d)
         (d / "bin").mkdir()
         if herdr:
-            (d / "bin" / "herdr").write_text(FAKE)
-            (d / "bin" / "herdr").chmod(0o755)
+            harness.fake(d / "bin", "herdr", FAKE)
         (d / "screen.txt").write_text(screen)
         log = d / "asked.txt"
         # TMPDIR inside the case's directory, so a default log lands where it is cleaned

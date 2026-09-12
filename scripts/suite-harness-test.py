@@ -3,8 +3,9 @@
 
 A suite records each case with `check` and returns `report()` from `main`;
 `run_case` and `mutate` run a table of cases and break a script's branches in
-turn; `git`, `write_tree` and `guard_in_repo` build a fixture repository. Each
-was a copy in every suite that used it, and a copy is what drifts.
+turn; `git`, `write_tree` and `guard_in_repo` build a fixture repository, and
+`fake` puts a stand-in command on a case's PATH. Each was a copy in every
+suite that used it, and a copy is what drifts.
 
 It is named as a suite and is one: run, it proves the tally and the helpers
 below. Named as a code path it would owe a scenario, and it is test code that
@@ -14,8 +15,10 @@ directory heads `sys.path`; a skill's suite appends this directory to it.
 
 Usage: scripts/suite-harness-test.py
 """
+import atexit
 import contextlib
 import io
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -91,6 +94,25 @@ def write_tree(root, files):
             p.write_bytes(body)
         else:
             p.write_text(body, encoding="utf-8")
+
+
+_FAKES = {}
+
+
+def fake(bin_dir, name, body):
+    """An executable `name` holding `body` in `bin_dir`, linked to one copy
+    written per run. The first exec of a new file costs 160-360 ms on macOS
+    and a later one about 15, measured on sdlc-alloy#364, so a fake written
+    per case paid that every case. A fake that needs its case's directory
+    reads it off `sys.argv[0]`, which names the link and not the copy."""
+    if (name, body) not in _FAKES:
+        home = Path(tempfile.mkdtemp(prefix="suite-fake-"))
+        atexit.register(shutil.rmtree, home, True)
+        (home / name).write_text(body)
+        (home / name).chmod(0o755)
+        _FAKES[name, body] = home / name
+    Path(bin_dir).mkdir(parents=True, exist_ok=True)
+    (Path(bin_dir) / name).symlink_to(_FAKES[name, body])
 
 
 def guard_in_repo(guard, files, *args):
@@ -189,6 +211,19 @@ def main():
         r = guard_in_repo(probe, {"x.txt": "1", ".gitignore": "x.txt\n"}, "--flag")
         check("guard_in_repo runs the guard over every file staged, ignored ones too",
               r.stdout.strip() == "['.gitignore', 'x.txt'] ['--flag']", r.stdout + r.stderr)
+    # read off the tally as well: a broken `report` cannot report itself
+    with tempfile.TemporaryDirectory() as d:
+        body = "#!/bin/sh\necho \"$0\"\n"
+        for case in ("a", "b"):
+            fake(Path(d) / case / "bin", "said", body)
+        said = [subprocess.run(["said"], capture_output=True, text=True,
+                               env={"PATH": str(Path(d) / c / "bin")}).stdout.strip()
+                for c in ("a", "b")]
+        links = [(Path(d) / c / "bin" / "said").resolve() for c in ("a", "b")]
+        check("fake links every case to one copy, and each sees its own path",
+              said == [str(Path(d) / c / "bin" / "said") for c in ("a", "b")]
+              and links[0] == links[1] and links[0] != Path(d) / "a" / "bin" / "said",
+              f"{said} {links}")
     # read off the tally as well: a broken `report` cannot report itself
     return max(report(), 1 if FAILED else 0)
 

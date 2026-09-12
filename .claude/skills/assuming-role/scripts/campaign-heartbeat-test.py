@@ -447,7 +447,7 @@ def _(m):
 HERDR = r'''#!%(py)s
 import json, os, sys
 a = sys.argv[1:]
-d = %(dir)r
+d = os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))
 if a[:2] == ["agent", "list"]:
     print(open(os.path.join(d, "listing.json")).read()); sys.exit(0)
 if a[:2] == ["pane", "read"]:
@@ -463,12 +463,13 @@ sys.exit(1)
 GH = r'''#!%(py)s
 import json, os, sys
 a = sys.argv[1:]
+d = os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))
 T = "repos/kalaluthien/campaign-base"
-with open(os.path.join(%(dir)r, "gh.log"), "a") as fh:
+with open(os.path.join(d, "gh.log"), "a") as fh:
     fh.write(" ".join(a) + "\n")
 if a[:2] == ["api", T + "/issues/7"]:
     print('["campaign", "campaign:tk"]'); sys.exit(0)
-broken = lambda f: os.path.exists(os.path.join(%(dir)r, f))
+broken = lambda f: os.path.exists(os.path.join(d, f))
 if a[:3] == ["issue", "view", "7"] and not broken("repos-broken"):
     print("## Repos\n\n- none\n"); sys.exit(0)
 if broken("gh-broken"):
@@ -587,10 +588,8 @@ def fleet(d, prompt_exit=0, sh=True):
     b = d / "bin"
     b.mkdir(parents=True)
     for name, body in (("herdr", HERDR), ("gh", GH)):
-        (b / name).write_text(body % {"py": sys.executable, "dir": str(d)})
-        (b / name).chmod(0o755)
-    (b / "sleep").write_text("#!/bin/sh\nexit 0\n")
-    (b / "sleep").chmod(0o755)
+        harness.fake(b, name, body % {"py": sys.executable})
+    harness.fake(b, "sleep", "#!/bin/sh\nexit 0\n")
     if sh:
         (b / "sh").symlink_to("/bin/sh")
     (d / "prompt-exit").write_text(str(prompt_exit))

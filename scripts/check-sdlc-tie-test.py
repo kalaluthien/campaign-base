@@ -3,6 +3,7 @@
 # witnesses: S4a_TiedCodeRename, S4b_ScenarioRenameBreak
 # witnesses: S4c_TestRenameBreak, WitnessesResolve_Bites
 # witnesses: S4e_ScenarioRenameWithItsTests
+# witnesses: FeaturelessKeeps_Bites, DebtNeverGrows_Bites
 """Cases for check-sdlc-tie.py: one named refusal per branch, and the allows
 beside each -- the ordinary shapes a tie check could catch by mistake.
 
@@ -14,15 +15,17 @@ does. The scenarios these fixtures play out are spec/sdlc's:
 `S4c_TestRenameBreak` is T2 at the suite's,
 `S4b_ScenarioRenameBreak` is T3, `S4a_TiedCodeRename` is the
 allow beside them, `S4e_ScenarioRenameWithItsTests` is the allow beside T3,
-`TreeStaysTied_Bites` is T1, and `WitnessesResolve_Bites`
-in checks.als is T6. The `# witnesses:` lines
+`TreeStaysTied_Bites` is T1, `WitnessesResolve_Bites`
+in checks.als is T6, `FeaturelessKeeps_Bites` is T8, and
+`DebtNeverGrows_Bites` is T4 over a list the commit grows. The `# witnesses:` lines
 above are what tie this suite to them, and are themselves the form under test.
 
 EVERY CASE PASSES `--legacy`, with an empty list unless it is about the
 allow-list. The built-in `LEGACY` names this repository's own untied paths, and
 a fixture tree holds none of them, so a case that let the default stand would
 be judging 22 spent lines rather than the shape it means to. The one case that
-DOES let it stand is named for exactly that reading.
+DOES let it stand is named for exactly that reading; the cases about the list
+growing carry their own copy of the guard, whose `LEGACY` is theirs.
 
 A mutation that deletes one branch of the guard fails the case named for it;
 the PR that added this suite ran that sweep and its REPORT quotes the result.
@@ -262,13 +265,77 @@ HTML_CASES = [
       "scripts/a.py": CODE,
       "scripts/a-test.py": "# witnesses: S1_FullChain, S2_Y\n"},
      {FORM: form("S1_FullChain, S2_Y")}, "T6"),
+    # The change adds a command, so it is a feature change and T8 stands down:
+    # what is left to refuse is the form's.
     ("T7 an html form this change never opened, untied by the change",
      {SPEC: DECL, "scripts/b-test.py": SUITE, FORM: form("S1_FullChain")},
-     {"scripts/b-test.py": "# nothing\n"}, "T7"),
+     {SPEC: snap("S1_FullChain", "S2_New"), "scripts/b-test.py": "# nothing\n"},
+     "T7"),
     ("allow an html form this change never opened, with a fault it already had",
      {SPEC: DECL, FORM: "<p>nothing declared</p>\n"},
      {"spec/x/checks.als": "open x/system\n"}, None),
 ]
+
+# ---- T8: a change that adds no feature -- the command list as it was --
+# shrinks what the suites witness. `FeaturelessKeeps_Bites` in checks.als.
+T8_CASES = [
+    ("T8 FeaturelessKeeps_Bites: one live name of two dropped, the command list "
+     "as it was, the code path still tied through the other",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {"scripts/a-test.py": SUITE}, "T8"),
+    ("T8 a script deleted with its suite, the scenario it alone witnessed left",
+     TIED, {"scripts/a.py": None, "scripts/a-test.py": None}, "T8"),
+    ("allow a name dropped from one suite while another still declares it",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH,
+      "scripts/b.py": CODE, "scripts/b-test.py": "# witnesses: S1_Other\n"},
+     {"scripts/a-test.py": SUITE}, None),
+    ("allow a name dropped in a commit that adds a command: a feature change, "
+     "which T8 does not read",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {SPEC: snap("S1_FullChain", "S1_Other", "S2_New"), "scripts/a-test.py": SUITE},
+     None),
+    ("allow a suite renamed with its code path, declaring what it declared",
+     TIED, {"scripts/a.py": None, "scripts/b.py": CODE,
+            "scripts/a-test.py": None, "scripts/b-test.py": SUITE}, None),
+    ("allow T6's remedy: a dead name dropped, the command list as it was -- a "
+     "name no command carries was never witnessed",
+     DEBT, {"scripts/a-test.py": SUITE}, None),
+    ("T8 reads the command NAMES: a snapshot rewritten with the same names is "
+     "no feature, and the name dropped beside it is refused",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {SPEC: snap(("check", "S1_FullChain"), "S1_Other"), "scripts/a-test.py": SUITE},
+     "T8"),
+]
+
+
+def own_guard(entries):
+    """This guard's text with `LEGACY` set to `entries`: a fixture tree that
+    carries its own copy, as this repository does, so the list BEFORE the commit
+    is a blob in the committed tree and the list after it is the copy the hook
+    runs."""
+    text = GUARD.read_text()
+    head, _, rest = text.partition("LEGACY = (\n")
+    _, _, tail = rest.partition("\n)\n")
+    body = "".join(f'    "{e}",\n' for e in entries)
+    return f"{head}LEGACY = (\n{body})\n{tail}"
+
+
+def own_list_case(listed_before, listed_after, change=None, copy_before=None,
+                  on_disk=None, copy_after=None):
+    """An untied code path under a list the fixture tree carries itself, run
+    the way the pre-commit runs it: the tree's own copy. The commit edits the
+    path unless `change` says what it does instead; `copy_before` replaces the
+    committed copy's whole text and `copy_after` the staged one's; `on_disk` is
+    written after staging, unstaged."""
+    sibling = GUARD.parent / "check-tree-shape.py"
+    base = {SPEC: DECL, "scripts/a.py": CODE,
+            "scripts/check-tree-shape.py": sibling.read_text(),
+            "scripts/check-sdlc-tie-test.py": SUITE,
+            "scripts/check-sdlc-tie.py": copy_before or own_guard(listed_before)}
+    staged = {"scripts/a.py": CODE + "y\n"} if change is None else dict(change)
+    staged["scripts/check-sdlc-tie.py"] = copy_after or own_guard(listed_after)
+    return run_case(base, staged, on_disk=on_disk, legacy=None,
+                    guard="scripts/check-sdlc-tie.py")
 
 
 def put(root, rel, body):
@@ -302,7 +369,7 @@ def stage(root, files):
 
 def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
              legacy=(), config=(), commits=(), branch_at_head=None,
-             back_to=None):
+             back_to=None, guard=None):
     """One fixture repository, and the guard run over it.
 
     `legacy` is the allow-list, written to a file OUTSIDE the repository -- a
@@ -311,7 +378,8 @@ def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
     the built-in `LEGACY` is reached. `commits` are further commits made after
     `before`, for the cases that need two commits to judge between;
     `branch_at_head` names the last of them and `back_to` then checks an earlier
-    one out, which is how a HEAD that does not CONTAIN the ref is built."""
+    one out, which is how a HEAD that does not CONTAIN the ref is built.
+    `guard` runs the fixture's own copy at that path instead of this one."""
     with tempfile.TemporaryDirectory() as d:
         root = (Path(d) / "repo").resolve()
         root.mkdir()
@@ -334,7 +402,8 @@ def run_case(before, after, args=("--staged",), on_disk=None, cwd="",
             allow = Path(d) / "legacy.txt"
             allow.write_text("".join(f"{e}\n" for e in legacy))
             args = (*args, "--legacy", str(allow))
-        return subprocess.run([sys.executable, str(GUARD), *args], cwd=root / cwd,
+        script = root / guard if guard else GUARD
+        return subprocess.run([sys.executable, str(script), *args], cwd=root / cwd,
                               capture_output=True, text=True)
 
 
@@ -372,6 +441,105 @@ def main():
         ok, want = judge(r, code)
         codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
         check(name, ok and codes <= {code}, want + ", and no other code", r)
+
+    for name, before, after, code in T8_CASES:
+        r = run_case(before, after)
+        ok, want = judge(r, code)
+        codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
+        check(name, ok and codes <= {code}, want + ", and no other code", r)
+    r = run_case(*T8_CASES[0][1:3])
+    line = next((ln for ln in r.stderr.splitlines() if ln.startswith("T8\t")), "")
+    check("T8's line names the suite that declared it and the name it lost",
+          line.startswith("T8\tscripts/a-test.py\t") and "`S1_Other`" in line,
+          "one T8 line naming scripts/a-test.py and `S1_Other`", r)
+    r = run_case(TIED, {"README.md": "r\n"})
+    check("the reading says T8 read the witnessed scenarios",
+          "T8 read 1 witnessed scenario(s) before and 1 after" in r.stdout,
+          "the T8 clause with both counts", r)
+    r = run_case(TIED, {SPEC: snap("S1_FullChain", "S2_New")})
+    check("the reading says T8 stood down when the command names changed",
+          "T8 stood down" in r.stdout, "the T8 stand-down clause", r)
+
+    # ---- the list before the commit, read from the tree that holds it.
+    r = own_list_case([], ["scripts/a.py"])
+    ok, want = judge(r, "T4")
+    check("T4 DebtNeverGrows_Bites: a code path the commit touches untied, "
+          "licensed by a line the same commit adds: the list does not grow",
+          ok, want, r)
+    r = own_list_case(["scripts/a.py"], ["scripts/a.py"])
+    ok, want = judge(r, None)
+    check("allow a code path licensed by a line the list held before the commit",
+          ok, want, r)
+    r = own_list_case(["scripts/a.py"], [])
+    ok, want = judge(r, "T4")
+    check("T4 a line dropped while the path it licensed is touched and untied",
+          ok, want, r)
+    r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"})
+    ok, want = judge(r, "T4")
+    check("T4 a line added for an untied path the commit never touches: the "
+          "list does not grow anywhere", ok and "gains this line" in r.stderr,
+          want + ", naming the line gained", r)
+    r = own_list_case(["scripts/a.py"], ["scripts/b.py"],
+                      change={"scripts/a.py": None, "scripts/b.py": CODE})
+    ok, want = judge(r, None)
+    check("allow a line moved with the file it names, in the same commit",
+          ok, want, r)
+    r = own_list_case(["scripts/a.py"], ["scripts/a.py"],
+                      change={"scripts/a.py": None, "scripts/b.py": CODE})
+    ok, want = judge(r, "T4")
+    check("T4 a listed file renamed with its line left at the old name: no "
+          "later commit could move the line", ok and "names only the old path"
+          in r.stderr, want + ", naming the line left behind", r)
+    # The list after is the judged tree's, not the copy on disk.
+    r = own_list_case([], [], change={"README.md": "r\n"},
+                      on_disk={"scripts/check-sdlc-tie.py": own_guard(["scripts/a.py"])})
+    ok, want = judge(r, None)
+    check("allow a commit while a line sits unstaged in the copy on disk: the "
+          "index does not carry it", ok and "read from the index's" in r.stdout,
+          want + ", the list after read from the index", r)
+    r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"},
+                      on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
+    ok, want = judge(r, "T4")
+    check("T4 a line the index gains, reverted on disk only", ok, want, r)
+    # A list before that cannot be read is not a licence to skip the commit:
+    # the running list stands for it, the reading says why, and T1 still bites.
+    added = {"scripts/b.py": CODE}
+    DEEP = own_guard([]) + "\nX = " + "-" * 200000 + "1\n"   # MemoryError at the parse
+    LONG = own_guard([]) + "\nX = a" + ".b" * 300000 + "\n"  # RecursionError at the parse
+    for name, copy, why in (
+            ("does not parse", "#!/bin/sh\necho not python\n", "does not parse"),
+            ("is no literal", own_guard([]).replace("LEGACY = (\n", "LEGACY = tuple((\n")
+             .replace("\n)\n", "\n))\n", 1), "is no literal"),
+            *((f"assigns {v}", own_guard([]) + f"\nLEGACY = {v}\n",
+               "is no sequence of paths")
+              for v in ("None", "0", '(["x"],)', '"scripts/a.py"')),
+            ("assigns an unhashable set", own_guard([]) + '\nLEGACY = {["x"]}\n',
+             "is no literal (TypeError"),
+            ("nests too deep to parse", DEEP, "does not parse"),
+            ("chains too long to parse", LONG, "does not parse")):
+        r = own_list_case([], [], change=added, copy_before=copy)
+        ok, want = judge(r, "T1")
+        check(f"a list before that {name} is named in the reading, and the "
+              f"commit is still judged", ok and why in r.stdout
+              and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
+    for name, copy in (("nests too deep", DEEP), ("chains too long", LONG)):
+        r = own_list_case([], [], change=added, copy_after=copy,
+                          on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
+        ok, want = judge(r, "T1")
+        check(f"a list after that {name} to parse is named in the reading, "
+              f"and the commit is still judged", ok and "does not parse" in
+              r.stdout and "PERMITTING" not in r.stderr, want + ", `does not "
+              "parse` in the reading", r)
+    twice = own_guard([]) + '\nLEGACY = ("scripts/a.py",)\n'
+    r = own_list_case(None, ["scripts/a.py"], copy_before=twice)
+    ok, want = judge(r, None)
+    check("a list before assigned twice is read at its last assignment, as "
+          "Python keeps it", ok, want, r)
+    annotated = own_guard(["scripts/a.py"]).replace("LEGACY = (", "LEGACY: tuple = (", 1)
+    r = own_list_case(None, ["scripts/a.py"], copy_before=annotated)
+    check("an annotated list before is read, not taken for no list",
+          judge(r, None)[0] and "the list before read from HEAD's" in r.stdout,
+          "0 finding(s) and the list-before clause naming HEAD", r)
 
     # An unopened form's old fault is counted in the reading, not dropped.
     r = run_case({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})
@@ -473,9 +641,10 @@ def main():
     check("a rename is licensed by the line's NEW name, so file and line move "
           "in one commit", ok, want, r)
     r = run_case(*rename, legacy=["scripts/a.py"])
-    ok, want = judge(r, None)
-    check("a rename is licensed by the line's OLD name too, so the line may "
-          "move in the commit after", ok, want, r)
+    ok, want = judge(r, "T4")
+    check("T4 a rename the line's OLD name alone names: the line moves in the "
+          "same commit, since the commit after would be a line the list gains",
+          ok, want, r)
     r = run_case(TIED, {"README.md": "r\n"}, legacy=["scripts/a.py"])
     ok, want = judge(r, "T5")
     check("T5 an allow-list line whose code path is tied now", ok, want, r)
@@ -504,9 +673,16 @@ def main():
     ok, want = judge(r, None)
     check("with no --legacy the built-in list is read, and a tree that never "
           "held its paths is not judged to have spent every line",
-          ok and f"(LEGACY, {len(LEGACY)} entr(ies), {len(LEGACY)} naming no "
-          f"code path here)" in r.stdout,
-          "0 finding(s) and a reading naming LEGACY, its size and its absences", r)
+          ok and f"(LEGACY, the running copy's: the index holds no "
+          f"scripts/check-sdlc-tie.py; {len(LEGACY)} entr(ies), {len(LEGACY)} "
+          f"naming no code path here; LEGACY stands for the list before too"
+          in r.stdout,
+          "0 finding(s) and a reading naming LEGACY, its size, its absences "
+          "and which list stood for the tree before", r)
+    r = own_list_case(["scripts/a.py"], ["scripts/a.py"])
+    check("the reading names the tree the list before was read from",
+          "the list before read from HEAD's scripts/check-sdlc-tie.py, 1 entr(ies)"
+          in r.stdout, "the list-before clause naming HEAD and its size", r)
 
     # ---- --against <ref>: the whole change between two commits, which is what
     # CI has to judge and what judging against HEAD on a merge commit cannot see.

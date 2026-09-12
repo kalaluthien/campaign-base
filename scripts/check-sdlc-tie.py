@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """Refuse a commit whose scenario, test and code path stop tying by name.
 
-The reader of `tieDiscipline` in spec/sdlc/scenarios.als: after a commit that
+The reader of `tieDiscipline` in spec/sdlc/checks.als: after a commit that
 writes or renames an artifact the tree is tied (`everyCodeHasScenario` in
-spec/sdlc/system.als), which is to say every code path walks back to a
-scenario through the test that drives it, and every name a test declares is a
-scenario (`everyWitnessExists`). The model says what a tie is; this
+spec/sdlc/system.als), which is to say every code path the allow-list does not
+exempt walks back to a scenario through the test that drives it, and every
+name a test declares is a scenario (`everyWitnessExists`). The model says what a tie is; this
 says how one is read off this tree, and judges the commit by what it CHANGES
 about the reading rather than by the tree's whole debt.
 
 THE THREE NAMES, as the tree carries them today
 
-  scenario   the name of a `run` or `check` command declared in any .als
-             under spec/. The declaration is read with alloy-check.py's
-             `DECL`, imported, so this is not a second reader of what a
-             command is.
+  scenario   the name of a `run` or `check` command, as
+             spec/commands.snapshot.json lists it. The snapshot is
+             alloy-check.py's statement of every command under spec/, and CI
+             compares it to the models (`--commands spec`), so this reads
+             that statement and parses no model: it is not a second reader of
+             what a command is. A tree with no snapshot lists no scenario, and
+             a command added to a model is a scenario here once the snapshot
+             is regenerated in the same commit.
   test       a suite: a `<stem>-test.<ext>` sitting directly in a scripts/
              directory -- the top-level one, or a skill's. It DECLARES the
              scenarios it witnesses on a `# witnesses: <Name>[, <Name>...]`
@@ -86,8 +90,8 @@ together, the first saying what the code path lost and T6 which name did it:
       of them made. A rename is licensed by EITHER name, so moving the line and
       moving the file are one commit rather than a commit and the wall after
       it.
-  T6  a suite's `# witnesses:` line declares a name no `run` or `check` under
-      spec/ declares. One live name ties the code path, so T1 and T3 read the
+  T6  a suite's `# witnesses:` line declares a name the snapshot does not
+      list. One live name ties the code path, so T1 and T3 read the
       rest of the line not at all, and a scenario renamed away from a suite that
       declared two left the second name dead with nothing refusing it (bd2143d,
       `WitnessesResolve_Bites`). Scoped the way T4 is: in a suite this change
@@ -97,8 +101,11 @@ together, the first saying what the code path lost and T6 which name did it:
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
-The model wants the whole tree tied; this tree is not, and a check that refused
-every edit to alloy-check.py until it had a suite would be a wall across the
+`LEGACY` is what the model's `Licensed` names (spec/sdlc/system.als), and
+`licenceNeverGrows` is the rule it is kept to: T1, T2 and T3 are judged before
+the list is read, so a line licenses only a path that was untied before the
+commit. Every other code path is to be tied, and a check that refused every
+edit to alloy-check.py until it had a suite would be a wall across the
 repair. So the debt is licensed by name in `LEGACY` -- derived from the tree
 when #268 wrote it, the shape #237 gave R3 -- and the licence bites both ways:
 T4 refuses a path the change touches that is untied and unlisted, T5 refuses a
@@ -163,7 +170,7 @@ the exception's name: a guard that could not run has judged nothing, and a
 wall across every commit costs more than one unjudged one that names itself.
 
 BYTES AND PATHS. Every blob is decoded with `errors="replace"`, so one
-non-UTF-8 byte in an .als or a suite is a replacement character in the text
+non-UTF-8 byte in the snapshot or a suite is a replacement character in the text
 this reads and not an exception the last resort turns into a permit. Every
 listing is `-z`, so a non-ASCII path arrives raw rather than quoted by
 `core.quotePath`, which git and CI both default on -- a quoted path matches no
@@ -185,6 +192,7 @@ Usage: scripts/check-sdlc-tie.py [--staged | --against <ref>] [--legacy <file>]
 import argparse
 import importlib.machinery
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -194,15 +202,20 @@ from pathlib import Path, PurePosixPath
 
 CODE_SUFFIXES = (".py", ".sh")
 
+# WHERE THE SCENARIO NAMES ARE READ: the committed command snapshot, whose
+# rows are [module, kind, name]. See the docstring's `scenario`.
+SNAPSHOT = "spec/commands.snapshot.json"
+
 # WHAT A SUITE DECLARES IT WITNESSES. One line, `#` because every suite this
 # tree holds is Python or shell and both comment that way; the names after the
-# colon are split on commas and matched EXACTLY against the declared commands,
+# colon are split on commas and matched EXACTLY against the listed commands,
 # so `S1_FullChainX` is not `S1_FullChain` and no prose spelling either name
 # ties anything. A suite may carry the line more than once and the names union.
 WITNESSES = re.compile(r"^[ \t]*#[ \t]*witnesses:[ \t]*(.*)$")
 
-# THE LEGACY ALLOW-LIST. Every code path this tree held untied when #268 wrote
-# it, derived from the tree by running the guard over it -- the shape #237 gave
+# THE LEGACY ALLOW-LIST, the model's `Licensed`. Every code path this tree held
+# untied when #268 wrote it, derived from the tree by running the guard over it
+# -- the shape #237 gave
 # R3, and for the same reason: a list the tree is CHECKED AGAINST shrinks by one
 # line per repair, where a list that only printed never shrank. What each
 # refusal actually reads is in the docstring's T4 and T5, and the two are
@@ -237,8 +250,7 @@ LEGACY = (
 
 def load_sibling(name):
     """A sibling script as a module, by path, because these are scripts and
-    not a package. Two rules are read this way rather than restated:
-    alloy-check.py's `DECL`, what a command declaration looks like, and
+    not a package. One rule is read this way rather than restated:
     check-tree-shape.py's `in_scripts_dir`, R6's reading of a script's own
     directory."""
     src = Path(__file__).resolve().parent / name
@@ -280,7 +292,7 @@ def read_blobs(oids):
     RE-SYNCHRONISATION, since a size that does not land on the next header
     leaves the reader mid-stream and this is what walks it back to one. Every
     blob is decoded with `errors="replace"`: a
-    non-UTF-8 byte in an .als or a suite becomes a replacement character in the
+    non-UTF-8 byte in the snapshot or a suite becomes a replacement character in the
     text, where a strict decode raised and the last resort turned the raise
     into a permit."""
     oids = sorted(set(oids))
@@ -304,13 +316,11 @@ def read_blobs(oids):
 
 
 def wanted(paths, in_scripts_dir):
-    """The paths whose TEXT is read: every .als under spec/, for the command
-    declarations, and every suite, for the `# witnesses:` lines. Nothing else's
-    bytes are fetched, which is what keeps a tree to one listing and one
-    batch."""
+    """The paths whose TEXT is read: the snapshot, for the command names,
+    and every suite, for the `# witnesses:` lines. Nothing else's bytes are
+    fetched, which is what keeps a tree to one listing and one batch."""
     return [p for p in paths
-            if (p.startswith("spec/") and p.endswith(".als"))
-            or (in_scripts_dir(p) and stem(p).endswith("-test"))]
+            if p == SNAPSHOT or (in_scripts_dir(p) and stem(p).endswith("-test"))]
 
 
 class Tree:
@@ -319,7 +329,7 @@ class Tree:
     `texts` covers `wanted(paths)` and nothing else; a path outside it reads as
     empty, which is correct because nothing asks for one."""
 
-    def __init__(self, label, paths, texts, decl, in_scripts_dir):
+    def __init__(self, label, paths, texts, in_scripts_dir):
         self.label = label
         self.paths = paths
         self.texts = texts
@@ -327,13 +337,8 @@ class Tree:
         self.suites = [p for p in scripts if stem(p).endswith("-test")]
         self.code = [p for p in scripts if not stem(p).endswith("-test")
                      and p.endswith(CODE_SUFFIXES)]
-        self.scenarios = set()
-        for p in paths:
-            if p.startswith("spec/") and p.endswith(".als"):
-                for line in texts.get(p, "").splitlines():
-                    m = decl.match(line)
-                    if m:
-                        self.scenarios.add(m.group(2))
+        self.scenarios = ({row[2] for row in json.loads(texts[SNAPSHOT])["commands"]}
+                          if SNAPSHOT in texts else set())
         self._declared = {}
 
     def suites_of(self, code_path):
@@ -383,7 +388,7 @@ def committed(label, ref, rules):
     """A tree named by a commit or a ref."""
     oid_of = entries(git_root_bytes("ls-tree", "-r", "-z", ref),
                      lambda f: f[2] if f[1] == b"blob" else None)
-    want = wanted(list(oid_of), rules[1])
+    want = wanted(list(oid_of), rules[0])
     blobs = read_blobs(oid_of[p] for p in want)
     return Tree(label, list(oid_of),
                 {p: blobs.get(oid_of[p], "") for p in want}, *rules)
@@ -398,7 +403,7 @@ def head_tree(rules):
 
 def index_tree(rules):
     oid_of = entries(git_root_bytes("ls-files", "-s", "-z"), lambda f: f[1])
-    want = wanted(list(oid_of), rules[1])
+    want = wanted(list(oid_of), rules[0])
     blobs = read_blobs(oid_of[p] for p in want)
     return Tree("the index", list(oid_of),
                 {p: blobs.get(oid_of[p], "") for p in want}, *rules)
@@ -411,7 +416,7 @@ def worktree(rules):
     paths = [os.fsdecode(r) for r in git_root_bytes("ls-files", "-z").split(b"\0") if r]
     paths = [p for p in paths if (Path(ROOT) / p).is_file()]
     texts = {p: (Path(ROOT) / p).read_text(errors="replace")
-             for p in wanted(paths, rules[1])}
+             for p in wanted(paths, rules[0])}
     return Tree("the working tree", paths, texts, *rules)
 
 
@@ -472,8 +477,7 @@ def judge(after_kind, against, legacy_path):
     # reads as a tree with no scripts/ and passes.
     ROOT = root = git_bytes("rev-parse", "--show-toplevel").decode(
         "utf-8", "replace").strip()
-    rules = (load_sibling("alloy-check.py").DECL,
-             load_sibling("check-tree-shape.py").in_scripts_dir)
+    rules = (load_sibling("check-tree-shape.py").in_scripts_dir,)
     source = "LEGACY" if legacy_path is None else legacy_path
     allowed = set(LEGACY) if legacy_path is None else read_legacy(legacy_path)
 
@@ -540,11 +544,11 @@ def judge(after_kind, against, legacy_path):
         was = moved.get(k, k)                    # its name in the tree before
         if was not in before.code:
             why = ("no suite carries its stem" if not after.suites_of(k)
-                   else "its suite declares no scenario that exists under spec/")
+                   else f"its suite declares no scenario {SNAPSHOT} lists")
             findings.append(("T1", k, f"added untied: {why}. A code path is "
                                       f"tied by a `{stem(k)}-test` suite carrying "
                                       f"a `# witnesses: <Name>` line that names a "
-                                      f"`run` or `check` declared under spec/"))
+                                      f"command {SNAPSHOT} lists"))
             continue
         if before.tied(was):                     # `was` is in before.code here
             if not after.suites_of(k):
@@ -605,9 +609,10 @@ def judge(after_kind, against, legacy_path):
             dead -= old
         for n in sorted(dead):
             findings.append(("T6", s, f"its `# witnesses:` line declares `{n}`, "
-                                      f"and no `run` or `check` under spec/ in "
-                                      f"{after.label} declares it. Rename it to "
-                                      f"the scenario it witnesses, or drop it"))
+                                      f"and {SNAPSHOT} in {after.label} lists "
+                                      f"no such command. Rename it to the "
+                                      f"scenario it witnesses, or drop it, or "
+                                      f"regenerate the snapshot"))
     for code, path, what in sorted(findings):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "

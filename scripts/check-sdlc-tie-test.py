@@ -29,6 +29,7 @@ the PR that added this suite ran that sweep and its REPORT quotes the result.
 """
 import importlib.machinery
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -51,8 +52,19 @@ def guard_module():
 
 LEGACY = guard_module().LEGACY
 
-SPEC = "spec/x/scenarios.als"
-DECL = "run S1_FullChain for 3 expect 1\n"
+SPEC = "spec/commands.snapshot.json"
+
+
+def snap(*rows):
+    """A command snapshot, the one place the guard reads a scenario name. A
+    row is a name (a `run` in one module), a (kind, name) pair, or a whole
+    [module, kind, name] row."""
+    full = [["x/checks.als", "run", r] if isinstance(r, str)
+            else ["x/checks.als", *r] if len(r) == 2 else list(r) for r in rows]
+    return json.dumps({"commands": full}) + "\n"
+
+
+DECL = snap("S1_FullChain")
 SUITE = "#!/usr/bin/env python3\n# witnesses: S1_FullChain\n"
 CODE = "#!/usr/bin/env python3\nprint('x')\n"
 TIED = {SPEC: DECL, "scripts/a.py": CODE, "scripts/a-test.py": SUITE}
@@ -106,13 +118,17 @@ CASES = [
      TIED, {"scripts/a-test.py": None, "scripts/c-test.py": SUITE}, "T2"),
     # ---- T3: a tied code path's suite stops naming a scenario.
     ("T3 the scenario renamed and the suite still names the old one",
-     TIED, {SPEC: "run S1_Other for 3 expect 1\n"}, "T3"),
+     TIED, {SPEC: snap("S1_Other")}, "T3"),
     ("T3 the `# witnesses:` line dropped from the suite",
      TIED, {"scripts/a-test.py": "#!/usr/bin/env python3\n"}, "T3"),
     ("T3 the `# witnesses:` line left with a name spec/ no longer declares",
      TIED, {"scripts/a-test.py": "# witnesses: S1_Other\n"}, "T3"),
-    ("T3 the scenario's module deleted",
+    ("T3 the snapshot deleted, so no scenario is listed",
      TIED, {SPEC: None}, "T3"),
+    ("T3 a command a model still declares, dropped from the snapshot: the "
+     "snapshot is what is read, not the model",
+     {**TIED, "spec/x/checks.als": "run S1_FullChain for 3 expect 1\n"},
+     {SPEC: snap("S1_Other")}, "T3"),
     # ---- allows.
     ("allow a full chain added in one commit",
      {"README.md": "r\n"}, TIED, None),
@@ -130,14 +146,17 @@ CASES = [
     ("allow the code path written after its suite",
      {SPEC: DECL, "scripts/a-test.py": SUITE}, {"scripts/a.py": CODE}, None),
     ("allow a scenario added on its own",
-     TIED, {"spec/y/checks.als": "check Z for 3 expect 0\n"}, None),
+     TIED, {SPEC: snap("S1_FullChain", ("check", "Z"))}, None),
+    ("allow a command the snapshot lists though no model under spec/ declares "
+     "it: the snapshot is what is read, and CI compares it to the models",
+     {"README.md": "r\n"}, TIED, None),
     ("allow a commit touching neither spec, suite nor code path",
      TIED, {"README.md": "r\n"}, None),
     ("allow a suite in scripts/ tying a code path in a skill's scripts/",
      {SPEC: DECL},
      {".claude/skills/s/scripts/a.sh": "#!/bin/sh\n", "scripts/a-test.py": SUITE}, None),
     ("allow a code path tied through a `check`, not only a `run`",
-     {SPEC: "check Held for 3 expect 0\n"},
+     {SPEC: snap(("check", "Held"))},
      {"scripts/a.py": CODE, "scripts/a-test.py": "# witnesses: Held\n"}, None),
     ("allow a file under scripts/fixtures/, which is data",
      {SPEC: DECL}, {"scripts/fixtures/a.py": CODE}, None),
@@ -146,22 +165,22 @@ CASES = [
     ("allow a scripts/ file with no language extension, which R6 refuses instead",
      {SPEC: DECL}, {"scripts/a": CODE}, None),
     ("allow a scenario renamed with its suite rewritten",
-     TIED, {SPEC: "run S1_Other for 3 expect 1\n",
+     TIED, {SPEC: snap("S1_Other"),
             "scripts/a-test.py": "# witnesses: S1_Other\n"}, None),
     ("allow a declaration written with slack whitespace around every part",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
       "scripts/a-test.py": "#   witnesses:   S1_FullChain  \n"}, None),
     ("allow a declaration split over two `# witnesses:` lines, both live",
-     {SPEC: DECL + "run S1_Other for 3 expect 1\n"},
+     {SPEC: snap("S1_FullChain", "S1_Other")},
      {"scripts/a.py": CODE,
       "scripts/a-test.py": "# witnesses: S1_FullChain\n# witnesses: S1_Other\n"}, None),
     ("allow a suite holding a byte that is not UTF-8 beside its declaration",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
       "scripts/a-test.py": b"# witnesses: S1_FullChain\n# \xff\n"}, None),
-    ("allow a spec module holding a byte that is not UTF-8",
-     {}, {SPEC: b"run S1_FullChain for 3 expect 1\n-- \xff\n",
+    ("allow a snapshot holding a byte that is not UTF-8",
+     {}, {SPEC: b'{"why": "\xff", "commands": [["x/checks.als", "run", "S1_FullChain"]]}\n',
           "scripts/a.py": CODE, "scripts/a-test.py": SUITE}, None),
 ]
 
@@ -170,7 +189,7 @@ CASES = [
 # covering the rest: the code path is tied throughout, so a T1 or a T3 beside
 # the T6 would mean the reading lost the live name -- a reader keeping one
 # `# witnesses:` line of two, say -- and not that it found the dead one.
-TWO = DECL + "run S1_Other for 3 expect 1\n"
+TWO = snap("S1_FullChain", "S1_Other")
 BOTH = "# witnesses: S1_FullChain, S1_Other\n"
 DEBT = {SPEC: DECL, "scripts/a.py": CODE,
         "scripts/a-test.py": "# witnesses: S1_FullChain, S9_Nowhere\n"}
@@ -178,12 +197,12 @@ T6_CASES = [
     ("T6 WitnessesResolve_Bites: a scenario renamed while the suite's other "
      "name still ties it, bd2143d's shape",
      {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
-     {SPEC: DECL + "run S1_Renamed for 3 expect 1\n"}),
-    ("T6 a scenario's module deleted while another module still declares the "
-     "suite's other name",
-     {SPEC: DECL, "spec/y/checks.als": "check S1_Other for 3 expect 0\n",
+     {SPEC: snap("S1_FullChain", "S1_Renamed")}),
+    ("T6 a module's rows dropped from the snapshot while another module's row "
+     "still lists the suite's other name",
+     {SPEC: snap("S1_FullChain", ("y/checks.als", "check", "S1_Other")),
       "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
-     {"spec/y/checks.als": None}),
+     {SPEC: DECL}),
     ("T6 a declaration naming two, only one of which spec/ declares",
      {SPEC: DECL},
      {"scripts/a.py": CODE,
@@ -371,7 +390,7 @@ def main():
     check("without --staged, a byte that is not UTF-8 on disk is replaced, not "
           "raised", ok, want, r)
     r = run_case(TIED, {}, args=(), on_disk={SPEC: None})
-    check("without --staged, a spec module deleted on disk and not staged is T3",
+    check("without --staged, the snapshot deleted on disk and not staged is T3",
           r.returncode == 1 and "T3\t" in r.stderr and "PERMITTING" not in r.stderr,
           "T3 on stderr, exit 1", r)
 

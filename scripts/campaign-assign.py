@@ -73,6 +73,7 @@ PROBED ON THIS MACHINE 2026-09-05
 import argparse
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 
@@ -144,6 +145,16 @@ def heartbeat_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+# THE ONE HOME OF THE ASSIGNMENT SENTENCE'S SHAPE, written by `prompt_for`
+# below and read back by `campaign-role-brief.py`, which imports this pattern
+# from here by path rather than spelling a second copy of it: the brief hook
+# delivers the kind's reference to whichever sub-issue a prompt assigns, so a
+# regex of its own there would drift the moment the sentence is reworded. A
+# planner typing the opening by hand is read by the same pattern, which is why
+# it matches the OPENING and not the whole sentence.
+ASSIGNMENT = re.compile(r"Work sub-issue (?P<repo>[\w.-]+/[\w.-]+)#(?P<issue>\d+)")
 
 
 def prompt_for(repo, issue):

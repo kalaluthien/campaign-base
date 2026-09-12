@@ -37,8 +37,30 @@ else:
     sys.exit(1)
 '''
 
+# The `gh` the REAL `campaign-tracker.py kind` runs, which is the one reader of
+# the `kind:` label: `gh api repos/<repo>/issues/<n> --jq '[.labels[].name]'`,
+# whose stdout is that list. Only gh is a fixture here -- the label rule under
+# test is the tracker's own, and a fake tracker would leave it covered by
+# nothing. EVERY INVOCATION IS LOGGED, so a case can assert that no call was
+# made, which is the only way to tell "asked and got nothing" from "never
+# asked".
+FAKE_GH = r'''#!/usr/bin/env python3
+import json, os, sys
+log = os.environ.get("FAKE_GH_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(" ".join(sys.argv[1:]) + "\n")
+if os.environ.get("FAKE_GH_FAILS"):
+    print("gh: api broke", file=sys.stderr); sys.exit(1)
+print(json.dumps(json.loads(os.environ.get("FAKE_LABELS", "[]"))))
+'''
+
+# What the last `run` left behind that its three return values do not carry:
+# the KIND record's text, and every `gh` call the tracker made under it.
+LAST = {}
+
 # The campaign AGENTS.md a scaffolded campaign holds: the three sections #227
-# put in `opening-campaign/assets/agents/*`, each with a marker no other
+# put in `opening-campaign/assets/AGENTS.md`, each with a marker no other
 # briefed file contains, so a case can say WHICH section was emitted.
 CAMPAIGN_AGENTS = """# Campaign principles: test
 
@@ -62,8 +84,12 @@ def row(session_id, name="demo-worker-10"):
 
 def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
         campaign_agents=CAMPAIGN_AGENTS, record=None, lock_runtime=False,
-        raw=None, record_swallows=False):
-    """(completed process, the record's text or None, the campaign dir)."""
+        raw=None, record_swallows=False, labels=None, gh_fails=False,
+        kind_record=None):
+    """(completed process, the record's text or None, the campaign dir).
+
+    The kind record and the `gh` call log go to `LAST`, since every existing
+    case unpacks three values."""
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         bin_dir = d / "bin"
@@ -72,6 +98,10 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             fake = bin_dir / "herdr"
             fake.write_text(FAKE)
             fake.chmod(0o755)
+        gh = bin_dir / "gh"
+        gh.write_text(FAKE_GH)
+        gh.chmod(0o755)
+        gh_log = d / "gh.log"
         # THE TEMPDIR IS ITSELF A BASE, so `record_path`'s walk stops here
         # rather than in the repository under test. Without it the
         # no-campaign-AGENTS.md case wrote a record into this checkout's own
@@ -86,6 +116,10 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             rec = camp / "runtime" / "briefed"
             rec.mkdir(parents=True)
             (rec / record[0]).write_text(record[1])
+        if kind_record is not None:
+            rec = camp / "runtime" / "briefed"
+            rec.mkdir(parents=True, exist_ok=True)
+            (rec / f"{kind_record[0]}.kind").write_text(kind_record[1])
         if record_swallows:
             # A record that accepts every write and reads back empty. It is the
             # only shape that separates `written` from `written and read back`:
@@ -98,9 +132,13 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             (camp / "runtime").chmod(0o500)
         env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                    FAKE_AGENTS=json.dumps(agents or []),
+                   FAKE_LABELS=json.dumps(labels or []),
+                   FAKE_GH_LOG=str(gh_log),
                    CLAUDE_PROJECT_DIR=str(camp))
         if list_fails:
             env["FAKE_LIST_FAILS"] = "1"
+        if gh_fails:
+            env["FAKE_GH_FAILS"] = "1"
         if payload is not None and payload.get("session_id"):
             env["CLAUDE_CODE_SESSION_ID"] = payload["session_id"]
         r = subprocess.run(
@@ -110,14 +148,38 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             capture_output=True, text=True)
         if lock_runtime:
             (camp / "runtime").chmod(0o700)
-        recs = [q for root in (camp, d)
-                for q in sorted((root / "runtime" / "briefed").glob("*"))]
+        found = [q for root in (camp, d)
+                 for q in sorted((root / "runtime" / "briefed").glob("*"))]
+        kinds = [q for q in found if q.name.endswith(".kind")]
+        recs = [q for q in found if not q.name.endswith(".kind")]
+        LAST["kind"] = kinds[0].read_text() if kinds else None
+        LAST["gh"] = (gh_log.read_text().splitlines()
+                      if gh_log.exists() else [])
         where = recs[0].parent.parent.parent if recs else None
         return r, (recs[0].read_text() if recs else None), where
 
 
 SID = "1111-2222"
 NAMED = row(SID)
+
+REPO, ISSUE = "kalaluthien/campaign-base", "314"
+# The real reference's first line, so a case measures the SHIPPED text and not
+# a fixture standing in for it.
+ANALYSIS_HEAD = "# Kind: analysis"
+
+
+def assignment(issue=ISSUE, repo=REPO):
+    """The assignment sentence, from `campaign-assign.py` itself. A literal
+    here would be a third copy of the shape `ASSIGNMENT` owns, and the drift
+    this delivery exists to avoid would pass unmeasured."""
+    import importlib.machinery
+    import importlib.util
+    path = BASE / "scripts" / "campaign-assign.py"
+    spec = importlib.util.spec_from_loader(
+        "ca", importlib.machinery.SourceFileLoader("ca", str(path)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m.prompt_for(repo, issue)
 
 
 def main():
@@ -389,6 +451,175 @@ FENCE-MARK
               r.returncode == 0 and len(landed) == 1
               and landed[0].name == SID and str(base) in r.stderr,
               f"landed {landed} err {r.stderr!r}")
+
+    # ---- the kind of the sub-issue, delivered on the assignment prompt ----
+    # Each case pins one branch of `deliver_kind`, and the absences are what
+    # they are for: a kind with no reference, a sub-issue with no kind, a
+    # tracker that refused, a gh that would not answer, and a prompt that
+    # assigns nothing -- which must ask the tracker NOTHING, asserted on the
+    # call log rather than on the output.
+
+    prompt = {"hook_event_name": "UserPromptSubmit", "session_id": SID,
+              "prompt": assignment()}
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"])
+    stamp_kind = LAST["kind"]
+    check("an assignment prompt for a `kind:analysis` sub-issue emits that "
+          "kind's own reference, headed with the sub-issue it is for",
+          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          and f"# Kind of {REPO}#{ISSUE}: analysis" in r.stdout,
+          f"out {r.stdout[-400:]!r} err {r.stderr!r}")
+    check("...recorded as `<repo>#<issue> <kind> <sha>`, read back",
+          stamp_kind is not None
+          and stamp_kind.startswith(f"{REPO}#{ISSUE} analysis ")
+          and len(stamp_kind.split()) == 3
+          and "written and read back" in r.stderr,
+          f"rec {stamp_kind!r} err {r.stderr!r}")
+    check("...and the role brief comes FIRST, so a session reads who it is "
+          "before what the work is",
+          "WORKER-MARK" in r.stdout
+          and r.stdout.index("WORKER-MARK") < r.stdout.index(ANALYSIS_HEAD),
+          f"out {r.stdout[:80]!r}")
+    check("...over exactly one gh call, for that issue",
+          len(LAST["gh"]) == 1 and f"issues/{ISSUE}" in LAST["gh"][0],
+          repr(LAST["gh"]))
+
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:development"])
+    check("a `kind:development` sub-issue has no reference on purpose: nothing "
+          "is emitted and the line names the file that is not there",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "kind: kalaluthien/campaign-base#314 is `development`" in r.stderr
+          and "has no reference at" in r.stderr and "kind-development.md"
+          in r.stderr and LAST["kind"] is None,
+          f"out {r.stdout[-200:]!r} err {r.stderr!r}")
+
+    r, _, _ = run(prompt, agents=NAMED, labels=["backlog"])
+    check("a sub-issue carrying no `kind:` label is the tracker's `none`, and "
+          "nothing is emitted or recorded",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "said `none`" in r.stderr and LAST["kind"] is None,
+          f"err {r.stderr!r}")
+
+    r, _, _ = run(prompt, agents=NAMED,
+                  labels=["kind:analysis", "kind:migration"])
+    check("two `kind:` labels are the tracker's REFUSAL, quoted, and not a "
+          "kind this picked one of",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "campaign-tracker refused to read the kind" in r.stderr
+          and "2 `kind:` labels" in r.stderr and LAST["kind"] is None,
+          f"err {r.stderr!r}")
+
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"],
+                  gh_fails=True)
+    check("a gh that will not answer is a reading never made, named as such, "
+          "and still exit 0 with nothing emitted",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "kind:" in r.stderr and "exited 1" in r.stderr
+          and "Traceback" not in r.stderr and LAST["kind"] is None,
+          f"exit {r.returncode} err {r.stderr!r}")
+
+    r, _, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID,
+                   "prompt": "please look at the sub-issue list and tell me "
+                             "what is open"},
+                  agents=NAMED, labels=["kind:analysis"])
+    check("a prompt that assigns nothing asks the tracker NOTHING -- no gh "
+          "call at all -- and emits no kind",
+          r.returncode == 0 and LAST["gh"] == []
+          and "# Kind of" not in r.stdout
+          and "no assignment sentence in the prompt" in r.stderr,
+          f"gh {LAST['gh']!r} err {r.stderr!r}")
+
+    r, _, _ = run(prompt, agents=NAMED, labels=["kind:analysis"],
+                  kind_record=(SID, stamp_kind))
+    check("the same assignment on a later prompt, the record matching, emits "
+          "nothing and says it already delivered",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "already delivered" in r.stderr, f"err {r.stderr!r}")
+
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "compact",
+                   "session_id": SID}, agents=NAMED,
+                  kind_record=(SID, stamp_kind))
+    check("SessionStart source=compact re-emits the recorded kind -- the case "
+          "this record exists for -- with NO gh call",
+          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          and f"# Kind of {REPO}#{ISSUE}: analysis" in r.stdout
+          and LAST["gh"] == [] and "no tracker call" in r.stderr,
+          f"out {r.stdout[-200:]!r} gh {LAST['gh']!r} err {r.stderr!r}")
+
+    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
+                   "session_id": SID}, agents=NAMED)
+    check("...and a session with no kind record re-emits nothing, saying it "
+          "has been assigned no sub-issue",
+          r.returncode == 0 and "# Kind of" not in r.stdout
+          and "no record at" in r.stderr and LAST["gh"] == [],
+          f"err {r.stderr!r}")
+
+    # DELIVERY IS NOT THE ROLE'S. A `claude -p` probe and a session not yet
+    # renamed both read as NO ROLE, and both are working a sub-issue.
+    r, rec, _ = run(prompt, agents=[], labels=["kind:analysis"])
+    check("a session herdr does not name gets the kind reference all the same, "
+          "and still no role brief",
+          r.returncode == 0 and ANALYSIS_HEAD in r.stdout
+          and "WORKER-MARK" not in r.stdout and "no role read for" in r.stderr
+          and rec is None and LAST["kind"] is not None,
+          f"out {r.stdout[:120]!r} err {r.stderr!r}")
+
+    r, rec, _ = run(dict(prompt, agent_id="sub-1"), agents=NAMED,
+                    labels=["kind:analysis"])
+    check("a subagent gets NEITHER, and asks the tracker nothing",
+          r.returncode == 0 and r.stdout == "" and rec is None
+          and LAST["kind"] is None and LAST["gh"] == []
+          and "kind:" not in r.stderr, f"out {r.stdout!r} err {r.stderr!r}")
+
+    # A TRACKER THAT IS NOT THERE IS NOT A TRACKER THAT REFUSED. The copied
+    # skill's base holds no `scripts/`, which is the shape a hook run out of a
+    # tree missing its own scripts has.
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        skill = d / "base" / ".claude" / "skills" / "assuming-role"
+        shutil.copytree(SCRIPT.parent.parent, skill)
+        bin_dir = d / "bin"
+        bin_dir.mkdir()
+        for name, text in (("herdr", FAKE), ("gh", FAKE_GH)):
+            (bin_dir / name).write_text(text)
+            (bin_dir / name).chmod(0o755)
+        plain = d / "plain"
+        plain.mkdir()
+        env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                   FAKE_AGENTS=json.dumps(NAMED),
+                   FAKE_LABELS=json.dumps(["kind:analysis"]),
+                   FAKE_GH_LOG=str(d / "gh.log"), CLAUDE_PROJECT_DIR=str(plain))
+
+        def run_copy():
+            return subprocess.run(
+                [sys.executable, str(skill / "scripts" / SCRIPT.name)], env=env,
+                cwd=str(plain), capture_output=True, text=True,
+                input=json.dumps(prompt))
+
+        # No `scripts/` at all: the SENTENCE'S SHAPE is what cannot be read,
+        # and nothing downstream is guessed at.
+        r = run_copy()
+        check("a base with no campaign-assign.py cannot read the assignment "
+              "sentence's shape, says so, and asks nothing",
+              r.returncode == 0 and "# Kind of" not in r.stdout
+              and "could not read the assignment sentence's shape" in r.stderr
+              and "campaign-assign.py" in r.stderr
+              and not (d / "gh.log").exists(),
+              f"exit {r.returncode} err {r.stderr!r}")
+
+        # The pattern present and the TRACKER absent: a reading never made,
+        # which is not the tracker refusing to make it.
+        (d / "base" / "scripts").mkdir()
+        shutil.copy(BASE / "scripts" / "campaign-assign.py",
+                    d / "base" / "scripts" / "campaign-assign.py")
+        r = run_copy()
+        check("...and a base with no campaign-tracker.py is COULD NOT LOOK, "
+              "naming the file, and not a refusal by the tracker",
+              r.returncode == 0 and "# Kind of" not in r.stdout
+              and "could not read" in r.stderr
+              and "campaign-tracker.py" in r.stderr
+              and "refused" not in r.stderr
+              and not (d / "gh.log").exists(),
+              f"exit {r.returncode} err {r.stderr!r}")
 
     for f in fails:
         print(f"FAIL  {f}")

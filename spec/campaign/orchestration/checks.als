@@ -302,7 +302,7 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    Bounded by the EVENT and not by a claim: the guard admits only a comment
    there, because `WriteBody` is the charter and belongs to the close, and a
    claim on some other sub-issue makes an irreversible write no safer. The
-   guard's own `OWN_CAMPAIGN_GH` is the verb list; this is the event.
+   guard's `own_campaign_gh` (campaign-roles.py) is the verb list; this is the event.
 
    WHICH CAMPAIGN'S issue this rule holds -- `i = s.worksOn.campaignIssue`,
    the session's own and no other -- is pinned by Q14, through Release. Not
@@ -315,7 +315,7 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    `i in Campaign.campaignIssue` turns Q14 SAT (sdlc-alloy#345 U1; pr#368
    review F1 found the trace). Its two neighbours are pinned too: dropping the
    disjunct reddens `Q11`, dropping `i not in Campaign.memberIssues` reddens
-   `Q4`. The guard's own `i == campaign` is tested in
+   `Q4`. The guard's own bound, `i == own_number`, is tested in
    check-campaign-claim-test.py.
 
    `i not in Campaign.memberIssues` is not decoration. Nothing in github/system

@@ -258,12 +258,14 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * says nothing about the outer checkout it sits inside.
  *
  * This section declares no signature of its own. It adds three subsets of
- * Machine, four events, and the two facts that govern all three subsets end
+ * Machine, five events, and the two facts that govern all three subsets end
  * to end.
  */
 
 /* The OUTER base checkout a campaign session runs from. */
 var sig BaseBehind   in Machine {}
+/* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push
+   (`push-campaign-branch.sh`); before PushBase it only grew (sdlc-alloy#345 I1). */
 var sig BaseUnpushed in Machine {}
 /* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
    because the two are cleared by different acts: a clone is cut fresh from
@@ -272,10 +274,10 @@ var sig CloneBehind in Machine {}
 
 /* ---------------- observable events ---------------- */
 
-one sig PullBase, PullClone, CommitLocal, Launch extends Event {}
+one sig PullBase, PullClone, CommitLocal, PushBase, Launch extends Event {}
 
 fun synchronizationEvents: set Event {
-  PullBase + PullClone + CommitLocal + Launch
+  PullBase + PullClone + CommitLocal + PushBase + Launch
 }
 
 /* This section writes no frame predicate. BaseBehind, BaseUnpushed
@@ -307,6 +309,14 @@ pred commitLocal[m: Machine] {
   Now.event = CommitLocal and Where.machine = m and no Where.repo
 }
 
+/* The outer checkout's commits reach origin. Unattended: the post-commit
+   hook pushes a campaign branch the moment it has a commit. */
+pred pushBase[m: Machine] {
+  m in BaseUnpushed
+  BaseUnpushed' = BaseUnpushed - m and BaseBehind' = BaseBehind
+  Now.event = PushBase and no Now.issue and Where.machine = m and no Where.repo
+}
+
 /* Here a launch is only a freshness question: WHEN the clone's distance from
    origin/main is read. The role-state half is orchestration/system.als's disjunct on
    the same event atom, and the session is session/system.als's. */
@@ -321,7 +331,7 @@ pred launch[m: Machine] {
    running campaign -- but it agrees BY CONSTRUCTION, so read it as a
    restatement of the assumption and not as evidence. */
 fact BaseCheckoutFrame {
-  always ((Now.event not in PullBase + CommitLocal) implies
+  always ((Now.event not in PullBase + CommitLocal + PushBase) implies
     (BaseUnpushed' = BaseUnpushed and
      ((Now.event = MergePullRequest and Now.issue.repo = Base)
         implies BaseBehind' = Machine else BaseBehind' = BaseBehind)))
@@ -341,7 +351,7 @@ pred synchronizationInit {
 
 pred synchronizationStep {
   (Now.event = Stutter and no Where.machine and no Where.repo)
-  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or launch[m])
+  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or pushBase[m] or launch[m])
   /* A github or directory event: those set `Where` themselves where they touch
      a machine, and this section has no state a branch could frame. */
   or (Now.event in githubEvents + directoryEvents)

@@ -13,6 +13,7 @@
     ["campaign/directory/checks.als", "run", "Cov_MergePullRequest"],
     ["campaign/directory/checks.als", "run", "Cov_PullBase"],
     ["campaign/directory/checks.als", "run", "Cov_PullClone"],
+    ["campaign/directory/checks.als", "run", "Cov_PushBase"],
     ["campaign/directory/checks.als", "run", "Cov_Reach"],
     ["campaign/directory/checks.als", "run", "MergeReachesInstall_Bites"],
     ["campaign/directory/checks.als", "run", "S15_NoLocalDirectory"],

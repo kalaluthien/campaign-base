@@ -224,6 +224,9 @@ assert MachineIndependence {
 
 pred Cov_PullBase { eventually Now.event = PullBase }
 pred Cov_PullClone     { eventually Now.event = PullClone }
+/* A push empties what a commit filled: BaseUnpushed can shrink (I1). */
+pred Cov_PushBase     { eventually (Now.event = PushBase and Where.machine in BaseUnpushed
+                                    and after Where.machine not in BaseUnpushed) }
 pred Cov_CommitLocal   { eventually Now.event = CommitLocal }
 pred Cov_Launch        { eventually Now.event = Launch }
 
@@ -235,5 +238,6 @@ check MachineIndependence for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 R
 -- every own event fires in some trace
 run Cov_PullBase for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_PullClone     for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
+run Cov_PushBase      for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_CommitLocal   for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1
 run Cov_Launch        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1

@@ -215,7 +215,7 @@ fun sessionActed: set Event {
 /* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
-  OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal
+  OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal + PushBase
 }
 
 /* THE HOOK EMITTING. Idempotent: a session already briefed stays briefed,

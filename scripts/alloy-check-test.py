@@ -394,21 +394,25 @@ def main() -> int:
 
     # The entity's own `var` relations, read from the model rather than the
     # table: `Reviewed` was the one a reader of merge condition 1 needed and
-    # the table never listed (sdlc-alloy#342). `far/` is another entity.
-    own = ("module sys/scenarios\nopen far/system\nsig Artifact {}\n"
+    # the table never listed (sdlc-alloy#342). `sys/near` is a module of the
+    # entity's own directory, as `system.als` is of `checks.als`; `far/` is
+    # another entity.
+    own = ("module sys/scenarios\nopen sys/near\nopen far/system\nsig Artifact {}\n"
            "var sig Held in Artifact {}\n"
            "one sig Mark { var x, y: lone Artifact }\n")
+    near = "module sys/near\nsig Spot {}\nvar sig Near in Spot {}\n"
     far = "module far/system\nsig Thing {}\nvar sig Far in Thing {}\n"
     q = "system/"
     marked = "\n".join([
         "------State 0-------",
-        f"{q}Held={{}}", f"{q}Mark<:x={{}}", f"{q}Mark<:y={{}}", "Far={}",
+        f"{q}Held={{}}", f"{q}Mark<:x={{}}", f"{q}Mark<:y={{}}", "near/Near={}", "Far={}",
         "------State 1 (loop)-------",
-        f"{q}Held={{{q}Artifact$0}}", f"{q}Mark<:x={{}}",
+        f"{q}Held={{{q}Artifact$0}}", f"{q}Mark<:x={{}}", "near/Near={}",
         f"{q}Mark<:y={{{q}Mark$0->{q}Artifact$1}}", f"Far={{Thing$0}}", ""])
 
     def digest(d, model_text, trace_text):
-        for name, text in {"sys/scenarios.als": model_text, "far/system.als": far,
+        for name, text in {"sys/scenarios.als": model_text, "sys/near.als": near,
+                           "far/system.als": far,
                            "T_solution-0.txt": trace_text}.items():
             (Path(d) / name).parent.mkdir(parents=True, exist_ok=True)
             (Path(d) / name).write_text(text)
@@ -428,6 +432,8 @@ def main() -> int:
                  "Mark<:y=Mark->Ar1" in s1),
                 ("the `var:` line names a relation empty in every state",
                  "Mark<:x" in varline),
+                ("the `var:` line names a module the entity's own directory holds",
+                 "Near" in [c.strip() for c in varline.split(":", 1)[-1].split(",")]),
                 ("another entity's `var` sig is that entity's to show",
                  not any(c.startswith("Far=") for c in s1) and "Far" not in varline)]:
             check(f"--digest: {name}", r.returncode == 0 and ok,

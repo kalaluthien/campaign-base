@@ -21,8 +21,9 @@ leaves the others live and unflagged, so all four are here.
 
   S2  a literal `.claude/skills/...` path, against the filesystem.
 
-  S3  a literal `spec/...` path, against the filesystem -- any entity's, since
-      #246 put a second one beside spec/campaign/.
+  S3  a literal `spec/...` or `docs/...` path, against the filesystem -- any
+      entity's, since #246 put a second one beside spec/campaign/, and any
+      view's, since #302 moved the views out of spec/ into docs/.
 
   S5  a literal `scripts/<name>.py` or `.sh` path. TWO ROOTS, and it resolves
       if EITHER holds the file: this repository keeps scripts at its root and
@@ -193,7 +194,7 @@ DEFAULT_TARGET = "AGENTS.md"
 
 # Which shape a run belongs to, by prefix. Order matters only in that the two
 # absolute prefixes are tested before the two relative ones.
-ABSOLUTE_PREFIXES = (".claude/skills/", "spec/")
+ABSOLUTE_PREFIXES = (".claude/skills/", "spec/", "docs/")
 RELATIVE_PREFIXES = ("references/", "assets/")
 SCRIPT_PREFIX = "scripts/"
 SCRIPT_SUFFIXES = (".py", ".sh")
@@ -626,7 +627,7 @@ def main(argv):
         # `<span class="src">spec/campaign/github/system.als:60-77 @ sha</span>`,
         # and a sweep that skipped `.html` let such a pin go stale in two
         # files unnoticed instead of one. R1 of check-tree-shape keeps HTML
-        # out of spec/ since #246, not out of the tree, so the sweep stays.
+        # out of spec/ since #246 and R7 gives it docs/, so the sweep stays.
         paths = [p for p in tracked(root)
                  if p.endswith((".md", ".markdown", ".als", ".html"))]
 

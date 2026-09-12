@@ -18,6 +18,11 @@ GUARD = Path(__file__).resolve().parent / "check-tree-shape.py"
 
 IGNORE = "/*\n!/.gitignore\n!/spec/\n!/.claude/\n!/scripts/\n!/AGENTS.md\n"
 
+# This repository's own allowlist, for the one case asking what IT admits:
+# every other fixture writes IGNORE, which cannot notice a line missing here.
+REAL_IGNORE = (Path(__file__).resolve().parent.parent / ".gitignore").read_text()
+DOCS_IGNORE = IGNORE + "!/docs/\n"
+
 # A fixture that spells a triple quote spells it with chr(), the way this
 # file already spells the single-quoted one: written out, the guard reading
 # *this* file takes it for a docstring opening and mis-reads what follows.
@@ -37,6 +42,27 @@ CASES = [
      {"scratch/x.txt": "hi\n"}, "R2"),
     ("R2 an entry written with its trailing slash still matches",
      {".claude/skills/s/SKILL.md": "hi\n"}, None),
+    ("R2 this repository's .gitignore admits docs/",
+     {".gitignore": REAL_IGNORE, "docs/m.html": "<p>hi</p>\n",
+      "spec/m/a.als": "sig S {}\n"}, None),
+
+    # R7 -- docs/, the view drawn for a reader. Each case carries the
+    # allowlist line, or R2 answers before R7 does.
+    ("R7 a view named for the model it draws",
+     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
+      "spec/m/a.als": "sig S {}\n"}, None),
+    ("R7 a view of a nested model mirrors its path",
+     {".gitignore": DOCS_IGNORE, "docs/m/n.html": "<p>hi</p>\n",
+      "spec/m/n/a.als": "sig S {}\n"}, None),
+    ("R7 a view naming no model",
+     {".gitignore": DOCS_IGNORE, "docs/gone.html": "<p>hi</p>\n",
+      "spec/m/a.als": "sig S {}\n"}, "R7"),
+    ("R7 a spec directory holding no .als is no model",
+     {".gitignore": DOCS_IGNORE, "docs/m.html": "<p>hi</p>\n",
+      "spec/m/x.json": "{}\n"}, "R7"),
+    ("R7 markdown under docs/",
+     {".gitignore": DOCS_IGNORE, "docs/m.md": "hi\n",
+      "spec/m/a.als": "sig S {}\n"}, "R7"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -449,6 +475,28 @@ def committed_then_staged():
                               capture_output=True, text=True)
 
 
+def view_of_a_committed_model():
+    """R7 under `--staged`: a view staged alone, its model committed before.
+
+    The staged file list holds the view and not the model, so an R7 that
+    looked for models in that list would refuse a view whose model is
+    plainly in the tree."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".gitignore").write_text(DOCS_IGNORE)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "spec" / "m").mkdir(parents=True)
+        (root / "spec" / "m" / "a.als").write_text("sig S {}\n")
+        subprocess.run(["git", "add", "-Af"], cwd=root, check=True)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-qm", "in", "--no-verify"], cwd=root, check=True)
+        (root / "docs").mkdir()
+        (root / "docs" / "m.html").write_text("<p>hi</p>\n")
+        subprocess.run(["git", "add", "docs/m.html"], cwd=root, check=True)
+        return subprocess.run([sys.executable, str(GUARD), "--staged"], cwd=root,
+                              capture_output=True, text=True)
+
+
 def judge(r, rule):
     """(ok, what was wanted). A clean run is not silence: every run says how
     many paths it read and from where, so a clean verdict is `0 finding(s)`
@@ -500,6 +548,13 @@ def main():
         print(f"FAIL  --staged does not judge a violation this commit does not "
               f"touch\n      wanted {want}, got exit {r.returncode}: "
               f"{(r.stdout + r.stderr).strip()[:160]}")
+    r = view_of_a_committed_model()
+    ok, want = judge(r, None)
+    if not ok:
+        failed += 1
+        print(f"FAIL  R7 --staged finds the model in the index, not the "
+              f"staged list\n      wanted {want}, got exit {r.returncode}: "
+              f"{(r.stdout + r.stderr).strip()[:160]}")
     for name, staged, worktree, rule in STAGED_CASES:
         r = run_staged_case(staged, worktree)
         ok, want = judge(r, rule)
@@ -514,7 +569,7 @@ def main():
             failed += 1
             print(f"FAIL  {name}\n      wanted {want}, got exit {r.returncode}:\n"
                   f"      {(r.stdout + r.stderr).strip()[:200] or '(nothing)'}")
-    total = len(CASES) + len(STAGED_CASES) + 2
+    total = len(CASES) + len(STAGED_CASES) + 3
     print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 

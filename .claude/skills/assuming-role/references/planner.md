@@ -35,10 +35,12 @@ Contents: the moments below, then
    goes into the sub-issue template or the kind's reference. What reaches you
    is [worker](worker.md) step 4's. A relay is never the authority; point at
    the durable artifact instead.
-8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
-   transcript shows released and compacted, holding no claim it cut, with no
-   prompt since the release and no tool call since the compaction; any other
-   listed peer is asked which claim it holds, never killed.
+8. **Retire agents as the campaign runs.** The heartbeat retires an idle
+   worker whose last assigned sub-issue has no claim ref left, with no prompt
+   and no tool call since the ref went, whoever released it; any other
+   listed peer is asked which claim it holds, never killed. `retire` is
+   decided before `compact`, so assign a released worker you mean to reuse
+   before the next `--apply`, or it gets `/exit`.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.

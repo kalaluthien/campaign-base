@@ -90,7 +90,7 @@ kind        The one reader of a sub-issue's `kind:<k>` LABEL -- the WORK kind,
             the ordinary state of everything filed before the rule; 2 is the
             read that failed or the label set that cannot be read as one word.
 
-            THE FIVE WORDS ARE `WORK_KINDS` and nowhere else here. A label whose
+            THE WORDS ARE `WORK_KINDS` and nowhere else here. A label whose
             word is outside them is refused rather than returned: the word names
             the `assuming-role` reference a worker is briefed from, so returning
             an unknown one hands out a path nothing resolves.
@@ -216,12 +216,14 @@ SLUG_LABEL_PREFIX = "campaign:"
 # decides -- that one is the `campaign` label and the parent link, and it names
 # what an issue IS; this names what the work on it is.
 WORK_KIND_LABEL_PREFIX = "kind:"
-# THE FIVE WORDS, stated once, here. The sub-issue template offers them and the
+# THE WORDS, stated once, here. The sub-issue template offers them and the
 # `assuming-role` skill's `references/kind-<k>.md` are NAMED by them -- all but
-# `development`, which is the ordinary kind and has no reference -- so a sixth
+# `development`, which is the ordinary kind and has no reference -- so a
 # word invented on a label resolves to no reference and no template row, and is
 # refused rather than returned.
-WORK_KINDS = ("research", "analysis", "prototyping", "migration", "development")
+# rule-check#354 folded five into these: `analysis` into `research`,
+# `prototyping` into `development`, `migration` into `maintenance`.
+WORK_KINDS = ("research", "development", "maintenance")
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.

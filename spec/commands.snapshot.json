@@ -287,9 +287,9 @@
     ["sdlc/checks.als", "run", "S5_CodeWithoutSpec"],
     ["sdlc/checks.als", "run", "S5a_WithoutTheCommitCheck"],
     ["sdlc/checks.als", "run", "S5b_WithoutTheLandingCheck"],
-    ["sdlc/checks.als", "run", "S6_PrototypingTestWaiver"],
+    ["sdlc/checks.als", "run", "S6_NarrowingTestWaiver"],
     ["sdlc/checks.als", "run", "S6a_DevelopmentTestWaiver"],
-    ["sdlc/checks.als", "run", "S7_PrototypingSpecWaiver"],
+    ["sdlc/checks.als", "run", "S7_NarrowingSpecWaiver"],
     ["sdlc/checks.als", "run", "S7a_DevelopmentSpecWaiver"],
     ["sdlc/checks.als", "run", "TreeStaysTied_Bites"],
     ["sdlc/checks.als", "run", "WitnessesResolve_Bites"]

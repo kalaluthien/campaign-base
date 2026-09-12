@@ -6,7 +6,8 @@ through a subagent, which carries the planner's session id and so its role.
 
 Contents: the moments below, then
 [decomposing and assigning](#decomposing-and-assigning),
-[the planner's clock](#the-planners-clock), [handing off](#handing-off).
+[the planner's clock](#the-planners-clock), [handing off](#handing-off),
+[a helper planner](#a-helper-planner).
 
 `campaign-roles.py` states the licence; these are the moments.
 
@@ -117,3 +118,13 @@ Rewrite the `.campaign` marker with the label. The worker's side is in
 
 The state travels in the NOTE, the claim refs, and the sub-issue index; the
 old pane, its transcript and a scratchpad carry none of it.
+
+## A helper planner
+
+A second planner may run beside the campaign's own, to keep the tree in order
+under a standing `kind:maintenance` sub-issue. It is started as step 2 of
+[handing off](#handing-off) starts a successor, named `<slug>-planner-<n>`, with no NOTE handed and
+no predecessor to close. It files sub-issues, investigates, and posts `NOTE`s;
+it launches nothing and assigns nothing, which stay the campaign planner's.
+It leaves by stopping its own pane, since `quiet` and the close both wait on
+every listed session of the campaign.

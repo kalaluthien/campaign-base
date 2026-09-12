@@ -54,13 +54,11 @@ A sub-issue carries one `kind:<k>` label, read by
 reference on the prompt that assigns the sub-issue, and again after a
 compaction; each holds only what no base rule or role reference states.
 
-The five words are `scripts/campaign-tracker.py`'s `WORK_KINDS`, and this table
-is their one prose home.
+The words are `scripts/campaign-tracker.py`'s `WORK_KINDS`, and this table is
+their one prose home.
 
 | the sub-issue exists to | label | reference |
 | --- | --- | --- |
-| measure or audit something that already runs | `kind:analysis` | [analysis](references/kind-analysis.md) |
-| answer an open question | `kind:research` | [research](references/kind-research.md) |
-| find out whether an approach can work at all | `kind:prototyping` | [prototyping](references/kind-prototyping.md) |
-| move a working system from one form to another | `kind:migration` | [migration](references/kind-migration.md) |
-| build something new under a specification | `kind:development` | none: its rules are the base's own |
+| answer an open question, or measure or audit something that already runs | `kind:research` | [research](references/kind-research.md) |
+| build something new under a specification, or find out whether an approach can work at all | `kind:development` | none: its rules are the base's own |
+| keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it | `kind:maintenance` | [maintenance](references/kind-maintenance.md) |

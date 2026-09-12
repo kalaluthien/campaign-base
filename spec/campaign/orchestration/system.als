@@ -746,7 +746,13 @@ pred exitSession[s: Session] {
    workers and never pair one with the other, because that pairing is not
    derivable -- AGENTS.md § Completion, liveness, and local-only work. And
    `stuck` is a clock, `context` a size, and `install` is `unreached` in
-   directory/system.als read for the base. */
+   directory/system.als read for the base.
+
+   `quiet <slug>` (#339) is the watch's one exit: no session of the campaign
+   listed but the planner's own, no open sub-issue without `backlog`, and no
+   claim -- each read that poll, since a last reading standing is not one.
+   Its act is a compaction of the planner and never `sessionExit`: a planner
+   releases nothing, so `exitSession`'s `once Release` never holds of it. */
 fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }
 fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
 

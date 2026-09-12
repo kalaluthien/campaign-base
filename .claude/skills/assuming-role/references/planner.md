@@ -60,9 +60,9 @@ hand a defect to a worker in one turn: a note nobody works is never read again.
 
 The wake is **one persistent Monitor** on
 `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch`,
-started once and left running. It prints only what changed and what is not as
-it should be (`drift <rule>`), so each line is an event. On one, run the
-**heartbeat**:
+started at the first assignment and left running until it prints `quiet`. It
+prints only what changed and what is not as it should be (`drift <rule>`), so
+each line is an event. On one, run the **heartbeat**:
 
 1. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --apply`.
    It reads every session of the campaign, this planner included, and gives
@@ -71,6 +71,13 @@ it should be (`drift <rule>`), so each line is an event. On one, run the
    rest. Its header says what each reads and sends.
 2. Act on the drift the heartbeat does not: assign an `unclaimed` sub-issue,
    ask about a `stuck` claim, release a `settled` one.
+
+**`quiet <slug>` means nothing is left to do**: no other session of the
+campaign listed, no open sub-issue without `backlog`, no claim. The watch has
+exited; do not start it again. The heartbeat's `--apply` gives this pane
+`quiet` and queues `/compact`; then wait for a person's prompt. The next
+assignment starts the watch again. A planner is never sent `/exit`: a campaign
+always has one.
 
 No cron and no idle subscription: a subscription on a session already idle
 fires at once. The only timer is the one `fire` schedules: a detached sleeper

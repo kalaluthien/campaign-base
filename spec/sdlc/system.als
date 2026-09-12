@@ -12,7 +12,7 @@
  *
  *   Stage       the six stages, and `feeds`, the order they owe each other in
  *   Change      one unit of work -- a sub-issue -- and the stages its
- *               campaign's kind lets it skip
+ *               sub-issue's kind lets it skip
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
  *   AddsShape   the spec artifacts that add a shape a person has to understand
@@ -50,10 +50,10 @@ module sdlc/system
    is at this base: intent and plan are the sub-issue's `## Intent` and
    `## Plan`; spec is a scenario or check in spec/; test is a case in a
    scripts/*-test.* suite; code is a path in scripts/ or .claude/ that a test
-   drives. Docs is a view a person reads beside the model, and this base no
-   longer keeps one. A member repository maps the last four onto its own
-   tree, and the profile line of its sub-issue's kind says which of them it
-   has at all. */
+   drives. Docs is a view a person reads beside the model, at
+   docs/<model>.html, whose shape is check-tree-shape's R7. A member
+   repository maps the last four onto its own tree, and the profile line of
+   its sub-issue's kind says which of them it has at all. */
 abstract sig Stage {}
 one sig Intent, Plan, Spec, Docs, Test, Code extends Stage {}
 

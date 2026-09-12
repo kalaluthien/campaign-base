@@ -32,6 +32,17 @@ ENTITY = {"spec/e/checks.als": "open e/system\n"}
 DQ = chr(34) * 3
 SQ = chr(39) * 3
 
+
+def entities(**systems):
+    """spec/c/<name>/ entities, each holding the given system.als text and the
+    checks.als R8 wants beside it: the fixture of an R9 case."""
+    out = {}
+    for name, text in systems.items():
+        out[f"spec/c/{name}/system.als"] = text
+        out[f"spec/c/{name}/checks.als"] = f"open {name}/system\n"
+    return out
+
+
 # (name, {path: contents}, expected_rule or None)
 CASES = [
     # R1 -- misfiled markdown, and the shape that is not it.
@@ -73,6 +84,25 @@ CASES = [
      {"spec/x.html": "<p>hi</p>\n"}, "R8"),
     ("R8 a module straight under spec/",
      {"spec/a.als": "sig S {}\n"}, "R8"),
+
+    # R9 -- the entities in one directory each open the one below.
+    ("R9 three entities, each opening the one below",
+     entities(a="sig A {}\n", b="open a/system\n",
+              c="open b/system\nopen util/ordering[B]\n"), None),
+    ("R9 an open in a comment opens nothing",
+     entities(a="/*\nopen b/system\n*/\nsig A {}\n", b="open a/system\n"),
+     None),
+    ("R9 two entities opening none",
+     entities(a="sig A {}\n", b="sig B {}\n"), "R9"),
+    ("R9 two entities opening the same one",
+     entities(a="sig A {}\n", b="open a/system\n", c="open a/system\n"), "R9"),
+    ("R9 an entity opening two",
+     entities(a="sig A {}\n", b="open a/system\n",
+              c="open a/system\nopen b/system\n"), "R9"),
+    ("R9 an entity opening a sibling's checks",
+     entities(a="sig A {}\n", b="open a/checks\n"), "R9"),
+    ("R9 a cycle beside the bottom",
+     entities(a="sig A {}\n", b="open c/system\n", c="open b/system\n"), "R9"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans

@@ -118,9 +118,9 @@ def sub_issue(*kinds, body=SECTIONS):
             "parent": {"number": 244}}
 
 
-def landing(d, name, change, base=None):
+def landing(d, name, change, base=None, disk=None):
     """A repository whose `main` is TREE plus `base` and whose HEAD adds
-    `change` to it."""
+    `change` to it, with `disk` written over the checkout uncommitted."""
     root = Path(d) / name
     git = ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t"]
     for files, ref in (({**TREE, **(base or {})}, "main"), (change, "work")):
@@ -133,6 +133,8 @@ def landing(d, name, change, base=None):
             subprocess.run([*git, "checkout", "-q", "-b", ref], check=True)
         subprocess.run([*git, "add", "-A"], check=True)
         subprocess.run([*git, "commit", "-qm", ref, "--no-verify"], check=True)
+    for rel, text in (disk or {}).items():
+        (root / rel).write_text(text)
     return root
 
 
@@ -371,10 +373,10 @@ def main() -> int:
         # ---- the landing ---------------------------------------------------
 
         def land(case, change, issue=None, branch="sdlc-alloy/363-x",
-                 before="main", base=None):
+                 before="main", base=None, disk=None):
             fake_gh(bindir, branch=branch, issue=issue or sub_issue())
             return call(bindir, "366", "--repo", "o/r", "--land", before,
-                        cwd=landing(d, case, change, base))
+                        cwd=landing(d, case, change, base, disk))
 
         # S5b_WithoutTheLandingCheck: a code path written with a suite that
         # witnesses nothing lands with no Spec, and only this reading refuses.
@@ -405,6 +407,16 @@ def main() -> int:
         check("a prose-only change under a profile narrowed to Spec lands unlicensed",
               (word, code) == ("unlicensed", 1) and "without Test, Code" in text
               and "optional = Spec` from" in text, f"{word} {code} {text}")
+
+        # The profile is HEAD's: a wider copy left on disk uncommitted is not
+        # the tree judged, and must not license what HEAD's profile refuses.
+        word, code, text = land("disk", {"README.md": "bye\n"},
+                                issue=sub_issue("research"),
+                                base={RESEARCH: "`optional = Spec`\n"},
+                                disk={RESEARCH: "`optional = skippable`\n"})
+        check("the profile is read from HEAD, not an uncommitted copy on disk",
+              (word, code) == ("unlicensed", 1) and "optional = Spec` from" in text,
+              f"{word} {code} {text}")
 
         word, code, text = land("snapshot", {"scripts/b.py": "x = 1\n",
                                              "scripts/b-test.py": "x = 1\n",

@@ -359,10 +359,19 @@ def main() -> int:
         f"{q}Step<:event={{{q}Step$0->{q}Land$0}}",
         f"{q}Step<:subject={{{q}Step$0->{q}Change$0}}",
         f"{q}Written={{{q}Artifact$0}}", ""])
+    # The model the digest reads its `var` relations from: sdlc's four, which
+    # the table already shows, so this block's columns are the table's alone.
+    sdlc = ("module sys/scenarios\nsig Artifact {}\nsig Change {}\n"
+            "var sig Written in Artifact {}\n"
+            "one sig Step { var event: lone Artifact, var artifact: lone Artifact,\n"
+            "               var subject: lone Change }\n")
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "S_solution-0.txt"
         path.write_text(trace)
-        r = subprocess.run([sys.executable, str(SCRIPT), "--digest", str(path)],
+        model = Path(d) / "sys" / "scenarios.als"
+        model.parent.mkdir()
+        model.write_text(sdlc)
+        r = subprocess.run([sys.executable, str(SCRIPT), "--digest", str(model), str(path)],
                            capture_output=True, text=True)
         out = r.stdout.splitlines()
         static, s0, s1 = line(out, "static:"), line(out, "        S0"), line(out, " S1 (loop)")
@@ -381,6 +390,61 @@ def main() -> int:
             check(f"--digest: {name}", r.returncode == 0 and any(
                       c.startswith(head) and c.endswith(tail) and (tail or c == head) for c in cells),
                   f"exit {r.returncode}: {out}")
+
+    # The entity's own `var` relations, read from the model rather than the
+    # table: `Reviewed` was the one a reader of merge condition 1 needed and
+    # the table never listed (sdlc-alloy#342). `far/` is another entity.
+    own = ("module sys/scenarios\nopen far/system\nsig Artifact {}\n"
+           "var sig Held in Artifact {}\n"
+           "one sig Mark { var x, y: lone Artifact }\n")
+    far = "module far/system\nsig Thing {}\nvar sig Far in Thing {}\n"
+    q = "system/"
+    marked = "\n".join([
+        "------State 0-------",
+        f"{q}Held={{}}", f"{q}Mark<:x={{}}", f"{q}Mark<:y={{}}", "Far={}",
+        "------State 1 (loop)-------",
+        f"{q}Held={{{q}Artifact$0}}", f"{q}Mark<:x={{}}",
+        f"{q}Mark<:y={{{q}Mark$0->{q}Artifact$1}}", f"Far={{Thing$0}}", ""])
+
+    def digest(d, model_text, trace_text):
+        for name, text in {"sys/scenarios.als": model_text, "far/system.als": far,
+                           "T_solution-0.txt": trace_text}.items():
+            (Path(d) / name).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / name).write_text(text)
+        return subprocess.run([sys.executable, str(SCRIPT), "--digest",
+                               str(Path(d) / "sys/scenarios.als"),
+                               str(Path(d) / "T_solution-0.txt")],
+                              capture_output=True, text=True)
+
+    with tempfile.TemporaryDirectory() as d:
+        r = digest(d, own, marked)
+        out = r.stdout.splitlines()
+        varline, s1 = line(out, "var ("), line(out, " S1 (loop)").split("  ")
+        for name, ok in [
+                ("a `var` sig the table does not list is a column of its own name",
+                 "Held=Ar0" in s1),
+                ("a field sharing one `var` declaration is read with the first",
+                 "Mark<:y=Mark->Ar1" in s1),
+                ("the `var:` line names a relation empty in every state",
+                 "Mark<:x" in varline),
+                ("another entity's `var` sig is that entity's to show",
+                 not any(c.startswith("Far=") for c in s1) and "Far" not in varline)]:
+            check(f"--digest: {name}", r.returncode == 0 and ok,
+                  f"exit {r.returncode}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = digest(d, own + "var sig Gone in Artifact {}\n", marked)
+        check("--digest: a declared `var` relation the trace does not hold is could not look",
+              r.returncode == 2 and "Gone" in r.stderr and not r.stdout,
+              f"exit {r.returncode}: {r.stdout}{r.stderr}")
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "T_solution-0.txt"
+        path.write_text(marked)
+        r = subprocess.run([sys.executable, str(SCRIPT), "--digest", str(path)],
+                           capture_output=True, text=True)
+        check("--digest: a trace with no model is refused, not digested without its var columns",
+              r.returncode == 1 and not r.stdout, f"exit {r.returncode}: {r.stdout}{r.stderr}")
 
     # ------------------------------------------------------------ --closure
 

@@ -94,9 +94,9 @@ those rules, what was rejected, and which risks are still open — it is the ent
 point to `spec/`, which is Alloy models, with no markdown and HTML only as
 a scenario's form beside its entity; each model's comments carry the part of
 the spec it checks. `spec/campaign/` is
-one module in four entities, each `open`ing the one below — `github`,
-`directory`, `session`, `orchestration` — so the top one is the whole composed
-model. Each entity is two files: `system.als` is the signatures, events and
+one module in four entities, each `open`ing the one below in the chain
+`scripts/check-tree-shape.py`'s R9 reads and prints, so the top one is the
+whole composed model. Each entity is two files: `system.als` is the signatures, events and
 trace, `checks.als` every command — the witnesses and the assertions. `spec/campaign/orchestration/system.als` for how a campaign
 session and its agents talk. `spec/sdlc/system.als` for the stages a change
 passes through, the tie by name between a scenario, its test and its code

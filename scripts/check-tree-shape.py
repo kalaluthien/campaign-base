@@ -68,6 +68,16 @@ WHAT IT CHECKS
       which directories are judged is what the commit touches, a deletion
       included, since deleting `checks.als` leaves nothing staged to look at.
 
+  R9  the entities beside one another each `open` the one below.
+      Read off every entity's `system.als` in one directory below spec/ --
+      the four under spec/campaign/; what stands directly under spec/ opens
+      none of the rest -- with alloy-check.py's `OPEN` and `COMMENT`: each
+      opens at most one sibling, and that sibling's `system`, no sibling is
+      opened twice, and one walk from the top reaches every entity, so the
+      top one is the whole composed model and no integration module is
+      needed. An open outside the siblings, `util/` or another directory's,
+      is not the chain's. Each run prints the chain it read, bottom first.
+
 WHAT IT DOES NOT CATCH
 
 R3 is a path check, not a concept check: reintroducing the holder role under a
@@ -75,7 +85,8 @@ different word, or in a file that exists, passes. R1 does not read a file's cont
 named `.als` passes. R6 reads no contents either, so a
 shell script named `.py` passes. R8 reads names, not modules: a `system.als`
 that declares a command passes it, and that is `alloy-check.py --commands`'s
-refusal. All are floors -- they stop the commit
+refusal. R9 reads opens and not what they declare: whether the chain composes
+is alloy's. All are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
 EXEMPTING A BLOCK FROM R3
@@ -99,7 +110,7 @@ READING VERSUS VERDICT
 A file it cannot read is reported as R0 and refuses the commit. It is never
 skipped: a guard that skips what it cannot read reports nothing and reads
 exactly like a pass, which is the failure mode this whole family of checks
-exists to refuse. R0 is counted apart from R1-R8 because "I looked and found
+exists to refuse. R0 is counted apart from R1-R9 because "I looked and found
 nothing" and "I could not look" want different repairs.
 
 EXIT
@@ -199,21 +210,71 @@ CLAIM_CALL = re.compile(
     r"(?=[\"\']?\s*(?:$|[<$0-9\"\']|--))")
 
 
-def load_tree(staged):
-    """(Tree or None, why) -- `check-cross-references.py`'s path resolver.
-
-    Imported by path because these are scripts and not a package. It owns
-    whether a path resolves in this tree; asking it is what keeps R3a from
-    becoming a second reader of that."""
-    src = Path(__file__).resolve().parent / "check-cross-references.py"
+def load_sibling(name, alias):
+    """(module or None, why). Imported by path because these are scripts and
+    not a package."""
+    src = Path(__file__).resolve().parent / name
     try:
         spec = importlib.util.spec_from_loader(
-            "xref", importlib.machinery.SourceFileLoader("xref", str(src)))
+            alias, importlib.machinery.SourceFileLoader(alias, str(src)))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        return mod, None
+    except Exception as e:                      # noqa: BLE001 -- any of them
+        return None, f"{e.__class__.__name__}: {e}"
+
+
+def load_tree(staged):
+    """(Tree or None, why) -- `check-cross-references.py`'s path resolver.
+    It owns whether a path resolves in this tree; asking it is what keeps R3a
+    from becoming a second reader of that."""
+    mod, why = load_sibling("check-cross-references.py", "xref")
+    if why:
+        return None, why
+    try:
         return mod.Tree(Path(mod.repo_root()), staged), None
     except Exception as e:                      # noqa: BLE001 -- any of them
         return None, f"{e.__class__.__name__}: {e}"
+
+
+def open_chain(entities, opens):
+    """(chain bottom-up, faults) for the entities beside one another, given
+    `opens`: {entity: [sibling module paths its system.als opens]}. One chain
+    is every entity opening at most one sibling's `system`, no sibling opened
+    twice, and one walk from the top reaching the bottom through all of them."""
+    faults, below = [], {}
+    for e in sorted(entities):
+        for o in opens[e]:
+            if o != o.split("/")[0] + "/system":
+                faults.append(f"{e}/system.als opens `{o}`: an entity opens the "
+                              f"system.als of the one below, not another module")
+        seen = sorted({o.split("/")[0] for o in opens[e]})
+        if len(seen) > 1:
+            faults.append(f"{e}/system.als opens {len(seen)} entities, "
+                          f"{', '.join(seen)}: each opens only the one below")
+        below[e] = seen[0] if seen else None
+    above = {}
+    for e, b in below.items():
+        if b:
+            above.setdefault(b, []).append(e)
+    for b, es in sorted(above.items()):
+        if len(es) > 1:
+            faults.append(f"{b} is opened by {len(es)} entities, "
+                          f"{', '.join(sorted(es))}: one entity sits above it")
+    bottoms = sorted(e for e, b in below.items() if b is None)
+    if len(bottoms) != 1:
+        faults.append(f"{len(bottoms)} entities open none"
+                      + (f" ({', '.join(bottoms)})" if bottoms else "")
+                      + ": one chain has one bottom")
+    tops = sorted(e for e in entities if e not in above)
+    chain, e = [], (tops[0] if len(tops) == 1 else None)
+    while e and e not in chain:
+        chain.append(e)
+        e = below[e]
+    if len(chain) != len(entities) and not faults:
+        faults.append(f"{', '.join(sorted(set(entities) - set(chain)))} lie "
+                      f"outside the chain from the top: the opens hold a cycle")
+    return chain[::-1], faults
 
 
 def in_scripts_dir(path):
@@ -614,6 +675,44 @@ def main():
             if not n.endswith(".html"):
                 note("R8", f"{d}/{n}", f"an entity holds {' + '.join(ENTITY)} "
                                        f"and *.html, nothing else")
+
+    # R9. The entities beside one another, grouped by the directory holding
+    # them; a group is judged when the change touches anything under it. The
+    # `open` and comment syntax are alloy-check.py's, imported.
+    alloy, alloy_why = load_sibling("alloy-check.py", "alloy_check")
+    if alloy_why:
+        note("R0", "scripts/alloy-check.py",
+             f"R9 did not run: the open reader would not load ({alloy_why})")
+    # spec/ itself is no group: what stands directly under it -- campaign/,
+    # sdlc/ -- stands beside the rest and opens none of it.
+    groups = {}
+    for d in held:
+        if f"{d}/{ENTITY[0]}" in index and str(Path(d).parent) != "spec":
+            groups.setdefault(str(Path(d).parent), []).append(Path(d).name)
+    for g in sorted(groups) if alloy else ():
+        if touched is not None and not any(t == g or t.startswith(g + "/")
+                                           for t in touched):
+            print(f"  R9 skipped {g}/: the commit touches nothing under it")
+            continue
+        opens = {}
+        for e in groups[g]:
+            try:
+                text = alloy.COMMENT.sub(" ", read(f"{g}/{e}/{ENTITY[0]}", staged))
+            except (UnicodeDecodeError, OSError) as err:
+                note("R0", f"{g}/{e}/{ENTITY[0]}", f"could not be read as text "
+                                                   f"({err.__class__.__name__}); "
+                                                   f"R9 did not judge {g}/")
+                break
+            opens[e] = [o for o in alloy.OPEN.findall(text)
+                        if o.split("/")[0] in groups[g]]
+        else:
+            chain, faults = open_chain(groups[g], opens)
+            print(f"  R9 read {len(opens)} {ENTITY[0]} under {g}/: "
+                  + (" <- ".join(chain) if not faults else
+                     "; ".join(f"{e} opens {', '.join(o) or 'none'}"
+                               for e, o in sorted(opens.items()))))
+            for f in faults:
+                note("R9", f"{g}/", f)
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

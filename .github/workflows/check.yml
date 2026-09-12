@@ -238,7 +238,29 @@ jobs:
           [ "$PLAN" = success ] || { echo "plan ended $PLAN: a fast check failed or no matrix was computed"; exit 1; }
           [ "$SOLVE" = success ] || { echo "solve ended $SOLVE: the failed job names its module"; exit 1; }
 
+      # `fetch-depth: 2` so the merge commit's first parent, the base it was
+      # built on, is here for the landing step below.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          fetch-depth: 2
+
+      # `landDiscipline`, GIVEN A READER (sdlc-alloy#363): every stage the
+      # change has no artifact for is licensed by its kind's profile and the
+      # criterion. ADVISORY: `continue-on-error` until sdlc-alloy#250 ties the
+      # LEGACY paths and removes that line, because a change writing an untied
+      # one lands with no Spec and would be refused today. It prints its word,
+      # what it read and the untied paths on every run all the same. Before the
+      # REVIEW step, which fails on the ordinary unreviewed push and would skip
+      # it. Against `HEAD^1`, not a fetched `origin/main`: a re-run keeps its
+      # merge commit, and a `main` that moved since would read as this change.
+      - name: Every absent stage licensed at the landing (advisory until sdlc-alloy#250)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/check-merge-review.py ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} --land HEAD^1
 
       # MERGE CONDITION 1, GIVEN A READER (kalaluthien/campaign-base#274).
       # AGENTS.md wants a review read at the sha being merged; nothing read it,

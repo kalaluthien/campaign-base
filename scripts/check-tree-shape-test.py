@@ -32,6 +32,17 @@ ENTITY = {"spec/e/checks.als": "open e/system\n"}
 DQ = chr(34) * 3
 SQ = chr(39) * 3
 
+
+def entities(**systems):
+    """spec/c/<name>/ entities, each holding the given system.als text and the
+    checks.als R8 wants beside it: the fixture of an R9 case."""
+    out = {}
+    for name, text in systems.items():
+        out[f"spec/c/{name}/system.als"] = text
+        out[f"spec/c/{name}/checks.als"] = f"open {name}/system\n"
+    return out
+
+
 # (name, {path: contents}, expected_rule or None)
 CASES = [
     # R1 -- misfiled markdown, and the shape that is not it.
@@ -73,6 +84,37 @@ CASES = [
      {"spec/x.html": "<p>hi</p>\n"}, "R8"),
     ("R8 a module straight under spec/",
      {"spec/a.als": "sig S {}\n"}, "R8"),
+
+    # R9 -- the entities in one directory each open the one below.
+    ("R9 three entities, each opening the one below",
+     entities(a="sig A {}\n", b="open a/system\n",
+              c="open b/system\nopen util/ordering[B]\n"), None),
+    ("R9 an open in a comment opens nothing",
+     entities(a="/*\nopen b/system\n*/\nsig A {}\n", b="open a/system\n"),
+     None),
+    ("R9 two entities opening none",
+     entities(a="sig A {}\n", b="sig B {}\n"), "R9:2 entities open none"),
+    ("R9 two entities opening the same one",
+     entities(a="sig A {}\n", b="open a/system\n", c="open a/system\n"),
+     "R9:a is opened by 2 entities"),
+    # q opens p, r opens q and s, s opens r: one walk still reaches all four,
+    # so only the fault this case names can say what is wrong.
+    ("R9 an entity opening two",
+     entities(p="sig P {}\n", q="open p/system\n",
+              r="open q/system\nopen s/system\n", s="open r/system\n"),
+     "R9:r/system.als opens 2 entities"),
+    ("R9 an entity opening a sibling's checks",
+     entities(a="sig A {}\n", b="open a/checks\n"), "R9:not another module"),
+    ("R9 a cycle beside the bottom",
+     entities(a="sig A {}\n", b="open c/system\n", c="open b/system\n"),
+     "R9:the opens hold a cycle"),
+    ("R9 what stands directly under spec/ is no chain",
+     {"spec/sdlc/system.als": "sig S {}\n", "spec/sdlc/checks.als": "open sdlc/system\n",
+      "spec/billing/system.als": "sig B {}\n",
+      "spec/billing/checks.als": "open billing/system\n"}, None),
+    ("R9 a system.als it cannot read is R0, not a traceback",
+     {**entities(a="sig A {}\n"), "spec/c/b/system.als": b"\xff\xfe sig\n",
+      "spec/c/b/checks.als": "open b/system\n"}, "R0:R9 did not judge spec/c/"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -532,8 +574,11 @@ def judge(r, rule):
     out = r.stdout + r.stderr
     said_what_it_read = "tracked path(s) under " in r.stdout
     if rule:
-        return (r.returncode == 1 and f"{rule}\t" in out and said_what_it_read,
-                f"a {rule} finding beside the reading")
+        # `R9:<words>` also names which fault: a rule code alone passes a case
+        # whose own branch was deleted while a neighbour fired instead.
+        rule, _, words = rule.partition(":")
+        return (r.returncode == 1 and f"{rule}\t" in out and words in out
+                and said_what_it_read, f"a {rule} finding {words!r} beside the reading")
     return (r.returncode == 0 and "refusing" not in out and said_what_it_read
             and "0 finding(s)" in r.stdout,
             "0 finding(s) beside the reading")

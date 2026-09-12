@@ -91,9 +91,10 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       touched scope is what separates this tree's debt from a tree the list is
       not about -- every fixture repository under scripts/*-test.py is a tree of
       copied guards with no suites, and unscoped this refused every commit any
-      of them made. A line licenses only a path the list held BEFORE the
-      commit as well as after it, so a line added by the commit that needs it
-      licenses nothing (`licenceNeverGrows`, `DebtNeverGrows_Bites`).
+      of them made. The same code refuses a LINE THE COMMIT ADDS to the list,
+      wherever its path is, save a line moved with the file it names: the list
+      only shrinks (`licenceNeverGrows`, `DebtNeverGrows_Bites`), so a line
+      licenses only a path the list held before the commit as well as after.
   T5  an allow-list entry whose code path is TIED now. The licence is spent and
       the line comes out in the same commit. An entry naming no code path here
       is counted in the reading instead of refused: the path may have been
@@ -279,13 +280,29 @@ LEGACY_HOME = "scripts/check-sdlc-tie.py"
 
 
 def listed(text):
-    """The `LEGACY` a copy of this guard assigns, or None where it assigns
-    none -- a tree holding no copy reads as the empty text."""
-    for node in ast.parse(text).body:
-        if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "LEGACY" for t in node.targets):
-            return set(ast.literal_eval(node.value))
-    return None
+    """(the `LEGACY` a copy of this guard assigns, "") -- or (None, why) where
+    no list can be read off it. The LAST assignment is the one, as Python
+    keeps it, and an annotated one counts. A copy that does not parse, or
+    whose list is no literal, is a reading that could not be made: the caller
+    lets the running list stand for it and says so, rather than letting the
+    raise permit the whole commit."""
+    try:
+        body = ast.parse(text).body
+    except SyntaxError as e:
+        return None, f"it does not parse (SyntaxError: {e.msg}, line {e.lineno})"
+    value = None
+    for node in body:
+        targets = (node.targets if isinstance(node, ast.Assign) else
+                   [node.target] if isinstance(node, ast.AnnAssign) and node.value
+                   else [])
+        if any(isinstance(t, ast.Name) and t.id == "LEGACY" for t in targets):
+            value = node.value
+    if value is None:
+        return None, "it assigns no LEGACY"
+    try:
+        return set(ast.literal_eval(value)), ""
+    except ValueError as e:
+        return None, f"its LEGACY is no literal (ValueError: {e})"
 
 
 # THE LEGACY ALLOW-LIST, the model's `Licensed`. Every code path this tree held
@@ -641,13 +658,17 @@ def judge(after_kind, against, legacy_path):
     t2 = time.perf_counter()
     moved, touched = changed(against if after_kind == "commit" else "HEAD",
                              after_kind)
-    held = None if legacy_path is not None else listed(before.texts.get(LEGACY_HOME, ""))
+    if legacy_path is not None:
+        held, unread = None, ""
+    elif LEGACY_HOME not in before.texts:
+        held, unread = None, f": {before.label} holds no {LEGACY_HOME}"
+    else:
+        held, why = listed(before.texts[LEGACY_HOME])
+        unread = f": {before.label}'s {LEGACY_HOME} was not read, {why}"
     allowed_before = allowed if held is None else held
     list_read = (f"the list before read from {before.label}'s {LEGACY_HOME}, "
                  f"{len(held)} entr(ies)" if held is not None else
-                 f"{source} stands for the list before too"
-                 + ("" if legacy_path is not None
-                    else f": {before.label} holds no {LEGACY_HOME} assigning one"))
+                 f"{source} stands for the list before too{unread}")
 
     print(f"check-sdlc-tie: read {len(after.scenarios)} scenario name(s), "
           f"{len(after.suites)} suite(s), {len(after.htmls)} html form(s), "
@@ -685,6 +706,8 @@ def judge(after_kind, against, legacy_path):
         names = {was, k}                     # a rename carries the licence
         if names & allowed and names & allowed_before:
             licensed.append(k)
+        elif names & allowed:
+            pass                                 # a line this commit added: below
         elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
             # that the change never opened is not this change's debt, and every
@@ -696,12 +719,17 @@ def judge(after_kind, against, legacy_path):
             # request, where the same path is new and T1 has it already.
             licensed.append(k)
         else:
-            why = (f"names it only from this commit on, and a line licenses "
-                   f"nothing the list did not hold before" if names & allowed
-                   else "does not name it: the debt grew where nothing read it")
             findings.append(("T4", k, f"untied before this commit and untied "
                                       f"after it, and the allow-list ({source}) "
-                                      f"{why}. Tie it"))
+                                      f"does not name it: the debt grew where "
+                                      f"nothing read it. Tie it"))
+    for e in sorted(allowed - allowed_before):
+        if moved.get(e) in allowed_before:       # the line moved with its file
+            continue
+        findings.append(("T4", e, f"the allow-list ({source}) gains this line in "
+                                  f"this commit, and the list only shrinks: a line "
+                                  f"licenses nothing {before.label}'s list did not "
+                                  f"hold. Tie the path instead"))
     absent = 0
     for e in sorted(allowed):
         if e not in after.code:

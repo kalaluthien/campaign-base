@@ -297,6 +297,14 @@ T8_CASES = [
     ("allow a suite renamed with its code path, declaring what it declared",
      TIED, {"scripts/a.py": None, "scripts/b.py": CODE,
             "scripts/a-test.py": None, "scripts/b-test.py": SUITE}, None),
+    ("allow T6's remedy: a dead name dropped, the command list as it was -- a "
+     "name no command carries was never witnessed",
+     DEBT, {"scripts/a-test.py": SUITE}, None),
+    ("T8 reads the command NAMES: a snapshot rewritten with the same names is "
+     "no feature, and the name dropped beside it is refused",
+     {SPEC: TWO, "scripts/a.py": CODE, "scripts/a-test.py": BOTH},
+     {SPEC: snap(("check", "S1_FullChain"), "S1_Other"), "scripts/a-test.py": SUITE},
+     "T8"),
 ]
 
 
@@ -312,17 +320,19 @@ def own_guard(entries):
     return f"{head}LEGACY = (\n{body})\n{tail}"
 
 
-def own_list_case(listed_before, listed_after):
-    """An untied code path the commit touches, under a list the fixture tree
-    carries itself, run the way the pre-commit runs it: the tree's own copy."""
+def own_list_case(listed_before, listed_after, change=None, copy_before=None):
+    """An untied code path under a list the fixture tree carries itself, run
+    the way the pre-commit runs it: the tree's own copy. The commit edits the
+    path unless `change` says what it does instead; `copy_before` replaces the
+    committed copy's whole text."""
     sibling = GUARD.parent / "check-tree-shape.py"
     base = {SPEC: DECL, "scripts/a.py": CODE,
             "scripts/check-tree-shape.py": sibling.read_text(),
             "scripts/check-sdlc-tie-test.py": SUITE,
-            "scripts/check-sdlc-tie.py": own_guard(listed_before)}
-    return run_case(base, {"scripts/a.py": CODE + "y\n",
-                           "scripts/check-sdlc-tie.py": own_guard(listed_after)},
-                    legacy=None, guard="scripts/check-sdlc-tie.py")
+            "scripts/check-sdlc-tie.py": copy_before or own_guard(listed_before)}
+    staged = {"scripts/a.py": CODE + "y\n"} if change is None else dict(change)
+    staged["scripts/check-sdlc-tie.py"] = own_guard(listed_after)
+    return run_case(base, staged, legacy=None, guard="scripts/check-sdlc-tie.py")
 
 
 def put(root, rel, body):
@@ -454,6 +464,38 @@ def main():
     ok, want = judge(r, "T4")
     check("T4 a line dropped while the path it licensed is touched and untied",
           ok, want, r)
+    r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"})
+    ok, want = judge(r, "T4")
+    check("T4 a line added for an untied path the commit never touches: the "
+          "list does not grow anywhere", ok and "gains this line" in r.stderr,
+          want + ", naming the line gained", r)
+    r = own_list_case(["scripts/a.py"], ["scripts/b.py"],
+                      change={"scripts/a.py": None, "scripts/b.py": CODE})
+    ok, want = judge(r, None)
+    check("allow a line moved with the file it names, in the same commit",
+          ok, want, r)
+    # A list before that cannot be read is not a licence to skip the commit:
+    # the running list stands for it, the reading says why, and T1 still bites.
+    added = {"scripts/b.py": CODE}
+    for name, copy, why in (
+            ("does not parse", "#!/bin/sh\necho not python\n", "does not parse"),
+            ("is no literal", own_guard([]).replace("LEGACY = (\n", "LEGACY = tuple((\n")
+             .replace("\n)\n", "\n))\n", 1), "is no literal")):
+        r = own_list_case([], [], change=added, copy_before=copy)
+        ok, want = judge(r, "T1")
+        check(f"a list before that {name} is named in the reading, and the "
+              f"commit is still judged", ok and why in r.stdout
+              and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
+    twice = own_guard([]) + '\nLEGACY = ("scripts/a.py",)\n'
+    r = own_list_case(None, ["scripts/a.py"], copy_before=twice)
+    ok, want = judge(r, None)
+    check("a list before assigned twice is read at its last assignment, as "
+          "Python keeps it", ok, want, r)
+    annotated = own_guard(["scripts/a.py"]).replace("LEGACY = (", "LEGACY: tuple = (", 1)
+    r = own_list_case(None, ["scripts/a.py"], copy_before=annotated)
+    check("an annotated list before is read, not taken for no list",
+          judge(r, None)[0] and "the list before read from HEAD's" in r.stdout,
+          "0 finding(s) and the list-before clause naming HEAD", r)
 
     # An unopened form's old fault is counted in the reading, not dropped.
     r = run_case({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})

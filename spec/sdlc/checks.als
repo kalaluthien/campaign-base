@@ -101,7 +101,7 @@ pred landDiscipline {
    for -- a suite's declaration rewritten, or a suite deleted, in place. */
 pred keepDiscipline {
   always ((Step.event in Write + Rename and featureless[Step.subject])
-          implies Written & stage.Spec in Written')
+          implies Written & (stage.Spec - Html) in Written')
 }
 
 pred allDisciplines { orderDiscipline and tieDiscipline and landDiscipline and keepDiscipline }

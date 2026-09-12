@@ -181,8 +181,9 @@ fun reusedStages[c: Change]:  set Stage    { (writtenOf[c].(witnesses + drives) 
    same thing per commit off the names -- a commit that leaves the snapshot's
    command list as it was -- and so reads a renamed scenario as a feature
    change, where here the new name is the scenario's owner's and a rename by
-   a change with none of its own is still that change's step. */
-pred featureless[c: Change] { no writtenOf[c] & stage.Spec }
+   a change with none of its own is still that change's step. An html form is
+   no scenario: it adds no command, as `witnesses` never targets one. */
+pred featureless[c: Change] { no writtenOf[c] & (stage.Spec - Html) }
 
 /* THE TIE. A test declares the scenario it witnesses and pairs with the code
    path it drives -- `t -> s` in `witnesses` and `t -> k` in `drives`, the

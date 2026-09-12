@@ -12,10 +12,11 @@ state.
 which is `development`'s; a labelled sub-issue takes the profile its kind's
 reference states.
 
-Under any profile, a change that writes no scenario of its own -- a stronger
-suite, a refactor -- has the scenario and the code path its tests witness and
-drive (`reusedStages`), and leaves every scenario witnessed (`keepDiscipline`;
-check-sdlc-tie.py's T8).
+A change that writes no scenario of its own -- a stronger suite over a
+scenario and a code path already in the tree -- has its Spec and its Code by
+its tests witnessing and driving them (`reusedStages`). Each profile a kind
+states lets it write that test first, since each lets Spec go; and the change
+leaves every scenario witnessed (`FeaturelessKeeps`, check-sdlc-tie.py's T8).
 
 ## Every session
 

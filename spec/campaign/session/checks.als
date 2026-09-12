@@ -1,8 +1,8 @@
 /*
  * The disciplines a campaign session might follow, the witnesses that measure
- * each, and the reachability floor for session/system: its own events, and
- * every refinement it adds to a lower entity's event. github/system.als is
- * spec/'s entry point.
+ * each, the property the adopted one holds, and the reachability floor for
+ * session/system: its own events, and every refinement it adds to a lower
+ * entity's event. github/system.als is spec/'s entry point.
  */
 module session/checks
 
@@ -11,8 +11,9 @@ open session/system
 /* ---------------- disciplines: candidate repairs ---------------- */
 
 /* Compare-then-write, THE guard the design adopted. Emptying it -- the
-   discipline present but comparing nothing -- brings the loss back, so R1c's
-   green is the comparison and not the shape of the scenario. */
+   discipline present but comparing nothing -- brings the loss back, so
+   CompareThenWriteKeepsEveryRepo's green is the comparison and not the shape
+   of a scenario. */
 pred compareThenWriteBody { always (Now.event = WriteBody implies Who.session.worksOn.reposInBody = Who.session.reposInBodyAsRead) }
 
 /* The rejected candidate, modelled as "sync only when every sub-issue is
@@ -91,10 +92,14 @@ pred R1b_IndexOutlivesRepoList {
   }
 }
 
-/* R1c. The recommendation, and the loss is gone. */
-pred R1c_CompareThenWriteBlocksLoss { compareThenWriteBody and R1_LostBodyUpdate }
+/* The recommendation, and the loss is gone: under it no body write drops a
+   repository, in R1's shape or any other. */
+assert CompareThenWriteKeepsEveryRepo {
+  compareThenWriteBody implies always (Now.event = WriteBody implies reposInBody in reposInBody')
+}
 
-/* R1d. UNSAT here would mean R1c went green by forbidding the scenario. */
+/* R1d. UNSAT here would mean CompareThenWriteKeepsEveryRepo went green by
+   forbidding the writes. */
 pred R1d_CompareThenWriteAdmitsBothWrites {
   compareThenWriteBody
   some c: Campaign, disj s1, s2: Session, disj r1, r2: Repo {
@@ -227,7 +232,7 @@ run R1_LostBodyUpdate            for 3 Issue, 1 PullRequest, 2 Campaign, 2 Sessi
 -- and it is worse than it looks
 run R1b_IndexOutlivesRepoList    for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 -- compare-then-write works: THE guard
-run R1c_CompareThenWriteBlocksLoss            for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+check CompareThenWriteKeepsEveryRepo         for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 -- control: it is not vacuous
 run R1d_CompareThenWriteAdmitsBothWrites       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 -- the candidate it beats

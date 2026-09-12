@@ -4,10 +4,12 @@
 gives one verdict per session -- and that each branch is pinned by a case.
 
 The transcript cases feed `transcript_reading` records in the shape this
-machine's transcripts were measured to have (2026-09-10): a release is a
-tool result, a compaction a `compact_boundary` record, a prompt a user
-record carrying text. The run cases call `main` in-process over a fake
-`herdr`, `gh` and `sleep` on a PATH holding nothing else, and a fake HOME
+machine's transcripts were measured to have (2026-09-10): a compaction a
+`compact_boundary` record, a prompt a user record carrying text, an
+assignment a prompt carrying the assignment sentence. The verdict cases
+answer the refs and the events feed with a function. The run cases call
+`main` in-process over a fake `herdr`, `gh` and `sleep` on a PATH holding
+nothing else, and a fake HOME
 holding the transcripts, so nothing here reads or drives a real pane; every
 action is asserted on what the fake herdr was ASKED. The watch cases drive
 `Watch.poll` over readings built here and a clock in minutes, and its reader
@@ -33,8 +35,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-heartbeat.py"
-ANCHOR = "campaign-claim: released"
-PANE = "w1:p2"
 
 
 def load(source):
@@ -53,8 +53,14 @@ def ts(minute):
     return f"2026-09-10T10:{minute:02d}:00.000Z"
 
 
-def release(minute, pane=PANE, branch="rc/1-x"):
-    return result(minute, f"sent /compact\n{ANCHOR} {branch} in {pane}")
+def gh_ts(minute):
+    """GitHub's precision, which does not sort against the transcript's as
+    a string: `10:03:00Z` > `10:03:00.500Z`."""
+    return f"2026-09-10T10:{minute:02d}:00Z"
+
+
+def work(n):
+    return f"Work sub-issue kalaluthien/campaign-base#{n} now"
 
 
 def boundary(minute, post=9000):
@@ -83,8 +89,7 @@ def queued(minute, text="Work sub-issue kalaluthien/campaign-base#9 now",
 
 
 def call(minute, tool="Bash"):
-    """An assistant turn calling a tool, as the release turn does after the
-    release: a REPORT, a memory filed."""
+    """An assistant turn calling a tool: the work, a REPORT, a memory filed."""
     return {"type": "assistant", "timestamp": ts(minute), "message": {
         "content": [{"type": "tool_use", "name": tool, "input": {}}],
         "usage": {"input_tokens": 1, "cache_creation_input_tokens": 0,
@@ -95,21 +100,13 @@ def lines(*records):
     return [json.dumps(r) for r in records]
 
 
-TOOK = "claimed tk/"
-
-
 def result(minute, text):
     return {"type": "user", "timestamp": ts(minute), "message": {"content": [
         {"type": "tool_result", "content": text}]}}
 
 
-def claimed(minute, branch="tk/9-next"):
-    """The tool result `campaign-claim.py take` prints when it cuts a claim."""
-    return result(minute, f"...\nclaimed {branch}\n  The ref IS the claim")
-
-
-def reading(m, *records, pane=PANE):
-    return m.transcript_reading(lines(*records), ANCHOR, pane, TOOK)
+def reading(m, *records):
+    return m.transcript_reading(lines(*records))
 
 
 # ------------------------------------------------------------- cases
@@ -126,36 +123,22 @@ def case(name):
 
 # transcript_reading
 
-@case("a release is a tool result naming this pane")
+@case("the assignment is the sub-issue the last assignment prompt names, typed or queued")
 def _(m):
-    r = reading(m, release(1))
-    return r["released"] == ts(1), r
+    r = reading(m, prompt(1, work(5)), queued(3, work(7)), prompt(4, "hello"))
+    return (r["assigned"], r["assigned_at"]) == (7, ts(3)), r
 
 
-@case("another pane's release, read into this transcript, is not this one's")
+@case("an assignment in a summary, a harness note or a tool result is none")
 def _(m):
-    r = reading(m, release(1, pane="w1:p9"))
-    return r["released"] is None, r
-
-
-@case("a release quoted in a prompt or a summary is not a release")
-def _(m):
-    line = f"{ANCHOR} rc/1-x in {PANE}"
-    r = reading(m, prompt(1, line), prompt(2, line, isCompactSummary=True))
-    return r["released"] is None, r
-
-
-@case("a release line quoted mid-line in a tool result is not a release")
-def _(m):
-    r = reading(m, {"type": "user", "timestamp": ts(1), "message": {
-        "content": [{"type": "tool_result", "content":
-                     f"the run printed {ANCHOR} rc/1-x in {PANE}"}]}})
-    return r["released"] is None, r
+    r = reading(m, prompt(1, work(5), isCompactSummary=True),
+                prompt(2, work(6), isMeta=True), result(3, work(8)))
+    return r["assigned"] is None, r
 
 
 @case("the compaction marker printed as text is not a compaction")
 def _(m):
-    r = reading(m, release(1), {"type": "user", "timestamp": ts(2), "message": {
+    r = reading(m, {"type": "user", "timestamp": ts(2), "message": {
         "content": [{"type": "tool_result", "content":
                      "Compacted (ctrl+o to see full summary)"}]}})
     return r["compacted"] is None, r
@@ -163,21 +146,31 @@ def _(m):
 
 @case("every last is by time, not by position in the file")
 def _(m):
-    r = reading(m, release(5), release(1), boundary(3))
-    return r["released"] == ts(5) and m.compacted_since_release(r)[0] == "stale", r
+    r = reading(m, prompt(5, work(5)), prompt(1, work(1)), boundary(3),
+                boundary(2))
+    return (r["assigned"], r["compacted"]) == (5, ts(3)), r
 
 
-@case("the LAST release decides: release, compact, release is stale")
+def gone(minute, standing=(), read="tk/9-* on o/r; the feed: o/r 40 event(s)"):
+    """A `refs` whose sub-issue's refs are `standing`, the last gone at
+    `minute` (None: no deletion read), recording each sub-issue asked."""
+    asked = []
+
+    def refs(n):
+        asked.append(n)
+        return (list(standing), gh_ts(minute) if minute is not None else None,
+                read), None
+    refs.asked = asked
+    return refs
+
+
+@case("compacted after the ref went is compacted, before it stale, and no time unknown")
 def _(m):
-    r = reading(m, release(1), boundary(2), release(3))
-    return m.compacted_since_release(r)[0] == "stale", r
-
-
-@case("release then compaction is compacted, and no release is unknown")
-def _(m):
-    a = m.compacted_since_release(reading(m, release(1), boundary(2)))[0]
-    b = m.compacted_since_release(reading(m, boundary(2)))[0]
-    return (a, b) == ("compacted", "unknown"), (a, b)
+    a = m.compacted_since_ref(reading(m, prompt(1, work(9)), boundary(4)), gone(3))
+    b = m.compacted_since_ref(reading(m, prompt(1, work(9)), boundary(2)), gone(3))
+    c = m.compacted_since_ref(reading(m, prompt(1, "hello"), boundary(4)), gone(3))
+    return ((a[0], b[0], c[0]) == ("compacted", "stale", "unknown")
+            and "no assignment prompt" in c[1]), (a, b, c)
 
 
 @case("context is the latest usage record's input plus cache tokens")
@@ -213,7 +206,7 @@ def _(m):
 
 @case("the bare /compact that release queues is not a prompt")
 def _(m):
-    r = reading(m, release(1), prompt(2, "/compact"), boundary(3))
+    r = reading(m, prompt(2, "/compact"), boundary(3))
     return r["prompted"] is None, r
 
 
@@ -227,11 +220,12 @@ def _(m):
     return r["context"] == 351_805, r
 
 
-@case("a prompt typed into a busy pane, between release and compaction, keeps the worker")
+@case("a prompt typed into a busy pane after the ref went keeps the worker")
 def _(m):
-    r = reading(m, release(1), queued(2, origin={"kind": "human"}), boundary(3))
-    v = m.verdict("worker", False, (True, None), "no limit", r)
-    return r["prompted"] == ts(2) and v[0] == "keep", (r, v)
+    r = reading(m, prompt(1, work(9)), queued(4, "one more thing",
+                                              origin={"kind": "human"}))
+    v = m.verdict("worker", False, (True, None), "no limit", r, gone(3))
+    return r["prompted"] == ts(4) and v[0] == "keep", (r, v)
 
 
 @case("a peer's message queued into the pane is not a prompt")
@@ -250,7 +244,7 @@ def _(m):
 
 @case("a task notification reaching an idle pane is not a prompt")
 def _(m):
-    r = reading(m, release(1), boundary(2),
+    r = reading(m, boundary(2),
                 prompt(3, "<task-notification>\n<task-id>b1</task-id>"))
     return r["prompted"] is None, r
 
@@ -263,7 +257,7 @@ def _(m):
 
 @case("the release's /compact, queued while busy, is not a prompt")
 def _(m):
-    r = reading(m, release(1), queued(2, "/compact"), boundary(3))
+    r = reading(m, queued(2, "/compact"), boundary(3))
     return r["prompted"] is None, r
 
 
@@ -273,33 +267,9 @@ def _(m):
     return r["prompted"] == ts(4), r
 
 
-@case("a claim cut in a tool result is held")
-def _(m):
-    r = reading(m, release(1), claimed(2))
-    return r["held"] == ["tk/9-next"], r
-
-
-@case("a claim cut BEFORE an unrelated release is still held")
-def _(m):
-    r = reading(m, claimed(1), release(2), boundary(3))
-    return r["held"] == ["tk/9-next"], r
-
-
-@case("a claim released later in this pane is not held")
-def _(m):
-    r = reading(m, claimed(1), release(2, branch="tk/9-next"), boundary(3))
-    return r["held"] == [], r
-
-
-@case("prose opening with 'claimed' is not a claim")
-def _(m):
-    r = reading(m, release(1), result(2, "claimed the same way."))
-    return r["held"] == [], r
-
-
 @case("an assistant turn with text and no tool call is not acting")
 def _(m):
-    r = reading(m, release(1), {"type": "assistant", "timestamp": ts(2),
+    r = reading(m, {"type": "assistant", "timestamp": ts(2),
         "message": {"content": [{"type": "text", "text": "done"}]}})
     return r["acted"] is None, r
 
@@ -316,7 +286,7 @@ def _(m):
 
 @case("a tool call is read as the session acting")
 def _(m):
-    r = reading(m, release(1), call(2))
+    r = reading(m, call(2))
     return r["acted"] == ts(2), r
 
 
@@ -332,121 +302,138 @@ def _(m):
 IDLE = (True, None)
 BUSY = (False, "status is working, not idle")
 NONE = "no limit (herdr lists w1:p2 idle)"
-DONE = {"released": ts(1), "compacted": ts(2), "prompted": None,
-        "acted": None, "held": [], "context": 9000, "context_at": ts(2),
-        "records": 2}
+# Assigned #9 at minute 1, worked until minute 2, its ref gone at minute 3.
+DONE = {"assigned": 9, "assigned_at": ts(1), "compacted": None,
+        "prompted": ts(1), "acted": ts(2), "context": 9000,
+        "context_at": ts(2), "records": 3}
 
 
 def big(tokens):
-    return dict(DONE, released=None, compacted=None, context=tokens)
+    return dict(DONE, assigned=None, assigned_at=None, context=tokens)
+
+
+def unread_refs(n):
+    return None, "the refs not read: gh exited 1"
 
 
 @case("fire: a banner on another pane")
 def _(m):
-    v = m.verdict("worker", False, IDLE, "session 2026-09-10T21:00+09:00", big(10))
+    v = m.verdict("worker", False, IDLE, "session 2026-09-10T21:00+09:00",
+                  big(10), gone(3))
     return v[0] == "fire", v
 
 
 @case("a passed banner is not a fire")
 def _(m):
-    v = m.verdict("worker", False, IDLE, "passed 2026-09-10T09:00+09:00", big(10))
+    v = m.verdict("worker", False, IDLE, "passed 2026-09-10T09:00+09:00",
+                  big(10), gone(3))
     return v[0] == "keep" and "has passed" in v[1], v
 
 
 @case("compact: idle at the threshold")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, big(m.COMPACT_AT))
+    v = m.verdict("worker", False, IDLE, NONE, big(m.COMPACT_AT), gone(3))
     return v[0] == "compact", v
 
 
 @case("one token under the threshold is keep")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, big(m.COMPACT_AT - 1))
+    v = m.verdict("worker", False, IDLE, NONE, big(m.COMPACT_AT - 1), gone(3))
     return v[0] == "keep", v
 
 
 @case("the own pane is compacted while it works, its banner unread")
 def _(m):
-    v = m.verdict("planner", True, BUSY, None, big(250_000))
+    v = m.verdict("planner", True, BUSY, None, big(250_000), gone(3))
     return v[0] == "compact", v
 
 
-@case("retire: a worker, idle, released then compacted, no prompt since")
+@case("retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, DONE)
-    return v[0] == "retire", v
+    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(3))
+    return (v[0] == "retire" and "assigned #9" in v[1]
+            and "tk/9-* on o/r" in v[1] and gh_ts(3) in v[1]), v
 
 
-@case("tool calls in the release turn, before the compaction, still retire")
+@case("a ref still standing is not retired")
 def _(m):
-    between = "2026-09-10T10:01:30.000Z"   # after the release, before the compaction
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=between))
-    return v[0] == "retire", v
+    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]))
+    return v[0] == "keep" and "tk/9-x standing" in v[1], v
 
 
-@case("a tool call after the compaction is not retired")
+@case("no assignment prompt is not retired")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)))
-    return v[0] == "keep", v
+    v = m.verdict("worker", False, IDLE, NONE, big(9000), gone(3))
+    return v[0] == "keep" and "no assignment prompt" in v[1], v
 
 
-@case("a worker holding a claim is not retired")
+@case("a prompt after the ref went is not retired")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, held=["tk/9-next"]))
-    return v[0] == "keep", v
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=ts(4)), gone(3))
+    return v[0] == "keep" and f"a prompt at {ts(4)}" in v[1], v
 
 
-@case("a worker prompted since its release is not retired")
+@case("a tool call after the ref went is not retired, though in the same second")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=ts(3)))
-    return v[0] == "keep", v
+    same = "2026-09-10T10:03:00.500Z"   # half a second after the delete
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=same), gone(3))
+    return v[0] == "keep" and "a tool call at" in v[1], v
 
 
-@case("a prompt after the release but before the compaction is not retired")
+@case("a tool call at the very instant the ref went is not retired")
 def _(m):
-    between = "2026-09-10T10:01:30.000Z"   # after the release, before the compaction
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=between))
-    return v[0] == "keep", v
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)), gone(3))
+    return v[0] == "keep" and "a tool call at" in v[1], v
+
+
+@case("no deletion read, or the refs unread, is not retired")
+def _(m):
+    a = m.verdict("worker", False, IDLE, NONE, DONE, gone(None))
+    b = m.verdict("worker", False, IDLE, NONE, DONE, unread_refs)
+    return (a[0], b[0]) == ("keep", "keep") and "no deletion read" in a[1] \
+        and "the refs not read" in b[1], (a, b)
 
 
 @case("keep: a transcript with no context size")
 def _(m):
     try:
-        v = m.verdict("worker", False, IDLE, NONE, big(None))
+        v = m.verdict("worker", False, IDLE, NONE, big(None), gone(3))
     except Exception as e:  # noqa: BLE001 -- raising is not answering keep
         return False, f"raised {e.__class__.__name__}"
     return v[0] == "keep" and "no context size" in v[1], v
 
 
-@case("a planner is never retired")
+@case("a planner is never retired, nor asked about its refs")
 def _(m):
-    v = m.verdict("planner", False, IDLE, NONE, DONE)
-    return v[0] == "keep", v
+    refs = gone(3)
+    v = m.verdict("planner", False, IDLE, NONE, DONE, refs)
+    return v[0] == "keep" and refs.asked == [], (v, refs.asked)
 
 
 @case("the own pane is never retired")
 def _(m):
-    v = m.verdict("worker", True, BUSY, None, DONE)
+    v = m.verdict("worker", True, BUSY, None, DONE, gone(3))
     return v[0] == "keep", v
 
 
 @case("keep: a working pane, whatever its context")
 def _(m):
-    v = m.verdict("worker", False, BUSY, NONE, big(900_000))
+    v = m.verdict("worker", False, BUSY, NONE, big(900_000), gone(3))
     return v[0] == "keep", v
 
 
 @case("keep: an unread banner, whatever its context")
 def _(m):
     v = m.verdict("worker", False, IDLE, "could not read: herdr exited 1",
-                  big(900_000))
+                  big(900_000), gone(3))
     return v[0] == "keep" and "banner not read" in v[1], v
 
 
 @case("keep: an unread transcript")
 def _(m):
     try:
-        v = m.verdict("worker", False, IDLE, NONE, "0 transcript(s) named x.jsonl")
+        v = m.verdict("worker", False, IDLE, NONE,
+                      "0 transcript(s) named x.jsonl", gone(3))
     except Exception as e:  # noqa: BLE001 -- raising is not answering keep
         return False, f"raised {e.__class__.__name__}"
     return v[0] == "keep" and "transcript not read" in v[1], v
@@ -501,11 +488,44 @@ if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
         {"number": 9, "state": "open", "labels": [{"name": "kind:maintenance"}]}]))
     sys.exit(0)
 if a[:2] == ["pr", "list"]:
-    pr = lambda n, head, k: {"number": n, "headRefName": head, "state": "OPEN",
-                             "headRefOid": "abc1234def", "comments": [{}] * k,
-                             "reviews": [{}]}
+    pr = lambda n, head, k, st="OPEN": {
+        "number": n, "headRefName": head, "state": st,
+        "headRefOid": "abc1234def", "comments": [{}] * k, "reviews": [{}]}
     print(json.dumps([pr(11, "tk/5-a", 2), pr(3, "tk/5-a", 0),
-                      pr(12, "other/5-a", 9)])); sys.exit(0)
+                      pr(12, "other/5-a", 9), pr(4, "tk/5-old", 0, "MERGED"),
+                      pr(20, "tk/13-z", 0, "MERGED"),
+                      pr(21, "tk/14-a", 0, "MERGED"),
+                      pr(22, "tk/14-b", 0, "MERGED")])); sys.exit(0)
+if a[:2] == ["api", "--paginate"] and a[2].endswith("/timeline"):
+    # What `--jq` leaves of a timeline: each head_ref_deleted's time.
+    n = int(a[2].split("/")[-2])
+    print({4: "2026-09-10T10:05:00Z", 20: "2026-09-10T10:04:00Z",
+           21: "2026-09-10T10:02:00Z",
+           22: "2026-09-10T10:05:00Z"}.get(n, "")); sys.exit(0)
+if a[:1] == ["api"] and a[1].startswith(T + "/events?per_page=100&page="):
+    if broken("events-broken"):
+        sys.stderr.write("HTTP 502\n"); sys.exit(1)
+    page = int(a[1].rsplit("=", 1)[1])
+    gone = lambda ref, m, kind="branch": {
+        "type": "DeleteEvent", "created_at": "2026-09-10T10:%%02d:00Z" %% m,
+        "payload": {"ref": ref, "ref_type": kind}}
+    push = [{"type": "PushEvent", "created_at": "2026-09-10T11:00:00Z",
+             "payload": {}}] * 100
+    # Newest first, as GitHub gives it: a prefix, a tag and an older
+    # topic stand beside each worker's own deletion.
+    feed = [gone("tk/90-y", 8), gone("tk/4-t", 7, "tag"), gone("tk/40-z", 6),
+            gone("tk/5-old", 5), gone("tk/9-x", 3), {"type": "PushEvent"},
+            gone("tk/9-old", 0)]
+    deep = {"events-deep": 3, "events-deeper": 4}
+    at = [deep[k] for k in deep if broken(k)]
+    if at:
+        print(json.dumps(feed if page == at[0] else push)); sys.exit(0)
+    if broken("events-unordered"):
+        # As measured: page 1 holds an older deletion than page 3's.
+        pages = {1: [gone("tk/9-a", 1)] + push[:99], 2: push, 3: feed}
+        print(json.dumps(pages.get(page, []))); sys.exit(0)
+    if page == 1:
+        print(json.dumps(feed)); sys.exit(0)
 sys.exit(1)
 '''
 
@@ -528,20 +548,32 @@ def row(sid, name, pane, status="idle"):
 
 FLEET = [  # (sid, name, pane, status, records, screen)
     ("S1", "tk-planner-1", "w1:p1", "working", [usage(1, 250_000)], None),
+    # Assigned #9, worked, then idle; tk/9-x went at 10:03 and a compaction
+    # came after it: done.
     ("S2", "tk-worker-2", "w1:p2", "idle",
-     [release(1, "w1:p2"), call(2), result(2, "claimed the same way."),
-      prompt(3, "/compact"), boundary(4)], ""),
+     [prompt(1, work(9)), call(2), prompt(4, "/compact"), boundary(5)], ""),
     ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 210_000)], ""),
     ("S4", "tk-worker-4", "w1:p4", "idle", [usage(1, 10)], banner(2)),
     ("S5", "tk-worker-5", "w1:p5", "idle", [usage(1, 10)], banner(2)),
     ("S6", "tk-worker-6", "w1:p6", "working", [usage(1, 900_000)], ""),
     ("S7", "other-worker-7", "w1:p7", "idle", [usage(1, 900_000)], ""),
     ("S8", None, "w1:p8", "idle", [usage(1, 900_000)], ""),
-    # A planner that is not this one also releases and compacts: never retired.
-    ("S9", "tk-planner-9", "w1:p9", "idle", [release(1, "w1:p9"), boundary(2)], ""),
-    # Cut a claim in its release turn, before the compaction: holds work.
+    # A planner that is not this one, assigned the same done sub-issue: never
+    # retired.
+    ("S9", "tk-planner-9", "w1:p9", "idle", [prompt(1, work(9)), boundary(2)], ""),
+    # Assigned #5, whose tk/5-a still stands though an older topic's pull
+    # request, pr#4, had its head deleted at 10:05: holds work.
     ("SB", "tk-worker-11", "w1:pB", "idle",
-     [release(1, "w1:pB"), claimed(2), boundary(3)], ""),
+     [prompt(1, work(5)), call(2), boundary(3)], ""),
+    # Assigned #4, no ref standing and no tk/4- branch deleted -- only a tag
+    # and tk/40-z: no time it went.
+    ("SC", "tk-worker-12", "w1:pC", "idle", [prompt(1, work(4)), call(2)], ""),
+    # Assigned #13, whose pr#20's head went at 10:04 by its timeline; the
+    # feed holds no tk/13- deletion.
+    ("SD", "tk-worker-13", "w1:pD", "idle", [prompt(1, work(13)), call(2)], ""),
+    # Assigned #14, two pull requests: pr#21's head went at 10:02, pr#22's
+    # at 10:05; it worked until 10:03.
+    ("SE", "tk-worker-14", "w1:pE", "idle", [prompt(1, work(14)), call(3)], ""),
     # Two transcripts carry this id: unread, so keep, never compact.
     ("SA", "tk-worker-10", "w1:pA", "idle", [usage(1, 900_000)], ""),
 ]
@@ -636,7 +668,8 @@ def _(m):
         code, out, _ = heartbeat(m, fleet(d), "7")
     want = {"w1:p1": "compact", "w1:p2": "retire", "w1:p3": "compact",
             "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep",
-            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep"}
+            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep", "w1:pC": "keep",
+            "w1:pD": "retire", "w1:pE": "retire"}
     return code == 0 and verdicts(out) == want, out
 
 
@@ -644,8 +677,98 @@ def _(m):
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d), "7")
-    return ("9 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
+    return ("12 of tk (#7)" in out and "2 transcript(s) named SA.jsonl" in out and "S3.jsonl" in out
             and "own pane, banner not read" in out and "herdr idle" in out), out
+
+
+def line_of(out, pane):
+    return next((ln for ln in out.splitlines()
+                 if ln.split()[1:2] == [pane]), "")
+
+
+@case("the run retires off the refs and the feed, and names N and what it read")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:p2")
+    return (got.startswith("retire w1:p2 tk-worker-2: assigned #9;")
+            and "tk/9-* on kalaluthien/campaign-base" in got
+            and "went 2026-09-10T10:03:00Z" in got
+            and "kalaluthien/campaign-base 7 event(s)" in got
+            and "tk/5-a standing" in line_of(out, "w1:pB")), out
+
+
+@case("a pull request's timeline answers where the feed has no deletion")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:pD")
+    return (got.startswith("retire") and "went 2026-09-10T10:04:00Z" in got
+            and "the timeline of kalaluthien/campaign-base pr#20" in got), out
+
+
+@case("a sub-issue with no pull request falls to the feed, and says it is the fallback")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:p2")
+    return (got.startswith("retire")
+            and "no pull request, so the events feed, the fallback" in got), out
+
+
+@case("two pull requests: the later head_ref_deleted wins")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        _, out, _ = heartbeat(m, fleet(d), "7")
+    got = line_of(out, "w1:pE")
+    return (got.startswith("retire") and "went 2026-09-10T10:05:00Z" in got
+            and "pr#21, kalaluthien/campaign-base pr#22" in got), out
+
+
+@case("the feed is read once a run, however many idle workers ask")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        heartbeat(m, d, "7")
+        asked = [ln for ln in (d / "gh.log").read_text().splitlines()
+                 if "/events?" in ln]
+    return len(asked) == 1, asked
+
+
+@case("a later deletion on a later page wins over an older one on page 1")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        (d / "events-unordered").write_text("")
+        _, out, _ = heartbeat(m, d, "7")
+    got = line_of(out, "w1:p2")
+    return (got.startswith("retire") and "went 2026-09-10T10:03:00Z" in got
+            and "207 event(s)" in got), out
+
+
+@case("a deletion on the feed's third page is read, and no page past it")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        a = fleet(Path(d) / "a")
+        (a / "events-deep").write_text("")
+        _, deep, _ = heartbeat(m, a, "7")
+        b = fleet(Path(d) / "b")
+        (b / "events-deeper").write_text("")
+        _, deeper, _ = heartbeat(m, b, "7")
+        pages = [ln for ln in (b / "gh.log").read_text().splitlines()
+                 if "page=4" in ln]
+    return (verdicts(deep)["w1:p2"] == "retire"
+            and verdicts(deeper)["w1:p2"] == "keep" and pages == []), (deep, deeper)
+
+
+@case("a feed that would not read keeps the worker and says so")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        (d / "events-broken").write_text("")
+        _, out, _ = heartbeat(m, d, "7")
+    got = line_of(out, "w1:p2")
+    return got.startswith("keep") and "the events feed not read" in got, out
 
 
 @case("without --apply nothing is sent and each action says what it would do")
@@ -1009,7 +1132,7 @@ def _(m):
     return (why is None and set(ss) == {
                 "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
                 "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
-                "tk-worker-10"}
+                "tk-worker-12", "tk-worker-13", "tk-worker-14", "tk-worker-10"}
             and ss["tk-worker-3"]["context"] == 210_000
             and ss["tk-worker-6"]["context"] is None
             and ss["tk-worker-4"]["banner"].startswith("session")
@@ -1025,7 +1148,11 @@ def _(m):
             and got["issues"] == ({5: ("open", False, False), 6: ("open", True, False),
                                    8: ("closed", False, False),
                                    9: ("open", False, True)}, None)
-            and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3)}, None)), got
+            and got["prs"] == ({"tk/5-a": (11, "open", "abc1234", 3),
+                                "tk/5-old": (4, "merged", "abc1234", 1),
+                                "tk/13-z": (20, "merged", "abc1234", 1),
+                                "tk/14-a": (21, "merged", "abc1234", 1),
+                                "tk/14-b": (22, "merged", "abc1234", 1)}, None)), got
 
 
 @case("watch reader: an unreadable or garbled source is a why, not a raise")
@@ -1229,36 +1356,87 @@ MUTATIONS = [
      'if reading["context"] > COMPACT_AT:', "compact: idle at the threshold"),
     ("the own pane skips the idle reading", "is_own = pane == own",
      "is_own = False", "the run gives one verdict per session of the campaign, and no other"),
-    ("retire", 'if (role == "worker" and not own and since == "compacted"',
-     'if False and (role == "worker"', "retire: a worker, idle, released then compacted, no prompt since"),
-    ("retire needs no prompt since", 'and not (reading["prompted"]', 'and not (False',
-     "a worker prompted since its release is not retired"),
-    ("retire only a worker", 'if (role == "worker" and not own', 'if (True and not own',
-     "a planner is never retired"),
-    ("never retire the own pane", 'if (role == "worker" and not own and',
-     'if (role == "worker" and', "the own pane is never retired"),
+    ("retire", "if went and not since:", "if False:",
+     "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
+    ("retire only a worker", 'if role == "worker" and not own:', "if not own:",
+     "a planner is never retired, nor asked about its refs"),
+    ("never retire the own pane", 'if role == "worker" and not own:', 'if role == "worker":',
+     "the own pane is never retired"),
+    ("no prompt after the ref went", '("prompt", reading["prompted"])', '("prompt", None)',
+     "a prompt after the ref went is not retired"),
+    ("no tool call after the ref went", '("tool call", reading["acted"])', '("tool call", None)',
+     "a tool call after the ref went is not retired, though in the same second"),
+    ("only what came after the ref went", "if went and ts and when(ts) >= when(went)]",
+     "if went and ts]", "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
+    ("times, not strings", "if went and ts and when(ts) >= when(went)]",
+     "if went and ts and ts >= went]", "a tool call after the ref went is not retired, though in the same second"),
+    ("a tie is after the delete", "if went and ts and when(ts) >= when(went)]",
+     "if went and ts and when(ts) > when(went)]", "a tool call at the very instant the ref went is not retired"),
+    ("no assignment, no retire", '    if n is None:\n        return None, (f"no assignment prompt',
+     '    if False:\n        return None, (f"no assignment prompt', "no assignment prompt is not retired"),
+    ("a ref standing, no retire", "    if standing:\n        return None, f\"assigned #{n}; {', '.join(standing)}",
+     "    if False:\n        return None, f\"assigned #{n}; {', '.join(standing)}",
+     "a ref still standing is not retired"),
+    ("no deletion read says so", '    if went is None:\n        return None, f"assigned #{n}; no ref standing',
+     '    if False:\n        return None, f"assigned #{n}; no ref standing',
+     "no deletion read, or the refs unread, is not retired"),
+    ("compacted means after the ref went", "if comp and when(comp) > when(went):", "if comp:",
+     "compacted after the ref went is compacted, before it stale, and no time unknown"),
+    ("the assignment by its sentence", 'hit = ASSIGNMENT.search("".join(texts(content)))',
+     "hit = None", "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
+    ("a queued assignment", 'said(ts, a.get("prompt"))', 'later("prompted", ts)',
+     "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
+    ("the last assignment by time", 'or ts > out["assigned_at"]):', "or True):",
+     "every last is by time, not by position in the file"),
+    ("no assignment in a note or a summary", 'if r.get("isMeta") or r.get("isCompactSummary"):',
+     "if False:", "an assignment in a summary, a harness note or a tool result is none"),
+    ("the feed only when no ref stands", "        if standing:\n            return (standing, None, read), None\n", "",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("a deletion under the prefix", 'and str(e["payload"].get("ref")).startswith(prefix)', "and True",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("the prefix ends at the number", 'prefix = f"{slug}/{n}-"', 'prefix = f"{slug}/{n}"',
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("a branch, not a tag", '.get("ref_type") == "branch"', '.get("ref_type") is not None',
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("the latest over every page", "return max(times, key=when, default=None)",
+     "return times[0] if times else None", "a later deletion on a later page wins over an older one on page 1"),
+    ("the timeline first", "    if heads:\n", "    if False:\n",
+     "a pull request's timeline answers where the feed has no deletion"),
+    ("the feed only without a pull request", "    if heads:\n", "    if heads and False:\n",
+     "two pull requests: the later head_ref_deleted wins"),
+    ("every pull request's timeline", "            times += got\n", "            times = times or got\n",
+     "two pull requests: the later head_ref_deleted wins"),
+    ("a head under the prefix", "for n, head in got if head.startswith(prefix)]", "for n, head in got]",
+     "the run gives one verdict per session of the campaign, and no other"),
+    ("the fallback names itself", '"no pull request, so the events feed, the "', '"the "',
+     "a sub-issue with no pull request falls to the feed, and says it is the fallback"),
+    ("no hit ends the feed", "        events += got\n",
+     "        events += got\n        if any(e.get('type') == 'DeleteEvent' for e in got):\n            break\n",
+     "a later deletion on a later page wins over an older one on page 1"),
+    ("a short page ends the feed", "        if len(got) < 100:\n            break\n", "",
+     "the feed is read once a run, however many idle workers ask"),
+    ("the feed once per repository", "            if (fn, repo) not in once:\n", "            if True:\n",
+     "the feed is read once a run, however many idle workers ask"),
+    ("the feed's later pages", "for page in range(1, EVENT_PAGES + 1):", "for page in range(1, 2):",
+     "a deletion on the feed's third page is read, and no page past it"),
+    ("the feed's bound", "EVENT_PAGES = 3", "EVENT_PAGES = 4",
+     "a deletion on the feed's third page is read, and no page past it"),
+    ("a feed unread says so", "        if r.returncode != 0:\n            return None, f\"gh api {path}:",
+     "        if False:\n            return None, f\"gh api {path}:",
+     "a feed that would not read keeps the worker and says so"),
+    ("the run gives verdict the refs", "refs = refs_reader(claims, slug)",
+     'refs = refs_reader((None, "x"), slug)', "the run retires off the refs and the feed, and names N and what it read"),
     ("keep a working pane", "if not idle[0]:", "if False:",
      "keep: a working pane, whatever its context"),
     ("keep an unread banner", 'if word == "unread":', "if False:",
      "keep: an unread banner, whatever its context"),
     ("keep an unread transcript", "if isinstance(reading, str):", "if False:",
      "keep: an unread transcript"),
-    ("the release names this pane", "ln.startswith(anchor) and ln.endswith(tail)",
-     "ln.startswith(anchor)", "another pane's release, read into this transcript, is not this one's"),
-    ("the release is a tool result", "for ln in result_lines(content):",
-     "for ln in texts(content) + list(result_lines(content)):",
-     "a release quoted in a prompt or a summary is not a release"),
-    ("the release opens its line", "ln.startswith(anchor) and ln.endswith(tail)",
-     "anchor in ln and ln.endswith(tail)", "a release line quoted mid-line in a tool result is not a release"),
     ("the compaction is a record type", 'r.get("subtype") == "compact_boundary"',
      'r.get("subtype") == "compact_boundary" or "Compacted" in line',
      "the compaction marker printed as text is not a compaction"),
     ("last by time", "if out[key] is None or ts > out[key]:",
      "if True:", "every last is by time, not by position in the file"),
-    ("the LAST release", 'later("released", ts)',
-     'out["released"] = out["released"] or ts', "the LAST release decides: release, compact, release is stale"),
-    ("compacted means after the release", "if comp and comp > rel:", "if comp:",
-     "the LAST release decides: release, compact, release is stale"),
     ("context from usage", '"cache_read_input_tokens")))', '"input_tokens",)))',
      "context is the latest usage record's input plus cache tokens"),
     ("context from the boundary",
@@ -1266,20 +1444,17 @@ MUTATIONS = [
      "context after a compaction is the boundary's postTokens"),
     ("skip a subagent", 'if not isinstance(r, dict) or r.get("isSidechain"):',
      "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
-    ("a prompt is text", 'if is_prompt(content):\n                later("prompted", ts)',
-     'if False:\n                later("prompted", ts)',
+    ("a prompt is text", "if is_prompt(content):\n                said(ts, content)",
+     "if False:\n                said(ts, content)",
      "a prompt is a user record carrying text"),
     ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
-     "a prompt typed into a busy pane, between release and compaction, keeps the worker"),
+     "a prompt typed into a busy pane after the ref went keeps the worker"),
     ("a queued peer message", 'and not a.get("isMeta") and is_prompt', "and is_prompt",
      "a peer's message queued into the pane is not a prompt"),
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
      "a queued command in any mode but prompt is not a prompt"),
     ("a queued echo", ' and is_prompt(a.get("prompt"))', "",
      "the release's /compact, queued while busy, is not a prompt"),
-    ("a prompt before the compaction blocks", 'reading["prompted"] > rel)',
-     'reading["prompted"] > comp)',
-     "a prompt after the release but before the compaction is not retired"),
     ("keep with no context size", 'if reading["context"] is None:', "if False:",
      "keep: a transcript with no context size"),
     ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
@@ -1301,19 +1476,6 @@ MUTATIONS = [
     ("only the bare /compact", "said != QUEUED_COMPACT and not",
      "not said.startswith(QUEUED_COMPACT) and not",
      "a person's `/compact <focus>` is a prompt"),
-    ("read a claim cut", "if took and ln.startswith(took):", "if False:",
-     "a claim cut in a tool result is held"),
-    ("a release frees its claim", "if b not in freed or freed[b] < t)", "if True)",
-     "a claim released later in this pane is not held"),
-    ("a claim before the release counts", "if b not in freed or freed[b] < t)",
-     'if (b not in freed or freed[b] < t) and t > (out["released"] or ""))',
-     "a claim cut BEFORE an unrelated release is still held"),
-    ("no claim held", 'and not reading["held"]', "and True",
-     "a worker holding a claim is not retired"),
-    ("the run reads this campaign's claims", 'f"{claim.CLAIMED} {slug}/")', "None)",
-     "the run gives one verdict per session of the campaign, and no other"),
-    ("the claim prefix names the slug", 'f"{claim.CLAIMED} {slug}/")', 'f"{claim.CLAIMED} ")',
-     "the run gives one verdict per session of the campaign, and no other"),
     ("only a tool call is acting", 'b.get("type") == "tool_use"',
      'b.get("type") in ("tool_use", "text")',
      "an assistant turn with text and no tool call is not acting"),
@@ -1323,10 +1485,6 @@ MUTATIONS = [
      'elif kind == "assistant":', "a synthetic record, a limit banner, does not zero the context"),
     ("read a tool call", 'later("acted", ts)', "pass",
      "a tool call is read as the session acting"),
-    ("no tool call after the compaction", 'and not (reading["acted"] and reading["acted"] > comp)',
-     "and True", "a tool call after the compaction is not retired"),
-    ("the release turn's calls do not block", 'reading["acted"] > comp)',
-     'reading["acted"] > rel)', "tool calls in the release turn, before the compaction, still retire"),
     ("the role off the name", 'role = row["name"].split("-")[-2]', 'role = "worker"',
      "the run gives one verdict per session of the campaign, and no other"),
     ("one transcript per id", "if len(hits) != 1:", "if not hits:",
@@ -1385,8 +1543,9 @@ MUTATIONS = [
     ("quiet reads this poll, not the last", 'fresh = {s: readings.get(s, (None, "not read this poll"))',
      "fresh = {s: (self.last.get(s, {}), None)",
      "quiet: a reading not made this poll is not quiet, though its last one stands"),
-    ("the run reads quiet from the refs and the index", 'got["claims"], got["issues"])',
-     '({}, None), ({}, None))',
+    ("the run reads quiet from the refs and the index",
+     'if claims[0] else claims,\n                               got["issues"])',
+     'if False else ({}, None),\n                               ({}, None))',
      "the run with the refs and the index unread is not quiet, and judges the own pane as today"),
     ("the own pane's verdict is quiet", "if is_own and calm:", "if False:",
      "the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit"),
@@ -1453,17 +1612,18 @@ MUTATIONS = [
      "watch reader: claims, sub-issues and pull requests of this slug"),
     ("backlog by its label", "tracker.BACKLOG_LABEL in names,", "False,",
      "watch reader: claims, sub-issues and pull requests of this slug"),
-    ("claims from the refs", "            out[b] = int(n) if n else None\n", "",
+    ("claims from the refs", "        out[b] = int(n) if n else None\n", "",
      "watch reader: claims, sub-issues and pull requests of this slug"),
-    ("an unread ## Repos fails claims", "        if listed is None:\n            repos.clear()\n            return None, why\n", "",
+    ("an unread ## Repos fails claims", "    listed, why = claim.campaign_repos(issue)\n    if listed is None:\n        return None, why\n",
+     "    listed, why = claim.campaign_repos(issue)\n",
      "watch reader: an unread ## Repos fails the claims and pull requests"),
     ("no pull requests without the repositories", "        if not repos:\n            return None,", "        if False:\n            return None,",
      "watch reader: an unread ## Repos fails the claims and pull requests"),
     ("an unread install is no reading", "((word, None) if readable(word)", "((word, None) if True",
      "watch reader: each install is a source, and one unreadable fails alone"),
     ("each install its own source", "        out.update(each)\n", "", "watch reader: each install is a source, and one unreadable fails alone"),
-    ("## Repos every poll", "        listed, why = claim.campaign_repos(issue)\n",
-     "        listed, why = (repos[1:], None) if repos else claim.campaign_repos(issue)\n",
+    ("## Repos every poll", "        repos.clear()\n        got, why = claim_reading(issue, slug, claim, repos)\n",
+     "        got, why = (({}, repos), None) if repos else claim_reading(issue, slug, claim, repos)\n",
      "watch reader: ## Repos is read on every poll"),
     ("an install that left is no source", "                    self.last.pop(gone, None)\n", "                    pass\n",
      "watch: an install that leaves the list takes its drift with it"),

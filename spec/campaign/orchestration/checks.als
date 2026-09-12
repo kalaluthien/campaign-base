@@ -475,21 +475,21 @@ pred L1b_PromptAfterTheResetIsAnswered {
                    and eventually (limitReset and after (status[a] and after answer[a])))
 }
 
-/* THE HEARTBEAT RETIRES A DONE WORKER (#296). A worker that released its
-   sub-issue, compacted with the release, and took nothing since is sent
-   `/exit`; one holding a claim or a live agent, one that launched since its
-   release, one that never released, and a planner are not. The first is reachable; the second is
-   UNSAT, and dropping any one guard of `sessionExit` or `exitSession` makes it
-   SAT. */
+/* THE HEARTBEAT RETIRES A DONE WORKER (#296, #349). A worker whose
+   sub-issue was released, by any session, and which holds nothing is sent
+   `/exit`; one holding a claim or a live agent, one with no sub-issue
+   released, and a planner are not. The first is reachable; the second is
+   UNSAT, and dropping any one of the four guards on `s` -- its role, its
+   claims, a released sub-issue, its live agents -- makes it SAT
+   (`no Target.agent` is a frame, and dropping it leaves this UNSAT). */
 pred H1_HeartbeatRetiresADoneWorker {
   some s: Session | eventually (Now.event = Release and Who.session = s
                      and eventually (Now.event = SessionExit and Who.session = s))
 }
 pred H1b_HeartbeatRetiresNoHolder {
   some s: Session | eventually (Now.event = SessionExit and Who.session = s
-    and (some s.claimedIssues or some heldBy[s] or s not in Compacted
-         or s.role = Planner
-         or not once (Now.event = Release and Who.session = s)))
+    and (some s.claimedIssues or some heldBy[s] or s.role = Planner
+         or no a: peer.s | once (Now.event = Release and Now.issue = a.task)))
 }
 
 /* THE WATCH READS A LEVEL (#296). An open sub-issue nobody claimed is an
@@ -2264,7 +2264,7 @@ pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_AgentDie         { eventually Now.event = AgentDie }
 /* The session limit stops a live agent, and its reset wakes every stopped
-   one; a session leaves once it released and was compacted. SessionExit is
+   one; a session leaves once a claim of its own agents was released. SessionExit is
    session/system's own event, witnessed here because `exitSession` above is
    the refinement that constrains it (sdlc-alloy#345 I6). */
 pred Cov_LimitStop        { eventually Now.event = LimitStop }

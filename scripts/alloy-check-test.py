@@ -31,6 +31,10 @@ THE NAMED FAILING CASES, one per refusal branch:
   reads                                 `open` inside a block comment, an
                                         alloy `util/` module; an `open` that
                                         is not there is `could not look`
+  a command in a system.als             SYSTEM, under --commands (--write
+                                        included) and under --staged
+  --staged against the snapshot         NEW, read off the index, not the
+                                        working tree
 
 and the allow cases beside them: the repaired model, a witness with extra
 conjuncts, an `or` inside a quantifier's body, a witness predicate declared in
@@ -493,6 +497,62 @@ def main() -> int:
         rc, out = closure(d, {}, "sys/nothing.als")
         check("--closure of a module that is not there is `could not look`",
               rc == 2 and len(out) == 1 and "could not look" in out[0], f"exit {rc}: {out}")
+
+    # ------------------------------------------------------------ --commands, --staged
+
+    def repo(d, files):
+        """A git repository at <d> holding <files>, every one staged."""
+        for name, text in files.items():
+            (Path(d) / name).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / name).write_text(text)
+        subprocess.run(["git", "init", "-q"], cwd=d, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+
+    def mode(d, *args):
+        r = subprocess.run([sys.executable, str(SCRIPT), *args],
+                           capture_output=True, text=True, cwd=d)
+        return r.returncode, r.stdout.splitlines()
+
+    entity = {"spec/m/system.als": "module m/system\nsig A {}\n",
+              "spec/m/checks.als": "module m/checks\nopen m/system\n"
+                                   "run Some { some A } expect 1\n"}
+    in_system = dict(entity, **{"spec/m/system.als": "module m/system\nsig A {}\n"
+                                                     "run Stray { no A } expect 1\n"})
+
+    with tempfile.TemporaryDirectory() as d:
+        repo(d, entity)
+        rc_w, _ = mode(d, "--commands", "spec", "--write")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+        rc, out = mode(d, "--staged")
+        check("--staged passes when the index's models and snapshot agree",
+              rc_w == 0 and rc == 0 and "exactly the 1 declared" in line(out, "RESULT"),
+              f"write {rc_w}, exit {rc}: {out}")
+        (Path(d) / "spec/m/checks.als").write_text(
+            entity["spec/m/checks.als"] + "run Unstaged { no A } expect 1\n")
+        rc, out = mode(d, "--staged")
+        check("--staged reads the index, not a working tree the commit does not hold",
+              rc == 0, f"exit {rc}: {out}")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True)
+        rc, out = mode(d, "--staged")
+        check("--staged refuses a staged command the snapshot does not name",
+              rc == 1 and "Unstaged" in line(out, "NEW").split(), f"exit {rc}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        repo(d, in_system)
+        rc, out = mode(d, "--commands", "spec", "--write")
+        check("--commands --write refuses a command in a system.als and writes nothing",
+              rc == 1 and "Stray" in line(out, "SYSTEM").split()
+              and not (Path(d) / "spec/commands.snapshot.json").exists(),
+              f"exit {rc}: {out}")
+        rc, out = mode(d, "--staged")
+        check("--staged refuses a command in a system.als",
+              rc == 1 and "Stray" in line(out, "SYSTEM").split(), f"exit {rc}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        repo(d, {"a.txt": "no models here\n"})
+        rc, out = mode(d, "--staged")
+        check("--staged over an index with no spec/ model passes, saying so",
+              rc == 0 and out and "no .als" in out[0], f"exit {rc}: {out}")
 
     # ------------------------------------------------------------ could not look
 

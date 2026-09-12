@@ -226,6 +226,50 @@ T6_CASES = [
      DEBT, {"scripts/a-test.py": DEBT["scripts/a-test.py"] + "x = 1\n"}),
 ]
 
+# ---- T6 and T7 over an html form under spec/, the model's `Html`: its
+# `data-refines` names are read as a suite's `# witnesses:` names are, against
+# the commands of the form's own entity -- `x`, the module `snap` gives a row.
+FORM = "spec/x/view.html"
+
+
+def form(names, attrs="data-scenario"):
+    return f'<section {attrs} data-refines="{names}">\n<p>drawn</p>\n</section>\n'
+
+
+HTML_CASES = [
+    ("allow an html form refining a witnessed scenario of its own entity",
+     TIED, {FORM: form("S1_FullChain")}, None),
+    ("allow data-refines in single quotes",
+     TIED, {FORM: "<section data-scenario data-refines='S1_FullChain'></section>\n"}, None),
+    ("T7 an html form with no data-scenario section",
+     TIED, {FORM: "<section><p>S1_FullChain</p></section>\n"}, "T7"),
+    ("T7 a data-refines on a section without data-scenario declares nothing",
+     TIED, {FORM: form("S1_FullChain", attrs="class=x")}, "T7"),
+    ("T7 data-scenario-id is not data-scenario",
+     TIED, {FORM: form("S1_FullChain", attrs="data-scenario-id=k")}, "T7"),
+    ("T7 a data-refines inside another attribute's value is text",
+     TIED, {FORM: "<section data-scenario title=\"see data-refines='S1_FullChain'\">"
+                  "</section>\n"}, "T7"),
+    ("allow data-scenario after data-refines, and in capitals",
+     TIED, {FORM: '<SECTION DATA-REFINES="S1_FullChain" DATA-SCENARIO></SECTION>\n'},
+     None),
+    ("T7 an html form refining a scenario no suite witnesses",
+     dict(TIED, **{SPEC: TWO}), {FORM: form("S1_Other")}, "T7"),
+    ("T6 an html form refining a name the snapshot does not list",
+     TIED, {FORM: form("S1_FullChain, S9_Nowhere")}, "T6"),
+    ("T6 an html form refining a command of another entity",
+     {SPEC: snap("S1_FullChain", ("y/checks.als", "run", "S2_Y")),
+      "scripts/a.py": CODE,
+      "scripts/a-test.py": "# witnesses: S1_FullChain, S2_Y\n"},
+     {FORM: form("S1_FullChain, S2_Y")}, "T6"),
+    ("T7 an html form this change never opened, untied by the change",
+     {SPEC: DECL, "scripts/b-test.py": SUITE, FORM: form("S1_FullChain")},
+     {"scripts/b-test.py": "# nothing\n"}, "T7"),
+    ("allow an html form this change never opened, with a fault it already had",
+     {SPEC: DECL, FORM: "<p>nothing declared</p>\n"},
+     {"spec/x/checks.als": "open x/system\n"}, None),
+]
+
 
 def put(root, rel, body):
     """A fixture file. `bytes` goes down as bytes, which is how the cases that
@@ -322,6 +366,18 @@ def main():
         r = run_case(before, after)
         ok, want = judge(r, code)
         check(name, ok, want, r)
+
+    for name, before, after, code in HTML_CASES:
+        r = run_case(before, after)
+        ok, want = judge(r, code)
+        codes = {line.split("\t", 1)[0] for line in r.stderr.splitlines() if "\t" in line}
+        check(name, ok and codes <= {code}, want + ", and no other code", r)
+
+    # An unopened form's old fault is counted in the reading, not dropped.
+    r = run_case({SPEC: DECL, FORM: "<p>nothing declared</p>\n"}, {"README.md": "x\n"})
+    check("an unopened form's old fault is counted in the reading",
+          judge(r, None)[0] and "1 fault(s) left in html forms" in r.stdout,
+          "0 finding(s) and `1 fault(s) left in html forms` in the reading", r)
 
     for name, before, after in T6_CASES:
         r = run_case(before, after)
@@ -597,7 +653,8 @@ def main():
 
     # The reading names its counts and its tree.
     r = run_case(TIED, {"README.md": "r\n"})
-    want = ("read 1 scenario name(s), 1 suite(s), 1 code path(s) from the index under")
+    want = ("read 1 scenario name(s), 1 suite(s), 0 html form(s), 1 code path(s) "
+            "from the index under")
     check("the reading names what it counted and where", want in r.stdout, want, r)
 
     print(f"{ran} case(s) ran, {failed} failed")

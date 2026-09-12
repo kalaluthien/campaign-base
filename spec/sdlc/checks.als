@@ -331,6 +331,14 @@ pred WitnessesResolve_Bites {
               and after some witnesses.(Artifact - Written) & (Artifact.tie).Written)
 }
 
+/* No code path is tied through an html form: a test witnesses scenarios and a
+   form refines them (`Html` in system.als), so a form is never the scenario a
+   tie runs through. The tie guard reads a witness name against the commands
+   alone, and would call such a code path T1. */
+assert FormsTieNothing {
+  always all k: Artifact | no (tie.k).Artifact & Html
+}
+
 /* ---------------- the skip rule ---------------- */
 
 /* Under `landDiscipline`, every stage a landed change has no artifact for
@@ -387,6 +395,7 @@ check DebtNeverGrows           for 2 Change, 6 Artifact, 10 steps expect 0
 run   DebtNeverGrows_Bites     for 2 Change, 6 Artifact, 10 steps expect 1
 check WitnessesResolve         for 2 Change, 6 Artifact, 10 steps expect 0
 run   WitnessesResolve_Bites   for 2 Change, 6 Artifact, 10 steps expect 1
+check FormsTieNothing          for 1 Change, 6 Artifact, 10 steps expect 0
 
 -- the skip rule: every absence is licensed under the landing check, and not without it
 check AbsenceLicensed          for 2 Change, 6 Artifact, 10 steps expect 0

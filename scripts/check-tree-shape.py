@@ -69,8 +69,9 @@ WHAT IT CHECKS
       included, since deleting `checks.als` leaves nothing staged to look at.
 
   R9  the entities beside one another each `open` the one below.
-      Read off every entity's `system.als` in one directory -- the four under
-      spec/campaign/ -- with alloy-check.py's `OPEN` and `COMMENT`: each
+      Read off every entity's `system.als` in one directory below spec/ --
+      the four under spec/campaign/; what stands directly under spec/ opens
+      none of the rest -- with alloy-check.py's `OPEN` and `COMMENT`: each
       opens at most one sibling, and that sibling's `system`, no sibling is
       opened twice, and one walk from the top reaches every entity, so the
       top one is the whole composed model and no integration module is
@@ -682,26 +683,36 @@ def main():
     if alloy_why:
         note("R0", "scripts/alloy-check.py",
              f"R9 did not run: the open reader would not load ({alloy_why})")
+    # spec/ itself is no group: what stands directly under it -- campaign/,
+    # sdlc/ -- stands beside the rest and opens none of it.
     groups = {}
     for d in held:
-        if f"{d}/{ENTITY[0]}" in index:
+        if f"{d}/{ENTITY[0]}" in index and str(Path(d).parent) != "spec":
             groups.setdefault(str(Path(d).parent), []).append(Path(d).name)
     for g in sorted(groups) if alloy else ():
         if touched is not None and not any(t == g or t.startswith(g + "/")
                                            for t in touched):
             print(f"  R9 skipped {g}/: the commit touches nothing under it")
             continue
-        opens = {e: [o for o in alloy.OPEN.findall(alloy.COMMENT.sub(
-                         " ", read(f"{g}/{e}/{ENTITY[0]}", staged)))
-                     if o.split("/")[0] in groups[g]]
-                 for e in groups[g]}
-        chain, faults = open_chain(groups[g], opens)
-        print(f"  R9 read {len(opens)} {ENTITY[0]} under {g}/: "
-              + (" <- ".join(chain) if not faults else
-                 "; ".join(f"{e} opens {', '.join(o) or 'none'}"
-                           for e, o in sorted(opens.items()))))
-        for f in faults:
-            note("R9", f"{g}/", f)
+        opens = {}
+        for e in groups[g]:
+            try:
+                text = alloy.COMMENT.sub(" ", read(f"{g}/{e}/{ENTITY[0]}", staged))
+            except (UnicodeDecodeError, OSError) as err:
+                note("R0", f"{g}/{e}/{ENTITY[0]}", f"could not be read as text "
+                                                   f"({err.__class__.__name__}); "
+                                                   f"R9 did not judge {g}/")
+                break
+            opens[e] = [o for o in alloy.OPEN.findall(text)
+                        if o.split("/")[0] in groups[g]]
+        else:
+            chain, faults = open_chain(groups[g], opens)
+            print(f"  R9 read {len(opens)} {ENTITY[0]} under {g}/: "
+                  + (" <- ".join(chain) if not faults else
+                     "; ".join(f"{e} opens {', '.join(o) or 'none'}"
+                               for e, o in sorted(opens.items()))))
+            for f in faults:
+                note("R9", f"{g}/", f)
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

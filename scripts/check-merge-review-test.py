@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush, M2c_AFreshReviewAfterThePushLands, S5b_WithoutTheLandingCheck, S2a_ProseOnlyChange, S6_PrototypingTestWaiver
+# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush, M2c_AFreshReviewAfterThePushLands, S5b_WithoutTheLandingCheck, S2a_ProseOnlyChange, S6_NarrowingTestWaiver
 """Prove check-merge-review refuses on every branch it claims to refuse on.
 
 One case per refusal, each named after the branch it exercises, and each one
@@ -79,7 +79,8 @@ def fake_gh(bindir, head=HEAD, comments=(), reviews=(), status=0, stdout=None,
     gh.write_text(
         "#!/bin/sh\n"
         'case "$*" in\n'
-        f"  *'issue view'*) cat <<'JSON'\n{json.dumps(issue or {})}\nJSON\n    exit 0 ;;\n"
+        f"  *'issue view'*) cat <<'JSON'\n"
+        f"{issue if isinstance(issue, str) else json.dumps(issue or {})}\nJSON\n    exit 0 ;;\n"
         f"  *'pr view'*) cat <<'JSON'\n{body}\nJSON\n    exit 0 ;;\n"
         f"  *issues*) cat <<'JSON'\n{payloads['issues']}\nJSON\n    exit {status} ;;\n"
         f"  *pulls*) cat <<'JSON'\n{payloads['pulls']}\nJSON\n    exit {status} ;;\n"
@@ -99,24 +100,30 @@ def call(bindir, *args, stdin=None, cwd=None):
 
 
 # THE LANDING'S FIXTURE: a tree on `main` holding one tied code path, a.py, and
-# one untied, c.py, and a change committed on top of it. The sub-issue carries
-# both sections unless a case takes one away.
+# one untied, c.py, the default profile line, and a change committed on top of
+# it. The sub-issue carries both sections unless a case takes one away. No kind
+# on this tree narrows its profile, so a case that needs one writes its own
+# reference: the reader reads the profile from the tree it judges.
 TREE = {"spec/commands.snapshot.json": '{"commands": [["spec/x/checks.als", "run", "S1"]]}\n',
         "scripts/a.py": "x = 1\n", "scripts/a-test.py": "# witnesses: S1\n",
-        "scripts/c.py": "x = 1\n", "README.md": "hi\n"}
+        "scripts/c.py": "x = 1\n", "README.md": "hi\n",
+        ".claude/skills/opening-campaign/assets/AGENTS.md": "`optional = skippable`\n"}
+RESEARCH = ".claude/skills/assuming-role/references/kind-research.md"
 SECTIONS = "## Intent\n- i\n## Plan\n- p\n"
 
 
-def sub_issue(kind="development", body=SECTIONS):
-    return {"title": "t", "body": body, "labels": [{"name": f"kind:{kind}"}],
+def sub_issue(*kinds, body=SECTIONS):
+    return {"title": "t", "body": body,
+            "labels": [{"name": f"kind:{k}"} for k in kinds or ("development",)],
             "parent": {"number": 244}}
 
 
-def landing(d, name, change):
-    """A repository whose `main` is TREE and whose HEAD adds `change` to it."""
+def landing(d, name, change, base=None):
+    """A repository whose `main` is TREE plus `base` and whose HEAD adds
+    `change` to it."""
     root = Path(d) / name
     git = ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t"]
-    for files, ref in ((TREE, "main"), (change, "work")):
+    for files, ref in (({**TREE, **(base or {})}, "main"), (change, "work")):
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text)
@@ -363,10 +370,11 @@ def main() -> int:
 
         # ---- the landing ---------------------------------------------------
 
-        def land(case, change, issue=None, branch="sdlc-alloy/363-x", before="main"):
+        def land(case, change, issue=None, branch="sdlc-alloy/363-x",
+                 before="main", base=None):
             fake_gh(bindir, branch=branch, issue=issue or sub_issue())
             return call(bindir, "366", "--repo", "o/r", "--land", before,
-                        cwd=landing(d, case, change))
+                        cwd=landing(d, case, change, base))
 
         # S5b_WithoutTheLandingCheck: a code path written with a suite that
         # witnesses nothing lands with no Spec, and only this reading refuses.
@@ -390,12 +398,36 @@ def main() -> int:
               (word, code) == ("licensed", 0)
               and "criterion (nothing runs): holds" in text, f"{word} {code} {text}")
 
-        # S6_PrototypingTestWaiver: the profile, not the criterion, refuses.
-        word, code, text = land("proto", {"README.md": "bye\n"},
-                                issue=sub_issue(kind="prototyping"))
-        check("a prose-only prototyping change lands unlicensed",
+        # S6_NarrowingTestWaiver: the profile, not the criterion, refuses.
+        word, code, text = land("narrow", {"README.md": "bye\n"},
+                                issue=sub_issue("research"),
+                                base={RESEARCH: "`optional = Spec`\n"})
+        check("a prose-only change under a profile narrowed to Spec lands unlicensed",
               (word, code) == ("unlicensed", 1) and "without Test, Code" in text
               and "optional = Spec` from" in text, f"{word} {code} {text}")
+
+        word, code, text = land("snapshot", {"scripts/b.py": "x = 1\n",
+                                             "scripts/b-test.py": "x = 1\n",
+                                             "spec/commands.snapshot.json": '{"commands": []}\n'})
+        check("a rewritten snapshot holds Spec for the change",
+              (word, code) == ("licensed", 0) and "the snapshot" in text,
+              f"{word} {code} {text}")
+
+        word, code, text = land("suite", {"scripts/a-test.py": "# witnesses: S1\nx = 2\n"})
+        check("a suite the change wrote holds Code through the path it drives",
+              (word, code) == ("licensed", 0)
+              and "stages held: Intent, Plan, Spec, Test, Code" in text,
+              f"{word} {code} {text}")
+
+        for case, issue, base, says in (
+                ("noissue", "not json at all", None, "could not parse"),
+                ("twokinds", sub_issue("research", "development"), None, "`kind:` labels"),
+                ("noline", sub_issue("research"), {RESEARCH: "no profile\n"}, "carries no"),
+                ("badword", sub_issue("research"), {RESEARCH: "`optional = Frob`\n"},
+                 "no skippable stage")):
+            word, code, text = land(case, {"README.md": "bye\n"}, issue=issue, base=base)
+            check(f"--land answers unknown: {says}",
+                  (word, code) == ("unknown", 2) and says in text, f"{word} {code} {text}")
 
         word, code, text = land("noplan", {"README.md": "bye\n"},
                                 issue=sub_issue(body="## Intent\n- i\n"))

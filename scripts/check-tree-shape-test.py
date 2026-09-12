@@ -93,16 +93,28 @@ CASES = [
      entities(a="/*\nopen b/system\n*/\nsig A {}\n", b="open a/system\n"),
      None),
     ("R9 two entities opening none",
-     entities(a="sig A {}\n", b="sig B {}\n"), "R9"),
+     entities(a="sig A {}\n", b="sig B {}\n"), "R9:2 entities open none"),
     ("R9 two entities opening the same one",
-     entities(a="sig A {}\n", b="open a/system\n", c="open a/system\n"), "R9"),
+     entities(a="sig A {}\n", b="open a/system\n", c="open a/system\n"),
+     "R9:a is opened by 2 entities"),
+    # q opens p, r opens q and s, s opens r: one walk still reaches all four,
+    # so only the fault this case names can say what is wrong.
     ("R9 an entity opening two",
-     entities(a="sig A {}\n", b="open a/system\n",
-              c="open a/system\nopen b/system\n"), "R9"),
+     entities(p="sig P {}\n", q="open p/system\n",
+              r="open q/system\nopen s/system\n", s="open r/system\n"),
+     "R9:r/system.als opens 2 entities"),
     ("R9 an entity opening a sibling's checks",
-     entities(a="sig A {}\n", b="open a/checks\n"), "R9"),
+     entities(a="sig A {}\n", b="open a/checks\n"), "R9:not another module"),
     ("R9 a cycle beside the bottom",
-     entities(a="sig A {}\n", b="open c/system\n", c="open b/system\n"), "R9"),
+     entities(a="sig A {}\n", b="open c/system\n", c="open b/system\n"),
+     "R9:the opens hold a cycle"),
+    ("R9 what stands directly under spec/ is no chain",
+     {"spec/sdlc/system.als": "sig S {}\n", "spec/sdlc/checks.als": "open sdlc/system\n",
+      "spec/billing/system.als": "sig B {}\n",
+      "spec/billing/checks.als": "open billing/system\n"}, None),
+    ("R9 a system.als it cannot read is R0, not a traceback",
+     {**entities(a="sig A {}\n"), "spec/c/b/system.als": b"\xff\xfe sig\n",
+      "spec/c/b/checks.als": "open b/system\n"}, "R0:R9 did not judge spec/c/"),
 
     # R3 markdown -- the split check-rule-readers already makes.
     # unguarded: check-tree-shape -- fixtures must spell the names it bans
@@ -562,8 +574,11 @@ def judge(r, rule):
     out = r.stdout + r.stderr
     said_what_it_read = "tracked path(s) under " in r.stdout
     if rule:
-        return (r.returncode == 1 and f"{rule}\t" in out and said_what_it_read,
-                f"a {rule} finding beside the reading")
+        # `R9:<words>` also names which fault: a rule code alone passes a case
+        # whose own branch was deleted while a neighbour fired instead.
+        rule, _, words = rule.partition(":")
+        return (r.returncode == 1 and f"{rule}\t" in out and words in out
+                and said_what_it_read, f"a {rule} finding {words!r} beside the reading")
     return (r.returncode == 0 and "refusing" not in out and said_what_it_read
             and "0 finding(s)" in r.stdout,
             "0 finding(s) beside the reading")

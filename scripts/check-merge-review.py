@@ -67,7 +67,8 @@ WHAT THE LANDING READS
 The sub-issue is the one the head branch claims -- check-campaign-claim.py's
 `claim_issue` -- and from it `## Intent`, `## Plan` and the `kind:` label,
 through campaign-tracker.py's own readers. The kind's profile is the
-`optional = ...` line of its reference, kind-<k>.md; a kind with none, and a
+`optional = ...` line of its reference, kind-<k>.md in the tree judged; a
+kind with none, and a
 sub-issue with no label, take the line in opening-campaign's AGENTS.md
 template. The change is the paths `git diff BEFORE HEAD` touches, and the tree
 is HEAD's, both read by check-sdlc-tie.py's own functions. As the model says,
@@ -112,9 +113,9 @@ TIE = HERE / "check-sdlc-tie.py"
 STAGES = ("Intent", "Plan", "Spec", "Test", "Code")
 SKIPPABLE = ("Spec", "Test", "Code")
 PROFILE = re.compile(r"^`optional = ([A-Za-z +]+)`", re.M)
-REFERENCES = HERE.parent / ".claude" / "skills" / "assuming-role" / "references"
-DEFAULT_PROFILE = (HERE.parent / ".claude" / "skills" / "opening-campaign"
-                   / "assets" / "AGENTS.md")
+# Read from the tree being judged, so a change to a profile is judged by it.
+REFERENCES = Path(".claude/skills/assuming-role/references")
+DEFAULT_PROFILE = Path(".claude/skills/opening-campaign/assets/AGENTS.md")
 
 # SEVEN, which is git's own floor for an abbreviation and this tracker's habit.
 # Shorter is not a sha anybody writes, and matching it would let a four-digit
@@ -358,15 +359,14 @@ def report(repo, pr, body, pattern, want_head):
                      "(AGENTS.md, § The four messages)."])
 
 
-def profile_of(kind):
+def profile_of(kind, root):
     """(optional stages, the file read, why). A kind with no reference --
     `development` -- and a sub-issue with no label take the template's line."""
-    path = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
-    if not path.exists():
-        path = DEFAULT_PROFILE
-    where = path.relative_to(HERE.parent)
+    where = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
+    if not (root / where).exists():
+        where = DEFAULT_PROFILE
     try:
-        m = PROFILE.search(path.read_text())
+        m = PROFILE.search((root / where).read_text())
     except OSError as e:
         return None, where, f"{where}: {e}"
     if not m:
@@ -408,7 +408,8 @@ def change_of(before):
     snapshot = tie.SNAPSHOT in touched
     held = ({"Spec"} if snapshot or any(tree.witnesses_a_scenario(s) for s in tests)
             else set()) | ({"Test"} if tests else set()) | ({"Code"} if codes else set())
-    return {"touched": len(touched), "code": wrote_code, "suites": wrote_suites,
+    return {"root": Path(tie.ROOT), "touched": len(touched),
+            "code": wrote_code, "suites": wrote_suites,
             "snapshot": snapshot, "stages": held,
             "untied": [k for k in wrote_code if not tree.tied(k)]}, None
 
@@ -433,10 +434,10 @@ def land(repo, pr, base, guard, before):
     kind, why = tracker.work_kind_of(names)
     if why:
         return answer("unknown", f"{base}#{issue}: {why}")
-    optional, where, why = profile_of(kind)
+    change, why = change_of(before)
     if why:
         return answer("unknown", why)
-    change, why = change_of(before)
+    optional, where, why = profile_of(kind, change["root"])
     if why:
         return answer("unknown", why)
     sections = set(tracker.SECTION.findall(body))

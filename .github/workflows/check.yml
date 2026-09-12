@@ -154,14 +154,14 @@ jobs:
       # floor plus a quarter, and never under 60 s, the budget of a module with
       # no row; the solve job warns past it and never fails, so a widening is
       # seen on the pull request that makes it. A row naming no module warns.
+      # A module folded from two carries the sum of their rows (sdlc-alloy#343).
       - name: One solve job per module, keyed on what its verdict reads
         id: matrix
         run: |
           set -euo pipefail
           floors='spec/sdlc/checks.als 1310
-          spec/campaign/orchestration/scenarios.als 546
-          spec/campaign/orchestration/checks.als 242
-          spec/campaign/session/scenarios.als 79'
+          spec/campaign/orchestration/checks.als 788
+          spec/campaign/session/checks.als 79'
           for r in $(awk '{print $1}' <<< "$floors"); do
             [ -f "$r" ] || echo "::warning title=solver budget::a floor row in check.yml names $r, which is not a module"
           done

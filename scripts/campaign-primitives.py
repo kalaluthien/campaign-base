@@ -44,11 +44,13 @@ complete list, and the reader concludes the thing is not there.
 
 WHAT IS LOCAL TO THIS REPOSITORY
 
-How a script is named and where it lives are AGENTS.md's, under "Authoring a
-script or a skill". It states the rule this listing's two sections are the
-consequence of -- a reader is asked a question by a flow, and a guard acts
-without being asked -- which is why the output has two sections rather than one
-alphabetical list. Two facts are this repository's own and are stated only here.
+How a script is named and where it lives is the filing skill's,
+~/.claude/skills/filing/references/scripts.md. It states the rule this
+listing's two sections are the consequence of -- a reader is asked a question
+by a flow, and a guard acts without being asked -- and AGENTS.md's "Authoring a
+script or a skill" keeps that consequence as this repository's own, which is
+why the output has two sections rather than one alphabetical list. Two facts
+are this repository's own and are stated only here.
 
 A reader's subject is one of AGENTS.md's three planes, so `campaign-` prefixes a
 reading of the campaign plane and nothing else. By that, `campaign-primitives`

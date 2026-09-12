@@ -154,7 +154,9 @@ jobs:
       # floor plus a quarter, and never under 60 s, the budget of a module with
       # no row; the solve job warns past it and never fails, so a widening is
       # seen on the pull request that makes it. A row naming no module warns.
-      # A module folded from two carries the sum of their rows (sdlc-alloy#343).
+      # A module folded from two carries the sum of their rows (sdlc-alloy#343),
+      # except spec/sdlc/checks.als, which is its own time in run 34700750567
+      # (sdlc-alloy#341).
       - name: One solve job per module, keyed on what its verdict reads
         id: matrix
         run: |

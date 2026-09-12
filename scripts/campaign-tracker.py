@@ -1207,7 +1207,7 @@ def claim_column(repo, campaign_issue):
             f"in {', '.join(repos)} -- {len(branches)} claim(s)")
 
     def word(number):
-        found = module.refs_for_issue(branches, campaign_issue, number, slug)
+        found = module.refs_for_issue(branches, number, slug)
         if not found:
             return "unclaimed"
         return f"claimed: {', '.join(found)}"
@@ -1371,13 +1371,6 @@ def main():
                            help="require `## Plan` too, which a sub-issue gains "
                                 "before anybody is prompted onto it; "
                                 "`campaign-claim take` passes it")
-        # Only settlement reads it, and only settlement is given it: a flag the
-        # other two accept and ignore reads as though naming a directory
-        # changed what they answer.
-        if name == "settlement":
-            p.add_argument("--dir", help="accepted and ignored since #176: "
-                                         "the claim is a branch on the remote, "
-                                         "so no directory is read")
         p.set_defaults(fn=fn)
 
     args = ap.parse_args()

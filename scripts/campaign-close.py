@@ -355,7 +355,7 @@ LIVE_GROUPS = (("claims checked out on this machine", "occupied"),
                ("sessions named for no campaign", None))
 
 
-def live_reading(text, n, slug):
+def live_reading(text, slug):
     """`campaign-claim live`'s groups: claim rows as (branch, issue, rest),
     session rows as (name, status, pane, cwd). A row is a row only if its
     first word is a claim branch or a session name of this campaign, so the
@@ -386,7 +386,7 @@ def live_reading(text, n, slug):
             if len(t) >= 3 and NAMES.campaign_of(t[0]) == slug:
                 out["sessions"].append((t[0], t[1], t[2], " ".join(t[3:])))
             continue
-        issue = CLAIM.issue_of_branch(t[0], n, slug)
+        issue = CLAIM.issue_of_branch(t[0], slug)
         if issue is not None:
             out[group].append((t[0], issue, " ".join(t[1:])))
     return out
@@ -416,11 +416,11 @@ def local_reading(text):
     return finished, finished and "went unread" in last, rows, last
 
 
-def local_rows(text, n, slug, issue):
+def local_rows(text, slug, issue):
     """`local_reading`, its rows narrowed to those naming <issue>'s claims."""
     finished, unread, rows, last = local_reading(text)
     mine = [line for _, line in rows
-            if any(CLAIM.issue_of_branch(tok.strip("[];,"), n, slug) == issue
+            if any(CLAIM.issue_of_branch(tok.strip("[];,"), slug) == issue
                    for tok in line.split())]
     return finished, unread, mine, last
 
@@ -521,7 +521,7 @@ def read_live(n, slug):
     print(f"  pruned stale worktree entries under {root}" if r.returncode == 0
           else f"  git worktree prune exited {r.returncode}: a worktree deleted "
                f"by hand may read below as an occupied claim")
-    reading = live_reading(script(CLAIM_SCRIPT, "live", n), n, slug)
+    reading = live_reading(script(CLAIM_SCRIPT, "live", n), slug)
     if not reading["read"]:
         raise Refused("live", "`campaign-claim live` did not make all three "
                               "readings, so no count from it is safe: "
@@ -576,7 +576,7 @@ def gate_local_work(n, slug, issue):
     directory = read_directory(n)
     args = [n, str(directory)] if directory else [n]
     finished, unread, rows, last = local_rows(
-        script(LOCAL_WORK_SCRIPT, *args), n, slug, issue)
+        script(LOCAL_WORK_SCRIPT, *args), slug, issue)
     if not finished:
         raise Refused("local-work", f"the reading did not finish: {last[:200]}")
     if unread:

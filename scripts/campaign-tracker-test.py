@@ -264,7 +264,7 @@ def main():
         claim_repos=lambda repo, root: ([repo], "1 repositor(y/ies)"),
         campaign_slug=lambda n: ("machinery", f"#{n} is `machinery`"),
         all_refs=lambda repos, n, slug=None: (seen.setdefault("slug", slug), {}, [])[1:],
-        refs_for_issue=lambda branches, n, number: [])
+        refs_for_issue=lambda branches, number, slug=None: [])
     real_reader = m.claim_reader
     m.claim_reader = lambda: (fake, None)
     try:

@@ -2,7 +2,7 @@
 """Read every session of a campaign and say, per session, what the planner's heartbeat does to it.
 
     .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> [--apply]
-    .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch [--every S]
+    .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch
 
 The planner runs this on every wake (planner.md § The planner's clock). It
 reads every session of campaign N -- a herdr row whose name carries N's slug,
@@ -89,11 +89,11 @@ went is kept for good.
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
 
---watch IS THE PLANNER'S WAKE: it polls every S seconds (60) until killed or
-quiet and prints only what changed, so a Monitor over it wakes the planner on
-an event, and the planner runs this with --apply. Keyed by N and its slug,
-which the planner holds at launch; a pull request that appears later is one
-more line. Each poll builds a snapshot and prints `+ line` for a line that
+--watch IS THE PLANNER'S WAKE: it polls every 60 seconds (WATCH_EVERY) until
+killed or quiet and prints only what changed, so a Monitor over it wakes the
+planner on an event, and the planner runs this with --apply. Keyed by N and
+its slug, which the planner holds at launch; a pull request that appears later
+is one more line. Each poll builds a snapshot and prints `+ line` for a line that
 appeared and `- line` for one that went; a drift still standing after 30m
 reprints as `= line`. The first poll prints `watching <slug>` and every drift
 and limit.
@@ -727,7 +727,7 @@ def claim_reading(issue, slug, claim, repos=None):
         return None, "; ".join(unread)
     out = {}
     for b in found:
-        n = claim.issue_of_branch(b, issue, slug)
+        n = claim.issue_of_branch(b, slug)
         out[b] = int(n) if n else None
     return (out, repos), None
 
@@ -983,8 +983,6 @@ def main(argv=None):
                     help="send the actions; without it nothing is sent")
     ap.add_argument("--watch", action="store_true",
                     help="poll until killed, printing what changed")
-    ap.add_argument("--every", type=int, default=WATCH_EVERY,
-                    help="seconds between the watch's polls")
     args = ap.parse_args(argv)
     issue = args.campaign_issue.lstrip("#")
 
@@ -998,7 +996,7 @@ def main(argv=None):
         own = os.environ.get("HERDR_PANE_ID")
         return run_watch(Watch(slug, own),
                          watch_reader(issue, slug, own, claim, names, {}),
-                         args.every)
+                         WATCH_EVERY)
     assign = load(ASSIGN_SCRIPT, "campaign_assign")
     sessions, why = claim.herdr_sessions()
     if sessions is None:

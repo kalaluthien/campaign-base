@@ -362,31 +362,28 @@ def branch_name(slug, issue, topic):
     return f"{slug}/{issue}-{topic}"
 
 
-def prefixes(campaign_issue, slug):
+def prefixes(slug):
     """Every ref prefix that carries a claim of this campaign.
 
     ONE SINCE #237. It was two for one window -- `campaign-<N>/`, the form
     branches were cut as before #181, read beside the slug until the last of
-    those pull requests merged. `campaign_issue` is kept in the signature
-    because every caller has it and the empty case below is about that
-    campaign.
+    those pull requests merged.
 
     EMPTY IS `COULD NOT LOOK`, NOT `NO CLAIMS`. With the retired form gone a
     slug that would not read leaves no prefix at all, and a caller that treated
     that as an answer would report an unreadable campaign as an empty one --
     which is what `release` deletes refs off. Every caller checks."""
-    del campaign_issue
     return [f"{slug}/"] if slug else []
 
 
-def issue_of_branch(branch, campaign_issue, slug=None):
+def issue_of_branch(branch, slug=None):
     """The sub-issue number a claim branch names, or None. Pure.
 
     `<slug>/<issue>-<topic>`: the number is what stands between the slash and
     the first hyphen after it. A branch whose second segment does not open with
     digits and a hyphen claims no sub-issue this can name, and it comes back
     None rather than guessed at."""
-    for prefix in prefixes(campaign_issue, slug):
+    for prefix in prefixes(slug):
         if branch.startswith(prefix):
             m = re.match(r"(\d+)-", branch[len(prefix):])
             return m.group(1) if m else None
@@ -417,7 +414,7 @@ def matching_refs(repo, campaign_issue, slug=None):
     exactly like a campaign with fewer of them, and `release` deletes refs off
     this."""
     found = []
-    wanted = prefixes(campaign_issue, slug)
+    wanted = prefixes(slug)
     if not wanted:
         return None, (f"#{campaign_issue} has no slug that could be read, so "
                       f"no ref prefix carries its claims -- this is `could not "
@@ -664,12 +661,12 @@ def campaign_repos(campaign_issue):
                     f"{', '.join(listed)}")
 
 
-def refs_for_issue(branches, campaign_issue, issue, slug=None):
+def refs_for_issue(branches, issue, slug=None):
     """The claim branches of one sub-issue, under either prefix. Pure, so none,
     one and two each have a case; two is what `release` refuses on rather than
     picking, and one sub-issue holding a ref under EACH form is one of the twos."""
     return [b for b in branches
-            if issue_of_branch(b, campaign_issue, slug) == str(issue)]
+            if issue_of_branch(b, slug) == str(issue)]
 
 
 # ------------------------------------------------------------------------ take
@@ -902,7 +899,7 @@ def cmd_take(args):
         print(f"refusing: {why}\n  A ref listing that did not happen is not "
               f"proof the sub-issue is free.", file=sys.stderr)
         return 1
-    siblings = refs_for_issue(existing, args.campaign_issue, args.issue, slug)
+    siblings = refs_for_issue(existing, args.issue, slug)
     if siblings:
         # A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM (#187 question 3,
         # spec/campaign/orchestration/scenarios.als `settledLeavesNoClaim`).
@@ -995,7 +992,7 @@ def cmd_take(args):
     # THE SAME PARTITION AS THE SURVEY, and this is the whole of finding 1.
     # Counting residue here made a reopened sub-issue's `take` delete the ref it
     # had just cut and report a race against a branch merged weeks ago.
-    all_after = refs_for_issue(after, args.campaign_issue, args.issue, slug)
+    all_after = refs_for_issue(after, args.issue, slug)
     rivals, after_residue, after_unread = partition_refs(repo, all_after)
     if after_unread:
         print(f"refusing: {branch} WAS cut, but whether "
@@ -1454,7 +1451,7 @@ def checkouts(roots):
     return {b: sorted(set(p)) for b, p in out.items()}, unread
 
 
-def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
+def classify(branches, where, sessions, slug=None, root=None,
              caller=None):
     """(occupied, vacant, ours, nameless) -- the join, on the branch name and
     on nothing else.
@@ -1492,7 +1489,6 @@ def classify(branches, where, sessions, campaign_issue, slug=None, root=None,
     # AN UNREADABLE SLUG EMPTIES THIS SET, and that is `could not look`. No
     # name can then be matched and `ours` is empty -- the reason `cmd_live`
     # prints the slug note beside the count rather than the count alone.
-    del campaign_issue
     mine = {slug} if slug else set()
     occupied, vacant = [], []
     for b in branches:
@@ -1573,7 +1569,7 @@ def cmd_live(args):
     found, unread1 = all_refs(repos, args.campaign_issue, slug)
     branches = sorted(found)
     why1 = "; ".join(unread1) if unread1 else None
-    under = (' and '.join(prefixes(args.campaign_issue, slug))
+    under = (' and '.join(prefixes(slug))
              or f"no prefix -- #{args.campaign_issue}'s slug did not read")
     print(f"reading 1  refs under {under} in "
           f"{', '.join(repos)} -- "
@@ -1614,7 +1610,7 @@ def cmd_live(args):
     print(f"           this session is "
           f"{caller or '<$CLAUDE_CODE_SESSION_ID unset: not excluded below>'}")
     occupied, vacant, ours, nameless = classify(
-        branches, where, sessions, args.campaign_issue, slug, root=root,
+        branches, where, sessions, slug, root=root,
         caller=caller)
 
     print(f"\nclaims checked out on this machine ({len(occupied)}) -- joined "
@@ -1791,9 +1787,9 @@ def which_branch(branches, campaign_issue, issue, branch_arg, slug=None):
     holds the work, and deleting the wrong one costs a branch."""
     if branch_arg:
         return branch_arg, None
-    found = refs_for_issue(branches, campaign_issue, issue, slug)
+    found = refs_for_issue(branches, issue, slug)
     if not found:
-        under = (' or '.join(prefixes(campaign_issue, slug))
+        under = (' or '.join(prefixes(slug))
                  or f"any prefix -- #{campaign_issue}'s slug did not read")
         return None, (f"no ref under "
                       f"{under} names "

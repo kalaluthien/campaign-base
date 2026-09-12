@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The role table: what a planner and a worker may write, stated once.
 
-    .claude/skills/assuming-role/scripts/campaign-roles.py [--brief]
+    .claude/skills/assuming-role/scripts/campaign-roles.py
 
 The `assuming-role` skill owns the role machinery, and this is its schema half
 -- what a role IS and what it may write -- kept apart from the instruction half
@@ -16,9 +16,8 @@ restated in AGENTS.md and again in each skill that briefed a session. A rule
 stated in four places is a rule with one reader and three copies; this file is
 the one spelling, and `check-rule-readers.py` cannot catch a re-statement in
 prose that names no shape. What keeps it honest instead is that every reader
-IMPORTS it: check-campaign-claim.py decides by it, campaign-name-session.py
-builds its name pattern from its keys, campaign-primitives.py prints it, and
-campaign-role-brief.py briefs from it. A value nothing imports would be
+IMPORTS it: check-campaign-claim.py decides by it, and campaign-name-session.py
+builds its name pattern from its keys. A value nothing imports would be
 documentation, and belongs in the skill's references instead.
 
 WHAT IS NOT HERE, and why each is somewhere else:
@@ -46,10 +45,9 @@ that renames itself already holds the power the name would grant. What the role
 buys is that it is EXPLICIT and that the mistake is LOUD. #194 is the sub-issue
 for tying the name to something the named session did not choose.
 
-EXIT. 0 always for `--brief` and the default listing; this file decides
-nothing on its own and refuses nothing. Its readers do.
+EXIT. 0 always; this file decides nothing on its own and refuses nothing.
+Its readers do.
 """
-import sys
 
 # THE TWO ROLES, and the keys are the role words themselves: every other
 # reader takes its vocabulary from here, so adding a third role is an edit to
@@ -158,18 +156,7 @@ ROLE_WORDS = tuple(ROLES)
 NO_ROLE = "no-role"
 
 
-def role(word):
-    """The row for one role word, or None. Callers that must distinguish an
-    unknown word from a role with an empty licence use this rather than
-    `ROLES.get(word, {})`, which makes the two read alike."""
-    return ROLES.get(word)
-
-
 def main():
-    brief = "--brief" in sys.argv
-    if brief:
-        print("campaign-roles: the role table -- plane and writes per role")
-        return 0
     print(f"{len(ROLES)} role(s), and every reader imports them from here.")
     for name, r in ROLES.items():
         print(f"\n  {name}")

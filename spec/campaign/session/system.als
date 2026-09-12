@@ -145,7 +145,7 @@ sig Session {
      spelling, and a second statement of it here would admit names that script
      refuses. What is modelled is only the one thing a reader does with it --
      tell whose campaign a session claims to be of -- which is the discriminator
-     orchestration/system.als's `namedForAnother` needs and which no other field
+     orchestration/system.als's `namedForThis` needs and which no other field
      can supply. It is `var` because a session renames itself. */
   var campaignNamed:     lone Campaign
 }

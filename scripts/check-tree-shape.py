@@ -9,11 +9,9 @@ alone, and each has already been broken once or is one careless commit from it.
 
 WHAT IT CHECKS
 
-  R1  spec/ holds no markdown and no HTML.
+  R1  spec/ holds no markdown.
       spec/ is Alloy whose comments are the spec. Markdown under it is what
-      "temporary" always turns out to be, and an HTML view beside a model is
-      a second statement of it that no check reads against the model. A view
-      drawn for a reader goes in docs/, R7.
+      "temporary" always turns out to be. HTML is R8's.
 
   R2  every tracked top-level entry is named in .gitignore's allowlist.
       The root is `/*` plus `!` lines. A directory that gets tracked without
@@ -60,22 +58,24 @@ WHAT IT CHECKS
       scripts is refused for the same reason and on purpose: what sits in a
       `scripts/` is a script, and prose about them goes where prose goes.
 
-  R7  docs/ holds HTML only, one view per model, named for the model.
-      `docs/<p>.html` is admitted when `spec/<p>/` holds an `.als` at any
-      depth, so the view's path mirrors its model directory's, and each model
-      directory has exactly one name its view may take. What docs/ holds is not normative, so spec/'s rules do
-      not reach it and its rules do not reach spec/. The models are read from
-      the index even under `--staged`, since a view is judged against a model
-      the commit need not touch.
+  R8  an entity is exactly `system.als` + `checks.als`, plus any `*.html`.
+      An entity is a directory under spec/ directly holding an `.als` or an
+      `.html`: the model in one module, every command in the other, and an
+      HTML form of a scenario beside them, which check-sdlc-tie.py ties to a
+      command by name (T6, T7). So an `.html` with no entity around it is
+      refused, a third `.als` is, and so is an entity missing either module.
+      What a directory holds is read from the index even under `--staged`;
+      which directories are judged is what the commit touches, a deletion
+      included, since deleting `checks.als` leaves nothing staged to look at.
 
 WHAT IT DOES NOT CATCH
 
 R3 is a path check, not a concept check: reintroducing the holder role under a
-different word, or in a file that exists, passes. R1 does not read a file's contents, so markdown or HTML
+different word, or in a file that exists, passes. R1 does not read a file's contents, so markdown
 named `.als` passes. R6 reads no contents either, so a
-shell script named `.py` passes. Under `--staged` R7 judges only the views the
-commit touches, so deleting a model leaves its view standing until CI, which
-reads the whole tree. All are floors -- they stop the commit
+shell script named `.py` passes. R8 reads names, not modules: a `system.als`
+that declares a command passes it, and that is `alloy-check.py --commands`'s
+refusal. All are floors -- they stop the commit
 somebody makes without noticing, which is how every one of these got broken.
 
 EXEMPTING A BLOCK FROM R3
@@ -99,7 +99,7 @@ READING VERSUS VERDICT
 A file it cannot read is reported as R0 and refuses the commit. It is never
 skipped: a guard that skips what it cannot read reports nothing and reads
 exactly like a pass, which is the failure mode this whole family of checks
-exists to refuse. R0 is counted apart from R1-R7 because "I looked and found
+exists to refuse. R0 is counted apart from R1-R8 because "I looked and found
 nothing" and "I could not look" want different repairs.
 
 EXIT
@@ -145,6 +145,9 @@ from pathlib import Path
 # asset never -- so a fourth name is a file whose fate nobody decided.
 SKILLS = ".claude/skills/"
 SKILL_DIRS = ("scripts", "references", "assets")
+
+# R8. The two modules of an entity: the model, and every command over it.
+ENTITY = ("system.als", "checks.als")
 
 # R3a. Every `scripts/<name>` a code line calls, skill-scoped or not. THE
 # RESOLUTION IS `check-cross-references.py`'s: its `Tree` is the one reader of
@@ -459,10 +462,9 @@ def main():
 
     # R1
     misfiled = [p for p in paths
-                if p.endswith((".md", ".html")) and p.split("/")[0] == "spec"]
+                if p.endswith(".md") and p.split("/")[0] == "spec"]
     for p in misfiled:
-        kind = "markdown" if p.endswith(".md") else "HTML"
-        note("R1", p, f"{kind} under spec/ -- spec/ is Alloy whose comments "
+        note("R1", p, "markdown under spec/ -- spec/ is Alloy whose comments "
                       "are the spec")
 
     # R2
@@ -586,23 +588,30 @@ def main():
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
 
-    # R7. Two questions asked apart, the suffix and the name, so a file that
-    # fails both says so twice.
-    models = [a for a in tracked(False)
-              if a.startswith("spec/") and a.endswith(".als")]
-    for p in paths:
-        if p == "docs":
-            note("R7", p, "a file where docs/ belongs: docs/ is the directory "
-                          "of views")
+    # R8. What each entity holds, from the index; which entities are judged,
+    # from the change.
+    index = tracked(False)
+    touched = ({str(Path(p).parent) for p in
+                git("diff", "--cached", "--name-only").splitlines() if p}
+               if staged else None)
+    held = {}
+    for a in index:
+        if a.startswith("spec/") and a.endswith((".als", ".html")):
+            held[str(Path(a).parent)] = set()
+    for a in index:
+        if str(Path(a).parent) in held:
+            held[str(Path(a).parent)].add(Path(a).name)
+    for d in sorted(held):
+        if touched is not None and d not in touched:
             continue
-        if not p.startswith("docs/"):
-            continue
-        if not p.endswith(".html"):
-            note("R7", p, "docs/ holds HTML only: a view drawn for a reader")
-        model = f"spec/{Path(p[len('docs/'):]).with_suffix('')}/"
-        if not any(a.startswith(model) for a in models):
-            note("R7", p, f"names no model: {model} holds no .als, and a "
-                          f"view is named for the model it draws")
+        for need in ENTITY:
+            if need not in held[d]:
+                note("R8", f"{d}/", f"no {need}: an entity is "
+                                    f"{' + '.join(ENTITY)}, plus any *.html")
+        for n in sorted(held[d] - set(ENTITY)):
+            if not n.endswith(".html"):
+                note("R8", f"{d}/{n}", f"an entity holds {' + '.join(ENTITY)} "
+                                       f"and *.html, nothing else")
 
     if fixtures:
         print(f"  R3a stood down for {len(fixtures)} suite(s): a case's "

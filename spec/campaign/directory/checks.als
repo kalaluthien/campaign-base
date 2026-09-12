@@ -50,9 +50,29 @@ pred S16_MergeReachesInstall {
   }
 }
 
+/* THE ESCAPE `reachDiscipline` closes: a machine holding the campaign deletes
+   its directory, and the campaign issue closes with that machine's install
+   behind a merge. S16e is it under the discipline, expect 0; it was SAT while
+   the discipline read only the machines holding the campaign at the close.
+   S16f is the same trace with the discipline dropped, expect 1, so the UNSAT
+   is the discipline's and not the model's. */
+pred deleteThenCloseBehind[c: Campaign, m: Machine] {
+  eventually (Now.event = DeleteDir and Where.machine = m and m in machinesHolding[c]
+              and eventually (Now.event = CloseIssue and Now.issue = c.campaignIssue
+                              and some unreached[c, m]))
+}
+pred S16e_DeleteThenCloseLeavesNoInstallBehind {
+  one c: Campaign | some m: Machine | reachDiscipline[c] and deleteThenCloseBehind[c, m]
+}
+pred S16f_DeleteThenCloseUnguarded {
+  one c: Campaign | some m: Machine | deleteThenCloseBehind[c, m]
+}
+
 /* ---------------- commands ---------------- */
 
 run S16_MergeReachesInstall     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run S16e_DeleteThenCloseLeavesNoInstallBehind for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run S16f_DeleteThenCloseUnguarded for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S7_TwoMachinesOneDeletes    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Machine, exactly 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run S15_NoLocalDirectory        for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 

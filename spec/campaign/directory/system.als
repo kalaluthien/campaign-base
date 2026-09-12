@@ -128,12 +128,16 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    github/system.als's `closeDiscipline` takes: `scripts/campaign-close.py`'s
    `campaign` scope, step 6 (`installed`), is the reader, and a check that
    assumed it as a fact could not exhibit its
-   absence. Scoped to `machinesHolding` because that is where the check runs --
-   the bound machine's disk -- and a machine that installed the repository but
-   never held the campaign is one no session of it can read. */
+   absence. Scoped to the machines that have EVER held the campaign, because
+   that is where the check runs -- the bound machine's disk -- and a machine
+   that installed the repository but never held the campaign is one no session
+   of it can read. EVER and not NOW: with the directory deleted the script
+   still runs, reading the installs from the campaign issue body, so a
+   `DeleteDir` before the close does not excuse an install left behind; scoped
+   to `machinesHolding` at the close, it did (sdlc-alloy#345 I5, S16e). */
 pred reachDiscipline[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue)
-          implies all m: machinesHolding[c] | no unreached[c, m])
+          implies all m: Machine | (once m in machinesHolding[c]) implies no unreached[c, m])
 }
 
 /* ---------------- observable events ---------------- */

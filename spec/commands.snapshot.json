@@ -21,6 +21,8 @@
     ["campaign/directory/checks.als", "run", "S16b_BaseBehindAfterMerge"],
     ["campaign/directory/checks.als", "run", "S16c_BehindForever"],
     ["campaign/directory/checks.als", "run", "S16d_CloneFromUnpushedBase"],
+    ["campaign/directory/checks.als", "run", "S16e_DeleteThenCloseLeavesNoInstallBehind"],
+    ["campaign/directory/checks.als", "run", "S16f_DeleteThenCloseUnguarded"],
     ["campaign/directory/checks.als", "run", "S17b_OldCloneRuleInsufficient"],
     ["campaign/directory/checks.als", "run", "S17c_PullBeforeLaunchAdmitsLaunch"],
     ["campaign/directory/checks.als", "run", "S7_TwoMachinesOneDeletes"],

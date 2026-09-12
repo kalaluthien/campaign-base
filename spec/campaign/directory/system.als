@@ -68,35 +68,19 @@ sig CampaignDir {
   campaign:         one Campaign,
   machine:         one Machine,
   var checkedOut: Repo -> Branch,
-  /* THE CLONES HERE THAT CARRY THE CAMPAIGN'S PRINCIPLES. #176 replaced
-     `--append-system-prompt-file` and its canary with a `CLAUDE.local.md` in
-     the delegate's own clone -- a file on disk in its cwd, so there is nothing
-     to prove arrived. #187 question 5 is that no command anywhere wrote one, so
-     the mechanism existed only as prose and a delegate launched by the book got
-     nothing. Modelled as a set of repositories rather than a file, because what
-     a launch needs is that the clone it launches into carries them; WHICH bytes
-     is `acquire-repo.sh`'s. Since rule-check#314 those bytes are the campaign's
-     own additions only -- a default SDLC profile line and the three role
-     sections -- because a sub-issue's kind is a `kind:<k>` label on the
-     sub-issue, whose reference the brief hook emits on the assignment prompt;
-     that second channel is per sub-issue and per prompt, so it is not a fact
-     about a clone and is not modelled here. */
-  var principled:  set Repo,
-  /* THE CLONES HERE WHOSE COMMITS SOMETHING REFUSES. `claimBeforeCommit` in
-     orchestration/checks.als is the rule -- a commit on a sub-issue names a
-     claim the committer holds -- and it says nothing about whether the checkout
-     making the commit runs anything that reads it. `acquire-repo.sh` ran a
-     clone's own `scripts/install-hooks.sh` only when the clone shipped one, and
-     a member repository ships none, so every member clone got the machine-wide
-     no-main-commits shim and NO CLAIM GATE, while check-campaign-claim.py went
-     on calling that clone campaign work. The rule held in the model and
-     enforced nothing on the trees delegates commit in (#190).
-
-     Separate from `principled` although one step installs both, because they
-     answer different questions: `principled` is what a delegate READS, this is
-     what its commit is REFUSED by. Modelled as a set of repositories and not a
-     file, for the reason given above it. */
-  var gated:       set Repo
+  /* THE CLONES HERE THAT `acquire-repo.sh` SET UP, and what that buys: each
+     carries the campaign's principles, a `CLAUDE.local.md` in the delegate's
+     own clone -- a file on disk in its cwd, so there is nothing to prove
+     arrived (#176, #187 question 5) -- and a pre-commit that runs the claim
+     gate, reached through the BASE because a member clone holds no copy of
+     `check-commit-claim.py` (#190). One set and not two: one step writes both
+     and one step removes both, so a delegate's launch and its commits are
+     judged against the same clones. Modelled as repositories rather than
+     files, because what a launch or a commit needs is that its clone is one
+     of these; WHICH bytes is the script's. Since rule-check#314 the principles
+     are the campaign's own additions only; a sub-issue's kind travels on the
+     assignment prompt, per sub-issue, and is no fact about a clone. */
+  var acquired:    set Repo
 }
 var sig OnDisk in CampaignDir {}
 
@@ -146,7 +130,14 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    assumed it as a fact could not exhibit its
    absence. Scoped to `machinesHolding` because that is where the check runs --
    the bound machine's disk -- and a machine that installed the repository but
-   never held the campaign is one no session of it can read. */
+   never held the campaign is one no session of it can read.
+
+   ITS ESCAPE, shown rather than closed here (S16e): a machine deletes its
+   directory and the close then reads no machine at all. The script is not
+   escaped that way -- with no directory its installed step reads the campaign
+   issue body, on the machine it runs on -- but which machine closes is a
+   session's fact, one entity up, and `once m in machinesHolding[c]` would bind
+   machines the script never reads (pr#368 review F2). */
 pred reachDiscipline[c: Campaign] {
   always ((Now.event = CloseIssue and Now.issue = c.campaignIssue)
           implies all m: machinesHolding[c] | no unreached[c, m])
@@ -158,14 +149,13 @@ one sig CreateDir, DeleteDir, Acquire, Reach extends Event {}
 
 fun directoryEvents: set Event { CreateDir + DeleteDir + Acquire + Reach }
 
-pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated and current' = current }
+pred directoryFrame { OnDisk' = OnDisk and checkedOut' = checkedOut and acquired' = acquired and current' = current }
 
 pred createDir[t: CampaignDir] {
   t not in OnDisk
   OnDisk' = OnDisk + t
   checkedOut' = checkedOut
-  principled' = principled     -- a fresh directory has no clone yet to principle
-  gated' = gated               -- nor one to gate
+  acquired' = acquired         -- a fresh directory has no clone yet
   current' = current           -- and the installs are not the directory's
   Now.event = CreateDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
@@ -177,8 +167,7 @@ pred deleteDir[t: CampaignDir] {
   t in OnDisk
   OnDisk'  = OnDisk - t
   checkedOut' = checkedOut - t->Repo->Branch
-  principled' = principled - t->Repo    -- the clones go with the directory
-  gated' = gated - t->Repo              -- and the hooks go with the clones
+  acquired' = acquired - t->Repo        -- the clones go with the directory
   current' = current                    -- the installs stay: they were never inside it
   Now.event = DeleteDir and no Now.issue and Where.machine = t.machine and no Where.repo
 }
@@ -189,7 +178,7 @@ pred deleteDir[t: CampaignDir] {
    installer (scripts/install-hooks.sh), and otherwise a shim carrying the machine-wide
    no-main-commits guard AND the claim gate; acquire-repo.sh verifies the guard is chained on
    both paths, and refuses to install a gate it cannot run. That the shim also carries the gate
-   is #190, and it is what `gated` below is: until then it was the guard alone, so this sentence
+   is #190, and it is half of what `acquired` below is: until then it was the guard alone, so this sentence
    said "the machine-wide no-main-commits guard alone otherwise" and the two halves of this file
    would now disagree. For a repository shipping this base's installer, one writer owns the slot
    -- the installer, which adopts the shim in either of its shapes and refuses anything else --
@@ -199,22 +188,12 @@ pred acquire[t: CampaignDir, r: Repo, b: Branch] {
   t in OnDisk
   t.checkedOut[r] != b
   checkedOut' = checkedOut - t->r->Branch + t->r->b
-  /* ACQUIRE IS WHAT PRINCIPLES A CLONE, and saying so is the whole of the
+  /* ACQUIRE IS WHAT SETS A CLONE UP, and saying so is the whole of the
      mechanism: `acquire-repo.sh` writes the campaign's `AGENTS.md` into the
-     checkout as `CLAUDE.local.md` on every checkout it leaves. Written into
-     the event because there is no other moment -- the clone comes into
-     existence here -- where `checkedOut` is a fact a later event may change.
-     Without this `principled` had no producer at all: every directory event
-     left it free, so R12c's witness rested on a set nothing wrote. */
-  principled' = principled + t->r
-  /* AND ACQUIRE IS ALSO WHAT GATES A CLONE. The same moment for the same
-     reason, with one difference worth writing down: `install_commit_guard`
-     reaches the gate through the BASE, resolved from `acquire-repo.sh`'s own
-     path, because a member clone holds no copy of `check-commit-claim.py` to
-     run. No atom here carries a path, so which bytes and by which path is the
-     script's; the model says only that a clone leaves an Acquire with something
-     that refuses its commits. */
-  gated' = gated + t->r
+     checkout as `CLAUDE.local.md` and installs the claim gate, on every
+     checkout it leaves. Written into the event because there is no other
+     moment -- the clone comes into existence here. */
+  acquired' = acquired + t->r
   OnDisk' = OnDisk
   current' = current           -- a clone is not the install
   Now.event = Acquire and no Now.issue and Where.machine = t.machine and Where.repo = r
@@ -231,7 +210,7 @@ pred reach[m: Machine, r: Repo] {
   r in m.installed
   r not in m.current
   current' = current + m->r
-  OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated
+  OnDisk' = OnDisk and checkedOut' = checkedOut and acquired' = acquired
   Now.event = Reach and no Now.issue and Where.machine = m and Where.repo = r
 }
 
@@ -243,7 +222,7 @@ pred reach[m: Machine, r: Repo] {
 pred mergeLeavesInstallBehind {
   Now.event = MergePullRequest
   current' = current - Machine->(Now.issue.repo)
-  OnDisk' = OnDisk and checkedOut' = checkedOut and principled' = principled and gated' = gated
+  OnDisk' = OnDisk and checkedOut' = checkedOut and acquired' = acquired
   no Where.machine and no Where.repo
 }
 
@@ -286,12 +265,14 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * says nothing about the outer checkout it sits inside.
  *
  * This section declares no signature of its own. It adds three subsets of
- * Machine, four events, and the two facts that govern all three subsets end
+ * Machine, five events, and the two facts that govern all three subsets end
  * to end.
  */
 
 /* The OUTER base checkout a campaign session runs from. */
 var sig BaseBehind   in Machine {}
+/* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push
+   (`push-campaign-branch.sh`); before PushBase it only grew (sdlc-alloy#345 I1). */
 var sig BaseUnpushed in Machine {}
 /* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
    because the two are cleared by different acts: a clone is cut fresh from
@@ -300,10 +281,10 @@ var sig CloneBehind in Machine {}
 
 /* ---------------- observable events ---------------- */
 
-one sig PullBase, PullClone, CommitLocal, Launch extends Event {}
+one sig PullBase, PullClone, CommitLocal, PushBase, Launch extends Event {}
 
 fun synchronizationEvents: set Event {
-  PullBase + PullClone + CommitLocal + Launch
+  PullBase + PullClone + CommitLocal + PushBase + Launch
 }
 
 /* This section writes no frame predicate. BaseBehind, BaseUnpushed
@@ -335,6 +316,14 @@ pred commitLocal[m: Machine] {
   Now.event = CommitLocal and Where.machine = m and no Where.repo
 }
 
+/* The outer checkout's commits reach origin. Unattended: the post-commit
+   hook pushes a campaign branch the moment it has a commit. */
+pred pushBase[m: Machine] {
+  m in BaseUnpushed
+  BaseUnpushed' = BaseUnpushed - m and BaseBehind' = BaseBehind
+  Now.event = PushBase and no Now.issue and Where.machine = m and no Where.repo
+}
+
 /* Here a launch is only a freshness question: WHEN the clone's distance from
    origin/main is read. The role-state half is orchestration/system.als's disjunct on
    the same event atom, and the session is session/system.als's. */
@@ -349,7 +338,7 @@ pred launch[m: Machine] {
    running campaign -- but it agrees BY CONSTRUCTION, so read it as a
    restatement of the assumption and not as evidence. */
 fact BaseCheckoutFrame {
-  always ((Now.event not in PullBase + CommitLocal) implies
+  always ((Now.event not in PullBase + CommitLocal + PushBase) implies
     (BaseUnpushed' = BaseUnpushed and
      ((Now.event = MergePullRequest and Now.issue.repo = Base)
         implies BaseBehind' = Machine else BaseBehind' = BaseBehind)))
@@ -369,7 +358,7 @@ pred synchronizationInit {
 
 pred synchronizationStep {
   (Now.event = Stutter and no Where.machine and no Where.repo)
-  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or launch[m])
+  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or pushBase[m] or launch[m])
   /* A github or directory event: those set `Where` themselves where they touch
      a machine, and this section has no state a branch could frame. */
   or (Now.event in githubEvents + directoryEvents)

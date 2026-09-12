@@ -29,14 +29,15 @@ is on the issue it belongs to.
 
 ## Standing work
 
-A maintenance sub-issue may be standing: no one deliverable, worked until a
-person closes it.
+A maintenance sub-issue stands when it wears `standing`: no one deliverable,
+worked until a person closes it.
 
 - A finding goes as a `NOTE` on the sub-issue that covers it, reopened. A new
   number only for work that outlives one review cycle.
 - Each tidy is one topic ref under this sub-issue's number and one pull
   request.
-- The sub-issue stays open until a person closes it.
+- The sub-issue stays open until a person closes it, and only a person puts
+  the label on or takes it off.
 - With no claim it is neither `unclaimed` nor a reason the campaign is not
   `quiet` in the heartbeat; while it holds one it is read like any other.
 

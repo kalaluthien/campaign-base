@@ -44,9 +44,8 @@ THE THREE NAMES, as the tree carries them today
              is not a code path here either, and what it refuses (no
              extension) is not one until it has one.
 
-The suite may sit in a different scripts/ directory from its code path --
-scripts/acquire-repo-test.py drives a skill's acquire-repo.sh -- so the pair is
-made on the stem alone, tree-wide. The stem pairs on the name and not the
+The suite may sit in a different scripts/ directory from its code path, so
+the pair is made on the stem alone, tree-wide. The stem pairs on the name and not the
 extension, since a Python suite drives a shell script.
 
 A DECLARATION, NOT A MENTION. Until #268 the tie was any whole-word occurrence
@@ -350,7 +349,8 @@ LEGACY = (
     # The model leaves the session name unmodelled on purpose
     # (spec/campaign/session/system.als), so there is no scenario to drive.
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
-    # No suite of its stem; check-campaign-claim-test.py drives its table.
+    # Its suite checks the table's shape, which the model does not state;
+    # check-campaign-claim-test.py drives the verdicts the table decides.
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
     # Its suite reads a directory's leftovers and drives no scenario over
     # `LocalOnly`, the set this script reads (R5b needs an agent's push).

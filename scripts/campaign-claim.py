@@ -477,7 +477,7 @@ def issue_repo(issue, default_repo):
     used to decide it, so two takers naming different repositories both cut a
     ref and both believed they held sub-issue #N: the one-claim-per-issue rule
     is keyed on the issue and cannot see a disagreement about where the issue
-    lives (spec/campaign/orchestration/scenarios.als, `claimOnTheIssuesRepo`,
+    lives (spec/campaign/orchestration/checks.als, `claimOnTheIssuesRepo`,
     with `R8_ClaimCutOnAnotherRepo` for the cost of dropping it). The template
     has carried the destination since the sub-issue template existed and
     NOTHING read it, which is the shape a declared contract takes just before it
@@ -505,7 +505,7 @@ def issue_repo(issue, default_repo):
     `none` and so refused every claim in every campaign whose sub-issues land on
     the base; the model already said otherwise (`claimWithinScope` and
     `R14d_ScopeAdmitsTheBaseWhateverTheListHolds` in
-    spec/campaign/orchestration/scenarios.als)."""
+    spec/campaign/orchestration/checks.als)."""
     r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json", "body",
             "--jq", ".body")
     if r.returncode != 0:
@@ -905,7 +905,7 @@ def cmd_take(args):
     siblings = refs_for_issue(existing, args.campaign_issue, args.issue, slug)
     if siblings:
         # A SETTLED SUB-ISSUE'S REF IS RESIDUE, NOT A CLAIM (#187 question 3,
-        # spec/campaign/orchestration/scenarios.als `settledLeavesNoClaim`).
+        # spec/campaign/orchestration/checks.als `settledLeavesNoClaim`).
         # `delete_branch_on_merge` is off on this tracker, so a merged branch's
         # ref stands until somebody deletes it by hand -- and this sweep read it
         # as a live claim, so a sub-issue that had ever been settled could never
@@ -2132,7 +2132,7 @@ def cmd_release(args):
         # already carries the missing bit: a CLOSED sub-issue says the work is
         # over, as completed or as not planned, and neither is a claim anybody
         # is standing in. That is `settled[Now.issue]` in
-        # spec/campaign/orchestration/scenarios.als's `releaseNeedsAWorker`,
+        # spec/campaign/orchestration/checks.als's `releaseNeedsAWorker`,
         # widened from `complete` by this question, with R7e as its control.
         #
         # This is what makes `R4_RepolessCampaign` true of the code: a sub-issue

@@ -204,16 +204,7 @@ pred R3_DeleteUnderWorkingSession {
    member repository" is a claim about the list, not about where a ref goes.
 
    Checked WITH the disciplines rather than instead of them, and the claim is
-   required: the branch is the claim before it is a workspace.
-
-   SCOPED TO #187, and this trace is ahead of the code. A repo-less sub-issue
-   lands no commit, so its ref stays 0 ahead of the base and is never a merged
-   pull request's head -- and `campaign-claim release` refuses exactly that
-   shape without `--confirmed-absent WHO`, because it cannot tell finished work
-   from a claim cut for a holder that has not checked it out yet. So the close
-   this trace reaches needs a person's word today, where the model asks for
-   none. #187 decides the repair: whether such a sub-issue cuts a ref at all,
-   or whether the closed issue is itself the evidence the holder is done. */
+   required: the branch is the claim before it is a workspace. */
 pred R4_RepolessCampaign {
   compareThenWriteBody and surveyAtFile
   some s: Session, c: Campaign, i: Issue {

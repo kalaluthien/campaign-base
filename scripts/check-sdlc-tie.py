@@ -7,7 +7,7 @@ spec/sdlc/system.als), which is to say every code path the allow-list does not
 exempt walks back to a scenario through the test that drives it, and every
 name a test declares is a scenario (`everyWitnessExists`); and of what
 `keepDiscipline` makes true, that a change adding no feature leaves every
-scenario witnessed (`FeaturelessKeeps`, T8). The model says what a tie is; this
+witnessed scenario witnessed (`FeaturelessKeeps`, T8). The model says what a tie is; this
 says how one is read off this tree, and judges the commit by what it CHANGES
 about the reading rather than by the tree's whole debt.
 
@@ -101,9 +101,10 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       deleted, or this may be a tree the list is not about -- which is what
       every fixture repository under scripts/*-test.py is, since each copies the
       guards by their real names, so refusing on it walled off every commit any
-      of them made. A rename is licensed by EITHER name, so moving the line and
-      moving the file are one commit rather than a commit and the wall after
-      it.
+      of them made. A rename is licensed by the NEW name, the line moving with
+      its file in the same commit; a rename that leaves the line at the old
+      name is a T4, since no later commit could move it -- it would be a line
+      the list gains.
   T6  a suite's `# witnesses:` line declares a name the snapshot does not
       list. One live name ties the code path, so T1 and T3 read the
       rest of the line not at all, and a scenario renamed away from a suite that
@@ -136,8 +137,8 @@ THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 `LEGACY` is what the model's `Licensed` names (spec/sdlc/system.als), and
 `licenceNeverGrows` is the rule it is kept to: T1, T2 and T3 are judged before
 the list is read, so a line licenses only a path that was untied before the
-commit, and T4 reads the list twice -- the copy the tree before holds, at
-`LEGACY_HOME`, and the one running -- so a line licenses only what both name. Every other code path is to be tied, and a check that refused every
+commit, and T4 reads the list twice -- the copies the tree before and the
+tree judged hold, at `LEGACY_HOME` -- so a line licenses only what both name. Every other code path is to be tied, and a check that refused every
 edit to alloy-check.py until it had a suite would be a wall across the
 repair. So the debt is licensed by name in `LEGACY` -- derived from the tree
 when #268 wrote it, the shape #237 gave R3 -- and the licence bites both ways:
@@ -159,8 +160,9 @@ reading rather than a finding.
 comment, on both sides of the change. It is how check-sdlc-tie-test.py
 exercises T4 and T5 over a fixture tree, whose paths no built-in list could
 name; the cases about the list growing carry their own copy of this guard
-instead. A tree before that holds no copy -- a first commit, a fixture --
-has the running list stand for it, and the reading says which was read.
+instead. A tree judged that holds no readable copy has the running list
+stand for it, and a tree before that holds none -- a first commit, a
+fixture -- has the list after; the reading says which was read.
 
 THE SKIP, and why nothing declares one here
 
@@ -275,7 +277,7 @@ def html_form(path):
 
 
 # WHERE A TREE HOLDS ITS OWN ALLOW-LIST: this guard's `LEGACY`, read from the
-# tree before the commit as well as from the copy running. See the docstring's T4.
+# tree before the commit as well as from the tree judged. See the docstring's T4.
 LEGACY_HOME = "scripts/check-sdlc-tie.py"
 
 
@@ -283,9 +285,9 @@ def listed(text):
     """(the `LEGACY` a copy of this guard assigns, "") -- or (None, why) where
     no list can be read off it. The LAST assignment is the one, as Python
     keeps it, and an annotated one counts. A copy that does not parse, or
-    whose list is no literal, is a reading that could not be made: the caller
-    lets the running list stand for it and says so, rather than letting the
-    raise permit the whole commit."""
+    whose list is no literal sequence of paths, is a reading that could not be
+    made: the caller lets another list stand for it and says so, rather than
+    letting the raise permit the whole commit."""
     try:
         body = ast.parse(text).body
     except SyntaxError as e:
@@ -300,9 +302,24 @@ def listed(text):
     if value is None:
         return None, "it assigns no LEGACY"
     try:
-        return set(ast.literal_eval(value)), ""
-    except ValueError as e:
-        return None, f"its LEGACY is no literal (ValueError: {e})"
+        entries = ast.literal_eval(value)
+    except (ValueError, TypeError, MemoryError, RecursionError) as e:
+        return None, f"its LEGACY is no literal ({type(e).__name__}: {e})"
+    if not (isinstance(entries, (tuple, list, set, frozenset))
+            and all(isinstance(e, str) for e in entries)):
+        return None, (f"its LEGACY is no sequence of paths (a "
+                      f"{type(entries).__name__})")
+    return set(entries), ""
+
+
+def own_list(tree):
+    """(the `LEGACY` a tree's own copy of this guard holds, "") -- or (None,
+    why) where it holds none that can be read."""
+    if LEGACY_HOME not in tree.texts:
+        return None, f"{tree.label} holds no {LEGACY_HOME}"
+    held, why = listed(tree.texts[LEGACY_HOME])
+    return held, "" if held is not None else \
+        f"{tree.label}'s {LEGACY_HOME} was not read, {why}"
 
 
 # THE LEGACY ALLOW-LIST, the model's `Licensed`. Every code path this tree held
@@ -607,7 +624,6 @@ def judge(after_kind, against, legacy_path):
         "utf-8", "replace").strip()
     rules = (load_sibling("check-tree-shape.py").in_scripts_dir,)
     source = "LEGACY" if legacy_path is None else legacy_path
-    allowed = set(LEGACY) if legacy_path is None else read_legacy(legacy_path)
 
     if after_kind == "commit":
         # HEAD MUST CONTAIN THE REF, or the two trees are not a change: every
@@ -658,13 +674,20 @@ def judge(after_kind, against, legacy_path):
     t2 = time.perf_counter()
     moved, touched = changed(against if after_kind == "commit" else "HEAD",
                              after_kind)
+    # THE LIST AFTER IS THE ONE THE JUDGED TREE HOLDS, not the copy running:
+    # under `--staged` the running copy is the worktree's, and a line on disk
+    # only would license or refuse a commit that does not carry it. A tree with
+    # no readable copy of its own is judged by the running one, and says so.
     if legacy_path is not None:
+        allowed, after_read = read_legacy(legacy_path), ""
         held, unread = None, ""
-    elif LEGACY_HOME not in before.texts:
-        held, unread = None, f": {before.label} holds no {LEGACY_HOME}"
     else:
-        held, why = listed(before.texts[LEGACY_HOME])
-        unread = f": {before.label}'s {LEGACY_HOME} was not read, {why}"
+        held, why = own_list(after)
+        allowed = set(LEGACY) if held is None else held
+        after_read = (f"read from {after.label}'s {LEGACY_HOME}; "
+                      if held is not None else f"the running copy's: {why}; ")
+        held, unread = own_list(before)
+        unread = f": {unread}"
     allowed_before = allowed if held is None else held
     list_read = (f"the list before read from {before.label}'s {LEGACY_HOME}, "
                  f"{len(held)} entr(ies)" if held is not None else
@@ -703,11 +726,17 @@ def judge(after_kind, against, legacy_path):
                                           f"commit. Rewrite its `# witnesses:` "
                                           f"line"))
             continue
-        names = {was, k}                     # a rename carries the licence
-        if names & allowed and names & allowed_before:
+        if k in allowed and {was, k} & allowed_before:  # the line moved with it
             licensed.append(k)
-        elif names & allowed:
+        elif k in allowed:
             pass                                 # a line this commit added: below
+        elif was in allowed:                     # renamed, its line left behind
+            findings.append(("T4", k, f"renamed from {was}, and the allow-list "
+                                      f"({source}) names only the old path: a "
+                                      f"line moves with its file, in the same "
+                                      f"commit, since a later one would be a "
+                                      f"line the list gains. Move it to {k}, or "
+                                      f"tie it"))
         elif k not in touched:               # a rename puts both ends in it
             # ONLY WHERE THIS COMMIT TOUCHED IT. A path untied on both sides
             # that the change never opened is not this change's debt, and every
@@ -780,6 +809,10 @@ def judge(after_kind, against, legacy_path):
         for w in lacks:
             findings.append(("T7", h, f"an html form is a scenario tied by name, "
                                       f"and this one {w}"))
+    t8_read = (f"T8 read {len(before.witnessed())} witnessed scenario(s) "
+               f"before and {len(after.witnessed())} after"
+               if after.scenarios == before.scenarios else
+               f"T8 stood down, the command names in {SNAPSHOT} having changed")
     if after.scenarios == before.scenarios:
         # NO FEATURE, READ BY NAMES: the command list is what it was. Every
         # scenario a suite declared must still be declared by some suite.
@@ -798,10 +831,12 @@ def judge(after_kind, against, legacy_path):
         print(f"{code}\t{path}\t{what}", file=sys.stderr)
     print(f"check-sdlc-tie: {len(findings)} finding(s); {len(licensed)} code "
           f"path(s) untied and licensed by the allow-list ({source}, "
+          f"{after_read}"
           f"{len(allowed)} entr(ies), {absent} naming no code path here; "
           f"{list_read}); "
           f"{left} dead witness name(s) left where the change never opened "
-          f"the suite, {kept} fault(s) left in html forms it never opened")
+          f"the suite, {kept} fault(s) left in html forms it never opened; "
+          f"{t8_read}")
     return 1 if findings else 0
 
 

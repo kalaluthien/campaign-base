@@ -320,11 +320,12 @@ def own_guard(entries):
     return f"{head}LEGACY = (\n{body})\n{tail}"
 
 
-def own_list_case(listed_before, listed_after, change=None, copy_before=None):
+def own_list_case(listed_before, listed_after, change=None, copy_before=None,
+                  on_disk=None):
     """An untied code path under a list the fixture tree carries itself, run
     the way the pre-commit runs it: the tree's own copy. The commit edits the
     path unless `change` says what it does instead; `copy_before` replaces the
-    committed copy's whole text."""
+    committed copy's whole text; `on_disk` is written after staging, unstaged."""
     sibling = GUARD.parent / "check-tree-shape.py"
     base = {SPEC: DECL, "scripts/a.py": CODE,
             "scripts/check-tree-shape.py": sibling.read_text(),
@@ -332,7 +333,8 @@ def own_list_case(listed_before, listed_after, change=None, copy_before=None):
             "scripts/check-sdlc-tie.py": copy_before or own_guard(listed_before)}
     staged = {"scripts/a.py": CODE + "y\n"} if change is None else dict(change)
     staged["scripts/check-sdlc-tie.py"] = own_guard(listed_after)
-    return run_case(base, staged, legacy=None, guard="scripts/check-sdlc-tie.py")
+    return run_case(base, staged, on_disk=on_disk, legacy=None,
+                    guard="scripts/check-sdlc-tie.py")
 
 
 def put(root, rel, body):
@@ -449,6 +451,13 @@ def main():
     check("T8's line names the suite that declared it and the name it lost",
           line.startswith("T8\tscripts/a-test.py\t") and "`S1_Other`" in line,
           "one T8 line naming scripts/a-test.py and `S1_Other`", r)
+    r = run_case(TIED, {"README.md": "r\n"})
+    check("the reading says T8 read the witnessed scenarios",
+          "T8 read 1 witnessed scenario(s) before and 1 after" in r.stdout,
+          "the T8 clause with both counts", r)
+    r = run_case(TIED, {SPEC: snap("S1_FullChain", "S2_New")})
+    check("the reading says T8 stood down when the command names changed",
+          "T8 stood down" in r.stdout, "the T8 stand-down clause", r)
 
     # ---- the list before the commit, read from the tree that holds it.
     r = own_list_case([], ["scripts/a.py"])
@@ -474,13 +483,33 @@ def main():
     ok, want = judge(r, None)
     check("allow a line moved with the file it names, in the same commit",
           ok, want, r)
+    r = own_list_case(["scripts/a.py"], ["scripts/a.py"],
+                      change={"scripts/a.py": None, "scripts/b.py": CODE})
+    ok, want = judge(r, "T4")
+    check("T4 a listed file renamed with its line left at the old name: no "
+          "later commit could move the line", ok and "names only the old path"
+          in r.stderr, want + ", naming the line left behind", r)
+    # The list after is the judged tree's, not the copy on disk.
+    r = own_list_case([], [], change={"README.md": "r\n"},
+                      on_disk={"scripts/check-sdlc-tie.py": own_guard(["scripts/a.py"])})
+    ok, want = judge(r, None)
+    check("allow a commit while a line sits unstaged in the copy on disk: the "
+          "index does not carry it", ok and "read from the index's" in r.stdout,
+          want + ", the list after read from the index", r)
+    r = own_list_case([], ["scripts/a.py"], change={"README.md": "r\n"},
+                      on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
+    ok, want = judge(r, "T4")
+    check("T4 a line the index gains, reverted on disk only", ok, want, r)
     # A list before that cannot be read is not a licence to skip the commit:
     # the running list stands for it, the reading says why, and T1 still bites.
     added = {"scripts/b.py": CODE}
     for name, copy, why in (
             ("does not parse", "#!/bin/sh\necho not python\n", "does not parse"),
             ("is no literal", own_guard([]).replace("LEGACY = (\n", "LEGACY = tuple((\n")
-             .replace("\n)\n", "\n))\n", 1), "is no literal")):
+             .replace("\n)\n", "\n))\n", 1), "is no literal"),
+            *((f"assigns {v}", own_guard([]) + f"\nLEGACY = {v}\n",
+               "is no sequence of paths")
+              for v in ("None", "0", '(["x"],)', '"scripts/a.py"'))):
         r = own_list_case([], [], change=added, copy_before=copy)
         ok, want = judge(r, "T1")
         check(f"a list before that {name} is named in the reading, and the "
@@ -597,9 +626,10 @@ def main():
     check("a rename is licensed by the line's NEW name, so file and line move "
           "in one commit", ok, want, r)
     r = run_case(*rename, legacy=["scripts/a.py"])
-    ok, want = judge(r, None)
-    check("a rename is licensed by the line's OLD name too, so the line may "
-          "move in the commit after", ok, want, r)
+    ok, want = judge(r, "T4")
+    check("T4 a rename the line's OLD name alone names: the line moves in the "
+          "same commit, since the commit after would be a line the list gains",
+          ok, want, r)
     r = run_case(TIED, {"README.md": "r\n"}, legacy=["scripts/a.py"])
     ok, want = judge(r, "T5")
     check("T5 an allow-list line whose code path is tied now", ok, want, r)
@@ -628,8 +658,10 @@ def main():
     ok, want = judge(r, None)
     check("with no --legacy the built-in list is read, and a tree that never "
           "held its paths is not judged to have spent every line",
-          ok and f"(LEGACY, {len(LEGACY)} entr(ies), {len(LEGACY)} naming no "
-          f"code path here; LEGACY stands for the list before too" in r.stdout,
+          ok and f"(LEGACY, the running copy's: the index holds no "
+          f"scripts/check-sdlc-tie.py; {len(LEGACY)} entr(ies), {len(LEGACY)} "
+          f"naming no code path here; LEGACY stands for the list before too"
+          in r.stdout,
           "0 finding(s) and a reading naming LEGACY, its size, its absences "
           "and which list stood for the tree before", r)
     r = own_list_case(["scripts/a.py"], ["scripts/a.py"])

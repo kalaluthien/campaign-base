@@ -263,13 +263,16 @@ pred S6a_DevelopmentTestWaiver {
   }
 }
 
-/* `narrowingProfile` LICENSES NOTHING A LANDING CHANGE CAN USE, which is
-   not the same as being narrow. The criterion lets a change skip Spec only
-   when it wrote nothing that runs; this profile lets neither Test nor Code go, so
-   such a change cannot land, and one that does land wrote a code path and is
-   refused Spec by the criterion (`S5_CodeWithoutSpec`). `S7a` is the same
-   question under a kind that narrows nothing, so neither the shape nor the
-   scope is what refuses `S7`. */
+/* `narrowingProfile` GRANTS A LANDING CHANGE NO SPEC SKIP, which is not the
+   same as being narrow. The criterion lets a change skip Spec only when it
+   wrote nothing that runs; this profile lets neither Test nor Code go, so a
+   lone change under it that lands wrote a code path and is refused Spec by
+   the criterion (`S5_CodeWithoutSpec`). The scope is one change because a
+   second is what reuse needs: at two, a change under it lands with its Spec
+   and Code reused (`S8_FeaturelessChange`'s shape), an absence reuse
+   licenses and the profile does not. `S7a` is the same question under a kind
+   that narrows nothing, so neither the shape nor the scope is what refuses
+   `S7`. */
 pred S7_NarrowingSpecWaiver {
   allDisciplines
   one c: Change { narrowingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }

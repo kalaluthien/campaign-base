@@ -485,6 +485,12 @@ if broken("gh-broken"):
     if a[:2] == ["pr", "list"]:
         print("not json"); sys.exit(0)
     sys.exit(1)
+if broken("quiet") and a[:2] == ["api", T + "/git/matching-refs/heads/tk/"]:
+    print("[]"); sys.exit(0)
+if broken("quiet") and a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
+    print(json.dumps([
+        {"number": 6, "state": "open", "labels": [{"name": "backlog"}]},
+        {"number": 8, "state": "closed", "labels": []}])); sys.exit(0)
 if a[:2] == ["api", T + "/git/matching-refs/heads/tk/"]:
     print(json.dumps(["refs/heads/tk/5-a", "refs/heads/tk/6-b"])); sys.exit(0)
 if a[:3] == ["api", "--paginate", T + "/issues/7/sub_issues"]:
@@ -563,6 +569,22 @@ def fleet(d, prompt_exit=0, sh=True):
     other.mkdir()
     (other / "SA.jsonl").write_text(lines(usage(1, 900_000))[0] + "\n")
     return d
+
+
+def quiet_fleet(d, *markers):
+    """The fleet with only the planner's own pane listed, and the fake gh
+    answering no claim and no workable sub-issue; `markers` break it more."""
+    d = fleet(d)
+    (d / "listing.json").write_text(json.dumps({"result": {"agents": [
+        row(sid, name, pane, status)
+        for sid, name, pane, status, _, _ in FLEET if sid == "S1"]}}))
+    for marker in ("quiet",) + markers:
+        (d / marker).write_text("")
+    return d
+
+
+QUIET_LINE = ("quiet tk: herdr 1 session(s), 0 but the own pane; the index 2 "
+              "sub-issue(s), 0 open without backlog; the refs 0 claim(s)")
 
 
 def heartbeat(m, d, *args, own="w1:p1"):
@@ -683,6 +705,31 @@ def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d, sh=False), "7", "--apply")
     return code == 1 and "could not fire" in out, out
+
+
+@case("the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, sent = heartbeat(m, quiet_fleet(d), "7", "--apply")
+    return (code == 0 and sent == ["HERDR_ENV=1 pane=w1:p1 prompt=/compact"]
+            and QUIET_LINE in out and "quiet w1:p1 tk-planner-1:" in out), (sent, out)
+
+
+@case("without --apply a quiet campaign says what it would send")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, sent = heartbeat(m, quiet_fleet(d), "7")
+    return (code == 0 and sent == [] and "quiet w1:p1 tk-planner-1:" in out
+            and "would send /compact to w1:p1" in out), (sent, out)
+
+
+@case("the run with the refs and the index unread is not quiet, and judges the own pane as today")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, quiet_fleet(d, "gh-broken"), "7")
+    return ("not quiet tk: the refs not read" in out and "; the index not read" in out
+            and "compact w1:p1 tk-planner-1" in out
+            and "quiet w1:p1" not in out), out
 
 
 @case("an unreadable slug is exit 1 and no verdict")
@@ -844,7 +891,7 @@ def _(m):
     s = lambda st: readings(sessions={"tk-planner-1": sess(st, pane="w1:p1",
                                                            context=300_000)})
     outs = polls(m, (0, s("idle")), (1, s("working")), (2, s("working")))
-    return (not [ln for ln in outs[2] if "session" in ln]
+    return (not [ln for ln in outs[2] if ln.split()[1:2] == ["session"]]
             and drifts(outs[0], "context") == ["+ drift context tk-planner-1 300k"]), outs
 
 
@@ -1078,6 +1125,74 @@ def _(m):
             and "+ drift settled tk/5-a" in outs[2]
             and "- drift settled tk/5-a" in outs[3]), outs
 
+
+QUIET = {"sessions": {"tk-planner-1": sess(pane="w1:p1")},
+         "issues": {6: ("open", True), 8: ("closed", False)}}
+
+
+def said_quiet(m, **change):
+    """The `quiet` lines of two polls running over QUIET with `change`
+    applied: two, since one calm poll does not end the watch."""
+    r = readings(**dict(QUIET, **change))
+    return [ln for out in polls(m, (0, r), (1, r)) for ln in out
+            if ln.startswith("quiet")]
+
+
+def quiet_counts(m, *steps):
+    """How many `quiet` lines each poll printed over (minute, readings)."""
+    return [sum(ln.startswith("quiet") for ln in o) for o in polls(m, *steps)]
+
+
+@case("watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it")
+def _(m):
+    reads, out = [], io.StringIO()
+
+    def read():
+        reads.append(1)
+        return readings(**QUIET)
+    with contextlib.redirect_stdout(out):
+        code = m.run_watch(m.Watch("tk", "w1:p1"), read, 60, polls=3,
+                           clock=lambda: 0, sleep=lambda s: None)
+    return (code == 0 and len(reads) == 2
+            and out.getvalue().splitlines()[-1] == QUIET_LINE), (reads, out.getvalue())
+
+
+@case("quiet: another session of the campaign listed is not quiet")
+def _(m):
+    got = said_quiet(m, sessions={"tk-planner-1": sess(pane="w1:p1"),
+                                  "tk-worker-2": sess()})
+    return got == [], got
+
+
+@case("quiet: an open sub-issue without backlog is not quiet")
+def _(m):
+    got = said_quiet(m, issues={5: ("open", False), 6: ("open", True)})
+    return got == [], got
+
+
+@case("quiet: a claim standing is not quiet")
+def _(m):
+    got = said_quiet(m, claims={"tk/9-z": 9})
+    return got == [], got
+
+
+@case("quiet: a reading not made this poll is not quiet, though its last one stands")
+def _(m):
+    busy = dict(QUIET, sessions={"tk-planner-1": sess(pane="w1:p1"),
+                                 "tk-worker-2": sess()})
+    got = quiet_counts(m, (0, readings(**busy)), (1, readings(**QUIET, fail=("claims",))),
+                       (2, readings(**QUIET)), (3, readings(**QUIET)))
+    return got == [0, 0, 0, 1], got
+
+
+@case("quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count")
+def _(m):
+    q = readings(**QUIET)
+    busy = readings(**dict(QUIET, claims={"tk/9-z": 9}))
+    twice = quiet_counts(m, (0, q), (1, q))
+    broken = quiet_counts(m, (0, q), (1, busy), (2, q))
+    return twice == [0, 1] and broken == [0, 0, 0], (twice, broken)
+
 # ------------------------------------------------------------- mutations
 
 # (the branch broken, old text, new text, the case that must go red)
@@ -1213,12 +1328,43 @@ MUTATIONS = [
      "added, removed = sorted(lines), []", "watch: a later poll prints only what changed, as + and -"),
     ("a pull request of a claim only", "for b, p in prs.items() if b in claims}", "for b, p in prs.items()}",
      "watch: a pull request is a line only while its branch is claimed"),
-    ("unclaimed", 'if state == "open" and not backlog and n not in claimed:', "if False:",
+    ("unclaimed", "for n in workable(issues):", "for n in ():",
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
-    ("unclaimed skips backlog", "and not backlog and n not in claimed", "and n not in claimed",
+    ("unclaimed skips backlog", 'if state == "open" and not backlog)', 'if state == "open")',
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
-    ("unclaimed skips a claimed one", "and not backlog and n not in claimed", "and not backlog",
+    ("unclaimed skips a claimed one", "if n not in claimed:", "if True:",
      "watch: unclaimed is an open sub-issue without backlog and no claim"),
+    ("quiet skips a backlog sub-issue", 'if state == "open" and not backlog)', 'if state == "open")',
+     "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("quiet ends the watch", "            if watch.quiet:\n                return 0\n", "",
+     "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("quiet prints its line", "([self.quiet] if ends else []))", "[])",
+     "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("the own pane is no other session", "others = [p for p in panes if p != own]", "others = list(panes)",
+     "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
+    ("quiet needs two calm polls", "ends = self.calm_polls >= QUIET_POLLS", "ends = calm",
+     "quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count"),
+    ("the calm polls run unbroken", "self.calm_polls = self.calm_polls + 1 if calm else 0",
+     "self.calm_polls = self.calm_polls + calm",
+     "quiet: one calm poll is not quiet, and a poll between two calm ones restarts the count"),
+    ("quiet needs no other session", "return not (others or todo or claims)", "return not (todo or claims)",
+     "quiet: another session of the campaign listed is not quiet"),
+    ("quiet needs no workable sub-issue", "return not (others or todo or claims)", "return not (others or claims)",
+     "quiet: an open sub-issue without backlog is not quiet"),
+    ("quiet needs no claim", "return not (others or todo or claims)", "return not (others or todo)",
+     "quiet: a claim standing is not quiet"),
+    ("a reading not made is not quiet", 'return False, "; ".join(unread)', 'return True, "; ".join(unread)',
+     "quiet: a reading not made this poll is not quiet, though its last one stands"),
+    ("quiet reads this poll, not the last", 'fresh = {s: readings.get(s, (None, "not read this poll"))',
+     "fresh = {s: (self.last.get(s, {}), None)",
+     "quiet: a reading not made this poll is not quiet, though its last one stands"),
+    ("the run reads quiet from the refs and the index", 'got["claims"], got["issues"])',
+     '({}, None), ({}, None))',
+     "the run with the refs and the index unread is not quiet, and judges the own pane as today"),
+    ("the own pane's verdict is quiet", "if is_own and calm:", "if False:",
+     "the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit"),
+    ("quiet compacts, never exits", '"quiet": "/compact"}', '"quiet": "/exit"}',
+     "the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit"),
     ("unworked", "if len(claims) > len(workers):", "if False:",
      "watch: unworked is more claims than workers, and a planner is no worker"),
     ("unworked is strictly more", "if len(claims) > len(workers):", "if len(claims) >= len(workers):",

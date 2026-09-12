@@ -27,6 +27,10 @@ THE NAMED FAILING CASES, one per refusal branch:
                                         parameter or return type is a set
                                         comprehension
   three readings it could not make      `could not look`, exit 2, never a pass
+  --closure short of what a verdict     a file reached only transitively, an
+  reads                                 `open` inside a block comment, an
+                                        alloy `util/` module; an `open` that
+                                        is not there is `could not look`
 
 and the allow cases beside them: the repaired model, a witness with extra
 conjuncts, an `or` inside a quantifier's body, a witness predicate declared in
@@ -377,6 +381,47 @@ def main() -> int:
             check(f"--digest: {name}", r.returncode == 0 and any(
                       c.startswith(head) and c.endswith(tail) and (tail or c == head) for c in cells),
                   f"exit {r.returncode}: {out}")
+
+    # ------------------------------------------------------------ --closure
+
+    # What a module's verdict reads: itself and every file its `open`s reach.
+    # CI keys a cached verdict on these files' hash, so a file missing from the
+    # list is a change that reuses a stale verdict.
+    def closure(d, files, module):
+        for name, text in files.items():
+            (Path(d) / name).parent.mkdir(parents=True, exist_ok=True)
+            (Path(d) / name).write_text(text)
+        r = subprocess.run([sys.executable, str(SCRIPT), "--closure", module],
+                           capture_output=True, text=True, cwd=d)
+        return r.returncode, r.stdout.splitlines()
+
+    chain = {"sys/system.als": "module sys/system\nsig A {}\n",
+             "sys/scenarios.als": "module sys/scenarios\nopen sys/system\n",
+             "sys/checks.als": "module sys/checks\nopen sys/scenarios\n"
+                               "/*\nopen sys/ghost\n*/\nopen util/ordering[A]\n"}
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = closure(d, chain, "sys/checks.als")
+        check("--closure lists the module, then every file its opens reach, transitively",
+              rc == 0 and out == ["sys/checks.als", "sys/scenarios.als", "sys/system.als"],
+              f"exit {rc}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = closure(d, chain, "sys/system.als")
+        check("--closure of a module that opens nothing lists that module alone",
+              rc == 0 and out == ["sys/system.als"], f"exit {rc}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = closure(d, dict(chain, **{"sys/system.als": "module sys/system\nopen sys/gone\n"}),
+                          "sys/checks.als")
+        check("--closure over an open that is not there is `could not look` and lists no file",
+              rc == 2 and len(out) == 1 and "could not look" in out[0] and "gone" in out[0],
+              f"exit {rc}: {out}")
+
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = closure(d, {}, "sys/nothing.als")
+        check("--closure of a module that is not there is `could not look`",
+              rc == 2 and len(out) == 1 and "could not look" in out[0], f"exit {rc}: {out}")
 
     # ------------------------------------------------------------ could not look
 

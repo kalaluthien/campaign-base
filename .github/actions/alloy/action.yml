@@ -1,0 +1,55 @@
+# Java, the pinned Alloy jar, and the `alloy` wrapper -- the install both the
+# `plan` job (whose suites run the real solver) and a `solve` job on a miss
+# need, written once so the jar's sha256 has one home. check.yml's constraint 3
+# holds here too: every `uses:` names a 40-character commit sha.
+name: alloy
+description: Install Java and the Alloy jar this repository checks against, verified by sha256
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    # Pinned to the release asset, not to a package manager: this is the same
+    # build the machine runs, which is what makes a green run here mean what a
+    # green run there means. Identity is the sha256 below, verified on every
+    # run. A size match is not identity, and the cache is not trustworthy on
+    # its own -- any branch can seed this key, so a restored jar is checked
+    # exactly like a downloaded one.
+    - name: Cache the Alloy jar
+      id: alloy-cache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+      with:
+        path: ~/.local/share/alloy/alloy-6.2.0.jar
+        key: alloy-6.2.0-dist-jar
+
+    - name: Fetch the Alloy jar
+      if: steps.alloy-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p ~/.local/share/alloy
+        curl -fsSL -o ~/.local/share/alloy/alloy-6.2.0.jar \
+          https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar
+
+    # Runs on both paths, cache hit and fresh download alike.
+    - name: The jar is the build this repository checks against
+      shell: bash
+      run: |
+        echo "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d  $HOME/.local/share/alloy/alloy-6.2.0.jar" \
+          | sha256sum -c -
+
+    # The same wrapper this machine has on PATH, so alloy-check is invoked
+    # exactly as a person invokes it rather than through a CI-only spelling.
+    - name: Install the alloy wrapper
+      shell: bash
+      run: |
+        mkdir -p ~/.local/bin
+        cat > ~/.local/bin/alloy <<'SH'
+        #!/bin/sh
+        exec java -Djava.awt.headless=true \
+          -jar "$HOME/.local/share/alloy/alloy-6.2.0.jar" "$@"
+        SH
+        chmod +x ~/.local/bin/alloy
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"

@@ -39,7 +39,7 @@
      kinds, so the label is the sub-issue's and not the campaign's.
      `campaign-tracker.py kind <N>` reads it back, and what
      `campaign-tracker.py check` does with a missing or doubled label is
-     AGENTS.md § Sub-issues'. The five words and what each is for are the
+     AGENTS.md § Sub-issues'. The words and what each is for are the
      `assuming-role` skill's table, "The kind of a sub-issue", and
      `campaign-tracker.py`'s `WORK_KINDS` is the list `check` enforces. -->
 

@@ -147,10 +147,11 @@ var sig Landed  in Change {}
    The trace starts from an empty tree, so the list as it stands at the start
    is the model's stand-in for the debt the tree held before the guard: a
    name on it that the trace writes later is such a path. The guard is
-   stricter at two points: it refuses a path a commit adds whether or not the
-   list names it, and a tied path a commit unties, before it reads the list at
-   all. A renamed path it licenses as here, by the new name: the line moves
-   with its file. */
+   stricter at two points and looser at one. It refuses a path a commit adds
+   whether or not the list names it, and a tied path a commit unties, before
+   it reads the list at all; and it licenses a renamed path by its new name
+   when the line moves with the file in the same commit, where here the new
+   name must already be on the list before it. */
 var sig Licensed in Artifact {}
 
 fact SdlcWellFormed {

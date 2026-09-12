@@ -321,18 +321,19 @@ def own_guard(entries):
 
 
 def own_list_case(listed_before, listed_after, change=None, copy_before=None,
-                  on_disk=None):
+                  on_disk=None, copy_after=None):
     """An untied code path under a list the fixture tree carries itself, run
     the way the pre-commit runs it: the tree's own copy. The commit edits the
     path unless `change` says what it does instead; `copy_before` replaces the
-    committed copy's whole text; `on_disk` is written after staging, unstaged."""
+    committed copy's whole text and `copy_after` the staged one's; `on_disk` is
+    written after staging, unstaged."""
     sibling = GUARD.parent / "check-tree-shape.py"
     base = {SPEC: DECL, "scripts/a.py": CODE,
             "scripts/check-tree-shape.py": sibling.read_text(),
             "scripts/check-sdlc-tie-test.py": SUITE,
             "scripts/check-sdlc-tie.py": copy_before or own_guard(listed_before)}
     staged = {"scripts/a.py": CODE + "y\n"} if change is None else dict(change)
-    staged["scripts/check-sdlc-tie.py"] = own_guard(listed_after)
+    staged["scripts/check-sdlc-tie.py"] = copy_after or own_guard(listed_after)
     return run_case(base, staged, on_disk=on_disk, legacy=None,
                     guard="scripts/check-sdlc-tie.py")
 
@@ -503,18 +504,29 @@ def main():
     # A list before that cannot be read is not a licence to skip the commit:
     # the running list stands for it, the reading says why, and T1 still bites.
     added = {"scripts/b.py": CODE}
+    DEEP = own_guard([]) + "\nX = " + "-" * 200000 + "1\n"   # past the parser's depth
     for name, copy, why in (
             ("does not parse", "#!/bin/sh\necho not python\n", "does not parse"),
             ("is no literal", own_guard([]).replace("LEGACY = (\n", "LEGACY = tuple((\n")
              .replace("\n)\n", "\n))\n", 1), "is no literal"),
             *((f"assigns {v}", own_guard([]) + f"\nLEGACY = {v}\n",
                "is no sequence of paths")
-              for v in ("None", "0", '(["x"],)', '"scripts/a.py"'))):
+              for v in ("None", "0", '(["x"],)', '"scripts/a.py"')),
+            ("assigns an unhashable set", own_guard([]) + '\nLEGACY = {["x"]}\n',
+             "is no literal (TypeError"),
+            ("nests too deep to parse", DEEP, "does not parse")):
         r = own_list_case([], [], change=added, copy_before=copy)
         ok, want = judge(r, "T1")
         check(f"a list before that {name} is named in the reading, and the "
               f"commit is still judged", ok and why in r.stdout
               and "PERMITTING" not in r.stderr, want + f", `{why}` in the reading", r)
+    r = own_list_case([], [], change=added, copy_after=DEEP,
+                      on_disk={"scripts/check-sdlc-tie.py": own_guard([])})
+    ok, want = judge(r, "T1")
+    check("a list after that nests too deep to parse is named in the reading, "
+          "and the commit is still judged", ok and "does not parse" in r.stdout
+          and "PERMITTING" not in r.stderr, want + ", `does not parse` in the "
+          "reading", r)
     twice = own_guard([]) + '\nLEGACY = ("scripts/a.py",)\n'
     r = own_list_case(None, ["scripts/a.py"], copy_before=twice)
     ok, want = judge(r, None)

@@ -270,9 +270,9 @@ pred S6a_DevelopmentTestWaiver {
    the criterion (`S5_CodeWithoutSpec`). The scope is one change because a
    second is what reuse needs: at two, a change under it lands with its Spec
    and Code reused (`S8_FeaturelessChange`'s shape), an absence reuse
-   licenses and the profile does not. `S7a` is the same question under a kind
-   that narrows nothing, so neither the shape nor the scope is what refuses
-   `S7`. */
+   licenses and the profile does not. `S7a` lands at the same one-change
+   scope under a kind that narrows nothing, so one change is enough for a
+   waiver, and what refuses `S7` there is the profile. */
 pred S7_NarrowingSpecWaiver {
   allDisciplines
   one c: Change { narrowingProfile[c] and eventually (c in Landed and Spec in absentStages[c]) }

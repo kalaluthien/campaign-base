@@ -145,10 +145,24 @@ jobs:
       # reads the git diff, and main honours the same key: a module whose
       # closure did not change has nothing new to say. `--closure` refuses
       # rather than list part of a closure, and that refusal fails this step.
+      #
+      # THE FLOORS: a module's solver seconds, the larger of main at 8778b40
+      # (run 34646154482) and pr#309 (run 34667942811). Its budget is the
+      # floor plus a quarter, and never under 60 s, the budget of a module with
+      # no row; the solve job warns past it and never fails, so a widening is
+      # seen on the pull request that makes it. A row naming no module warns.
       - name: One solve job per module, keyed on what its verdict reads
         id: matrix
         run: |
           set -euo pipefail
+          floors='spec/sdlc/checks.als 1310
+          spec/sdlc/scenarios.als 679
+          spec/campaign/orchestration/scenarios.als 546
+          spec/campaign/orchestration/checks.als 242
+          spec/campaign/session/scenarios.als 79'
+          for r in $(awk '{print $1}' <<< "$floors"); do
+            [ -f "$r" ] || echo "::warning title=solver budget::a floor row in check.yml names $r, which is not a module"
+          done
           jar=$(sha256sum ~/.local/share/alloy/alloy-6.2.0.jar | cut -d' ' -f1)
           checker=$(sha256sum scripts/alloy-check.py | cut -d' ' -f1)
           rows=""
@@ -157,13 +171,15 @@ jobs:
             files=$(scripts/alloy-check.py --closure "$m")
             closure=$(sha256sum $files | sha256sum | cut -d' ' -f1)
             key="alloy-verdict-$jar-$checker-$m-$closure"
-            echo "$m  $(echo $files | wc -w) file(s) in its closure  $key"
-            rows+="$m"$'\t'"$key"$'\n'
+            floor=$(awk -v m="$m" '$1 == m {print $2}' <<< "$floors")
+            budget=$(( ${floor:-0} * 5 / 4 )); [ "$budget" -ge 60 ] || budget=60
+            echo "$m  $(echo $files | wc -w) file(s) in its closure  budget ${budget}s  $key"
+            rows+="$m"$'\t'"$key"$'\t'"$budget"$'\n'
             n=$((n + 1))
           done
           [ "$n" -gt 0 ] || { echo "no .als module was found under spec"; exit 1; }
           echo "$n module(s) found"
-          echo "matrix=$(printf '%s' "$rows" | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {module: .[0], key: .[1]})')" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(printf '%s' "$rows" | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {module: .[0], key: .[1], budget: .[2]})')" >> "$GITHUB_OUTPUT"
 
   # One module, and the solver only on a miss. The lookup is the cache
   # action's own, so what a pull request may reuse -- its own entries and
@@ -182,6 +198,7 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       MODULE: ${{ matrix.module }}
+      BUDGET: ${{ matrix.budget }}
     steps:
       - name: A verdict already saved under this module's key
         id: lookup
@@ -193,7 +210,7 @@ jobs:
 
       - name: Hit, so the solver does not run
         if: steps.lookup.outputs.cache-hit == 'true'
-        run: echo "$MODULE hit"
+        run: echo "$MODULE hit" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - if: steps.lookup.outputs.cache-hit != 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -202,13 +219,21 @@ jobs:
         uses: ./.github/actions/alloy
 
       # The same run refuses a check over an event no witness shows firing,
-      # which its `expect` cannot see (alloy-check.py, THE DEAD EVENT).
+      # which its `expect` cannot see (alloy-check.py, THE DEAD EVENT). It
+      # prints `<module> <seconds>` into the log and the run's summary, and
+      # warns past the module's budget (THE FLOORS, in `plan`).
       - name: Every command comes out as its `expect` clause says
         if: steps.lookup.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           mkdir -p verdict
-          scripts/alloy-check.py "$MODULE" | tee verdict/alloy-check.txt
+          start=$(date +%s)
+          rc=0
+          scripts/alloy-check.py "$MODULE" | tee verdict/alloy-check.txt || rc=$?
+          secs=$(( $(date +%s) - start ))
+          echo "$MODULE $secs" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$secs" -le "$BUDGET" ] || echo "::warning title=solver budget::$MODULE took ${secs}s, over its ${BUDGET}s budget (check.yml, THE FLOORS)"
+          exit "$rc"
 
       - name: Save the verdict under this module's key
         if: steps.lookup.outputs.cache-hit != 'true'

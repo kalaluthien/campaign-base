@@ -74,7 +74,8 @@ each line is an event. On one, run the **heartbeat**:
    ask about a `stuck` claim, release a `settled` one.
 
 **`quiet <slug>` means nothing is left to do**: no other session of the
-campaign listed, no open sub-issue without `backlog`, no claim. The watch has
+campaign listed, no open sub-issue without `backlog` or `kind:maintenance`, no
+claim. The watch has
 exited; do not start it again. The heartbeat's `--apply` gives this pane
 `quiet` and queues `/compact`; then wait for a person's prompt. The next
 assignment starts the watch again. A planner is never sent `/exit`: a campaign

@@ -37,6 +37,8 @@ person closes it.
 - Each tidy is one topic ref under this sub-issue's number and one pull
   request.
 - The sub-issue stays open until a person closes it.
+- With no claim it is neither `unclaimed` nor a reason the campaign is not
+  `quiet` in the heartbeat; while it holds one it is read like any other.
 
 ## What to refuse
 

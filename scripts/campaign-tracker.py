@@ -224,6 +224,10 @@ WORK_KIND_LABEL_PREFIX = "kind:"
 # rule-check#354 folded five into these: `analysis` into `research`,
 # `prototyping` into `development`, `migration` into `maintenance`.
 WORK_KINDS = ("research", "development", "maintenance")
+# THE KIND WHOSE SUB-ISSUE MAY STAND OPEN WITH NO CLAIM (rule-check#354). The
+# heartbeat reads an unclaimed one as neither `drift unclaimed` nor a reason
+# the campaign is not quiet; its claims, one per tidy, are read like any other.
+STANDING_KIND = "maintenance"
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.

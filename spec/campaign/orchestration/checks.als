@@ -814,299 +814,165 @@ pred R11_HolderThroughAnotherCampaignsDir {
   }
 }
 
-/* A DELEGATE IS LAUNCHED INTO A CLONE THAT CARRIES THE PRINCIPLES (#187
-   question 5). A delegate has no session of its own to be named and reads no
-   ancestor instruction file behind a dialog that defaults to declining, so the
-   `CLAUDE.local.md` in its cwd is the whole channel. #176 wrote that channel
-   down as prose and no command wrote the file, which is the shape of a rule
-   that is remembered rather than enforced -- and one nothing observes, since a
-   delegate that received nothing looks exactly like one that received
-   everything and ignored it.
+/* WORK HAPPENS IN A CLONE `acquire-repo.sh` SET UP (#187 question 5, #190).
+   Two readings of one set, `acquired` in directory/system.als. A delegate is
+   launched into such a clone, because it reads no ancestor instruction file
+   and the `CLAUDE.local.md` in its cwd is its whole channel to the campaign's
+   principles; and a commit on campaign work is made in one, because that is
+   where the claim gate runs -- a member repository ships no installer, so
+   before #190 a member clone got the no-main-commits shim alone while
+   check-campaign-claim.py went on calling it campaign work. Both were
+   mechanisms that existed only as prose, and neither failure is observable:
+   a delegate that received nothing looks like one that ignored everything,
+   and an ungated commit looks like a gated one that passed.
 
-   Delegates only. A session launching an in-process subagent, or working by its
-   own hands, already has the campaign's instructions loaded by its own harness.
+   Delegates only for the launch: a session launching an in-process subagent,
+   or working by its own hands, already has the campaign's instructions loaded.
 
-   WHAT THE CHANNEL CARRIES narrowed in rule-check#314: the campaign's own
-   additions, not a kind's advice. rule-check#313 measured that the kind file
-   reached a base worker zero times and that 8 of `development`'s 9 claims were
-   stated elsewhere, so the kind moved onto the sub-issue as a `kind:<k>` label
-   and its reference travels with the assignment prompt, through the brief
-   hook, to a delegate and a base worker alike. This rule is unchanged by that:
-   a delegate still reads no ancestor file, so what the campaign adds still has
-   to be in its clone. */
-pred delegateLaunchIsPrincipled {
-  always all a: Agent |
+   THE COMMIT HALF IS NARROWED TO A TASK THAT HAS A CAMPAIGN. Without it the
+   rule forbids a commit whose task belongs to no campaign -- `campaignOf` is
+   `lone` and `x in none` is false -- by vacuity rather than by anything it
+   claims. The script reads the committing checkout's PATH, which this entity
+   does not carry, so "no campaign" and "outside every base tree" are two
+   readings the model cannot show coincide; R12h is this narrowing's witness.
+
+   `workDir` is the one navigation both halves take, so the commands
+   pinning its campaign filter (R12g) and its host filter (R12e) pin both.
+   Those two spell the navigation out rather than call `workDir`: a witness
+   reading the rule's own helper moves with any change to it and pins
+   nothing. */
+fun workDir[a: Agent]: lone CampaignDir { campaignDirAt[campaignOf[a.task], a.host] }
+
+pred acquiredCloneOnly {
+  always all a: Agent {
     (a not in Launched and a in Launched' and no a.peer)
-      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].principled'
-}
-
-/* R12. The defect: a delegate launched into a clone carrying nothing. */
-pred R12_DelegateLaunchedWithoutPrinciples {
-  some a: Agent {
-    no a.peer
-    eventually (a not in Launched and a in Launched'
-                and a.task.repo not in
-                    campaignDirAt[campaignOf[a.task], a.host].principled')
+      implies a.task.repo in workDir[a].acquired'
+    (Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task])
+      implies a.task.repo in workDir[a].acquired
   }
 }
 
-/* R12b. CONTROL: the discipline excludes it. */
+/* A delegate launched, or a campaign commit made, outside an acquired clone. */
+pred launchOutside[a: Agent] {
+  no a.peer and a not in Launched and a in Launched' and a.task.repo not in workDir[a].acquired'
+}
+pred commitOutside[a: Agent] {
+  Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task]
+  and a.task.repo not in workDir[a].acquired
+}
+
+/* R12. THE DEFECT, without the rule: a delegate launched into a clone carrying
+   nothing, or a commit on campaign work in a clone that runs nothing.
+   `claimBeforeCommit` holds throughout, so a reader can see what this is not:
+   the claim rule holding over a tree that enforces it on nobody. */
+pred R12_WorkOutsideAnAcquiredClone {
+  claimBeforeCommit
+  some a: Agent | eventually (launchOutside[a] or commitOutside[a])
+}
+
+/* R12b. CONTROL: the rule excludes both, so deleting either half turns it SAT. */
 pred R12b_RepairExcludesIt {
-  delegateLaunchIsPrincipled and R12_DelegateLaunchedWithoutPrinciples
+  acquiredCloneOnly and R12_WorkOutsideAnAcquiredClone
 }
 
-/* R12c. ...and it still admits the launch that DID carry them, or the rule
-   would be one that forbids every delegate. */
-pred R12c_RepairAdmitsThePrincipledLaunch {
-  delegateLaunchIsPrincipled
+/* R12c. ...and it still admits a launch and a commit in an acquired clone, or
+   it would be a rule that forbids delegates, or committing, outright. */
+pred R12c_RepairAdmitsTheAcquiredLaunchAndCommit {
+  acquiredCloneOnly
   some a: Agent {
     no a.peer
-    eventually (a not in Launched and a in Launched'
-                and a.task.repo in
-                    campaignDirAt[campaignOf[a.task], a.host].principled')
+    eventually (a not in Launched and a in Launched' and a.task.repo in workDir[a].acquired')
+  }
+  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
+                              and some campaignOf[a.task] and a.task.repo in workDir[a].acquired)
+}
+
+/* R12d. ACQUIRE IS WHAT SETS A CLONE UP, pinned. R12c is satisfied by an
+   `acquired` that was simply true at time zero, so on its own it says nothing
+   about where the set comes from. Starting from nothing acquired, a launch
+   into an acquired clone is reachable only through an Acquire, so this goes
+   UNSAT the moment `acquire` stops producing. */
+pred R12d_AcquireIsWhatSetsACloneUp {
+  no acquired
+  some a: Agent {
+    no a.peer
+    eventually (a not in Launched and a in Launched' and a.task.repo in workDir[a].acquired')
   }
 }
 
-/* R12d. ACQUIRE IS WHAT PRINCIPLES A CLONE, pinned. R12c is satisfied by a
-   `principled` that was simply true at time zero, so it says nothing about
-   WHERE principles come from -- and while `acquire` did not write the field,
-   nothing in the model did. Starting from nothing principled, a principled
-   launch is reachable only through an Acquire. Goes UNSAT when `acquire` stops
-   producing. */
-pred R12d_AcquireIsWhatPrinciplesAClone {
-  no principled
-  some a: Agent {
-    no a.peer
-    eventually (a not in Launched and a in Launched'
-                and a.task.repo in
-                    campaignDirAt[campaignOf[a.task], a.host].principled')
-  }
-}
+/* R12e. WHICH HOST, pinned. `campaignDirAt[c, m]` filters on two columns, and
+   at `1 Machine` `workDir[a]` and `campaignDirsOf[campaignOf[a.task]]`
+   are the same relation; one campaign directory per machine is exactly the
+   shape that has two. Two machines, one campaign: the directory on the
+   agent's own host lacks the repository and the other machine's holds it, and
+   the rule must still refuse. Expect 0, and it goes SAT the moment `a.host`
+   stops filtering (measured on the #190 branch at 1836881: without it all 78
+   commands then in this module stayed green).
 
-/* R12e. WHICH HOST, pinned. `campaignDirAt[c, m]` filters on two columns and
-   R11 pins only the campaign, so at `1 Machine` -- which is every command
-   above -- `campaignDirAt[campaignOf[a.task], a.host]` and
-   `campaignDirsOf[campaignOf[a.task]]` are the same relation. Nothing said the
-   principles have to be in the directory on the machine the delegate RUNS on,
-   and one campaign directory per machine is exactly the shape that has two.
-   Measured on the #190 branch at 1836881, by a reviewer and by the author:
-   replacing the navigation with `campaignDirsOf[campaignOf[a.task]]` left all
-   78 commands in this module green.
-
-   Two machines, one campaign: the directory on the agent's own host does not
-   carry the principles and the one on the other machine does, and the rule must
-   still refuse. Expect 0, and it goes SAT the moment `a.host` stops filtering.
-   R13g is this command one field over, for `gated`.
-
-   `some campaignOf[a.task]` is deliberately NOT a conjunct: the last one
-   implies it, since `campaignDirAt[none, m]` is empty and `x in none` is false.
-   An expect-0 witness pays for every redundant conjunct, which can make it
-   UNSAT for a reason that is not the one under test. */
+   `some campaignOf[a.task]` is not a conjunct: the last one implies it. An
+   expect-0 witness pays for every redundant conjunct, which can make it UNSAT
+   for a reason that is not the one under test. */
 pred R12e_TheAgentsOwnHostIsTheOneThatCounts {
-  delegateLaunchIsPrincipled
+  acquiredCloneOnly
   some a: Agent, m: Machine {
     no a.peer
     eventually (a not in Launched and a in Launched'
                 and m != a.host
-                and a.task.repo not in
-                    campaignDirAt[campaignOf[a.task], a.host].principled'
-                and a.task.repo in
-                    campaignDirAt[campaignOf[a.task], m].principled')
+                and a.task.repo not in campaignDirAt[campaignOf[a.task], a.host].acquired'
+                and a.task.repo in campaignDirAt[campaignOf[a.task], m].acquired')
   }
 }
 
-/* R12f. AND NOTHING BUT AN ACQUIRE PRINCIPLES A CLONE. R12d says a principled
-   launch is REACHABLE from `no principled`, and reachability is satisfied by
-   ANY producer -- so what R12d reads as "acquire is where principles come
-   from" actually rests on `principled' = principled` holding in
-   `directoryFrame`, which no command asked for. Measured the same way:
-   deleting that line freed `principled` on every event outside the directory
-   entity and left all 78 commands green.
-
-   The other half, and the pair is what pins the field: from nothing
-   principled, with no Acquire ever firing, a principled launch is IMPOSSIBLE.
-   Expect 0, and it goes SAT the moment the frame stops carrying `principled`.
-   R13h is this command one field over.
-
-   The rule is NOT asserted here, as in R12d and R13h: what is under test is
-   what the transition system can produce, and adding the rule would make the
-   command UNSAT for the rule's reason as well as the frame's. */
-pred R12f_NothingButAnAcquirePrinciplesAClone {
-  no principled
+/* R12f. AND NOTHING BUT AN ACQUIRE SETS A CLONE UP. R12d says an acquired
+   launch is REACHABLE from `no acquired`, which any producer satisfies -- so it
+   rests on `acquired' = acquired` holding in `directoryFrame`, which no command
+   asked for; deleting that line once freed the set on every event outside the
+   directory entity and left every command green. From nothing acquired, with
+   no Acquire ever firing, an acquired launch is IMPOSSIBLE. Expect 0, and it
+   goes SAT the moment the frame stops carrying `acquired`. The rule is not
+   assumed: what is under test is what the transition system can produce. */
+pred R12f_NothingButAnAcquireSetsACloneUp {
+  no acquired
   always Now.event != Acquire
   some a: Agent {
     no a.peer
-    eventually (a not in Launched and a in Launched'
-                and a.task.repo in
-                    campaignDirAt[campaignOf[a.task], a.host].principled')
+    eventually (a not in Launched and a in Launched' and a.task.repo in workDir[a].acquired')
   }
 }
 
-/* ================= the gate is installed where the commit lands ============= */
+/* R12g. WHOSE directory, pinned: #203's lesson, and R11's campaign filter
+   inside `campaignDirAt` taken up by this rule. At `1 Campaign`
+   `workDir[a].acquired` and `CampaignDir.acquired` are the same relation. Two
+   campaigns on one machine: the agent's own campaign's clone is not acquired
+   and a neighbour's clone of the same repository is, and the rule must still
+   refuse. Expect 0, and it goes SAT the moment the navigation is replaced by
+   `CampaignDir.acquired`.
 
-/* A COMMIT IS ONLY REFUSABLE WHERE THE GATE IS INSTALLED (#190).
-   `claimBeforeCommit` above says a commit on a sub-issue names a claim the
-   committer holds. It is silent on whether anything in the checkout the commit
-   is made in reads that -- and for a member repository nothing did.
-   `acquire-repo.sh` ran a clone's own `scripts/install-hooks.sh` only
-   `if [ -x "$installer" ]`, a member repository ships none, so a member clone
-   got the machine-wide no-main-commits shim and NO claim gate, while
-   check-campaign-claim.py went on calling that same clone campaign work. The
-   rule held in the model and enforced nothing on the trees delegates do most of
-   their committing in. That is the shape #187 question 5 hit with the
-   principles channel: a mechanism that existed only as prose.
-
-   NARROWED TO A TASK THAT HAS A CAMPAIGN, deliberately, and the reason is
-   about this model and not about the script. Without the conjunct the rule
-   forbids a commit whose task belongs to no campaign -- `campaignOf` is `lone`,
-   `campaignDirAt[none, m]` is empty, and `x in none` is FALSE -- so it would
-   refuse by vacuity rather than by anything it claims. A rule wider than what
-   it can justify is false, not cautious.
-
-   DO NOT justify this by check-commit-claim.py admitting such a commit: that
-   was the first spelling of this comment and it is wrong. The script reads the
-   committing checkout's PATH, and this entity carries none -- `CommitLocal`
-   names an agent and an issue and no location, and `launch` reaches a checkout
-   through `Who.session.worksOn` rather than through `campaignOf[a.task]`, so
-   the two are free of one another here (R13e's witness rests on exactly that
-   freedom). "The issue has no campaign" and "the checkout is outside every base
-   tree" are two different readings, and the model cannot state that they
-   coincide. What the script does with a commit it cannot place is its
-   docstring's. R13f is this narrowing's witness. */
-pred commitGateInstalled {
-  always all a: Agent |
-    (Now.event = CommitLocal and Target.agent = a and some campaignOf[a.task])
-      implies a.task.repo in campaignDirAt[campaignOf[a.task], a.host].gated
-}
-
-/* R13. THE DEFECT, without the rule: a commit on campaign work in a clone that
-   runs nothing. `claimBeforeCommit` is asserted throughout, so a reader can see
-   what this is not -- the claim rule is holding perfectly, over a tree that
-   enforces it on nobody. */
-pred R13_CommitInAnUngatedClone {
-  claimBeforeCommit
-  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
-                              and some campaignOf[a.task]
-                              and a.task.repo not in
-                                  campaignDirAt[campaignOf[a.task], a.host].gated)
-}
-
-/* R13b. CONTROL: the discipline excludes it. */
-pred R13b_RepairExcludesIt {
-  commitGateInstalled and R13_CommitInAnUngatedClone
-}
-
-/* R13c. ...and it still admits the commit in a gated clone, or the rule would
-   be one that forbids committing at all. */
-pred R13c_RepairAdmitsTheGatedCommit {
-  commitGateInstalled
-  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
-                              and some campaignOf[a.task]
-                              and a.task.repo in
-                                  campaignDirAt[campaignOf[a.task], a.host].gated)
-}
-
-/* R13d. ACQUIRE IS WHAT GATES A CLONE, pinned -- R12d's lesson taken up front
-   rather than after a review. R13c is satisfied by a `gated` that was simply
-   true at time zero, so on its own it says nothing about where the gate comes
-   from. Starting from nothing gated, a gated commit is reachable only through
-   an Acquire, so this goes UNSAT the moment `acquire` stops producing. */
-pred R13d_AcquireIsWhatGatesAClone {
-  no gated
-  commitGateInstalled
-  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
-                              and some campaignOf[a.task]
-                              and a.task.repo in
-                                  campaignDirAt[campaignOf[a.task], a.host].gated)
-}
-
-/* R13e. WHOSE directory, pinned. Every command above runs at `1 Campaign` and
-   `1 CampaignDir`, where `campaignDirAt[campaignOf[a.task], a.host].gated` and
-   `CampaignDir.gated` are the same relation -- so together they say nothing
-   about which directory the gate has to be in, and #203 is the round that cost
-   was paid in. R11 pins the campaign filter inside `campaignDirAt`; this pins
-   that THIS rule goes through it.
-
-   Two campaigns on one machine: the agent's own campaign's clone is ungated
-   and a neighbour's clone of the same repository is gated, and the rule must
-   still refuse. Expect 0, and it goes SAT the moment the navigation is replaced
-   by `CampaignDir.gated`.
-
-   EVERY conjunct sits inside the `eventually`, including `some campaignOf` and
-   `c != campaignOf[a.task]`. `memberIssues` is a var relation, so stated
-   outside it they are read at time zero and a trace that moves the sub-issue
-   out of its campaign before the commit satisfies the witness while the rule's
-   antecedent is false -- which is exactly how the first spelling of this went
-   SAT. */
-pred R13e_TheAgentsOwnDirIsTheOneThatCounts {
-  commitGateInstalled
+   EVERY conjunct sits inside the `eventually`: `memberIssues` is a var
+   relation, and stated outside it they are read at time zero, so a trace that
+   moves the sub-issue out of its campaign before the commit satisfies the
+   witness while the rule's antecedent is false. */
+pred R12g_TheAgentsOwnDirIsTheOneThatCounts {
+  acquiredCloneOnly
   some a: Agent, c: Campaign |
     eventually (Now.event = CommitLocal and Target.agent = a
                 and some campaignOf[a.task]
                 and c != campaignOf[a.task]
-                and a.task.repo not in
-                    campaignDirAt[campaignOf[a.task], a.host].gated
-                and a.task.repo in campaignDirAt[c, a.host].gated)
+                and a.task.repo not in campaignDirAt[campaignOf[a.task], a.host].acquired
+                and a.task.repo in campaignDirAt[c, a.host].acquired)
 }
 
-/* R13f. THE CASE THE RULE DOES NOT COVER, stated rather than left to the
-   reader of the conjunct: an agent committing on a task that belongs to no
-   campaign is admitted with nothing gated anywhere, because that is what
-   check-commit-claim.py does with a checkout outside every base tree and every
-   campaign directory. Without this the narrowing above reads as a silent loss.
-   Expect 1, and it goes UNSAT if `some campaignOf[a.task]` is dropped from the
-   rule. */
-pred R13f_ACommitOnNoCampaignsWorkIsNotGated {
-  commitGateInstalled
-  no gated
+/* R12h. THE CASE THE COMMIT HALF DOES NOT COVER, stated rather than left to
+   the reader of the conjunct: an agent committing on a task that belongs to
+   no campaign is admitted with nothing acquired anywhere, as
+   check-commit-claim.py admits a checkout outside every base tree and every
+   campaign directory. Expect 1, and it goes UNSAT if `some campaignOf[a.task]`
+   is dropped from the rule. */
+pred R12h_ACommitOnNoCampaignsWorkIsOutsideTheRule {
+  acquiredCloneOnly
+  no acquired
   some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
                               and no campaignOf[a.task])
-}
-
-/* R13g. WHICH HOST, pinned -- #203's lesson one axis over, and the axis R13e
-   did not reach. `campaignDirAt[c, m]` filters on two columns, and R11 and R13e
-   between them pin only the campaign. Every command above runs at `1 Machine`,
-   where `campaignDirAt[campaignOf[a.task], a.host]` and
-   `campaignDirsOf[campaignOf[a.task]]` are the same relation, so nothing said
-   the gate has to be installed on the machine the commit is MADE on -- and one
-   campaign directory per machine is exactly the shape that has two of them.
-
-   Two machines, one campaign: the directory on the agent's own host has the
-   repository ungated and the one on the other machine has it gated, and the
-   rule must still refuse. Expect 0, and it goes SAT the moment `a.host` stops
-   filtering.
-
-   `principled` had the same gap at `delegateLaunchIsPrincipled`, measured on
-   the #190 branch and closed by R12e above (#212). */
-pred R13g_TheAgentsOwnHostIsTheOneThatCounts {
-  commitGateInstalled
-  some a: Agent, m: Machine |
-    eventually (Now.event = CommitLocal and Target.agent = a
-                and some campaignOf[a.task]
-                and m != a.host
-                and a.task.repo not in
-                    campaignDirAt[campaignOf[a.task], a.host].gated
-                and a.task.repo in campaignDirAt[campaignOf[a.task], m].gated)
-}
-
-/* R13h. AND NOTHING BUT AN ACQUIRE GATES A CLONE. R13d says a gated commit is
-   REACHABLE from `no gated`, which is satisfied by any producer at all -- so it
-   rests on `gated' = gated` holding in `directoryFrame`, and deleting that line
-   left R13 through R13g green while `gated` became free on every event outside
-   this entity. This is the other half: from nothing gated, with no Acquire ever
-   firing, a gated commit is IMPOSSIBLE. Expect 0, and it goes SAT the moment
-   the frame stops carrying `gated`.
-
-   `principled` was unframed in the same way and by the same measurement;
-   R12f above is that half, added by #212 rather than by #190, because
-   widening R12 was that command's business and not this one's. */
-pred R13h_NothingButAnAcquireGatesAClone {
-  no gated
-  always Now.event != Acquire
-  some a: Agent | eventually (Now.event = CommitLocal and Target.agent = a
-                              and some campaignOf[a.task]
-                              and a.task.repo in
-                                  campaignDirAt[campaignOf[a.task], a.host].gated)
 }
 
 /* R9d. THE ORDINARY LANDING, and the case whose absence let the first spelling
@@ -1934,7 +1800,7 @@ pred P2_PlannerLaunchesDelegate {
    the launch must find sits in the TASK's own directory, not the launcher's --
    pinned by requiring `c`'s own directory hold something else for that repo.
    Reverting the fix to `Who.session.worksOn` makes this UNSAT, the same shape
-   R13e uses for `campaignDirAt` inside `commit`.
+   R12g uses for `campaignDirAt` inside `commit`.
 
    `some a.peer` -- a session launching itself onto its own claim -- so
    nothing here also has to set up a live planner and a delegate's ref, which
@@ -2037,20 +1903,14 @@ run R9d_OrdinaryLandingStillAllowed for 4 Issue, 1 PullRequest, 1 Campaign, 2 Se
 run R9e_SecondClaimOnAPullRequestLessSubIssue for 4 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run R7e_WorkerRuleAdmitsTheDroppedSubIssue for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R11_HolderThroughAnotherCampaignsDir for 4 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 3 Repo, 2 Branch, 2 CampaignDir, 10 steps expect 0
-run R12_DelegateLaunchedWithoutPrinciples for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
-run R12c_RepairAdmitsThePrincipledLaunch for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run R12d_AcquireIsWhatPrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R12_WorkOutsideAnAcquiredClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R12b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R12c_RepairAdmitsTheAcquiredLaunchAndCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run R12d_AcquireIsWhatSetsACloneUp for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R12e_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
-run R12f_NothingButAnAcquirePrinciplesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run R13_CommitInAnUngatedClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run R13b_RepairExcludesIt for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run R13c_RepairAdmitsTheGatedCommit for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run R13d_AcquireIsWhatGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run R13e_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
-run R13f_ACommitOnNoCampaignsWorkIsNotGated for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-run R13g_TheAgentsOwnHostIsTheOneThatCounts for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
-run R13h_NothingButAnAcquireGatesAClone for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R12f_NothingButAnAcquireSetsACloneUp for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run R12g_TheAgentsOwnDirIsTheOneThatCounts for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run R12h_ACommitOnNoCampaignsWorkIsOutsideTheRule for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the own-hands hole, the guard that closes it, and the control
 run R4h_OwnHandsWorkWithoutClaim for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run R4i_GuardClosesOwnHandsGap   for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0

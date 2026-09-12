@@ -12,11 +12,13 @@
 #      produce is never "skipped" -- it stays pending forever, and with
 #      `enforce_admins` there is no override. A prose-only branch must still
 #      produce this check.
-#   2. Keep the job named `check`, and keep this file parseable. The required
-#      context is the job name, so renaming it, deleting this file, or leaving
-#      it unparseable produces no `check` at all -- which is pending forever,
-#      not red. A job that *fails* is fine: the context is reported, and a push
-#      clears it. Recovering an absent context means pushing one back; only a
+#   2. Keep the last job named `check`, and keep this file parseable. The
+#      required context is the job name, so renaming it, deleting this file, or
+#      leaving it unparseable produces no `check` at all -- which is pending
+#      forever, not red. A job that *fails* is fine: the context is reported,
+#      and a push clears it. Keep its `if: always()` too: GitHub reports a
+#      SKIPPED job as success to a required check, so without it a failed
+#      `plan` would skip `check` and read green. Recovering an absent context means pushing one back; only a
 #      pull request that means to remove the check needs an admin to empty
 #      `required_status_checks.contexts` on `main`, land it, and restore them.
 #   3. Every `uses:` names a 40-character commit sha, never a tag, with the
@@ -44,9 +46,17 @@ permissions:
   # when it cannot look -- which fails the job for the wrong reason.
   pull-requests: read
 
+# THREE JOBS, BECAUSE THE SOLVER WAS THE WHOLE WAIT (kalaluthien/campaign-base#310).
+# Run serially it was 48 min on main at 8778b40, two sdlc modules 69% of it.
+# `plan` runs every fast check and lists the modules; `solve` is one job per
+# module, so the wall time is the slowest module rather than the sum, and a
+# module whose verdict is already cached under its key does not run at all;
+# `check` is the required context and holds the verdict of both.
 jobs:
-  check:
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       # `fetch-depth: 0`, not the default 1. The tie guard below asks whether
       # HEAD contains `origin/main`, and in a shallow clone HEAD's parents are
@@ -81,49 +91,9 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           scripts/check-sdlc-tie.py --against origin/main
 
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      # Pinned to the release asset, not to a package manager: this is the same
-      # build the machine runs, which is what makes a green run here mean what a
-      # green run there means. Identity is the sha256 below, verified on every
-      # run. A size match is not identity, and the cache is not trustworthy on
-      # its own -- any branch can seed this key, so a restored jar is checked
-      # exactly like a downloaded one.
-      - name: Cache the Alloy jar
-        id: alloy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
-        with:
-          path: ~/.local/share/alloy/alloy-6.2.0.jar
-          key: alloy-6.2.0-dist-jar
-
-      - name: Fetch the Alloy jar
-        if: steps.alloy-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/.local/share/alloy
-          curl -fsSL -o ~/.local/share/alloy/alloy-6.2.0.jar \
-            https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar
-
-      # Runs on both paths, cache hit and fresh download alike.
-      - name: The jar is the build this repository checks against
-        run: |
-          echo "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d  $HOME/.local/share/alloy/alloy-6.2.0.jar" \
-            | sha256sum -c -
-
-      # The same wrapper this machine has on PATH, so alloy-check is invoked
-      # exactly as a person invokes it rather than through a CI-only spelling.
-      - name: Install the alloy wrapper
-        run: |
-          mkdir -p ~/.local/bin
-          cat > ~/.local/bin/alloy <<'SH'
-          #!/bin/sh
-          exec java -Djava.awt.headless=true \
-            -jar "$HOME/.local/share/alloy/alloy-6.2.0.jar" "$@"
-          SH
-          chmod +x ~/.local/bin/alloy
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Java, the jar verified by its sha256, and the `alloy` wrapper; the
+      # action says why each is pinned the way it is.
+      - uses: ./.github/actions/alloy
 
       # After the Alloy install, not before it: alloy-check-test.py runs the
       # real solver on its fixtures, and a suite with no alloy fails red here
@@ -161,25 +131,109 @@ jobs:
         run: scripts/alloy-check.py --commands spec
 
       # Every module of every entity under the spec/ root, system modules
-      # included: one that no
-      # longer parses is a failure the two sibling modules would report only
-      # indirectly, and a system module declares no command so running it costs
-      # one trivial `Default`. `find`, not a depth-2 glob: the step above
-      # inventories to any depth, and a module the inventory sees but this loop
-      # misses is one whose commands nothing here runs. A run that finds no
-      # module fails the job, since an empty loop is green. The same run
-      # refuses a check over an event no witness shows firing, which its
-      # `expect` cannot see (alloy-check.py, THE DEAD EVENT).
-      - name: Every command comes out as its `expect` clause says
+      # included: one that no longer parses is a failure the two sibling
+      # modules would report only indirectly, and a system module declares no
+      # command so running it costs one trivial `Default`. `find`, not a
+      # depth-2 glob: the step above inventories to any depth, and a module the
+      # inventory sees but this list misses is one whose commands nothing here
+      # runs. A plan that finds no module fails, since an empty matrix is green.
+      #
+      # THE KEY is everything a module's verdict reads, and nothing else: the
+      # jar, alloy-check.py (its dead-event refusal is part of every verdict),
+      # the module's path, and the hash of every file `alloy-check.py
+      # --closure` lists -- the module and each file its `open`s reach. Nothing
+      # reads the git diff, and main honours the same key: a module whose
+      # closure did not change has nothing new to say. `--closure` refuses
+      # rather than list part of a closure, and that refusal fails this step.
+      - name: One solve job per module, keyed on what its verdict reads
+        id: matrix
         run: |
+          set -euo pipefail
+          jar=$(sha256sum ~/.local/share/alloy/alloy-6.2.0.jar | cut -d' ' -f1)
+          checker=$(sha256sum scripts/alloy-check.py | cut -d' ' -f1)
+          rows=""
           n=0
           for m in $(find spec -name '*.als' | sort); do
-            echo "== $m"
-            scripts/alloy-check.py "$m" || exit 1
+            files=$(scripts/alloy-check.py --closure "$m")
+            closure=$(sha256sum $files | sha256sum | cut -d' ' -f1)
+            key="alloy-verdict-$jar-$checker-$m-$closure"
+            echo "$m  $(echo $files | wc -w) file(s) in its closure  $key"
+            rows+="$m"$'\t'"$key"$'\n'
             n=$((n + 1))
           done
           [ "$n" -gt 0 ] || { echo "no .als module was found under spec"; exit 1; }
-          echo "$n module(s) ran"
+          echo "$n module(s) found"
+          echo "matrix=$(printf '%s' "$rows" | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {module: .[0], key: .[1]})')" >> "$GITHUB_OUTPUT"
+
+  # One module, and the solver only on a miss. The lookup is the cache
+  # action's own, so what a pull request may reuse -- its own entries and
+  # main's, never another pull request's -- is GitHub's scope rule, read by
+  # nothing here. A hit ends the job before Java is set up. The verdict is
+  # saved only when the run passed: a failure is never cached, so it is re-run
+  # on every push until it is fixed. `fail-fast: false`, so one red module
+  # does not cancel the others and leave their verdicts unsaved.
+  solve:
+    needs: plan
+    name: solve ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      MODULE: ${{ matrix.module }}
+    steps:
+      - name: A verdict already saved under this module's key
+        id: lookup
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: verdict
+          key: ${{ matrix.key }}
+          lookup-only: true
+
+      - name: Hit, so the solver does not run
+        if: steps.lookup.outputs.cache-hit == 'true'
+        run: echo "$MODULE hit"
+
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        uses: ./.github/actions/alloy
+
+      # The same run refuses a check over an event no witness shows firing,
+      # which its `expect` cannot see (alloy-check.py, THE DEAD EVENT).
+      - name: Every command comes out as its `expect` clause says
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          mkdir -p verdict
+          scripts/alloy-check.py "$MODULE" | tee verdict/alloy-check.txt
+
+      - name: Save the verdict under this module's key
+        if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: verdict
+          key: ${{ matrix.key }}
+
+  # The required context. `always()`, per constraint 2; it reads the result of
+  # every job before it, and the review gate runs last.
+  check:
+    needs: [plan, solve]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: The plan ran and every solve job passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          SOLVE: ${{ needs.solve.result }}
+        run: |
+          echo "plan: $PLAN; solve, over every module: $SOLVE"
+          [ "$PLAN" = success ] || { echo "plan ended $PLAN: a fast check failed or no matrix was computed"; exit 1; }
+          [ "$SOLVE" = success ] || { echo "solve ended $SOLVE: the failed job names its module"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       # MERGE CONDITION 1, GIVEN A READER (kalaluthien/campaign-base#274).
       # AGENTS.md wants a review read at the sha being merged; nothing read it,

@@ -109,7 +109,8 @@ ROLES = {
         # ONE route to a claim, which is the only condition under which that
         # model rule has a reader at all.
         "gh_except": frozenset({("issue", "develop")}),
-        "own_campaign_gh": frozenset(),
+        "own_campaign_gh": {"campaign issue": frozenset(),
+                            "sub-issue": frozenset()},
     },
     "worker": {
         "campaign_plane": "own",
@@ -128,7 +129,19 @@ ROLES = {
         # writes; `close` closes the CAMPAIGN, a person's decision; `delete`
         # and `transfer` are irreversible. A claim on some other sub-issue
         # makes none of them safer, so the claim was never the missing test.
-        "own_campaign_gh": frozenset({("issue", "comment")}),
+        #
+        # ANY SUB-ISSUE OF THAT CAMPAIGN, TOO, for the two verbs that append
+        # to its record (#354). AGENTS.md § Sub-issues has a discovery appended
+        # to the sub-issue that covers it and that sub-issue reopened; without
+        # this a worker could do neither on a number it held no claim on, and
+        # its findings drifted onto new numbers under the 100-sub-issue cap.
+        # `reopen` is the SUB-ISSUE's and not the campaign issue's: reopening
+        # the campaign undoes a close, which is a person's decision.
+        "own_campaign_gh": {
+            "campaign issue": frozenset({("issue", "comment")}),
+            "sub-issue": frozenset({("issue", "comment"),
+                                    ("issue", "reopen")}),
+        },
     },
 }
 
@@ -169,10 +182,10 @@ def main():
         if r["gh_except"]:
             print("    except           "
                   + ", ".join(sorted(f"{s} {v}" for s, v in r["gh_except"])))
-        if r["own_campaign_gh"]:
-            print("    own campaign     "
-                  + ", ".join(sorted(f"{s} {v}"
-                                     for s, v in r["own_campaign_gh"])))
+        for target, pairs in r["own_campaign_gh"].items():
+            if pairs:
+                print(f"    own {target}: "
+                      + ", ".join(sorted(f"{s} {v}" for s, v in pairs)))
     print("\nWhat this file does not decide: the claim (per call, in "
           "check-campaign-claim.py), the name shape (campaign-name-session.py), "
           "and who holds a role (herdr, by session id).")

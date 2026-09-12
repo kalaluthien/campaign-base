@@ -131,9 +131,9 @@ old pane, its transcript and a scratchpad carry none of it.
 ## A helper planner
 
 A second planner may run beside the campaign's own, to keep the tree in order
-under a standing `kind:maintenance` sub-issue. It is started as step 2 of
-[handing off](#handing-off) starts a successor, named `<slug>-planner-<n>`, with no NOTE handed and
-no predecessor to close. It files sub-issues, investigates, and posts `NOTE`s;
-it launches nothing and assigns nothing, which stay the campaign planner's.
-It leaves by stopping its own pane, since `quiet` and the close both wait on
-every listed session of the campaign.
+under a standing `kind:maintenance` sub-issue. It is started the way
+[handing off](#handing-off) step 2 starts a successor, named
+`<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It files sub-issues, investigates,
+and posts `NOTE`s; it launches nothing and assigns nothing, which stay the
+campaign planner's. It leaves by stopping its own pane, since `quiet` and the
+close both wait on every listed session of the campaign.

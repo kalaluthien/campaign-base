@@ -1184,12 +1184,11 @@ def _(m):
     return got == [], got
 
 
-@case("quiet: an open kind:maintenance sub-issue with no claim is quiet, and one with a claim is not")
+@case("quiet: an open kind:maintenance sub-issue with no claim is quiet")
 def _(m):
-    standing = {6: ("open", False, True), 8: ("closed", False, False)}
-    free = said_quiet(m, issues=standing)
-    held = said_quiet(m, issues=standing, claims={"tk/6-b": 6})
-    return free == [QUIET_LINE] and held == [], (free, held)
+    got = said_quiet(m, issues={6: ("open", False, True),
+                                8: ("closed", False, False)})
+    return got == [QUIET_LINE], got
 
 
 @case("quiet: a claim standing is not quiet")
@@ -1363,7 +1362,7 @@ MUTATIONS = [
     ("quiet skips a backlog sub-issue", 'if state == "open" and not backlog\n', 'if state == "open"\n',
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("quiet skips an unclaimed maintenance one", "and not maintenance)", ")",
-     "quiet: an open kind:maintenance sub-issue with no claim is quiet, and one with a claim is not"),
+     "quiet: an open kind:maintenance sub-issue with no claim is quiet"),
     ("quiet ends the watch", "            if watch.quiet:\n                return 0\n", "",
      "watch: quiet is no other session, no workable sub-issue, no claim, and the watch exits 0 on it"),
     ("quiet prints its line", "([self.quiet] if ends else []))", "[])",

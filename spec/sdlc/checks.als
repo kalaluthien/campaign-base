@@ -376,9 +376,9 @@ run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 6 Artifact, 10 step
 run S5_CodeWithoutSpec         for 2 Change, 6 Artifact, 10 steps expect 0
 run S5a_WithoutTheCommitCheck  for 2 Change, 6 Artifact, 10 steps expect 0
 run S5b_WithoutTheLandingCheck for 2 Change, 6 Artifact, 10 steps expect 1
-run S6_NarrowingTestWaiver   for exactly 1 Change, exactly 3 Artifact, 10 steps expect 0
+run S6_NarrowingTestWaiver     for exactly 1 Change, exactly 3 Artifact, 10 steps expect 0
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
-run S7_NarrowingSpecWaiver   for exactly 1 Change, 6 Artifact, 12 steps expect 0
+run S7_NarrowingSpecWaiver     for exactly 1 Change, 6 Artifact, 12 steps expect 0
 run S7a_DevelopmentSpecWaiver  for exactly 1 Change, 6 Artifact, 12 steps expect 1
 
 -- the order: holds under the discipline, and has a counterexample without it.

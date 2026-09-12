@@ -346,8 +346,9 @@ def own_list(tree):
 # does not drive is the forgery the declaration exists to prevent -- so a line
 # goes when the model gains the scenario or the path gains a suite.
 LEGACY = (
-    # The model leaves the session name unmodelled on purpose
-    # (spec/campaign/session/system.als), so there is no scenario to drive.
+    # The model states what a name says (spec/campaign/session/system.als)
+    # and leaves its shape to this script; its suite drives the setter and no
+    # scenario.
     ".claude/skills/assuming-role/scripts/campaign-name-session.py",
     # Its suite checks the table's shape, which the model does not state;
     # check-campaign-claim-test.py drives the verdicts the table decides.

@@ -557,7 +557,12 @@ def main():
             shutil.rmtree(copy.parent, ignore_errors=True)
     n_cases, n_mut = len(CASES), len(MUTATIONS)
     print(f"campaign-limit-reset-test: {n_cases} cases, 1 control, {n_mut} mutations, script {SCRIPT}")
-    return max(harness.report(), len(harness.RAN) != n_cases + n_mut + 1)
+    status, want = harness.report(), n_cases + n_mut + 1
+    if harness.RAN and len(harness.RAN) != want:
+        print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {want}: "
+              f"a case whose body did not run reports nothing")
+        return 1
+    return status
 
 
 if __name__ == "__main__":

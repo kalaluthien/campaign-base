@@ -67,7 +67,7 @@ def mutate(source, load, cases, mutations):
         if count != 1:
             check(f"MUTATION {label}", False, f"the text to break occurs {count} times")
             continue
-        ok, detail = run_case(cases[name], load(source.replace(old, new)))
+        ok, detail = run_case(lambda m: cases[name](m), load(source.replace(old, new)))
         check(f"MUTATION {label}", ok is False,
               f"{name!r} crashed -- {detail}" if ok is None else f"{name!r} stayed green")
 
@@ -161,7 +161,8 @@ def main():
 
     def boom():
         raise ValueError("x")
-    check("run_case passes a case's own verdict through", run_case(lambda: (0, "d")) == (False, "d"))
+    check("run_case passes a case's own verdict through, as a bool",
+          run_case(lambda: ([], "d")) == (False, "d") and run_case(lambda: ([], "d"))[0] is False)
     check("run_case reports a crash as None, never red", run_case(boom) == (None, "ValueError: x"))
 
     def load(text):
@@ -170,16 +171,25 @@ def main():
         return ns
 
     with apart():
-        mutate("def f():\n    return 1\n", load, {"f is 1": lambda m: (m["f"]() == 1, "")},
+        mutate("def f():\n    return 1\n", load,
+               {"f is 1": lambda m: (m["f"]() == 1, ""),
+                "f is 2": lambda m: (m["f"]() == 2, "f is 1")},
                [("caught", "return 1", "return 2", "f is 1"),
                 ("survives", "def f", "def f", "f is 1"),
-                ("absent", "return 3", "return 4", "f is 1")])
+                ("absent", "return 3", "return 4", "f is 1"),
+                ("crashed", "def f():", "f = 1\ndef g():", "f is 1"),
+                ("unnamed", "return 1", "return 2", "no such case")])
         seen = RAN[:], FAILED[:]
     check("mutate runs every case, then each mutation", seen[0] == [
-        "f is 1", "MUTATION caught", "MUTATION survives", "MUTATION absent"], seen)
-    check("a mutation passes only when its case goes red", seen[1] == [
-        "MUTATION survives  -- 'f is 1' stayed green",
-        "MUTATION absent  -- the text to break occurs 0 times"], seen[1])
+        "f is 1", "f is 2", "MUTATION caught", "MUTATION survives",
+        "MUTATION absent", "MUTATION crashed", "MUTATION unnamed"], seen)
+    check("a case red on the unmutated source fails", "f is 2  -- f is 1" in seen[1], seen[1])
+    check("a mutation passes only when its case goes red by its own assertion",
+          seen[1][1:4] == ["MUTATION survives  -- 'f is 1' stayed green",
+                           "MUTATION absent  -- the text to break occurs 0 times",
+                           "MUTATION crashed  -- 'f is 1' crashed -- TypeError: 'int' object is not callable"]
+          and seen[1][4].startswith("MUTATION unnamed  -- 'no such case' crashed -- KeyError"),
+          seen[1])
 
     with tempfile.TemporaryDirectory() as d:
         write_tree(d, {"a/b.txt": "t", "c.bin": b"\x00", "gone.txt": None})
@@ -211,7 +221,6 @@ def main():
         r = guard_in_repo(probe, {"x.txt": "1", ".gitignore": "x.txt\n"}, "--flag")
         check("guard_in_repo runs the guard over every file staged, ignored ones too",
               r.stdout.strip() == "['.gitignore', 'x.txt'] ['--flag']", r.stdout + r.stderr)
-    # read off the tally as well: a broken `report` cannot report itself
     with tempfile.TemporaryDirectory() as d:
         body = "#!/bin/sh\necho \"$0\"\n"
         for case in ("a", "b"):

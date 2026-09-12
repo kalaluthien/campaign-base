@@ -28,8 +28,11 @@ Contents: the moments below, then
    prompt is the session's own user turn, so its hooks run.
 7. **Answer a `BLOCKED`** with a `DECISION` on the sub-issue, or carry it to
    the owner when it is preference, scope or a destructive stake; never leave
-   one standing. What a worker hands up is [worker](worker.md) step 4's. A
-   relay is never the authority; point at the durable artifact instead.
+   one standing. A question's `DECISION` cites the brief's line, or is the
+   line the brief lacked; a question asked twice goes into the sub-issue
+   template or the kind's reference. What reaches you is
+   [worker](worker.md) step 4's. A relay is never the authority; point at the
+   durable artifact instead.
 8. **Retire agents as the campaign runs.** The heartbeat retires a worker its
    transcript shows released and compacted, holding no claim it cut, with no
    prompt since the release and no tool call since the compaction; any other

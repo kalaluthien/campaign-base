@@ -14,15 +14,21 @@ and, on a claim, the code the sub-issue names.
    clone for a member repository. The stages inside this step, what each
    produces and when one may be skipped, are
    [landing a change](references/landing-a-change.md).
-4. **Hand up a choice that is not yours**: a `BLOCKED` on the sub-issue, then
-   the message to the planner, and nothing else -- not a NOTE, a question in
-   the pane, or a DECISION of your own. Not yours: a scope change (a Plan or
-   Definition of done item added, dropped or moved, even one a check shows is
-   moot -- the check is the BLOCKED's evidence), a rule found two ways, an
-   off-limits file or target, a destructive step, a Definition of done you
-   cannot meet, and a pick the Plan reserves for the planner. Yours: what a
-   check settles, and how to build what the Definition of done names. Whether
-   written work is right is the review's, step 7.
+4. **Sort each choice into one of four routes** before you act on it:
+   - **decide it**: what a check settles, and how to build what the
+     Definition of done names;
+   - **the review**, step 7: whether work already written is right;
+   - **ask the planner**: the brief is silent, or reads two ways, on what it
+     asks of you -- which step is next, what a line means, whether a file is in
+     scope;
+   - **hand it up**: it changes what the work is -- a Plan or Definition of
+     done item added, dropped or moved, even one a check shows is moot, a rule
+     found two ways, an off-limits file or target, a destructive step, a
+     Definition of done you cannot meet, a pick the Plan reserves.
+
+   A question and a hand-up take one channel: a `BLOCKED` on the sub-issue,
+   its first line saying which, then the message -- not a NOTE, a question in
+   the pane, or a DECISION of your own.
 5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.

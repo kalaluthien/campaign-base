@@ -509,8 +509,9 @@ pred report[a: Agent] {
 }
 
 /* Silence is not this message: an agent that stops without sending it
-   looks identical to one thinking. Which choices an agent sends it for is
-   `.claude/skills/assuming-role/references/worker.md` step 4. */
+   looks identical to one thinking. An agent sends it for a decision or a
+   question about its brief, one event because both leave it Waiting;
+   `.claude/skills/assuming-role/references/worker.md` step 4 sorts them. */
 pred blocked[a: Agent] {
   a in Live and a not in Waiting and a not in Stopped
   Waiting' = Waiting + a

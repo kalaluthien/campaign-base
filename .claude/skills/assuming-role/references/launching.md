@@ -121,7 +121,7 @@ and concluded the `info/exclude` line was doing the work; this machine's global
 gitignore holds `*.local.md`, so the file was ignored either way and the probe
 could not have told the two apart. Re-measured with the global and system config
 emptied (`GIT_CONFIG_GLOBAL=/dev/null`), the exclude does do it — and
-`scripts/acquire-repo-test.py` is that measurement, run on every push: delete
+`.claude/skills/opening-campaign/scripts/acquire-repo-test.py` is that measurement, run on every push: delete
 the exclude line and its named case reports `?? CLAUDE.local.md`.
 
 The old external-import dialog goes with the flag: `CLAUDE.local.md` in the cwd

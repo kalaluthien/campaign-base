@@ -66,8 +66,9 @@ scopes stay callable by name; the front door only chooses among them.
   no target       scope here, of the campaign whose directory this runs in
                   (its `.campaign` marker), else the one this session's name
                   names (`campaign-tracker.py issue <slug>`).
-  anything else   refuses, saying what it tried. A flag the scope read does
-                  not take refuses too, rather than being dropped.
+  anything else   refuses, saying what it tried -- a scope's own name typed
+                  alone among them. A flag the scope read does not take
+                  refuses too, rather than being dropped.
 
 SCOPE sub-issue <N> <issue> --not-planned "<why>"
 
@@ -1062,17 +1063,25 @@ def own_campaign():
 def front_door(args):
     """The scope's own argv, read off the one target, with what was read and
     from where printed first."""
-    t = args.target
+    t = (args.target or "").strip() or None
+    if t in SCOPES:
+        raise Refused("target", f"{t!r} is the name of a scope, not a target: "
+                                f"give it its arguments (`campaign-close.py "
+                                f"{t} ...`, see --help), or give /close a "
+                                f"target")
     if t is None:
         n, where = own_campaign()
         scope, argv, how = "here", ["here", n], f"no target; #{n} from {where}"
-    elif NUMBER.match(t):
-        n = NUMBER.match(t).group(1)
+    elif num := NUMBER.match(t):
+        n = num.group(1)
         text = script(TRACKER_SCRIPT, "check", n)
         m = CHECK_LINE.search(text)
         if m is None:
             raise Refused("target", f"campaign-tracker check {n} printed no kind "
                                     f"line: {(text.strip().splitlines() or ['<nothing>'])[0][:160]}")
+        if m.group(1) != n:
+            raise Refused("target", f"campaign-tracker check {n} answered for "
+                                    f"#{m.group(1)}")
         kind, parent = m.group(2), m.group(3)
         if kind == "campaign issue":
             scope, argv = "campaign", ["campaign", n]
@@ -1090,7 +1099,7 @@ def front_door(args):
             raise Refused("target", f"{t!r} has a slash and names no owner/repo")
         n, where = own_campaign()
         scope, argv = "repo", ["repo", n, repo]
-        how = f"{repo} is a repository; #{n} from {where}"
+        how = f"{repo} is an owner/repo name; #{n} from {where}"
     else:
         sessions, why = CLAIM.herdr_sessions()
         if sessions is None:
@@ -1150,7 +1159,11 @@ def answered(fn):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
-    if not argv or argv[0] not in SCOPES + ("-h", "--help"):
+    # A SCOPE'S NAME ALONE IS NOT THE SCOPE'S FORM, which takes arguments, so it
+    # goes to the front door and is refused there in the REFUSE vocabulary,
+    # rather than dying in argparse outside it.
+    if not argv or argv[0] not in SCOPES + ("-h", "--help") or (
+            argv[0] in SCOPES and len(argv) == 1):
         code, argv = answered(lambda: front_door(front_parser().parse_args(argv)))
         if code:
             return code

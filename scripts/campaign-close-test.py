@@ -272,8 +272,13 @@ def drive(m, argv, w):
     was = os.getcwd()
     os.chdir(w.get("cwd") or tempfile.gettempdir())
     try:
-        with contextlib.redirect_stdout(buf):
-            code = m.main(argv)
+        # argparse exits on an argv it refuses; its status is the reading,
+        # so a case asserts on it rather than the run ending.
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            try:
+                code = m.main(argv)
+            except SystemExit as e:
+                code = e.code
     finally:
         os.chdir(was)
         for k, v in saved.items():
@@ -692,6 +697,12 @@ def case_nested_campaign_dir(m):
 # ------------------------------------------------------------- the front door
 
 
+def whole_padded(m):
+    w = whole(check=check_line("campaign issue", n=N))
+    code, out, asked, _ = drive(m, [f" {N} "], w)
+    return code == 3 and "read as scope campaign -- #10 is a campaign issue" in out, out
+
+
 def case_front_campaign(m):
     w = whole(check=check_line("campaign issue", n=N))
     code, out, asked, _ = drive(m, [N], w)
@@ -719,7 +730,7 @@ def case_front_repo(m):
     w = dropped()
     w["cwd"] = str(w["dir"] / "scripts")
     code, out, asked, _ = drive(m, [MEMBER], w)
-    return (code == 3 and f"read as scope repo -- {MEMBER} is a repository; "
+    return (code == 3 and f"read as scope repo -- {MEMBER} is an owner/repo name; "
             f"#{N} from the marker" in out and "re-run with --delete" in out), out
 
 
@@ -920,6 +931,14 @@ CASES = {
         case_front_here_marker,
     "front: no target elsewhere reads as scope here by the session's name":
         case_front_here_session,
+    "refuse front: a scope's name alone is not a target": refusal(
+        "target", "'here' is the name of a scope, not a target", argv=["here"]),
+    "refuse front: digits with more after them are not a number": refusal(
+        "target", "'32x' is not a number", argv=["32x"]),
+    "refuse front: check answering for another number": refusal(
+        "target", "campaign-tracker check 7 answered for #8", argv=["7"],
+        check=check_line("campaign issue", n="8")),
+    "front: a padded number is read as the number": whole_padded,
     "refuse front: a number of the third kind": refusal(
         "target", "reads as a third kind", argv=["7"],
         check=check_line("third kind", n="7")),
@@ -1220,6 +1239,18 @@ MUTATIONS = [
      'if slug is None:\n            raise Refused("target", f"session {t} carries',
      'if False:\n            raise Refused("target", f"session {t} carries',
      "refuse front: a session whose name carries no campaign"),
+    ("front: a scope's name alone reaches the front door",
+     "or (\n            argv[0] in SCOPES and len(argv) == 1)", "or (False)",
+     "refuse front: a scope's name alone is not a target"),
+    ("front: a scope's name alone refuses", "    if t in SCOPES:\n", "    if False:\n",
+     "refuse front: a scope's name alone is not a target"),
+    ("front: the number is the whole target", 'NUMBER = re.compile(r"^#?(\\d+)$")',
+     'NUMBER = re.compile(r"^#?(\\d+)")',
+     "refuse front: digits with more after them are not a number"),
+    ("front: the target is stripped", 't = (args.target or "").strip() or None',
+     "t = args.target", "front: a padded number is read as the number"),
+    ("front: check answers for that number", "if m.group(1) != n:", "if False:",
+     "refuse front: check answering for another number"),
     ("front: an unread flag refuses", "if extra:", "if False:",
      "refuse front: a flag the scope does not take"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",

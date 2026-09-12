@@ -785,7 +785,7 @@ prints the line under each shebang, so a hand-kept inventory is never written.
 
 **`check-campaign-claim.py` is the only harness hook here that refuses**; the
 others announce. A `pre-commit` guard numbers its own findings and says which
-codes it uses in its docstring; take them from there. Three of these guards
+codes it uses in its docstring; take them from there. Four of these guards
 return 1 for a finding, which is also what an unhandled exception exits, so a
 guard whose caller must tell the two apart says so and handles its own errors.
 
@@ -797,6 +797,8 @@ answered no from a question it could not read.
 enough to need no procedure around it, one a hook runs, one CI runs, and one
 two skills call.
 
-**`.claude/skills/herdr/` is vendored**, and the first line of its body, under
-the frontmatter, names the upstream and the tag. An upgrade replaces the whole
-file; any edit breaks the identity that makes that replacement safe.
+**`.claude/skills/herdr/SKILL.md` is vendored**, and the first line of its
+body, under the frontmatter, names the upstream and the tag. An upgrade
+replaces the whole file; any edit breaks the identity that makes that
+replacement safe. `.claude/skills/herdr/scripts/` and
+`.claude/skills/herdr/references/` are ours, and an upgrade leaves them alone.

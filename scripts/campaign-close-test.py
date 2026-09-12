@@ -22,8 +22,10 @@ Usage: scripts/campaign-close-test.py
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -83,11 +85,11 @@ def live(occupied=(), vacant=(), sessions=(), read=True):
 
 def local(rows=(), verdict="clear"):
     out = [f"campaign #{N}  base /base  directory /c/campaign-{SLUG}"]
-    for counted, ident in rows:
-        out += [f"  {' ' if counted else '~'} {TRACKER}  unpushed commit  "
-                f"{ident}  [2 commit(s)]", "      found by  git log",
-                "      clears by push"]
-    n = sum(1 for c, _ in rows if c)
+    for counted, ident, *repo in rows:
+        out += [f"  {' ' if counted else '~'} {(repo or [TRACKER])[0]}  "
+                f"unpushed commit  {ident}  [2 commit(s)]",
+                "      found by  git log", "      clears by push"]
+    n = sum(1 for c, *_ in rows if c)
     out += [{"clear": f"  -- 0 item(s) exist only on this machine; clear",
              "counted": f"  -- {n} item(s) exist only on this machine; NOT "
                         f"clear: clear every counted row, then re-run",
@@ -117,13 +119,70 @@ ROW = {"name": "rc-planner-1", "status": "working", "cwd": "/base",
        "pane": "w1:p1"}
 
 
+INSTALLED_CLEAR = ("kalaluthien/campaign-base  /base  HEAD a1  origin/main a1  -- "
+                   "current\n1 row(s) read, 0 behind, 0 apply failed, 0 unread "
+                   "-- clear\n")
+INSTALLED_BEHIND = ("kalaluthien/campaign-base  /base  HEAD a1  origin/main b2  -- "
+                    "behind 2\n1 row(s) read, 1 behind, 0 apply failed, 0 "
+                    "unread -- NOT clear\n")
+MEMBER = "acme/member"
+README_OLD = f"## Intent\n\n- old\n\n## Repos\n\n- {MEMBER}\n"
+README_NEW = f"## Intent\n\n- new\n\n## Repos\n\n- {MEMBER}\n"
+README_DROPPED = "## Intent\n\n- new\n\n## Repos\n\n- none\n"
+TMP = []
+
+
+def settlement_all(rows=((f"{TRACKER}#{ISSUE}", "complete"),), state="OPEN"):
+    out = [f"campaign issue {TRACKER}#{N}  [{state}]  Title",
+           f"  -- claims: #{N} is `{SLUG}`"]
+    out += [f"  {ref}  {word:<9} Title of it" for ref, word in rows]
+    words = [w for _, w in rows]
+    settled = sum(w in ("complete", "dropped") for w in words)
+    blockers = (["open sub-issues remain"] if "open" in words else []) + (
+        [f"{words.count('unread')} sub-issue(s) could not be read, which "
+         f"settles nothing either way"] if "unread" in words else [])
+    out += [f"  -- {settled}/{len(rows)} settled; "
+            + ("closable" if not blockers else "NOT closable: " + "; ".join(blockers))]
+    return "\n".join(out) + "\n"
+
+
+def whole(readme=README_NEW, body=README_OLD, derived=None, marker=True,
+          **over):
+    """A world with a real campaign directory under a temporary base root:
+    the delete removes it for real, and the sync reads and writes its files."""
+    root = Path(tempfile.mkdtemp())
+    TMP.append(root)
+    d = root / f"campaign-{SLUG}-260912"
+    (d / "runtime").mkdir(parents=True)
+    (d / "scripts").mkdir()
+    (d / "scripts" / ".gitkeep").write_text("")
+    (d / "AGENTS.md").write_text("# principles\n")
+    (d / "repos" / "member").mkdir(parents=True)
+    if marker:
+        (d / ".campaign").write_text(f"{N} {SLUG}\n")
+    (d / "README.md").write_text(readme)
+    if derived is not False:
+        (d / "runtime" / "campaign-issue-body-derived.md").write_text(
+            body if derived is None else derived)
+    w = world(directory=str(d), root=str(root), body=body,
+              settlement=settlement_all(),
+              live=live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99")]))
+    w.update(over)
+    w["dir"] = d
+    return w
+
+
 def world(**over):
     w = {"slug": SLUG, "settlement": settlement(),
          "live": live(vacant=[(f"rc/{ISSUE}-drop", "never merged")]),
          "directory": f"/c/campaign-{SLUG}", "local": local(),
          "release": RELEASE_OK, "gh": 0, "herdr": 0,
          "sessions": {SID: ROW}, "heartbeat": heartbeat(RETIRE_LINE),
-         "env": {"CLAUDE_CODE_SESSION_ID": SID, "HERDR_ENV": "1"}}
+         "env": {"CLAUDE_CODE_SESSION_ID": SID, "HERDR_ENV": "1"},
+         "bound": "here\n", "standing": "not-standing\n",
+         "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
+         "origin": MEMBER, "lands": {},
+         "root": "/c", "released": {}}
     w.update(over)
     return w
 
@@ -132,19 +191,46 @@ def answer(w, a):
     ok = lambda out, rc=0: subprocess.CompletedProcess(a, rc, out, "")
     if a[0] == sys.executable:
         name, sub = Path(a[1]).name, a[2:]
-        if name == "campaign-tracker.py" and sub[0] == "settlement":
-            return ok(w["settlement"])
+        if name == "campaign-tracker.py":
+            return ok(w[sub[0]])
+        if "--branch" in sub and name == "campaign-claim.py":
+            return ok(w["released"].get(sub[sub.index("--branch") + 1],
+                                        RELEASE_OK))
+        if name == "campaign-claim.py" and sub[0] == "live" and "live_seq" in w:
+            seq = w["live_seq"]
+            return ok(seq.pop(0) if len(seq) > 1 else seq[0])
         if name == "campaign-claim.py":
             return ok(w[sub[0]])
+        if name == "campaign-installed.py":
+            w["installed_read"] = Path(sub[1]).read_text()
+            return ok(w["installed"])
         if name == "campaign-directory.py":
+            w["directory_args"] = sub
             return ok(w["directory"] + "\n", 0 if w["directory"].startswith("/")
                       else 2)
         if name == "campaign-local-work.py":
             return ok(w["local"])
         if name == "campaign-heartbeat.py":
             return ok(w["heartbeat"])
+    if a[:3] == ["gh", "issue", "view"]:
+        return ok(w["body"], w["gh_view"])
+    if a[:3] == ["gh", "issue", "edit"]:
+        # What GitHub keeps: the file with a newline more, as measured, or
+        # whatever the case says it stored instead.
+        w["body"] = w.get("store") or Path(a[a.index("--body-file") + 1]).read_text() + "\n"
+        return subprocess.CompletedProcess(a, w["gh_edit"], "", "gh failed")
+    if a[:3] == ["gh", "issue", "comment"]:
+        w["comment"] = Path(a[a.index("--body-file") + 1]).read_text()
+    if a[:3] == ["gh", "issue", "close"]:
+        return subprocess.CompletedProcess(a, w.get("gh_close", w["gh"]), "",
+                                           "gh failed")
     if a[0] in ("gh", "herdr"):
         return subprocess.CompletedProcess(a, w[a[0]], "", f"{a[0]} failed")
+    if a[0] == "lsof":
+        return subprocess.CompletedProcess(a, w.get("lsof_rc", 1),
+                                           w.get("lsof", ""), "")
+    if a[:2] == ["git", "-C"] and a[3:] == ["worktree", "prune"]:
+        return ok("")
     return subprocess.CompletedProcess(a, 127, "", "not faked")
 
 
@@ -161,6 +247,10 @@ def drive(m, argv, w):
     polls = iter(w.get("polls", []))
     m.CLAIM.herdr_sessions = ((lambda: next(polls, (None, "no more polls")))
                               if "polls" in w else (lambda: (w["sessions"], None)))
+    m.CLAIM.base_root = lambda: (w["root"], None)
+    m.CLAIM.remote_of = lambda clone: w["origin"]
+    m.CLAIM.issue_repo = lambda issue, default: w["lands"].get(
+        issue, (TRACKER, None, "lands in the base"))
     clock = [0.0]
 
     def sleep(s):
@@ -331,6 +421,263 @@ def case_no_kill(m):
                         or a[:3] == ["herdr", "agent", "kill"] for a in asked)), out
 
 
+
+# ------------------------------------------------------------- the whole
+
+
+CLOSE = ["campaign", N]
+CLOSE_YES = CLOSE + ["--close"]
+CLOSE_ALL = CLOSE + ["--close", "--delete"]
+HERE_SCOPE = ["here", N]
+DROP_REPO = ["repo", N, MEMBER]
+
+
+def writes(asked):
+    return [a for a in asked if a[:2] == ["gh", "issue"]
+            and a[2] in ("edit", "comment", "close")]
+
+
+def halted(m, argv, w, flag, *says):
+    code, out, asked, _ = drive(m, argv, w)
+    head = next((ln for ln in out.splitlines() if ln.startswith("HALT: ")), "")
+    return (code == 3 and (flag is None or head.endswith(
+        f"re-run with {flag} once they say so")) and all(x in out for x in says)
+            ), asked, out
+
+
+def case_campaign_halts(m):
+    ok, asked, out = halted(m, CLOSE, whole(), "--close", "every gate held")
+    return ok and not writes(asked) and not releases(asked), out
+
+
+def case_campaign_closes(m):
+    w = whole(live=live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99"),
+                                ("rc/33-other", "landed as #98")]))
+    ok, asked, out = halted(m, CLOSE_YES, w, "--delete", "is closed")
+    d = w["dir"]
+    edits = [a for a in asked if a[:3] == ["gh", "issue", "edit"]]
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    c = closes(asked)
+    return (ok and len(edits) == 1 and rel == [f"rc/{ISSUE}-drop", "rc/33-other"]
+            and c and c[0][c[0].index("--comment") + 1]
+            == "NOTE rc-planner-1: campaign closed."
+            and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} from ")
+            and "AGENTS.md" in w["comment"] and "scripts/.gitkeep" in w["comment"]
+            and "runtime" not in w["comment"].split("```")[1]
+            and (d / "README.md").read_text() == README_NEW + "\n"
+            and (d / "runtime" / "campaign-issue-body-derived.md").read_text()
+            == README_NEW + "\n" and d.is_dir()), out
+
+
+def case_leftovers(m):
+    w = whole()
+    wt = w["dir"] / "worktrees" / "40-x"
+    (wt / "scripts").mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: /base/.git/worktrees/40-x\n")
+    (wt / "scripts" / "a.py").write_text("")
+    (w["dir"] / "repos" / "member" / "x").write_text("")
+    got = m.leftovers(w["dir"])
+    return got == [".campaign", "AGENTS.md", "README.md", "scripts",
+                   "scripts/.gitkeep", "worktrees",
+                   "worktrees/40-x/ (a git checkout)"], got
+
+
+def case_campaign_deletes(m):
+    w = whole()
+    code, out, asked, _ = drive(m, CLOSE_ALL, w)
+    return (code == 0 and not w["dir"].exists() and (Path(w["root"])).is_dir()
+            and any(a[0] == "lsof" for a in asked)
+            and any(a[3:] == ["worktree", "prune"] for a in asked
+                    if a[:2] == ["git", "-C"])), out
+
+
+def case_campaign_closed_already(m):
+    w = whole(settlement=settlement_all(state="CLOSED"))
+    code, out, asked, _ = drive(m, CLOSE + ["--delete"], w)
+    return (code == 0 and not writes(asked) and len(releases(asked)) == 1
+            and not w["dir"].exists()), out
+
+
+def case_campaign_no_directory(m):
+    w = whole(directory="none", body=README_OLD)
+    code, out, asked, _ = drive(m, CLOSE_YES, w)
+    return (code == 0 and w["installed_read"] == README_OLD
+            and not [a for a in asked if a[:3] == ["gh", "issue", "edit"]]
+            and "No directory of it on this machine" in w["comment"]
+            and w["dir"].exists()), out
+
+
+def case_campaign_synced_already(m):
+    w = whole(readme=README_OLD)
+    ok, asked, out = halted(m, CLOSE_YES, w, "--delete")
+    return ok and not [a for a in asked if a[:3] == ["gh", "issue", "edit"]], out
+
+
+def case_open_rows_halt(m):
+    w = whole(settlement=settlement_all([(f"{TRACKER}#{ISSUE}", "open"),
+                                         (f"{TRACKER}#33", "complete")]))
+    ok, asked, out = halted(m, CLOSE_ALL, w, None, "1 open sub-issue(s) need a "
+                            f"disposition", f"  open  {TRACKER}#{ISSUE}")
+    return ok and not writes(asked) and w["dir"].exists(), out
+
+
+def case_release_refused(m):
+    w = whole(released={f"rc/{ISSUE}-drop": RELEASE_REFUSED})
+    ok, asked, out = refused(m, CLOSE_YES, w, "release", "ahead of main",
+                             "#10 is still open")
+    return ok and not closes(asked), out
+
+
+def case_lsof_open(m):
+    w = whole(lsof="COMMAND PID\nzsh 12 me cwd DIR /x\n", lsof_rc=0)
+    ok, asked, out = refused(m, CLOSE_ALL, w, "delete", "1 file(s) open under")
+    return ok and w["dir"].exists(), out
+
+
+def case_lsof_missing(m):
+    w = whole(lsof_rc=127)
+    ok, asked, out = refused(m, CLOSE_ALL, w, "delete", "lsof did not run")
+    return ok and w["dir"].exists(), out
+
+
+def case_not_a_campaign_dir(m):
+    w = whole(marker=False)
+    ok, asked, out = refused(m, CLOSE_ALL, w, "delete",
+                             "is not a campaign directory")
+    return ok and w["dir"].exists(), out
+
+
+def whole_written(gate, *says, **over):
+    """A refusal after the first write: the case names what was changed."""
+    def case(m):
+        w = whole(**over)
+        ok, asked, out = refused(m, CLOSE_YES, w, gate, *says)
+        return ok and w["dir"].exists(), out
+    return case
+
+
+def whole_refusal(gate, *says, argv=CLOSE_YES, **over):
+    def case(m):
+        w = whole(**over)
+        ok, asked, out = refused(m, argv, w, gate, *says)
+        return ok and not writes(asked) and not releases(asked) \
+            and w["dir"].exists(), out
+    return case
+
+
+def case_here_lets_go(m):
+    w = whole(bound="elsewhere other-mac\n",
+              live=live(vacant=[(f"rc/{ISSUE}-drop", "never merged")]))
+    code, out, asked, _ = drive(m, HERE_SCOPE + ["--delete"], w)
+    return (code == 0 and not writes(asked) and not releases(asked)
+            and not w["dir"].exists()), out
+
+
+def case_here_halts(m):
+    w = whole(bound="unbound\n")
+    ok, asked, out = halted(m, HERE_SCOPE, w, "--delete")
+    return ok and w["dir"].exists(), out
+
+
+def case_here_nothing(m):
+    code, out, asked, _ = drive(m, HERE_SCOPE, whole(
+        bound="unbound\n", directory="none"))
+    return code == 0 and "nothing on this machine to let go" in out, out
+
+
+def dropped(readme=README_DROPPED, **over):
+    return whole(readme=readme, body=README_OLD, **over)
+
+
+def case_repo_drops(m):
+    w = dropped(
+        settlement=settlement_all([(f"{TRACKER}#{ISSUE}", "open")]),
+        lands={ISSUE: (TRACKER, None, "lands in the base")},
+        local=local(rows=[(True, "rc/40-x", "acme/other")], verdict="counted"),
+        live=live(sessions=[("rc-worker-2", "working", OTHER)]))
+    ok, asked, out = halted(m, DROP_REPO, w, "--delete")
+    edits = [a for a in asked if a[:3] == ["gh", "issue", "edit"]]
+    return ok and len(edits) == 1 and w["body"] == README_DROPPED + "\n", out
+
+
+def case_repo_deletes_clone(m):
+    w = dropped()
+    code, out, asked, _ = drive(m, DROP_REPO + ["--delete"], w)
+    return (code == 0 and not (w["dir"] / "repos" / "member").exists()
+            and w["dir"].is_dir()), out
+
+
+def case_repo_session_in_clone(m):
+    w = dropped()
+    clone = str(w["dir"] / "repos" / "member")
+    w["live"] = live(sessions=[("rc-worker-2", "idle", OTHER)]).replace(
+        "/base", clone)
+    ok, asked, out = refused(m, DROP_REPO, w, "live", "1 session(s) of rc",
+                             "ask rc-worker-2 (idle, w1:p3): which claim do you hold?")
+    return ok and not writes(asked), out
+
+
+def case_repo_claim_in_clone(m):
+    w = dropped()
+    w["live"] = live(occupied=[("rc/40-x", str(w["dir"] / "repos" / "member"))])
+    ok, asked, out = refused(m, DROP_REPO, w, "live", "rc/40-x is checked out")
+    return ok and not writes(asked), out
+
+
+def repo_refusal(gate, *says, argv=DROP_REPO, **over):
+    def case(m):
+        w = dropped(**over)
+        ok, asked, out = refused(m, argv, w, gate, *says)
+        return ok and not writes(asked) and (w["dir"] / "repos" / "member").exists(), out
+    return case
+
+
+def case_prune_before_live(m):
+    code, out, asked, _ = drive(m, DROP, world())
+    prune = [i for i, a in enumerate(asked) if a[:2] == ["git", "-C"]
+             and a[2] == "/c" and a[3:] == ["worktree", "prune"]]
+    live_at = [i for i, a in enumerate(asked) if a[0] == sys.executable
+               and a[2:3] == ["live"]]
+    return (code == 0 and prune and live_at and prune[0] < live_at[0]
+            and "pruned stale worktree entries under /c" in out), out
+
+
+def case_directory_gets_the_base(m):
+    w = world()
+    code, out, asked, _ = drive(m, DROP, w)
+    return code == 0 and w["directory_args"] == [N, "/c"], out
+
+
+def case_compact_said_once(m):
+    code, out, asked, _ = drive(m, DROP, world())
+    w = whole(live=live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99"),
+                                ("rc/33-other", "landed as #98")]))
+    code2, out2, _, _ = drive(m, CLOSE_YES, w)
+    note = "enqueues /compact on the pane that runs this"
+    return code == 0 and out.count(note) == 1 and out2.count(note) == 1, out + out2
+
+
+def case_release_rereads_live(m):
+    first = live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99")])
+    second = live(vacant=[(f"rc/{ISSUE}-drop", "landed as #99"),
+                          ("rc/34-late", "landed as #97")])
+    w = whole(live_seq=[first, second])
+    ok, asked, out = halted(m, CLOSE_YES, w, "--delete")
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    return ok and rel == [f"rc/{ISSUE}-drop", "rc/34-late"], out
+
+
+def case_nested_campaign_dir(m):
+    w = whole()
+    nested = Path(w["root"]) / "deeper"
+    nested.mkdir()
+    w["dir"] = Path(shutil.move(str(w["dir"]), str(nested)))
+    w["directory"] = str(w["dir"])
+    ok, asked, out = refused(m, CLOSE_ALL, w, "delete",
+                             "is not a campaign directory directly under")
+    return ok and w["dir"].exists(), out
+
+
 CASES = {
     # allows
     "drop: an open sub-issue with a vacant claim and nobody listed is closed "
@@ -372,7 +719,7 @@ CASES = {
     "refuse: a claim stands and sessions are listed, and each is asked":
         case_status_asked,
     "refuse: the campaign directory reads unknown": refusal(
-        "local-work", "answered 'unknown'", directory="unknown"),
+        "directory", "answered 'unknown'", directory="unknown"),
     "refuse: local-work did not finish": refusal(
         "local-work", "did not finish", local=local(verdict="refuse")),
     "refuse: local-work left places unread": refusal(
@@ -400,6 +747,134 @@ CASES = {
     "refuse: herdr could not send /exit": refusal(
         "exit", "herdr exited 1", argv=RETIRE, herdr=1, acted=True),
     "refuse: still listed after the wait, and never killed": case_no_kill,
+    # the whole: campaign
+    "campaign: every gate held and no --close halts before any write":
+        case_campaign_halts,
+    "campaign: --close syncs, announces, releases every ref, closes, and "
+    "halts for --delete": case_campaign_closes,
+    "campaign: the delete's list names a checkout once and skips runtime and "
+    "repos": case_leftovers,
+    "campaign: --close --delete removes the directory and prunes":
+        case_campaign_deletes,
+    "campaign: a CLOSED issue skips the writes, releases, and deletes":
+        case_campaign_closed_already,
+    "campaign: no directory here reads the body for installs and deletes "
+    "nothing": case_campaign_no_directory,
+    "campaign: a body that already is the README is not written":
+        case_campaign_synced_already,
+    "campaign: open rows halt, listed, for the person's disposition":
+        case_open_rows_halt,
+    "refuse campaign: bound elsewhere": whole_refusal(
+        "bound", "reads `elsewhere other-mac`", bound="elsewhere other-mac\n"),
+    "refuse campaign: the binding did not read": whole_refusal(
+        "bound", "answered 'error'", bound="error\n"),
+    "refuse campaign: standing": whole_refusal(
+        "standing", "carries the `standing` label", standing="standing\n"),
+    "refuse campaign: a claim is checked out here": whole_refusal(
+        "live", "rc/33-x is checked out at /c/wt/33",
+        live=live(occupied=[("rc/33-x", "/c/wt/33")])),
+    "refuse campaign: a claim checked out nowhere never merged": whole_refusal(
+        "live", "rc/33-x is checked out nowhere here and reads `never merged`",
+        live=live(vacant=[("rc/33-x", "never merged")])),
+    "refuse campaign: a session is listed, and asked": whole_refusal(
+        "live", "1 session(s) of rc are listed",
+        "ask rc-worker-2 (idle, w1:p3): which claim do you hold?",
+        live=live(sessions=[("rc-worker-2", "idle", OTHER)])),
+    "refuse campaign: a counted local row": whole_refusal(
+        "local-work", "1 item(s) exist only", local=local(
+            rows=[(True, "rc/40-x")], verdict="counted")),
+    "refuse campaign: local-work left places unread": whole_refusal(
+        "local-work", "places went unread", local=local(verdict="unread")),
+    "refuse campaign: local-work did not finish": whole_refusal(
+        "local-work", "the whole reading did not finish",
+        local=local(verdict="refuse")),
+    "refuse campaign: an install is behind": whole_refusal(
+        "installed", "behind 2", installed=INSTALLED_BEHIND),
+    "refuse campaign: a row that did not read": whole_refusal(
+        "settlement", "rows that did not read", settlement=settlement_all(
+            [(f"{TRACKER}#{ISSUE}", "unread")])),
+    "refuse campaign: settlement did not finish": whole_refusal(
+        "settlement", "the reading did not finish", settlement=SETTLEMENT_CUT),
+    "refuse campaign: no derived copy to compare the body against": whole_refusal(
+        "sync", "campaign-issue-body-derived.md to compare", derived=False),
+    "refuse campaign: the body moved since the README was derived": whole_refusal(
+        "sync", "the body moved", derived="## Intent\n\n- older\n"),
+    "refuse campaign: the body GitHub stored is not the README": whole_written(
+        "sync", "is not the README", "the body was written",
+        store="## Intent\n\n- mangled\n"),
+    "refuse campaign: the close did not happen": whole_written(
+        "close", "gh exited 1", "announced, and its claim refs released",
+        gh_close=1),
+    "refuse campaign: the announcement did not post": whole_written(
+        "announce", "gh exited 1", "the body was written", gh=1),
+    "refuse campaign: a ref that would not release keeps the issue open":
+        case_release_refused,
+    "refuse campaign: an open file under the directory": case_lsof_open,
+    "refuse campaign: lsof that did not run": case_lsof_missing,
+    "refuse campaign: a directory with no marker is not deleted":
+        case_not_a_campaign_dir,
+    "refuse campaign: a marked directory not directly under the base is not "
+    "deleted": case_nested_campaign_dir,
+    "refuse campaign: the number has a parent of its own": whole_refusal(
+        "settlement", "#10 is not a campaign issue", "is itself a sub-issue of #9",
+        settlement=settlement_all().replace(
+            "  -- claims:", "  -- REPORT: this campaign issue is itself a "
+            "sub-issue of #9 -- closing that campaign will not settle this one"
+            "\n  -- claims:")),
+    "refuse campaign: the number carries no campaign label": whole_refusal(
+        "settlement", "#10 is not a campaign issue", "may be a sub-issue read",
+        settlement=settlement_all().replace(
+            "  -- claims:", "  -- REPORT: no `campaign` label, so this may be a "
+            "sub-issue read as a campaign issue\n  -- claims:")),
+    "campaign: the release reads live again after the writes":
+        case_release_rereads_live,
+    "live: stale worktree entries are pruned under the base before live reads":
+        case_prune_before_live,
+    "directory: campaign-directory is handed the base, not the cwd":
+        case_directory_gets_the_base,
+    "release: the compaction is said once, beside the first release":
+        case_compact_said_once,
+    "refuse: a release that printed neither word did not release": refusal(
+        "release", "printed neither", release=f"releasing rc/{ISSUE}-drop\n",
+        acted=True),
+    # the whole: here
+    "here: bound elsewhere, a vacant claim does not block, and --delete lets "
+    "it go": case_here_lets_go,
+    "here: without --delete it halts": case_here_halts,
+    "here: no directory here is nothing to let go": case_here_nothing,
+    "refuse here: bound here": whole_refusal(
+        "bound", "bind the machine taking it first", argv=HERE_SCOPE + ["--delete"]),
+    "refuse here: a session is listed": whole_refusal(
+        "live", "1 session(s) of rc are listed", argv=HERE_SCOPE + ["--delete"],
+        bound="unbound\n", live=live(sessions=[("rc-worker-2", "idle", OTHER)])),
+    # the whole: repo
+    "repo: unlisted, landing elsewhere, another repo's row and a session "
+    "elsewhere let it sync and halt": case_repo_drops,
+    "repo: --delete removes its clone and leaves the directory":
+        case_repo_deletes_clone,
+    "refuse repo: the README still lists it": repo_refusal(
+        "repos", "still lists acme/member", readme=README_NEW),
+    "refuse repo: the base is not a member repository": repo_refusal(
+        "repos", "is not a member repository",
+        argv=["repo", N, "kalaluthien/campaign-base"]),
+    "refuse repo: bound elsewhere": repo_refusal(
+        "bound", "reads `elsewhere", bound="elsewhere other-mac\n"),
+    "refuse repo: an open sub-issue lands in it": repo_refusal(
+        "settlement", "land in acme/member", settlement=settlement_all(
+            [(f"{TRACKER}#{ISSUE}", "open")]),
+        lands={ISSUE: (MEMBER, MEMBER, "lands in acme/member")}),
+    "refuse repo: where an open sub-issue lands did not read": repo_refusal(
+        "settlement", "did not read: no ## Lands in", settlement=settlement_all(
+            [(f"{TRACKER}#{ISSUE}", "open")]),
+        lands={ISSUE: (None, None, "no ## Lands in")}),
+    "refuse repo: a claim is checked out in its clone": case_repo_claim_in_clone,
+    "refuse repo: a session was started in its clone": case_repo_session_in_clone,
+    "refuse repo: a counted local row is its": repo_refusal(
+        "local-work", "1 item(s) exist only", local=local(
+            rows=[(True, "rc/40-x", MEMBER)], verdict="counted")),
+    "refuse repo: the folder is not a clone of it": repo_refusal(
+        "delete", "is not a clone of acme/member",
+        origin="acme/else"),
 }
 
 MUTATIONS = [
@@ -427,8 +902,8 @@ MUTATIONS = [
      "refuse: this sub-issue's claim is checked out here"),
     ("listed sessions", "if here or (away and who):", "if here:",
      "refuse: a claim stands and sessions are listed, and each is asked"),
-    ("each is asked", "for name, status, pane in who:",
-     "for name, status, pane in []:",
+    ("each is asked", "for name, status, pane, _ in who:",
+     "for name, status, pane, _ in []:",
      "refuse: a claim stands and sessions are listed, and each is asked"),
     ("landed blocks nothing", 'if i == issue and not rest.startswith("landed as")]',
      "if i == issue]", "drop: a landed claim of this sub-issue stands in nobody's way"),
@@ -436,7 +911,7 @@ MUTATIONS = [
      'here = [(b, rest) for b, i, rest in reading["occupied"] if i == issue]',
      'here = [(b, rest) for b, i, rest in reading["occupied"] if issue in i]',
      "drop: another sub-issue's claim checked out here is its own business"),
-    ("directory word", 'elif word.startswith("/"):', "elif True:",
+    ("directory word", 'if not said.startswith("/"):', "if False:",
      "refuse: the campaign directory reads unknown"),
     ("local unfinished", "if not finished:", "if False:",
      "refuse: local-work did not finish"),
@@ -482,6 +957,131 @@ MUTATIONS = [
      "retire: a listing that did not read is one more poll"),
     ("sleep between polls", "if k + 1 < polls:", "if True:",
      "wait: it polls exactly its count and sleeps between polls only"),
+    ("bound word", 'if (word == "here") != want_here:', "if False:",
+     "refuse campaign: bound elsewhere"),
+    ("bound here refuses here", 'if (word == "here") != want_here:',
+     'if word == "elsewhere":', "refuse here: bound here"),
+    ("bound unread", 'if word not in ("here", "elsewhere", "unbound"):',
+     "if False:", "refuse campaign: the binding did not read"),
+    ("standing", 'if said == "not-standing":', "if True:",
+     "refuse campaign: standing"),
+    ("whole occupied", 'here = [(b, p) for b, _, p in reading["occupied"] if inside(p)]',
+     'here = [(b, p) for b, _, p in reading["occupied"] if False]',
+     "refuse campaign: a claim is checked out here"),
+    ("whole vacant", 'if vacant_blocks and not m.startswith("landed as")]',
+     "if False]", "refuse campaign: a claim checked out nowhere never merged"),
+    ("whole landed", 'if vacant_blocks and not m.startswith("landed as")]',
+     "if vacant_blocks]",
+     "campaign: --close syncs, announces, releases every ref, closes, and "
+     "halts for --delete"),
+    ("here lets vacant pass", "gate_live_whole(n, slug, vacant_blocks=False)\n"
+     "    gate_local_whole(n, directory)\n",
+     "gate_live_whole(n, slug, vacant_blocks=True)\n"
+     "    gate_local_whole(n, directory)\n",
+     "here: bound elsewhere, a vacant claim does not block, and --delete lets "
+     "it go"),
+    ("whole sessions", '[f"{len(who)} session(s) of {slug} are listed"] * bool(who)',
+     "[]", "refuse campaign: a session is listed, and asked"),
+    ("repo narrows to its clone",
+     "return under is None or Path(path).is_relative_to(under)", "return True",
+     "repo: unlisted, landing elsewhere, another repo's row and a session "
+     "elsewhere let it sync and halt"),
+    ("repo clone sessions", "who = [s for s in reading[\"sessions\"] if inside(s[3])]",
+     "who = [s for s in reading[\"sessions\"] if False]",
+     "refuse repo: a session was started in its clone"),
+    ("whole local rows", "if kept:", "if False:",
+     "refuse campaign: a counted local row"),
+    ("whole local gaps", "if gaps:", "if False:",
+     "refuse campaign: local-work left places unread"),
+    ("whole local done", "if not done:", "if False:",
+     "refuse campaign: local-work did not finish"),
+    ("repo local rows are its",
+     "if not repo or REPOS.key(r) == REPOS.key(repo)]", "if True]",
+     "repo: unlisted, landing elsewhere, another repo's row and a session "
+     "elsewhere let it sync and halt"),
+    ("installed", 'if not last.endswith("-- clear"):', "if False:",
+     "refuse campaign: an install is behind"),
+    ("closable", 'if not s["closable"]:', "if False:",
+     "campaign: open rows halt, listed, for the person's disposition"),
+    ("settlement finished", 'if not s["finished"]:', "if False:",
+     "refuse campaign: settlement did not finish"),
+    ("settlement unread rows", "if unread_rows:", "if False:",
+     "refuse campaign: a row that did not read"),
+    ("landing", "if REPOS.key(subject) == REPOS.key(repo):", "if False:",
+     "refuse repo: an open sub-issue lands in it"),
+    ("landing unread", 'if subject is None:\n            raise Refused("settlement"',
+     'if False:\n            raise Refused("settlement"',
+     "refuse repo: where an open sub-issue lands did not read"),
+    ("unlisted", "if any(REPOS.key(r) == REPOS.key(repo) for r, _, _ in rows):",
+     "if False:", "refuse repo: the README still lists it"),
+    ("the base", "if repo is None or REPOS.is_base(repo):", "if repo is None:",
+     "refuse repo: the base is not a member repository"),
+    ("body moved", 'if now.rstrip("\\n") != derived.read_text().rstrip("\\n"):',
+     "if False:", "refuse campaign: the body moved since the README was derived"),
+    ("already synced", 'if now.rstrip("\\n") == text.rstrip("\\n"):',
+     "if False:", "campaign: a body that already is the README is not written"),
+    ("stored body", 'if after is None or rows != before or after.rstrip("\\n") != text.rstrip("\\n"):',
+     "if False:", "refuse campaign: the body GitHub stored is not the README"),
+    ("announce status", 'if r.returncode != 0:\n        raise Refused("announce"',
+     'if False:\n        raise Refused("announce"',
+     "refuse campaign: the announcement did not post"),
+    ("release all", "if failed:", "if False:",
+     "refuse campaign: a ref that would not release keeps the issue open"),
+    ("campaign close status", "if r.returncode:", "if False:",
+     "refuse campaign: the close did not happen"),
+    ("lsof rows", "if open_rows:", "if False:",
+     "refuse campaign: an open file under the directory"),
+    ("lsof missing", "if r.returncode == 127:", "if False:",
+     "refuse campaign: lsof that did not run"),
+    ("campaign dir shape", '(path / ".campaign").is_file() and (path / "runtime").is_dir()):',
+     "True):", "refuse campaign: a directory with no marker is not deleted"),
+    ("clone origin", "if where is None or REPOS.key(where) != REPOS.key(repo):",
+     "if False:", "refuse repo: the folder is not a clone of it"),
+    ("close is asked", "if not args.close:", "if False:",
+     "campaign: every gate held and no --close halts before any write"),
+    ("delete is asked", 'if not args.delete:\n        raise Halt(f"#{n} is closed',
+     'if False:\n        raise Halt(f"#{n} is closed',
+     "campaign: --close syncs, announces, releases every ref, closes, and "
+     "halts for --delete"),
+    ("here delete is asked", 'if not args.delete:\n        raise Halt(f"deleting {directory}',
+     'if False:\n        raise Halt(f"deleting {directory}', "here: without --delete it halts"),
+    ("repo delete is asked", 'if not args.delete:\n        raise Halt(f"deleting {clone}',
+     'if False:\n        raise Halt(f"deleting {clone}',
+     "repo: unlisted, landing elsewhere, another repo's row and a session "
+     "elsewhere let it sync and halt"),
+    ("a checkout is one line", 'checkouts = [x for x in dirnames if (d / x / ".git").exists()]',
+     "checkouts = []", "campaign: the delete's list names a checkout once and "
+     "skips runtime and repos"),
+    ("runtime and repos are skipped",
+     "dirnames[:] = [x for x in dirnames if d / x not in skip]",
+     "dirnames[:] = [x for x in dirnames]", "campaign: the delete's list names "
+     "a checkout once and skips runtime and repos"),
+    ("shape: directly under the base", "if path.parent != root or not (",
+     "if not (", "refuse campaign: a marked directory not directly under the "
+     "base is not deleted"),
+    ("release printed neither", "if refusal or not done:", "if refusal:",
+     "refuse: a release that printed neither word did not release"),
+    ("not a campaign refuses", 'if s["not_campaign"]:', "if False:",
+     "refuse campaign: the number has a parent of its own"),
+    ("both reports are read", '"may be a sub-issue read as a campaign issue",',
+     '"<never printed>",', "refuse campaign: the number carries no campaign label"),
+    ("prune before live", 'r = run("git", "-C", str(root), "worktree", "prune")',
+     'r = run("true")',
+     "live: stale worktree entries are pruned under the base before live reads"),
+    ("the base is passed", 'word_of(DIRECTORY_SCRIPT, n, str(base_root("directory")))',
+     "word_of(DIRECTORY_SCRIPT, n)",
+     "directory: campaign-directory is handed the base, not the cwd"),
+    ("compact said by one release", "    print(COMPACT_NOTE)\n    why = release_refusal",
+     "    why = release_refusal",
+     "release: the compaction is said once, beside the first release"),
+    ("compact said by the loop", "    print(COMPACT_NOTE)\n    failed = []",
+     "    failed = []",
+     "release: the compaction is said once, beside the first release"),
+    ("release reads live again", "step_release_all(n, read_live(n, slug),",
+     "step_release_all(n, reading,",
+     "campaign: the release reads live again after the writes"),
+    ("closed skips the writes", 'if state == "CLOSED":', "if False:",
+     "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]
 
 
@@ -521,6 +1121,8 @@ def main():
           f"{sum(1 for f in failed if f.startswith('MUTATION'))} survived or crashed")
     for f in failed:
         print(f)
+    for root in TMP:
+        shutil.rmtree(root, ignore_errors=True)
     return 1 if failed else 0
 
 

@@ -163,8 +163,9 @@ var sig Claimed in Issue {}
    taken off by a person alone: nothing can observe that they have changed their
    mind about keeping a campaign open, which is the same reason `backlog` is
    theirs. It sits in `closable` beside settlement because it is read at the
-   same moment and refuses the same event -- `closing-campaign` step 1 asks
-   `campaign-tracker.py standing <N>` and stops on the word.
+   same moment and refuses the same event -- `scripts/campaign-close.py`'s
+   `campaign` scope, step 3, asks `campaign-tracker.py standing <N>` and
+   stops on the word.
 
    `var` and otherwise unconstrained: a trace may drop a campaign out of
    `Standing` and close it in the next step, which is exactly what a person

@@ -394,7 +394,7 @@ pred launch[a: Agent] {
      read the launching session's campaign, which is only the same campaign by
      the binding discipline holding -- a fact this predicate does not assume
      anywhere else. `campaignOf[i]` is `memberIssues.i`, the function every
-     other checkout read in this file (line 252) and throughout scenarios.als
+     other checkout read in this file (line 252) and throughout checks.als
      uses for a sub-issue; `campaignIssueOf[i]` is `campaignIssue.i` and is
      `lone` empty on a memberIssue, since `campaignIssue` and `memberIssues`
      are disjoint (`github/system.als` line 156) -- so a literal
@@ -445,10 +445,10 @@ pred work[a: Agent] {
   Now.event = Work and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
-/* The commit, refined from synchronization/system.als's `CommitLocal`: that
+/* The commit, refined from directory/system.als's `CommitLocal`: that
    entity says only that a machine now holds an unpushed commit, and carried
    neither an issue nor an agent, so no discipline over a commit was expressible
-   -- which is the hole `claimBeforeCommit` (scenarios.als) closes, and the one
+   -- which is the hole `claimBeforeCommit` (checks.als) closes, and the one
    the pre-commit claim gate, scripts/check-commit-claim.py, enforces. An
    agent's commit names its task and the agent; it moves nothing of this
    entity's own. The unattended form below is a person's commit, which names
@@ -746,7 +746,14 @@ pred exitSession[s: Session] {
    workers and never pair one with the other, because that pairing is not
    derivable -- AGENTS.md § Completion, liveness, and local-only work. And
    `stuck` is a clock, `context` a size, and `install` is `unreached` in
-   directory/system.als read for the base. */
+   directory/system.als read for the base.
+
+   `quiet <slug>` (#339) is the watch's one exit: no session of the campaign
+   listed but the planner's own, no open sub-issue without `backlog`, and no
+   claim -- on two polls running, each read that poll, since a last reading
+   standing is not one.
+   Its act is a compaction of the planner and never `sessionExit`: a planner
+   releases nothing, so `exitSession`'s `once Release` never holds of it. */
 fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed }
 fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
 

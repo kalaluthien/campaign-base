@@ -17,31 +17,30 @@
  *   Claimed      the sub-issues whose branch is on the remote. A branch is a
  *                ref, readable from any machine, so the claim is a GitHub fact
  *                and not a local one -- which is why it lives here.
- *   Event        the events, one atom per event across all five entities.
+ *   Event        the events, one atom per event across all four entities.
  *   Now          the observer: which event is happening and to which issue.
  *
  * ORIENTATION
  *
- * Five entities, each opening the one below, so the composed model is the top
- * one and there is no sixth integration module:
+ * Four entities, each opening the one below, so the composed model is the top
+ * one and there is no fifth integration module:
  *
  *   github/          issues, pull requests, the sub-issue index, the campaign
  *                    issue body, and the claim
- *   directory/       one campaign's directory on a machine, and its checkouts
- *   synchronization/ how far behind origin each base checkout is
+ *   directory/       one campaign's directory on a machine, its checkouts, and
+ *                    how far behind origin each base checkout is
  *   session/         a campaign session: one role, bound to one machine
  *   orchestration/   agents, and how a campaign session coordinates them
  *
- * Each entity is three modules, split by what the text is FOR:
+ * Each entity is two modules:
  *
  *   <entity>/system.als     signatures, observers, events, frame, trace
- *   <entity>/scenarios.als  the disciplines, and every witness `run`
- *   <entity>/checks.als     every `assert` and `check`, and the floor that says
- *                           each event is reachable at all
+ *   <entity>/checks.als     every command: the witnesses, the checks, and the
+ *                           floor that says each event is reachable at all
  *
- * `scenarios` opens its own `system`; `checks` opens its own `scenarios`. A
- * command declared in an OPENED module is not executed, so running a system
- * module runs nothing and the two siblings are where every command lives.
+ * `checks` opens its own `system`. A command declared in an OPENED module is
+ * not executed, so running a system module runs nothing and `checks` is where
+ * every command lives.
  *
  * WHAT CHECKS WHAT
  *
@@ -58,7 +57,7 @@
  * one snapshot over every entity there, which is committed and compared
  * rather than regenerated:
  *
- *   scripts/alloy-check.py spec/campaign/github/scenarios.als -o /tmp/alloy-github
+ *   scripts/alloy-check.py spec/campaign/github/checks.als -o /tmp/alloy-github
  *   scripts/alloy-check.py --commands spec               -- and --write to update
  *   scripts/alloy-check.py --digest spec/campaign/github/scenarios.als \
  *       /tmp/alloy-github/S1_HappyPath-solution-0.txt
@@ -141,7 +140,7 @@ var sig Filed  in Campaign {}
    A CLAIM'S IDENTITY IS THE SUB-ISSUE, and the repository is the sub-issue's
    own -- `Issue.repo`, "where the work lands, never where the issue is filed".
    It is therefore not the taker's to choose, which is what `claimOnTheIssuesRepo`
-   in orchestration/scenarios.als says and what `R8_ClaimCutOnAnotherRepo` shows
+   in orchestration/checks.als says and what `R8_ClaimCutOnAnotherRepo` shows
    the cost of dropping. The script agrees since #187: `take` and `release` read
    the sub-issue's own `## Lands in` section and `--repo` may only confirm it,
    where before `--repo` alone decided and two takers naming different
@@ -258,7 +257,7 @@ one sig Now {
 
      UNCONSTRAINED BY EVERY EVENT, `claim` INCLUDED, and deliberately: it is a
      record of what happened, not state, and the rule that ties it to the
-     sub-issue is `claimOnTheIssuesRepo` in orchestration/scenarios.als. Written
+     sub-issue is `claimOnTheIssuesRepo` in orchestration/checks.als. Written
      into `claim` itself it would be true in every world the model admits, so no
      scenario could exhibit its absence and R8b could never redden -- which is
      how the first draft of this went green while testing nothing. */
@@ -359,7 +358,7 @@ pred writeBody[c: Campaign] {
 }
 
 /* Deliberately LOOSE -- it does not require the ref to be absent -- so that
-   the atomicity is a named discipline above (orchestration/scenarios.als's
+   the atomicity is a named discipline above (orchestration/checks.als's
    `claimAtomic`) with its absence runnable as a control.
 
    AND `claimAtomic` IS NOT create-ref ALONE, which is what this comment used to
@@ -378,7 +377,7 @@ pred writeBody[c: Campaign] {
    NOT scoped to a single repository any more, and the sentence that said so
    pointed at a `Claimed` comment #187 rewrote to say the opposite. A claim is
    the sub-issue, and the repository is the sub-issue's own -- see
-   `claimOnTheIssuesRepo` in orchestration/scenarios.als, whose R8b is what
+   `claimOnTheIssuesRepo` in orchestration/checks.als, whose R8b is what
    reddens if that stops holding. */
 pred claim[i: Issue] {
   i in Campaign.memberIssues and i in Open
@@ -388,7 +387,7 @@ pred claim[i: Issue] {
   Now.event = Claim and Now.issue = i
 }
 
-/* What may be released is guarded above, in orchestration/scenarios.als: the condition
+/* What may be released is guarded above, in orchestration/checks.als: the condition
    is about an agent, which this entity does not have. */
 pred release[i: Issue] {
   i in Claimed

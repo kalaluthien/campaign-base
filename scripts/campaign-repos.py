@@ -165,6 +165,18 @@ def is_base(text):
     return key(text) is not None and key(text) == key(BASE_REPO)
 
 
+def remote(url):
+    """The `owner/repo` an `origin` URL ends in, raw, for `slug` and `key` to
+    read. The last two path components name the repository however the URL is
+    spelled: `git@github.com:owner/repo.git`, `https://.../owner/repo`, or a
+    local path ending in `owner/repo.git`, which is what the suites build.
+
+    ONE READER, TWO ASKERS: `campaign-installed.py` asks whether an install is
+    a checkout of the repository `## Repos` names, and `check-campaign-claim.py`
+    whether a checkout is one of the repository a `gh pr` write names (#389)."""
+    return "/".join(url.replace(":", "/").rstrip("/").split("/")[-2:])
+
+
 def section(text, heading=REPOS_HEADING):
     """The non-blank lines under `## <heading>`, or None when there is none.
 

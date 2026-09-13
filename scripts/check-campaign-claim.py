@@ -65,7 +65,9 @@ say, so a guard failing on every call would read as a quiet one.
 
 WHERE A FILE TARGET IS. A base tree -- main checkout, linked worktree anywhere,
 delegate clone, all by `git rev-parse --git-common-dir` from the TARGET, never
-from cwd -- or a campaign directory at a base root. Anything else is outside.
+from cwd -- or a campaign directory at a base root. Anything else is outside,
+an install a campaign's `## Repos` names included: `install_of` says why only
+the commit gate reads one (#389).
 
 WHO MAY WRITE WHAT. A session's ROLE decides, read from its name through
 `herdr agent list` and the pattern `campaign-name-session.py` owns. What each
@@ -90,8 +92,10 @@ worktree on one. Clause 2 is the WEAKER gate -- every session at one root
 reads as holding every claim under it, design B's named cost -- and for a
 FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
-needs a claim on `<n>`. `gh issue create` is exempt, the number being minted
-there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
+needs a claim on `<n>`, found in the base's worktrees or an install's. A `gh pr`
+write naming a MEMBER repository needs a claim checked out in a checkout of
+that repository, never the base's (#389). `gh issue create` is exempt, the
+number being minted there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
 WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
@@ -849,6 +853,105 @@ def campaign_dir_of(path: Path, base: Path):
                  if d.parent == base and is_campaign_dir(d)), None)
 
 
+_REPOS = None
+# Set when campaign-repos.py would not load, as TRACKER_UNREADABLE is for the
+# tracker, and printed beside whichever verdict went without the installs.
+REPOS_UNREADABLE = None
+
+
+def repos_reader():
+    """campaign-repos.py loaded once, or None with REPOS_UNREADABLE set. Never
+    raises, for the reason `tracker` gives."""
+    global _REPOS, REPOS_UNREADABLE
+    if _REPOS is None and REPOS_UNREADABLE is None:
+        try:
+            spec = importlib.util.spec_from_loader(
+                "crepos", importlib.machinery.SourceFileLoader(
+                    "crepos", str(HERE / "campaign-repos.py")))
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+        except Exception as e:          # noqa: BLE001 -- reported, not raised
+            REPOS_UNREADABLE = e.__class__.__name__
+            return None
+        _REPOS = m
+    return _REPOS
+
+
+_INSTALLS = {}
+
+
+def installs(base):
+    """[(owner/repo, install path, campaign directory)] for every repository
+    the campaigns at `base` name as installed on this machine (#389).
+
+    READ FROM EACH CAMPAIGN'S README, through `campaign-repos.py`'s `## Repos`
+    reader and its `installed` marker, which is where `campaign-installed.py`
+    and `campaign-close.py`'s `installed` gate read it too. A campaign whose
+    README is missing, or whose list that reader refuses, names no install
+    here; the second is said beside the verdict, because an install it hides
+    is one whose claims this guard can no longer see.
+
+    WHY AN INSTALL IS READ AT ALL. Since homeops#229's DECISION of 2026-09-13
+    a campaign may work an installed member repository in worktrees OF THE
+    INSTALL, `<install>/.worktrees/<issue>-<topic>`, which sit under no base
+    and no campaign directory. Until this read them, the commit gate read them
+    as outside campaign work and refused nothing there, and `held` never saw
+    the claims checked out in them."""
+    key = str(base)
+    if key not in _INSTALLS:
+        found = []
+        m = repos_reader()
+        if m is None:
+            NOTES.append(f"installs not read: campaign-repos.py would not "
+                         f"load ({REPOS_UNREADABLE})")
+        for d, _fields in (campaign_dirs_at(base) if m is not None else ()):
+            try:
+                text = (d / "README.md").read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            rows, why = m.read_repos(text)
+            if why:
+                NOTES.append(f"installs not read from {d}/README.md: {why}")
+                continue
+            found += [(slug, Path(os.path.expanduser(path)).resolve(), d)
+                      for slug, path, _apply in rows if path is not None]
+        _INSTALLS[key] = found
+    return _INSTALLS[key]
+
+
+def install_of(main: Path):
+    """(owner/repo, install path, campaign directory, base) when `main` -- a
+    main checkout under no base -- is an install a campaign of this guard's
+    own base names, else None.
+
+    THIS GUARD'S OWN BASE, because nothing else ties the two: an install sits
+    wherever it is used, `~/homeops`, and no walk up from it reaches a base.
+    What does is the path this file runs from -- the member hook
+    `acquire-repo.sh` writes calls it by absolute path into the base.
+
+    ONE ASKER, THE COMMIT GATE, and `classify` is deliberately not another.
+    The gate runs only in a repository whose own hook calls it, so it reaches
+    exactly the installs somebody wired it into. The file half runs for every
+    session on this machine, and `~/.claude` is an install too (html-doc's
+    `kalaluthien/dotclaude`): reading installs there would put every memory
+    and settings write behind a claim, which is an outage and not a gate."""
+    if main is None:
+        return None
+    own = base_roots_for(HERE.parent)
+    if not own:
+        return None
+    return next(((slug, path, d, own[0]) for slug, path, d in installs(own[0])
+                 if path == main), None)
+
+
+def origin_key(top):
+    """The case-folded `owner/repo` of the checkout at `top`'s origin, through
+    campaign-repos.py's `remote` and `key`, or None when either is unreadable."""
+    m = repos_reader()
+    out, _, _ = git(["remote", "get-url", "origin"], top)
+    return m.key(m.remote(out.strip())) if m is not None and out else None
+
+
 def classify(target: Path):
     """(inside?, where, checkout toplevel or None, scratch?).
 
@@ -1004,25 +1107,50 @@ def session_root(cwd: Path):
     return None, f"cwd {cwd} is under no repository and no base"
 
 
-def held(repo_root, issue=None):
+def held(repo_root, issue=None, repo=None):
     """([(path, branch, source)], detail lines): the claimed branches checked
-    out under `repo_root`, narrowed to sub-issue `issue` when given."""
-    trees = worktrees(repo_root)
-    if trees is None:
-        return [], [f"git worktree list could not be read at {repo_root}"]
-    out, detail = [], []
+    out under `repo_root`, narrowed to sub-issue `issue` when given.
+
+    THE INSTALLS' WORKTREES BESIDE THE BASE'S (#389), in two of the three
+    readings and deliberately not the third:
+
+      * narrowed to `issue`: the base's and every install's, because the number
+        names the claim wherever it is checked out;
+      * narrowed to `repo`, the member repository a `gh pr` write names: only
+        the installs whose origin is that repository. The base's never -- a
+        claim on the base is a branch of the base, and letting one license a
+        write on homeops pr#21 was the false allow of 2026-09-13;
+      * neither: the base's alone, as before, since an install's claim
+        admitting a write this cannot narrow is the widening #389 removes."""
     base = Path(repo_root)
-    claims = [(p, b, claim_match(b, base)) for p, b in trees
-              if claim_match(b, base)]
-    for path, branch, m in claims:
-        if issue is not None and m[1] != str(issue):
-            detail.append(f"{path} is on {branch}, not a claim on #{issue}")
+    roots = [base] if repo is None else []
+    m = repos_reader()
+    if m is not None and (issue is not None or repo is not None):
+        roots += [path for _slug, path, _d in installs(base)
+                  if repo is None or same_repo(path, repo)]
+    out, detail = [], []
+    if not roots:
+        detail.append(f"no install a campaign at {base} names is a checkout "
+                      f"of {repo}")
+    for root in roots:
+        trees = worktrees(root)
+        if trees is None:
+            detail.append(f"git worktree list could not be read at {root}")
             continue
-        exists, source = ref_exists(branch, repo_root)
-        (out if exists else detail).append(
-            (path, branch, source) if exists else f"{path} is on {branch}, but {source}")
-    if not claims:
-        detail.append(f"no checkout under {repo_root} is on a campaign branch")
+        # The slug narrows against the BASE's campaign directories, for an
+        # install's worktrees too: the install holds none of its own.
+        claims = [(p, b, claim_match(b, base)) for p, b in trees
+                  if claim_match(b, base)]
+        for path, branch, m in claims:
+            if issue is not None and m[1] != str(issue):
+                detail.append(f"{path} is on {branch}, not a claim on #{issue}")
+                continue
+            exists, source = ref_exists(branch, root)
+            (out if exists else detail).append(
+                (path, branch, source) if exists
+                else f"{path} is on {branch}, but {source}")
+        if not claims:
+            detail.append(f"no checkout under {root} is on a campaign branch")
     return out, detail
 
 
@@ -1883,6 +2011,36 @@ def repo_named(tokens):
     return None
 
 
+def member_pr(tokens):
+    """The member repository a `gh pr` segment names -- by `-R`, or by the
+    pull request's URL -- or None: for a segment that is not `gh pr`, for one
+    naming no repository, which writes the cwd's own and so is answered by the
+    checkout the session stands in, and for one naming the base (#389).
+
+    FAIL CLOSED: with campaign-repos.py unreadable the base cannot be told
+    from a member, so a named repository is read as a member, which only a
+    checkout of it can license -- and none can be found without that reader."""
+    if gh_words(tokens)[:1] != ["pr"]:
+        return None
+    named = repo_named(tokens)
+    if named is None:
+        url = next((u for u in map(PULL_URL.search, tokens) if u), None)
+        named = url.group(1) if url else None
+    m = repos_reader()
+    if named is None or (m is not None and m.is_base(named)):
+        return None
+    if m is None:
+        NOTES.append(f"`gh pr` on {named} read as a member repository's: "
+                     f"campaign-repos.py would not load ({REPOS_UNREADABLE})")
+    return named
+
+
+def same_repo(top, repo):
+    """Whether the checkout at `top` is one of `repo`, by its origin."""
+    m = repos_reader()
+    return m is not None and origin_key(top) == m.key(repo)
+
+
 def bare_references(text):
     """(the warning sentence for this comment's bare `#N` references, why the
     rule would not load). Both are "" / None when there is nothing to say.
@@ -2704,21 +2862,39 @@ def bash_call(command, cwd: Path, session_id=""):
                        f"in the same command.", how, *read_on, *fell_back,
                        *detail, TAKE])
     if unreadable:
-        holders, d = held(root)
-        if role == "worker" and campaign is not None:
-            holders = [h for h in holders
-                       if claim_token(h[1]) == campaign]
-        if (not holders and own is not None
-                and (role != "worker" or campaign is None
-                     or claim_token(own[1]) == campaign)):
-            holders = [own]
-        if not holders:
-            return refuse([f"{what}: a campaign-plane write, and this session "
-                           f"holds no claim covering it.", how, *read_on,
-                           *fell_back, *detail, *d, TAKE])
-        path, branch, source = holders[0]
-        return allow([f"{what}: {how}; {path} is on {branch}, a claim "
-                      f"({source}).", *fell_back])
+        # A MEMBER REPOSITORY'S PULL REQUEST IS ITS OWN QUESTION (#389): a
+        # `gh pr` write naming one is licensed only by a claim checked out in a
+        # checkout of that repository -- an install's worktree, or the checkout
+        # the session stands in -- and each one named must be. Everything else
+        # this cannot narrow keeps the one unnarrowed reading it had, `None`
+        # below. Before this, every write here took that reading, so a claim
+        # on the base licensed `gh pr comment 21 -R kalaluthien/homeops` from
+        # the base root (runtime/guard.log, 2026-09-13T07:18:07).
+        members = sorted({r for r in map(member_pr, writes) if r is not None})
+        rest = stray or any(issue_target(x) is None and member_pr(x) is None
+                            for x in writes)
+        covered = []
+        for repo in members + ([None] if rest else []):
+            holders, d = held(root, repo=repo)
+            if role == "worker" and campaign is not None:
+                holders = [h for h in holders
+                           if claim_token(h[1]) == campaign]
+            if (not holders and own is not None
+                    and (role != "worker" or campaign is None
+                         or claim_token(own[1]) == campaign)
+                    and (repo is None or same_repo(own[0], repo))):
+                holders = [own]
+            if not holders:
+                return refuse([f"{what}: a campaign-plane write, and this "
+                               f"session holds no claim covering it"
+                               + (f" in a checkout of {repo}" if repo else "")
+                               + ".", how, *read_on, *fell_back, *detail, *d,
+                               TAKE])
+            covered.append((repo, holders[0]))
+        return allow([f"{what}: {how}; " + "; ".join(
+            f"{p} is on {b}, a claim ({s})" + (f", in a checkout of {r}" if r
+                                               else "")
+            for r, (p, b, s) in covered) + ".", *fell_back])
     # WHAT USED TO BE HERE: a second `own_claim` allow and a second refusal,
     # for the state where `covering` is empty and `unreadable` is false. That
     # state cannot be reached (kalaluthien/campaign-base#192 item 2). `issues`

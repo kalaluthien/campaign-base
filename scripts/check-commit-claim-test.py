@@ -415,6 +415,36 @@ def main():
             check(f"--is-claim exits {want} when {why}", r.returncode == want,
                   f"exit {r.returncode}: {out(r)[:300]}")
 
+    # AN INSTALL'S WORKTREE IS CAMPAIGN WORK (#389). `f3b72ac` on
+    # `homeops/380-manual` in `~/homeops/.worktrees/380-manual` was admitted as
+    # "in no base tree and no campaign directory": the install sits under
+    # neither, so nothing tied it to the campaign whose `## Repos` names it.
+    # The gate reads that list through the base it runs from, as the member
+    # hook calls it -- by absolute path into the base.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d)
+        # Read lazily and not declared on `# imports:`: a guard missing it
+        # reads no install and says so, where a missing import tracebacks.
+        place("campaign-repos.py", f.base)
+        _inst, trees = f.install(claims=("demo/12-x",), plain=("feature-z",))
+        gate = f.base / "scripts" / "check-commit-claim.py"
+        e = dict(os.environ, HOME=str(f.home))
+        e.pop("CLAUDE_CODE_SESSION_ID", None)
+
+        def staged(cwd):
+            return subprocess.run([str(gate), "--staged"], cwd=str(cwd),
+                                  capture_output=True, text=True, env=e)
+        r = staged(trees["demo/12-x"])
+        check("ADMIT --staged in an install's worktree whose branch is a "
+              "claim, saying it read the install",
+              r.returncode == 0 and "is a claim" in r.stdout
+              and "in the install" in r.stdout, out(r)[:400])
+        r = staged(trees["feature-z"])
+        check("REFUSE --staged in an install's worktree on a branch that is "
+              "not a claim", r.returncode == 1
+              and "is not a claim" in r.stderr and "in the install" in r.stderr,
+              out(r)[:400])
+
     return harness.report()
 
 

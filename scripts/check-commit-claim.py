@@ -30,7 +30,8 @@ pre-tool-use half and holds the reading both share. The model is
 a sub-issue by a session's own hands names a sub-issue that session has
 claimed. A claim is a `<slug>/<issue>-<topic>` branch whose ref exists
 on the remote, so the reading is: the committing checkout is campaign work --
-a base tree, or under a campaign directory -- and its branch is a claim.
+a base tree, under a campaign directory, or an install a campaign's `## Repos`
+names, worktrees of it included (#389) -- and its branch is a claim.
 
 WHY THIS IS THE GATE THAT HOLDS
 
@@ -162,6 +163,12 @@ def main() -> int:
     # judged by the branch of the checkout it lands in, and a commit always
     # has one.
     inside, where, _, _ = guard.classify(top)
+    # AN INSTALL IS CAMPAIGN WORK HERE AND NOT IN THE FILE HALF (#389), and
+    # `install_of` says why the two differ: this runs only where a hook calls it.
+    inst = None if inside else guard.install_of(guard.checkout_of(top)[0])
+    if inst is not None:
+        inside, where = True, (f"in the install {inst[1]} of {inst[0]}, which "
+                               f"{inst[2]}/README.md names")
     if not inside:
         print(f"check-commit-claim: {top} is {where}; not campaign work, "
               f"no claim needed. {who}.")

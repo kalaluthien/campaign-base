@@ -117,9 +117,9 @@ def main(gate, argv=None) -> int:
         return say("unknown", f"the gate answered {word!r}, not `reviewed`")
 
     runs, why = gate.gh_json(
-        f"gh run list {WORKFLOW} at {head}", "gh", "run", "list", "-R", repo,
-        "--workflow", WORKFLOW, "--commit", head, "--branch", branch,
-        "--event", "pull_request", "--limit", "1", "--json", "databaseId")
+        "run", "list", "-R", repo, "--workflow", WORKFLOW, "--commit", head,
+        "--branch", branch, "--event", "pull_request", "--limit", "1",
+        "--json", "databaseId")
     if why:
         return say("unknown", why)
     if not isinstance(runs, list):
@@ -131,9 +131,8 @@ def main(gate, argv=None) -> int:
 
     polls = 0
     while True:
-        run, why = gate.gh_json(f"gh run view {rid}", "gh", "run", "view",
-                                str(rid), "-R", repo, "--json",
-                                "status,conclusion,jobs")
+        run, why = gate.gh_json("run", "view", str(rid), "-R", repo,
+                                "--json", "status,conclusion,jobs")
         if why:
             return say("unknown", why)
         if not isinstance(run, dict):

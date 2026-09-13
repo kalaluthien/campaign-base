@@ -2803,7 +2803,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the worker's, on one (#207).
         if (licence and i == own_number
-                and verbs_on_i <= licence["campaign issue"]):
+                and verbs_on_i <= licence[roles().CAMPAIGN]):
             covering.append((i, [(CARVED, campaign, f"#{i} is the campaign "
                                   f"issue of the campaign this session is "
                                   f"of")]))
@@ -2830,7 +2830,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # that goes to the network; the PARENT is what licenses it, read from
         # GitHub, never the number the command typed.
         if (licence and not holders and i != own_number
-                and verbs_on_i <= licence["sub-issue"]):
+                and verbs_on_i <= licence[roles().SUB_ISSUE]):
             elsewhere = off_tracker(
                 [x for x in writes if issue_target(x) == i], i, cwd, root)
             parent, note = (None, elsewhere) if elsewhere else parent_of(i)

@@ -877,8 +877,12 @@ def bare_reference_warning(bare):
             f"not a refusal: every body written before the rule carries them.")
 
 
-CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
-    "campaign issue", "sub-issue", "stray", "third kind")
+# THE WORDS ARE campaign-roles.py's ISSUE_KINDS (rule-check#370 row 21): its
+# licences are keyed by them, and the guard reads that leaf on every call.
+ISSUE_KINDS = load(Path(__file__).resolve().parent.parent / ".claude" / "skills"
+                   / "assuming-role" / "scripts" / "campaign-roles.py",
+                   "campaign_roles").ISSUE_KINDS
+CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = ISSUE_KINDS
 
 
 def kind_of(labelled, parented):

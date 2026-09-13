@@ -286,6 +286,8 @@ CLAIM = load(CLAIM_SCRIPT, "campaign_claim")
 REPOS = CLAIM.REPOS
 GUARD = CLAIM.GUARD
 NAMES = load(SKILL_SCRIPTS / "campaign-name-session.py", "cns")
+# The tracker, for the words it prints: an issue's kind on `check`'s line.
+TRACKER_MODULE = load(TRACKER_SCRIPT, "campaign_tracker")
 HEARTBEAT = load(HEARTBEAT_SCRIPT, "campaign_heartbeat")
 RETIRE = "retire"
 EXIT_TEXT = HEARTBEAT.ACTIONS[RETIRE]
@@ -1263,8 +1265,9 @@ def sync(args):
 SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign", "sync",
           "leave")
 NUMBER = re.compile(r"^#?(\d+)$")
-CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
-                        r"third kind) \(label `[^`]+`: (?:yes|no), parent: "
+CHECK_LINE = re.compile(r"^read \S+#(\d+): ("
+                        + "|".join(map(re.escape, TRACKER_MODULE.ISSUE_KINDS))
+                        + r") \(label `[^`]+`: (?:yes|no), parent: "
                         r"(#\d+|no)\)", re.M)
 # The flags each scope takes. Any other one refuses: a flag dropped in silence
 # is an answer the person gave and nobody read.
@@ -1328,16 +1331,17 @@ def front_door(args):
             raise Refused("target", f"campaign-tracker check {n} answered for "
                                     f"#{m.group(1)}")
         kind, parent = m.group(2), m.group(3)
-        if kind == "campaign issue":
+        if kind == TRACKER_MODULE.CAMPAIGN:
             scope, argv = "campaign", ["campaign", n]
-        elif kind == "sub-issue":
+        elif kind == TRACKER_MODULE.SUB_ISSUE:
             scope, argv = "sub-issue", ["sub-issue", parent.lstrip("#"), n]
         else:
             raise Refused("target", f"#{n} reads as a {kind} (campaign-tracker "
                                     f"check), neither a campaign issue nor a "
                                     f"sub-issue")
-        how = (f"#{n} is a {kind}" + (f" of {parent}" if kind == "sub-issue"
-                                      else "") + ", by campaign-tracker check")
+        how = (f"#{n} is a {kind}"
+               + (f" of {parent}" if kind == TRACKER_MODULE.SUB_ISSUE else "")
+               + ", by campaign-tracker check")
     elif "/" in t:
         repo = REPOS.slug(t)
         if repo is None:

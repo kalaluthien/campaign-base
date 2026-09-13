@@ -49,6 +49,15 @@ EXIT. 0 always; this file decides nothing on its own and refuses nothing.
 Its readers do.
 """
 
+# THE FOUR ISSUE KINDS' WORDS, which campaign-tracker.py's `kind_of` answers
+# and the `own_campaign_gh` licences below are keyed by (rule-check#370 row
+# 21). They live in this leaf, which the guard reads on every call, for the
+# reason campaign-name-session.py holds the slug rule: reaching them through
+# the tracker would exec its `gh` plumbing on the hook's path. The tracker,
+# the guard and campaign-close.py take them from here.
+ISSUE_KINDS = CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
+    "campaign issue", "sub-issue", "stray", "third kind")
+
 # THE TWO ROLES, and the keys are the role words themselves: every other
 # reader takes its vocabulary from here, so adding a third role is an edit to
 # this dict and to whatever new behaviour it needs, never a sweep for the words
@@ -107,8 +116,7 @@ ROLES = {
         # ONE route to a claim, which is the only condition under which that
         # model rule has a reader at all.
         "gh_except": frozenset({("issue", "develop")}),
-        "own_campaign_gh": {"campaign issue": frozenset(),
-                            "sub-issue": frozenset()},
+        "own_campaign_gh": {CAMPAIGN: frozenset(), SUB_ISSUE: frozenset()},
     },
     "worker": {
         "campaign_plane": "own",
@@ -136,9 +144,8 @@ ROLES = {
         # `reopen` is the SUB-ISSUE's and not the campaign issue's: reopening
         # the campaign undoes a close, which is a person's decision.
         "own_campaign_gh": {
-            "campaign issue": frozenset({("issue", "comment")}),
-            "sub-issue": frozenset({("issue", "comment"),
-                                    ("issue", "reopen")}),
+            CAMPAIGN: frozenset({("issue", "comment")}),
+            SUB_ISSUE: frozenset({("issue", "comment"), ("issue", "reopen")}),
         },
     },
 }

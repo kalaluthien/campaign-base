@@ -3239,14 +3239,17 @@ def main():
                     command="gh issue comment 7 --body 'not a kinded line'")
             # NAMED, and the name is `campaign-name-session.py` in BOTH arms:
             # that file imports `campaign-roles.py` for the role words, so
-            # deleting either leaves the first-line rule unloadable. What the
-            # assertion buys is that the sentence is not the OTHER import's --
-            # `campaign-tracker.py`'s -- which says "would not load" too.
+            # deleting either leaves the first-line rule unloadable. The
+            # assertion is on that sentence whole, since the OTHER import's --
+            # `campaign-tracker.py`'s -- says "would not load" too, and does in
+            # the roles arm: the tracker takes the issue kinds from
+            # campaign-roles.py (rule-check#370 row 21).
             check(f"...and with {missing} gone the verdict says the first-line "
                   f"rule was NOT read, and names its own file",
-                  "shape NOT checked" in out(r) and "would not load" in out(r)
-                  and "campaign-name-session.py" in out(r)
-                  and "campaign-tracker.py" not in out(r), out(r)[:400])
+                  "shape NOT checked: campaign-name-session.py, which owns the "
+                  "session-name half of the first line, would not load" in out(r)
+                  and ("campaign-tracker.py" not in out(r)
+                       or missing == "campaign-roles.py"), out(r)[:400])
             # THE CEILING IS A SECOND CHECK, and it needs no pattern. Letting
             # an unreadable name rule silence it would trade one hole for
             # another: `comment_findings` measures the length whatever the

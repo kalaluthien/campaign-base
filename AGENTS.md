@@ -698,7 +698,7 @@ claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
 can say which claim it holds — except a worker the planner's heartbeat reads
-as done, its last assigned sub-issue's ref gone and idle since, which it
+as done, its last assigned sub-issue's ref gone and no assignment since, which it
 sends `/exit`.
 `scripts/check-campaign-claim.py` refuses
 `herdr agent kill`, `pkill` and `killall`: a pattern reaches every process

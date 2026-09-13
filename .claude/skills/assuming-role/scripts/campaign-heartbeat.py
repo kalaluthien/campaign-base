@@ -14,8 +14,11 @@ verdict first, then what it read and from where:
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
     retire   a worker, idle, whose last assignment prompt names sub-issue N,
-             with no `<slug>/<N>-` ref standing and no prompt and no tool
-             call since the last such ref went: done by a GitHub fact, `/exit`
+             with no `<slug>/<N>-` ref standing and no assignment prompt
+             since the last such ref went: done by a GitHub fact, `/exit`.
+             A prompt of another shape, or a tool call, after it is not
+             work (the owner, rule-check#349, 2026-09-13); the line names
+             the last of each it read past
     quiet    the own pane, when the campaign has nothing left to do: `/compact`,
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
@@ -73,18 +76,20 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
-WHAT `retire` CANNOT SEE, both ways. Who released the ref is not read, and
-neither is which checkout a session stands in (AGENTS.md § Completion): a
-worker that took another claim before its assigned one's ref went, and has
-been idle since, reads as done. The rest err the safe way, `keep`: a claim
-with no pull request -- or one older than the newest 100 -- falls to the
-feed, which holds the last 300 events however long that is and drops some
-deletes, so one it dropped reads as none, and so does a pull request whose
-head is not deleted yet; a sub-issue given in a prompt of another shape is
-no assignment, and one
-whose prompt sits in an earlier file a resume left behind is none; and a
-done worker that answers a peer's message with a tool call after the ref
-went is kept for good.
+WHAT `retire` CANNOT SEE, both ways. Only an assignment prompt is read as
+work, so nothing else that reaches an idle worker after its ref went is:
+not who released the ref, not which checkout the session stands in
+(AGENTS.md § Completion), and not what a prompt of another shape set it
+doing. A worker that took another claim before its assigned one's ref went,
+or was handed work in words of the planner's own -- a sub-issue named in no
+assignment sentence, a question -- reads as done once it is idle; the line
+names the last such prompt, so what was read past is on the screen. The
+rest err the safe way, `keep`: a claim with no pull request -- or one older
+than the newest 100 -- falls to the feed, which holds the last 300 events
+however long that is and drops some deletes, so one it dropped reads as
+none, and so does a pull request whose head is not deleted yet; and an
+assignment whose prompt sits in an earlier file a resume left behind is
+none.
 
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
@@ -170,6 +175,9 @@ QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is a person's prompt
 # isMeta, its text opening with this tag (820 on this machine, 2026-09-11).
 # Busy, the same notice is a queued_command of another mode.
 TASK_NOTICE = "<task-notification>"
+# How much of the last prompt of another shape a `retire` line quotes: enough
+# to tell "wait, launch nothing" from work handed over in words.
+OTHER_CHARS = 80
 
 
 def load(path, name):
@@ -238,14 +246,17 @@ def transcript_reading(lines):
                  summary or a tool result quoting the sentence does not.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
-      prompted   the last user record carrying text that is not the
+      other      the last prompt carrying no assignment sentence, at
+                 `other_at`, as its first OTHER_CHARS characters. A prompt
+                 is a user record carrying text that is not the
                  compaction's own echo and not a harness note (`isMeta`),
-                 or the last prompt typed while the pane was busy: an
-                 `attachment` record of type `queued_command`, mode
-                 `prompt`, not `isMeta` -- which a peer's message is, and a
-                 task notification is another mode.
-      acted      the last assistant record calling a tool: a turn after the
-                 claim went is work `retire` must not cut off.
+                 or one typed while the pane was busy: an `attachment`
+                 record of type `queued_command`, mode `prompt`, not
+                 `isMeta` -- which a peer's message is, and a task
+                 notification is another mode. `retire` reads past it and
+                 names it.
+      acted      the last assistant record calling a tool, which `retire`
+                 reads past and names as well.
       context    input plus cache tokens of the latest usage record, or the
                  boundary's `postTokens` when a compaction came after it --
                  none when the boundary carries none, since the usage before
@@ -258,7 +269,7 @@ def transcript_reading(lines):
     "last" is the latest time. Records of a subagent (`isSidechain`) are its
     own context, not this session's."""
     out = {"assigned": None, "assigned_at": None, "compacted": None,
-           "prompted": None, "acted": None, "context": None,
+           "other": None, "other_at": None, "acted": None, "context": None,
            "context_at": None, "records": 0}
 
     def later(key, ts):
@@ -270,10 +281,13 @@ def transcript_reading(lines):
             out["context"], out["context_at"] = tokens, ts
 
     def said(ts, content):
-        later("prompted", ts)
         n = assignment(content)
-        if n is not None and (out["assigned_at"] is None
-                              or ts > out["assigned_at"]):
+        if n is None:
+            if out["other_at"] is None or ts > out["other_at"]:
+                out["other_at"] = ts
+                out["other"] = " ".join("".join(texts(content)).split())[
+                    :OTHER_CHARS]
+        elif out["assigned_at"] is None or ts > out["assigned_at"]:
             out["assigned"], out["assigned_at"] = n, ts
 
     for line in lines:
@@ -409,15 +423,21 @@ def verdict(role, own, idle, banner, reading, refs):
     if role == "worker" and not own:
         went, why = ref_went(reading, refs)
         # AT the delete counts as after it: GitHub gives the second, so a tie
-        # is a call that may have come later, and it errs to `keep`.
-        since = [f"a {what} at {ts}" for what, ts in (
-            ("prompt", reading["prompted"]), ("tool call", reading["acted"]))
-            if went and ts and when(ts) >= when(went)]
-        if went and not since:
-            return "retire", (f"{why}; no prompt and no tool call since"
-                              f"{passed}")
+        # is an assignment that may have come later, and it errs to `keep`.
+        # A `went` implies an `assigned_at`: `ref_went` answers none without.
+        again = went and when(reading["assigned_at"]) >= when(went)
+        if went and not again:
+            past = [f"a {what} at {ts}" for what, ts in (
+                ("prompt", reading["other_at"]), ("tool call", reading["acted"]))
+                if ts and when(ts) >= when(went)]
+            if past and past[0].startswith("a prompt"):
+                past[0] += f" ({reading['other']!r})"
+            return "retire", (f"{why}; no assignment prompt since, "
+                              + (f"read past {' and '.join(past)}" if past
+                                 else "nothing else since") + passed)
         passed += "; not retired: " + (
-            f"{' and '.join(since)} after {went}" if since else why)
+            f"an assignment prompt at {reading['assigned_at']} after {went}"
+            if again else why)
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:

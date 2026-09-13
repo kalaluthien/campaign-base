@@ -111,9 +111,9 @@ def heartbeat(*lines):
     return "\n".join(out) + "\n"
 
 
-RETIRE_LINE = ("retire", PANE, "rc-worker-2", "released 1, compacted 2, no "
-               "claim held, no prompt since the release, no tool call since "
-               "the compaction")
+RETIRE_LINE = ("retire", PANE, "rc-worker-2", "assigned #32; no ref standing, "
+               "the last went 2026-09-10T10:03:00Z (rc/32-* on o/r); no "
+               "assignment prompt since, nothing else since")
 RELEASE_OK = f"releasing rc/{ISSUE}-drop\ndeleted rc/{ISSUE}-drop\n"
 RELEASE_REFUSED = ("refusing: kalaluthien/campaign-base says rc/32-drop is 2 "
                    "commit(s) ahead of main.\n")
@@ -411,6 +411,65 @@ def case_wait_counts(m):
                              every=7)
     return (not gone and len(reads) == 4 and sleeps == [7, 7, 7]
             and "poll 4" in note), note
+
+
+# ------------------------------------------------------------- workers
+
+WORKERS = ["workers", N]
+# This campaign's planner, two workers, and another campaign's worker.
+LISTED = {SID: ROW, "S2": dict(ROW, name="rc-worker-2", pane=PANE),
+          "S3": dict(ROW, name="rc-worker-3", pane=OTHER),
+          "S4": dict(ROW, name="zz-worker-4", pane="w1:p4")}
+TWO_WORKERS = heartbeat(RETIRE_LINE, ("keep", OTHER, "rc-worker-3",
+                                      "context 9 < 200"))
+
+
+def heartbeats(asked):
+    return [a for a in asked if a[0] == sys.executable
+            and Path(a[1]).name == "campaign-heartbeat.py"]
+
+
+def worker_lines(out):
+    return [ln for ln in out.splitlines()
+            if ln.split(" ", 1)[0] in ("exited", "kept", "failed")]
+
+
+def case_workers(m):
+    gone = {k: v for k, v in LISTED.items() if k != "S2"}
+    code, out, asked, _ = drive(m, WORKERS, world(
+        heartbeat=TWO_WORKERS,
+        polls=[(LISTED, None), (LISTED, None), (gone, None)]))
+    lines = worker_lines(out)
+    return (code == 0 and "2 worker(s) of rc (#10) among the 4 session(s)" in out
+            and len(lines) == 2 and len(heartbeats(asked)) == 2
+            and lines[0].startswith(f"exited      rc-worker-2 {PANE} -- retire: ")
+            and f"gone: poll 2: {PANE} is not listed" in lines[0]
+            and lines[1].startswith(f"kept        rc-worker-3 {OTHER} -- retire: "
+                                    "the heartbeat reads rc-worker-3 as `keep`")
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
+
+
+def case_workers_failed(m):
+    ok, asked, out = refused(m, WORKERS, world(
+        heartbeat=TWO_WORKERS, sessions=LISTED, env={}), "workers",
+        "1 of 2 worker(s) failed past `retire`: rc-worker-2")
+    lines = worker_lines(out)
+    return (ok and not prompts(asked) and len(lines) == 2
+            and lines[0].startswith("failed      rc-worker-2 w1:p2 -- herdr: "
+                                    "HERDR_ENV is not 1 (nothing was changed)")
+            and lines[1].startswith("kept        rc-worker-3")), out
+
+
+def case_front_workers(m):
+    listed = dict(LISTED)
+    del listed["S2"]
+    w = world(issue=f"{N}\n", sessions=listed, heartbeat=TWO_WORKERS)
+    code, out, asked, _ = drive(m, ["workers"], w)
+    return (code == 0 and "read as scope workers -- `workers`; #10 from this "
+            "session's name rc-planner-1" in out
+            and worker_lines(out) == [f"kept        rc-worker-3 {OTHER} -- retire: "
+                                      "the heartbeat reads rc-worker-3 as `keep`: "
+                                      "context 9 < 200"]), out
 
 
 # ------------------------------------------------------------- the refusals
@@ -785,6 +844,15 @@ CASES = {
     "retire: a listing that did not read is one more poll": case_unread_poll_retries,
     "wait: it polls exactly its count and sleeps between polls only":
         case_wait_counts,
+    "workers: each of the campaign's workers is judged alone, one line each; "
+    "a done one exits, the rest are kept": case_workers,
+    "refuse workers: a step past retire failed, and the run says so":
+        case_workers_failed,
+    "refuse workers: herdr did not list the sessions": refusal(
+        "workers", "herdr agent list did not read: herdr is down", argv=WORKERS,
+        polls=[(None, "herdr is down")]),
+    "front: `workers` alone reads as scope workers of this session's campaign":
+        case_front_workers,
     # refusals
     "refuse: the slug did not read": refusal("slug", "did not read", slug=None),
     "refuse: settlement did not finish": refusal(
@@ -1244,7 +1312,7 @@ MUTATIONS = [
     ("front: a scope's name alone reaches the front door",
      "or (\n            argv[0] in SCOPES and len(argv) == 1)", "or (False)",
      "refuse front: a scope's name alone is not a target"),
-    ("front: a scope's name alone refuses", "    if t in SCOPES:\n", "    if False:\n",
+    ("front: a scope's name alone refuses", "    elif t in SCOPES:\n", "    elif False:\n",
      "refuse front: a scope's name alone is not a target"),
     ("front: the number is the whole target", 'NUMBER = re.compile(r"^#?(\\d+)$")',
      'NUMBER = re.compile(r"^#?(\\d+)")',
@@ -1255,6 +1323,22 @@ MUTATIONS = [
      "refuse front: check answering for another number"),
     ("front: an unread flag refuses", "if extra:", "if False:",
      "refuse front: a flag the scope does not take"),
+    ("workers: only this campaign's", 'if NAMES.campaign_of(r["name"]) == slug\n',
+     "if True\n", "workers: each of the campaign's workers is judged alone, one "
+     "line each; a done one exits, the rest are kept"),
+    ("workers: only workers", 'and r["name"].rsplit("-", 2)[1] == "worker")', ")",
+     "workers: each of the campaign's workers is judged alone, one line each; "
+     "a done one exits, the rest are kept"),
+    ("workers: kept is not failed", 'word = "kept" if r.gate == "retire" else "failed"',
+     'word = "failed"', "workers: each of the campaign's workers is judged alone, "
+     "one line each; a done one exits, the rest are kept"),
+    ("workers: a failure refuses", "    if broke:\n", "    if False:\n",
+     "refuse workers: a step past retire failed, and the run says so"),
+    ("workers: the exit's evidence is on the line", 'if s in ("retire", "gone"))',
+     'if s in ("retire",))', "workers: each of the campaign's workers is judged "
+     "alone, one line each; a done one exits, the rest are kept"),
+    ("front: `workers` alone", 'if t == "workers":', "if False:",
+     "front: `workers` alone reads as scope workers of this session's campaign"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

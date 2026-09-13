@@ -4,6 +4,7 @@
     scripts/campaign-close.py [<target>] [--not-planned "<why>"] [--close] [--delete]
     scripts/campaign-close.py sub-issue <N> <issue> --not-planned "<why>"
     scripts/campaign-close.py worker <N> <pane>
+    scripts/campaign-close.py workers <N>
     scripts/campaign-close.py repo <N> <owner/repo> [--delete]
     scripts/campaign-close.py here <N> [--delete]
     scripts/campaign-close.py campaign <N> [--close] [--delete]
@@ -39,9 +40,9 @@ THE GATES, and why each exists (printed beside every refusal)
                reached its install is a merge nobody installed.
   retire       `campaign-heartbeat.py <N>` without --apply, one pane's line.
                Only a worker the heartbeat reads as done -- its assigned
-               sub-issue's ref gone, idle since -- holds nothing an `/exit`
-               could lose; that reading is the heartbeat's, and nothing here
-               restates it.
+               sub-issue's ref gone and no assignment since -- holds nothing
+               an `/exit` could lose; that reading is the heartbeat's, and
+               nothing here restates it.
 
 THE PERSON'S ANSWERS are flags, and a run without one halts before the write
 it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
@@ -54,7 +55,7 @@ A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS -- every
 a run says so once, beside its first release.
 
 THE FRONT DOOR -- `/close <target>` -- reads the scope off the one target and
-prints which it read and from where, then runs that scope as below. The five
+prints which it read and from where, then runs that scope as below. The six
 scopes stay callable by name; the front door only chooses among them.
 
   a number        `campaign-tracker.py check <n>`'s kind line: a campaign
@@ -64,12 +65,15 @@ scopes stay callable by name; the front door only chooses among them.
   owner/repo      scope repo, of the campaign read as for no target.
   a session name  one `herdr agent list` names: scope worker, of the campaign
                   its name's slug names, on the pane herdr gives it.
+  `workers`       scope workers, of the campaign read as for no target: the
+                  one scope's name the front door takes alone, since that
+                  scope needs nothing but the campaign.
   no target       scope here, of the campaign whose directory this runs in
                   (its `.campaign` marker), else the one this session's name
                   names (`campaign-tracker.py issue <slug>`).
-  anything else   refuses, saying what it tried -- a scope's own name typed
-                  alone among them. A flag the scope read does not take
-                  refuses too, rather than being dropped.
+  anything else   refuses, saying what it tried -- any other scope's own
+                  name typed alone among them. A flag the scope read does
+                  not take refuses too, rather than being dropped.
 
 SCOPE sub-issue <N> <issue> --not-planned "<why>"
 
@@ -103,6 +107,19 @@ SCOPE worker <N> <pane>
   4. gone         `herdr agent list`, WAIT_POLLS polls WAIT_EVERY seconds
                   apart. Holds when: no row names <pane>. Still listed is
                   reported with the time measured, and never killed.
+
+SCOPE workers <N> -- every finished worker at once
+
+  1. workers      `herdr agent list`. Holds when: it read; every session
+                  whose name is of <N>'s slug with the role word `worker` is
+                  one worker, the pane running this included, which the
+                  heartbeat never retires.
+  2. worker       Scope worker, once per worker, each on a heartbeat run of
+                  its own, so no reading outlives the `/exit` before it. One
+                  line per worker: `exited` (every step held), `kept` (retire
+                  refused: nothing was sent) or `failed` (a later step
+                  refused; the line says what was sent). Holds when: none
+                  `failed`.
 
 SCOPE repo <N> <owner/repo> [--delete] -- drop a member repository
 
@@ -250,8 +267,10 @@ WHY = {
     "release": "a claim ref is residue only once it is deleted",
     "delete": "the delete is the one step nothing recovers",
     "retire": "only a worker the heartbeat reads as done, its assigned "
-              "sub-issue's ref gone and idle since, holds nothing an /exit "
-              "could lose",
+              "sub-issue's ref gone and no assignment since, holds nothing an "
+              "/exit could lose",
+    "workers": "every worker is judged alone, and one not done is kept, "
+               "never exited",
     "herdr": "a herdr command that drives a pane runs only inside herdr "
              "(HERDR_ENV=1), so it cannot act on somebody else's session",
     "exit": "a session leaves by fact, and the fact is its pane stopping",
@@ -914,7 +933,7 @@ def sub_issue(args):
         holds("release", f"no claim ref names #{issue}; nothing to release")
 
 
-def worker(args):
+def worker(args, say=holds):
     n, pane = args.campaign_issue, args.pane
     text = script(HEARTBEAT_SCRIPT, n)
     line = heartbeat_line(text, pane)
@@ -927,22 +946,56 @@ def worker(args):
     if word != RETIRE:
         raise Refused("retire", f"the heartbeat reads {name} as `{word}`: "
                                 f"{reason}")
-    holds("retire", f"{name}: {reason}")
+    say("retire", f"{name}: {reason}")
     if os.environ.get("HERDR_ENV") != "1":
         raise Refused("herdr", "HERDR_ENV is not 1")
-    holds("herdr", "HERDR_ENV=1")
+    say("herdr", "HERDR_ENV=1")
     r = run("herdr", "agent", "prompt", pane, EXIT_TEXT)
     if r.returncode != 0:
         raise Refused("exit", f"herdr exited {r.returncode}: "
                               f"{(r.stderr or '').strip()[:200]}")
-    holds("exit", f"sent {EXIT_TEXT} to {pane}")
+    say("exit", f"sent {EXIT_TEXT} to {pane}")
     began = time.monotonic()
     gone, note = wait_gone(pane)
     if not gone:
         raise Refused("gone", f"{note} after {time.monotonic() - began:.0f}s: "
                               f"say so on the sub-issue it worked, and ask",
                       changed=f"{EXIT_TEXT} was sent to {pane}")
-    holds("gone", note)
+    say("gone", note)
+
+
+def workers(args):
+    """Scope worker once per worker herdr lists for the campaign, each on a
+    fresh heartbeat reading, one line per worker. A refusal at `retire` is a
+    worker not done, `kept`; a refusal at any later step is `failed`."""
+    n = args.campaign_issue
+    slug = slug_of(n)
+    sessions, why = CLAIM.herdr_sessions()
+    if sessions is None:
+        raise Refused("workers", f"herdr agent list did not read: {why}")
+    rows = sorted((r["name"], r["pane"]) for r in sessions.values()
+                  if NAMES.campaign_of(r["name"]) == slug
+                  and r["name"].rsplit("-", 2)[1] == "worker")
+    print(f"{'workers':<11} {len(rows)} worker(s) of {slug} (#{n}) among the "
+          f"{len(sessions)} session(s) herdr lists")
+    broke = []
+    for name, pane in rows:
+        steps = []
+        try:
+            worker(argparse.Namespace(campaign_issue=n, pane=pane),
+                   say=lambda step, evidence: steps.append((step, evidence)))
+            word, what = "exited", "; ".join(f"{s}: {e}" for s, e in steps
+                                             if s in ("retire", "gone"))
+        except Refused as r:
+            word = "kept" if r.gate == "retire" else "failed"
+            what = f"{r.gate}: {r.reason}" + (
+                "" if word == "kept" else f" ({r.changed})")
+            broke += [name] * (word == "failed")
+        print(f"{word:<11} {name} {pane} -- {what}")
+    if broke:
+        raise Refused("workers", f"{len(broke)} of {len(rows)} worker(s) "
+                                 f"failed past `retire`: {', '.join(broke)}",
+                      changed="each line above says what was sent")
 
 
 def drop_repo(args):
@@ -1021,7 +1074,7 @@ def campaign(args):
 # ------------------------------------------------------------- the front door
 
 
-SCOPES = ("sub-issue", "worker", "repo", "here", "campaign")
+SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign")
 NUMBER = re.compile(r"^#?(\d+)$")
 CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
                         r"third kind) \(label `[^`]+`: (?:yes|no), parent: "
@@ -1029,7 +1082,8 @@ CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
 # The flags each scope takes. Any other one refuses: a flag dropped in silence
 # is an answer the person gave and nobody read.
 FLAGS = {"campaign": ("close", "delete"), "here": ("delete",),
-         "repo": ("delete",), "sub-issue": ("not_planned",), "worker": ()}
+         "repo": ("delete",), "sub-issue": ("not_planned",), "worker": (),
+         "workers": ()}
 
 
 def campaign_named(slug, whose):
@@ -1066,12 +1120,15 @@ def front_door(args):
     """The scope's own argv, read off the one target, with what was read and
     from where printed first."""
     t = (args.target or "").strip() or None
-    if t in SCOPES:
+    if t == "workers":
+        n, where = own_campaign()
+        scope, argv, how = "workers", ["workers", n], f"`workers`; #{n} from {where}"
+    elif t in SCOPES:
         raise Refused("target", f"{t!r} is the name of a scope, not a target: "
                                 f"give it its arguments (`campaign-close.py "
                                 f"{t} ...`, see --help), or give /close a "
                                 f"target")
-    if t is None:
+    elif t is None:
         n, where = own_campaign()
         scope, argv, how = "here", ["here", n], f"no target; #{n} from {where}"
     elif num := NUMBER.match(t):
@@ -1188,6 +1245,10 @@ def main(argv=None):
     w.add_argument("campaign_issue", type=number)
     w.add_argument("pane")
     w.set_defaults(fn=worker)
+    ws = sub.add_parser("workers", help="scope worker on every worker of the "
+                                        "campaign, one line each")
+    ws.add_argument("campaign_issue", type=number)
+    ws.set_defaults(fn=workers)
     r = sub.add_parser("repo", help="drop a member repository the README "
                                     "no longer lists, and its clone")
     r.add_argument("campaign_issue", type=number)

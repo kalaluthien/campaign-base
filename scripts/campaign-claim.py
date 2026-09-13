@@ -205,19 +205,23 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package.
+    Raises what loading raised; each caller decides what that means."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def _repos_module():
     """`campaign-repos.py`, imported for the three things only it should say:
     what the base's slug is, what makes two spellings one repository, and what
     a `## Repos` entry may look like. The LIST is still read by running it as a
     subprocess (`campaign_repos` below) -- its refusals are exit strings, and
     reading them back is what keeps one reader rather than two."""
-    src = HERE / "campaign-repos.py"
-    spec = importlib.util.spec_from_loader(
-        "campaign_repos", importlib.machinery.SourceFileLoader(
-            "campaign_repos", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(HERE / "campaign-repos.py", "campaign_repos")
 
 
 def _tracker_module():
@@ -228,13 +232,7 @@ def _tracker_module():
 
     NO CYCLE: `campaign-tracker.py` imports THIS file only inside
     `claim_reader()`, at call time, so a module-level import here resolves."""
-    src = HERE / "campaign-tracker.py"
-    spec = importlib.util.spec_from_loader(
-        "campaign_tracker", importlib.machinery.SourceFileLoader(
-            "campaign_tracker", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(HERE / "campaign-tracker.py", "campaign_tracker")
 
 
 def _name_rule_module():
@@ -244,13 +242,8 @@ def _name_rule_module():
     not all regular, and a regex spelling them here would admit names that
     script refuses. `check-campaign-claim.py` reaches the same file the same
     way."""
-    src = HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py"
-    spec = importlib.util.spec_from_loader(
-        "campaign_name_session", importlib.machinery.SourceFileLoader(
-            "campaign_name_session", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts"
+                / "campaign-name-session.py", "campaign_name_session")
 
 
 REPOS = _repos_module()
@@ -1888,12 +1881,7 @@ def _review_words():
     with two readers. A module that will not load leaves the words unknown,
     which `review_verdict` reports rather than guessing."""
     try:
-        spec = importlib.util.spec_from_loader(
-            "check_merge_review", importlib.machinery.SourceFileLoader(
-                "check_merge_review", str(CHECK_MERGE_REVIEW)))
-        m = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(m)
-        return m.GATE_WORDS, None
+        return load(CHECK_MERGE_REVIEW, "check_merge_review").GATE_WORDS, None
     # BaseException, NOT Exception. Reading a constant out of another script
     # means EXECUTING that script, and a `sys.exit` reached at its import level
     # raises SystemExit -- which is not an Exception, so it would leave this

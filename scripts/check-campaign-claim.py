@@ -416,6 +416,16 @@ HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
 
 
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package.
+    Raises what loading raised; each caller decides what that means."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def skill_module(stem, alias):
     """One module out of the `assuming-role` skill's scripts, by path.
 
@@ -425,12 +435,7 @@ def skill_module(stem, alias):
     owner refuses, and the two would drift apart on the first change to
     either. Failure is the CALLER's to report -- `role_of` turns it into
     could-not-look -- so nothing is swallowed here."""
-    src = SKILL_SCRIPTS / f"{stem}.py"
-    spec = importlib.util.spec_from_loader(
-        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(SKILL_SCRIPTS / f"{stem}.py", alias)
 
 
 _roles = None
@@ -865,11 +870,7 @@ def repos_reader():
     global _REPOS, REPOS_UNREADABLE
     if _REPOS is None and REPOS_UNREADABLE is None:
         try:
-            spec = importlib.util.spec_from_loader(
-                "crepos", importlib.machinery.SourceFileLoader(
-                    "crepos", str(HERE / "campaign-repos.py")))
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
+            m = load(HERE / "campaign-repos.py", "crepos")
         except Exception as e:          # noqa: BLE001 -- reported, not raised
             REPOS_UNREADABLE = e.__class__.__name__
             return None
@@ -1940,13 +1941,8 @@ def tracker():
     the call proceed -- a hole, not a refusal."""
     global _TRACKER, TRACKER_UNREADABLE
     if _TRACKER is None and TRACKER_UNREADABLE is None:
-        src = HERE / "campaign-tracker.py"
         try:
-            spec = importlib.util.spec_from_loader(
-                "ctracker", importlib.machinery.SourceFileLoader(
-                    "ctracker", str(src)))
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
+            m = load(HERE / "campaign-tracker.py", "ctracker")
         except Exception as e:          # noqa: BLE001 -- reported, not raised
             TRACKER_UNREADABLE = e.__class__.__name__
             return None

@@ -78,14 +78,21 @@ DEFAULT_OUT = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 DEFAULT_TRANSCRIPTS = "~/.claude/projects/**/*.jsonl"
 FILE_TOOLS = ("Edit", "Write", "NotebookEdit", "MultiEdit")
 PATH_KEYS = ("file_path", "notebook_path", "path")
-def _name_rule():
-    """`campaign-name-session.py`, imported for `BASE_DIRS` alone."""
-    src = HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts" / "campaign-name-session.py"
+
+
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package."""
     spec = importlib.util.spec_from_loader(
-        "cns", importlib.machinery.SourceFileLoader("cns", str(src)))
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
+
+
+def _name_rule():
+    """`campaign-name-session.py`, imported for `BASE_DIRS` alone."""
+    return load(HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts"
+                / "campaign-name-session.py", "cns")
 
 
 # The base's own top-level directories, imported from the one file that names
@@ -113,12 +120,7 @@ def guard():
     a change to how it finds one moves the corpus with it instead of leaving
     a second, drifting answer here (AGENTS.md: no second reader of a rule a
     script owns)."""
-    src = HERE / "check-campaign-claim.py"
-    spec = importlib.util.spec_from_loader(
-        "ccc", importlib.machinery.SourceFileLoader("ccc", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(HERE / "check-campaign-claim.py", "ccc")
 
 
 def reads_for_a_target(g, command):

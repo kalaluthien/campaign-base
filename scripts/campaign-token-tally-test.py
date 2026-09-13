@@ -590,6 +590,15 @@ def main():
                   "NO branch is attributed" in r.stdout
                   and "--slug" in r.stdout, r.stdout[:400])
 
+    # THE GUARD LOADS ONCE PER RUN: the base root and the shell splitter are
+    # both its readings, and each call used to load all 3000 lines again.
+    m = harness.load(SCRIPT, "campaign_token_tally")
+    for _ in range(5):
+        m.guard_module()
+    info = getattr(m.guard_module, "cache_info", lambda: None)()
+    check("five guard_module calls load the guard once",
+          info is not None and info.misses == 1 and info.hits == 4, repr(info))
+
     return harness.report()
 
 

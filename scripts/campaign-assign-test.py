@@ -7,9 +7,10 @@ AN ALLOW CASE BESIDE EVERY REFUSAL. A guard is only worth its refusals if the
 thing it admits still gets through, and a refusing check with no allow case
 reads identically to one that refuses everything.
 
-The herdr stub answers `agent list` and `agent prompt`, logs every prompt, and
-refuses everything else -- so a case passes only if the reading came from
-the transcript and GitHub and never from the pane. The gh stub answers the
+The herdr stub answers `agent list`, `agent prompt` and `pane read`, logs
+every prompt, and refuses everything else -- so a case passes only if the
+reading came from the transcript and GitHub, and of the pane only its input
+box, which `pane read` shows as Claude Code draws it. The gh stub answers the
 sub-issue's parent, the campaign's slug and `## Repos`, its claim refs and
 the events feed, where the pane's last sub-issue's ref went at T1. "The
 assignment was sent" is asserted on what herdr was ASKED, never on an exit
@@ -52,6 +53,13 @@ STALE = [WORK9]
 FRESH = [said(T0, "hello")]
 
 
+RULE = "\u2500" * 40
+# Claude Code's input box as `herdr pane read --source detection` shows it,
+# the top rule carrying the session's name as a live pane's did 2026-09-13.
+SCREEN = ("\u273b Baked for 20s\n\n" + RULE[:30] + " machinery-worker-2 \u2500\n"
+          "\u276f%s\n" + RULE + "\n  -- INSERT -- \u23f5\u23f5 auto mode on\n")
+
+
 def agent(sid, name, pane, status="idle"):
     return {"agent_session": {"value": sid}, "name": name, "cwd": "/tmp",
             "pane_id": pane, "agent_status": status}
@@ -68,6 +76,11 @@ JSON
   "agent prompt")
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
     exit %s ;;
+  "pane read")
+    cat <<'SCREEN'
+%s
+SCREEN
+    exit 0 ;;
 esac
 echo "herdr shim: refusing $*" >&2
 exit 1
@@ -94,18 +107,20 @@ sys.stderr.write("gh shim: refusing %%s\n" %% a); sys.exit(1)
 '''
 
 
-def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False):
+def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False,
+          screen=SCREEN % ""):
     """A PATH holding only the stubs, and a HOME whose transcript for `sid`
     holds `records` (no file at all when None). PATH is this directory ALONE,
     so a call that escaped the stubs would run nothing rather than silently
     reaching the real herdr and driving somebody's pane. `standing` leaves
-    a ref of rc#9 on the remote."""
+    a ref of rc#9 on the remote; `screen` is what `pane read` shows, an empty
+    input box by default."""
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True, exist_ok=True)
     listing = json.dumps({"result": {"agents": rows}})
     (b / "herdr").write_text(
-        HERDR % (str(d / "prompts.log"), listing, prompt_exit))
+        HERDR % (str(d / "prompts.log"), listing, prompt_exit, screen))
     (b / "herdr").chmod(0o755)
     (b / "gh").write_text(GH % (sys.executable, standing, T1))
     (b / "gh").chmod(0o755)
@@ -169,6 +184,22 @@ def pure_cases(m):
     check("a status this does not recognise is not evidence of rest",
           not ok and "unheard-of" in why, why)
 
+    # THE INPUT BOX, over the screen shapes read off live panes 2026-09-13.
+    check("an empty input box reads empty",
+          m.input_line(SCREEN % "") == ("", None), repr(m.input_line(SCREEN % "")))
+    got = m.input_line(SCREEN % "\u00a0/compact")
+    check("text typed and not sent is read back, past the no-break space",
+          got == ("/compact", None), repr(got))
+    got = m.input_line(SCREEN % "\u00a0a long line\n  that wrapped")
+    check("...and a box of two lines is read whole",
+          got == ("a long line that wrapped", None), repr(got))
+    got = m.input_line("1. Stop and wait for limit to reset\n2. Upgrade\n")
+    check("a screen with no box is no reading, not an empty box",
+          got[0] is None and "0 rule line(s)" in got[1], repr(got))
+    got = m.input_line(RULE + "\nDo you want to proceed?\n" + RULE + "\n")
+    check("...nor is text between two rules that does not open with the mark",
+          got[0] is None and "Do you want to proceed?" in got[1], repr(got))
+
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
           "kalaluthien/campaign-base#42" in sentence
@@ -213,6 +244,8 @@ def end_to_end_cases():
               f"{T1} (rc/9-* on kalaluthien/campaign-base" in out
               and "S2.jsonl" in out, out[:400])
         # A CLEAN PATH SAYS NOTHING ABOUT OVERRIDING.
+        check("...having read the input box empty",
+              "input box empty (herdr pane read w1:p2" in out, out[:400])
         check("...and says nothing about overriding anything",
               "assigning anyway" not in out and "--force" not in out
               and "--assume-fresh" not in out, out[:400])
@@ -317,6 +350,23 @@ def end_to_end_cases():
         check("a working pane is refused before anything is sent",
               r.returncode == 1 and "not idle" in out
               and prompts(busy) == [], f"exit {r.returncode}: {out[:300]}")
+
+        # REFUSE: text waits in the input box. Sent after it, the sentence
+        # joins it as one line -- `/compactWork ...`, rule-check#370.
+        typed = shims(Path(d) / "typed", rows, COMPACTED,
+                      screen=SCREEN % "\u00a0/compact")
+        r = assign(["w1:p2", "198", "--force"], typed)
+        out = r.stdout + r.stderr
+        check("text in the input box is refused, naming it, --force or not",
+              r.returncode == 1 and "input box holds '/compact'" in out
+              and prompts(typed) == [], f"exit {r.returncode}: {out[:300]}")
+        nobox = shims(Path(d) / "nobox", rows, COMPACTED,
+                      screen="1. Stop and wait for limit to reset\n")
+        r = assign(["w1:p2", "198", "--assume-fresh"], nobox)
+        out = r.stdout + r.stderr
+        check("a screen with no input box refuses, saying what it read",
+              r.returncode == 1 and "no input box: 0 rule line(s)" in out
+              and prompts(nobox) == [], f"exit {r.returncode}: {out[:300]}")
 
         # REFUSE: no row names the pane.
         gone = shims(Path(d) / "gone", rows, COMPACTED)

@@ -54,9 +54,10 @@ it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
 delete (`--delete`). Every run re-reads every gate, so a run that stopped
 halfway is run again, never resumed from memory.
 
-A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS -- every
-`campaign-claim release` does, and `sub-issue` and `campaign` both call it;
-a run says so once, beside its first release.
+A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS when that pane is a
+worker's and none is pending -- `campaign-claim release` decides, and
+`sub-issue` and `campaign` both call it; a run says so once, beside its first
+release.
 
 THE FRONT DOOR -- `/close <target>` -- reads the scope off the one target and
 prints which it read and from where, then runs that scope as below. The seven
@@ -818,7 +819,7 @@ def release_refusal(text):
 
 
 COMPACT_NOTE = ("  each `campaign-claim release` enqueues /compact on the "
-                "pane that runs this")
+                "pane that runs this, if it is a worker's and none is pending")
 
 
 def step_release(n, issue):

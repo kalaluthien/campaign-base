@@ -690,9 +690,10 @@ appended log holds every previous run's success line. **Give a polling loop's
 no-evidence verdict a terminal branch** — count the quiet polls, exit reporting
 what was observed, and recover the true outcome from a durable source.
 
-**A release compacts the releasing session's own pane**, so a reused worker
-does not carry a finished sub-issue's transcript into the next one:
-`campaign-claim release` enqueues it, and says so when it could not.
+**A worker's release compacts its own pane**, so a reused worker does not
+carry a finished sub-issue's transcript into the next one: `campaign-claim
+release` enqueues it, and says why when it did not — a planner's release,
+or a `/compact` already pending.
 
 **The session limit is a first-class cause of death, and it kills in batches**;
 a planner's own pacing against it is `.claude/skills/assuming-role/references/planner.md`

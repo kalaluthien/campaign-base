@@ -181,8 +181,10 @@ check_slot() {
 	fi
 	# What it OBSERVED, not what it assumes: two shapes reach this branch and
 	# they carry different things, so a message naming only the guard was untrue
-	# of the one that also carries the claim gate.
-	if [ -e "$slot" ] && is_guard_shim "$slot"; then
+	# of the one that also carries the claim gate. Each shim is adopted in the
+	# slot acquire-repo.sh writes it to and no other: elsewhere it runs nothing
+	# that slot is for, so replacing it would drop somebody's decision.
+	if [ "$slot" = "$precommit" ] && [ -e "$slot" ] && is_guard_shim "$slot"; then
 		echo "adopting: $slot is a shim acquire-repo.sh wrote -- $(wc -l <"$slot" | tr -d ' ') lines," >&2
 		echo "opening with the marker and calling the no-main-commits guard. The" >&2
 		echo "hook written here runs that guard and this repository's own, so" >&2

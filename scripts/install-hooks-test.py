@@ -415,6 +415,17 @@ def main():
               out.returncode != 0 and "refusing" in out.stderr
               and "adopting" not in out.stderr,
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+    # ...and the guard shim likewise only in the pre-commit slot.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        guard = fake_guard(r.root.parent / "home")
+        r.hook("post-commit").write_text(legacy_guard_shim(guard))
+        r.hook("post-commit").chmod(0o755)
+        out = installer(r.root)
+        check("the guard shim in the post-commit slot is refused, not adopted",
+              out.returncode != 0 and "refusing" in out.stderr
+              and "adopting" not in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
 
     # 5c. --git-only. The harness half is machine-wide and points at one
     # checkout; a clone running it would repoint every session's guard.

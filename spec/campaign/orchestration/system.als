@@ -169,8 +169,8 @@ var sig Stopped in Agent {}
    satisfies it by construction, since the process does not exist yet and so
    carries nothing. Two ways of meeting one precondition, which is why this
    names neither as its reader. `agentRelease` gives it
-   back, which is `campaign-claim.py release` enqueueing `/compact` into its own
-   pane as its last act.
+   back to a Worker session, which is `campaign-claim.py release` enqueueing
+   `/compact` into a worker's own pane as its last act.
 
    WHY RELEASE AND NOT SOME LATER MOMENT: a compaction run while the release
    turn's context is still in the prompt cache is cheap, and one run later
@@ -672,17 +672,24 @@ pred agentRelease {
   Now.event = Release
   no a: Agent | a.task = Now.issue and a in PushedToRemote
   no a: Agent | a.task = Now.issue and a.host = Who.session.machine and a in Live
-  /* A RELEASE ENDS THE RELEASING SESSION'S CONTEXT. `campaign-claim.py release`
+  /* A RELEASE ENDS A WORKER SESSION'S CONTEXT. `campaign-claim.py release`
      enqueues `/compact` into its own pane as its last act, so the compaction
      fires the moment the release turn ends -- while that context is still
      cached. Everything else here keeps the bit; this is the only event that
      gives it back, which is what makes `SessionCompactsBetweenSubIssues`
      derived rather than assumed.
 
+     A WORKER'S ONLY (rule-check#370 row 19). A planner releases after every
+     merge, and its context is its plan: compacting it per release lost the
+     plan each time. `role_of` in check-campaign-claim.py is what the script
+     asks, and campaign-claim-test.py's planner case pins this conjunct, since
+     no command here reddens when it is dropped.
+
      NOT A GATE. The script releases even when it cannot find its own pane, and
-     says so; compaction is a cost rule. The model has no could-not-look, so
-     the suite is that branch's only pin. */
-  Compacted' = Compacted + Who.session
+     says so; compaction is a cost rule. Nor does it send a second `/compact`
+     while one is pending. The model has no could-not-look and no queue, so the
+     suite is those branches' only pin. */
+  Compacted' = Compacted + (Who.session & (Session <: role).Worker)
   keepLife and keepReview and keepMessages and keepShutdown and keepLaunched
   no Target.agent
 }

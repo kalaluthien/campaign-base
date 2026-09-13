@@ -200,6 +200,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -244,6 +245,15 @@ def _name_rule_module():
     way."""
     return load(HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts"
                 / "campaign-name-session.py", "campaign_name_session")
+
+
+def _heartbeat_module():
+    """`campaign-heartbeat.py`, imported for `read_transcript` and
+    `compaction_pending`: the one reading of whether a session's `/compact`
+    waits unrun. Loaded at the one call, so a release that compacts nothing
+    does not pay for it."""
+    return load(HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts"
+                / "campaign-heartbeat.py", "campaign_heartbeat")
 
 
 REPOS = _repos_module()
@@ -1107,9 +1117,20 @@ def own_pane(sessions, session_id):
                          f"({row['name']})")
 
 
-def compact_own_pane(sessions, session_id):
-    """Enqueue `/compact` into the releasing session's own pane, and print what
-    was read either way. Returns the pane it prompted, or None.
+# How long `compact_own_pane` watches the transcript for the `/compact` it
+# sent, and how often. herdr returns before the pane has taken the prompt:
+# probed 2026-09-13, `herdr agent prompt` returned in 0.01 s and the queue's
+# `enqueue` record reached the transcript 0.42 s later, so a second release in
+# the same command, reading before then, would find nothing pending.
+QUEUED_WAIT = 5.0
+QUEUED_EVERY = 0.25
+
+
+def compact_own_pane(sessions, session_id, sleep=time.sleep):
+    """Enqueue `/compact` into the releasing session's own pane, when it is a
+    worker's and none is pending, and print what was read either way. Returns
+    the pane when it could name one, None when it could not or herdr refused
+    the prompt.
 
     WHY HERE. A worker's release is the last thing it does on a sub-issue,
     and the context it is holding at that instant is the finished sub-issue's
@@ -1121,6 +1142,21 @@ def compact_own_pane(sessions, session_id):
     (`Compacting conversation... (41s)`), and the session comes back idle
     holding no plan it had named, which is why the next sub-issue arrives as a
     fresh prompt (`scripts/campaign-assign.py`).
+
+    ONLY A WORKER'S (rule-check#370 row 19). A planner releases after every
+    merge, and each release compacted it: six times in 93 minutes, losing its
+    plan each time (rule-check#370 issuecomment-5652560769). The role is the
+    guard's `role_of`; anything but `worker` -- a planner, a name of no shape,
+    a listing it could not read -- sends nothing.
+
+    NEVER A SECOND ONE. A `/compact` queued and not yet run, by the
+    heartbeat's `compaction_pending`, is left to run alone: a second compacts
+    the fresh context the first leaves, which two releases in one turn did. A
+    transcript it cannot read sends nothing, since whether one is pending is
+    then unknown; that miss is loud, because `campaign-assign.py` refuses a
+    pane that has not compacted. After a send it WATCHES the transcript for
+    the queued `/compact` (QUEUED_WAIT), so the next release in the same
+    command sees it pending.
 
     NOT A GATE, and this is the whole reason it lives after the delete rather
     than before it. Compaction is a cost rule: a release that could not find
@@ -1142,6 +1178,22 @@ def compact_own_pane(sessions, session_id):
         print(f"not compacting: {note}. The claim is released; only the "
               f"compaction did not happen.")
         return None
+    _campaign, role, how = GUARD.role_of(session_id)
+    if role != "worker":
+        print(f"not compacting: {how}, and only a worker's release compacts "
+              f"its pane. The claim is released.")
+        return pane
+    hb = _heartbeat_module()
+    reading, where, why = hb.read_transcript(session_id)
+    if reading is None:
+        print(f"not compacting: {where}: {why}, so whether a {COMPACT} is "
+              f"already pending is unknown. The claim is released.")
+        return pane
+    pending = hb.compaction_pending(reading)
+    if pending:
+        print(f"not compacting again: {pending} (read {where}). The claim is "
+              f"released.")
+        return pane
     print(f"compacting: {note}")
     # The one herdr call here that DRIVES a pane rather than reading one, so it
     # carries the HERDR_ENV guard and names its target explicitly -- and the
@@ -1153,7 +1205,19 @@ def compact_own_pane(sessions, session_id):
               f"{r.returncode}: {r.stderr.strip()[:160]}. The claim is "
               f"released; only the compaction did not happen.")
         return None
-    print(f"sent {COMPACT} to {pane}; it runs when this turn ends")
+    polls = int(QUEUED_WAIT / QUEUED_EVERY)
+    for i in range(polls + 1):
+        seen, _where, _why = hb.read_transcript(session_id)
+        queued = seen and hb.compaction_pending(seen)
+        if queued:
+            print(f"sent {COMPACT} to {pane}; it runs when this turn ends "
+                  f"({queued}, read {where})")
+            return pane
+        if i < polls:
+            sleep(QUEUED_EVERY)
+    print(f"sent {COMPACT} to {pane}, and {where} shows no queued {COMPACT} "
+          f"after {QUEUED_WAIT:g}s ({polls + 1} reads), so a release after "
+          f"this one in the same turn would read none pending")
     return pane
 
 
@@ -1366,9 +1430,13 @@ def sweep_roots(sessions, only=None):
     roots.update(clones)
     for row in sessions.values():
         # A cwd in no repository is not a failure -- a session may sit
-        # anywhere -- so the note is dropped. `?` is herdr's unknown.
+        # anywhere -- so the note is dropped. `?` is herdr's unknown. A cwd
+        # that is gone names no checkout: `checkout_of` walks up to the
+        # nearest directory that exists, which answered the base for a
+        # removed worktree, so it is asked only of a directory that is there.
         cwd = row.get("cwd", "")
-        main = GUARD.checkout_of(Path(cwd))[0] if cwd not in ("", "?") else None
+        main = (GUARD.checkout_of(Path(cwd))[0]
+                if cwd not in ("", "?") and Path(cwd).is_dir() else None)
         if main:
             roots.add(str(main))
     return sorted(roots), unread, None

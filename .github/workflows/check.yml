@@ -1,9 +1,5 @@
-# The second reader for everything this repository states about itself.
-#
-# AGENTS.md says a declared contract stays true only while a second reader
-# enforces it. Three of this repository's checks were run because a rule said
-# to, which makes the person the reader -- and a person who forgets leaves no
-# trace. This runs them on every pull request instead.
+# The second reader for everything this repository states about itself: its
+# checks run on every pull request, so none waits on a person remembering it.
 #
 # Three constraints on this file, because breaking any of them is quiet:
 #
@@ -30,10 +26,8 @@
 #
 # It is also what makes branch protection bite. `strict` ("require branches to
 # be up to date") is a modifier on required status checks, so with no checks it
-# enforces nothing: measured 2026-08-30 on a branch one commit behind `main`,
-# which read MERGEABLE/CLEAN with `strict: true` and `contexts: []`. Naming this
-# job in `required_status_checks.contexts` is what gives merge condition 3 a
-# reader.
+# enforces nothing. Naming this job in `required_status_checks.contexts` is
+# what gives merge condition 3 a reader.
 
 name: check
 
@@ -49,8 +43,7 @@ permissions:
   # when it cannot look -- which fails the job for the wrong reason.
   pull-requests: read
 
-# THREE JOBS, BECAUSE THE SOLVER WAS THE WHOLE WAIT (kalaluthien/campaign-base#310).
-# Run serially it was 48 min on main at 8778b40, two sdlc modules 69% of it.
+# THREE JOBS, BECAUSE THE SOLVER WAS THE WHOLE WAIT (sdlc-alloy#310).
 # `plan` runs every fast check and lists the modules; `solve` is one job per
 # module, so the wall time is the slowest module rather than the sum, and a
 # module whose verdict is already cached under its key does not run at all;
@@ -75,8 +68,7 @@ jobs:
       # branch never is.
       #
       # The tie guard judges a change against a tree, and the runner's HEAD is
-      # the merge commit -- against HEAD there is nothing left to judge, which
-      # is why a `--no-verify` commit once landed a T1, T2 or T3 unread (#268).
+      # the merge commit -- against HEAD there is nothing left to judge.
       # `--against origin/main` makes the before-tree the base branch, so what
       # is judged is the pull request's whole change. The fetch is here because
       # `actions/checkout` leaves no `origin/main` ref on a pull request even at
@@ -104,8 +96,7 @@ jobs:
       # rather than passing on a stand-in.
       #
       # Every suite, found rather than listed: a hand-kept list is one more copy
-      # to forget, and the five suites #111 added were run by nobody here until
-      # a review noticed. A suite that exits non-zero fails the job; a run that
+      # to forget. A suite that exits non-zero fails the job; a run that
       # finds no suite at all fails it too, since an empty loop is green.
       # `*-test.*`, not `*-test.py`: the `-test` element is what names a suite
       # and the extension names its language, so a shell suite is found too
@@ -132,10 +123,11 @@ jobs:
       # included: one that no longer parses is a failure its checks module
       # would report only indirectly, and a system module declares no command
       # -- `alloy-check.py --commands` refuses one -- so running it costs one
-      # trivial `Default`. `find`, not a
-      # depth-2 glob: `alloy-check.py --commands` in the guards step inventories
-      # to any depth, and a module the inventory sees but this list misses is
-      # one whose commands nothing here runs. A plan that finds no module fails, since an empty matrix is green.
+      # trivial `Default`. `find`, not a depth-2 glob: `alloy-check.py
+      # --commands` in the guards step inventories to any depth, and a module
+      # the inventory sees but this list misses is one whose commands nothing
+      # here runs. A plan that finds no module fails, since an empty matrix is
+      # green.
       #
       # THE KEY is everything a module's verdict reads, and nothing else: the
       # jar, alloy-check.py (its dead-event refusal is part of every verdict),
@@ -263,10 +255,8 @@ jobs:
           scripts/check-merge-review.py ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} --land HEAD^1
 
-      # MERGE CONDITION 1, GIVEN A READER (kalaluthien/campaign-base#274).
-      # AGENTS.md wants a review read at the sha being merged; nothing read it,
-      # and PR #262 merged at 8ca2609 with no REVIEW comment on it at all. This
-      # is the required-status half: with `check` in
+      # MERGE CONDITION 1, GIVEN A READER (rule-check#274): a review read at the
+      # sha being merged. This is the required-status half: with `check` in
       # `required_status_checks.contexts` on `main`, a merge without a REVIEW
       # at the head is refused by GitHub rather than by whoever remembers.
       #
@@ -289,10 +279,8 @@ jobs:
       # `--head` IS NOT OPTIONAL HERE. The status this step produces is recorded
       # against `github.event.pull_request.head.sha`, and without the flag the
       # reader would answer about whatever the branch tip is when the runner
-      # gets there. Those come apart: a run queued for sha A while the author
-      # pushes B and posts a REVIEW naming B would mark A green with nothing
-      # ever naming A. Naming the sha makes the run's verdict about the run's
-      # own commit.
+      # gets there: a run queued for sha A, with B pushed and reviewed, would
+      # mark A green with nothing ever naming A.
       #
       # A comment fires no `pull_request` event, so review-rerun.yml re-runs
       # this job once a REVIEW names the head.

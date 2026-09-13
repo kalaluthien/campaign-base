@@ -1562,7 +1562,7 @@ MUTATIONS = [
     ("workers: only this campaign's", 'if NAMES.campaign_of(r["name"]) == slug\n',
      "if True\n", "workers: each of the campaign's workers is judged alone, one "
      "line each; a done one exits, the rest are kept"),
-    ("workers: only workers", 'and r["name"].rsplit("-", 2)[1] == "worker")', ")",
+    ("workers: only workers", 'and NAMES.role_word(r["name"]) == "worker")', ")",
      "workers: each of the campaign's workers is judged alone, one line each; "
      "a done one exits, the rest are kept"),
     ("workers: kept is not failed", 'word = "kept" if r.gate == "retire" else "failed"',

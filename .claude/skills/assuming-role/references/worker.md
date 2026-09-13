@@ -17,7 +17,7 @@ and, on a claim, the code the sub-issue names.
 4. **Sort each choice into one of four routes** before you act on it:
    - **decide it**: what a check settles, and how to build what the
      Definition of done names;
-   - **the review**, step 7: whether work already written is right, a
+   - **the review**, step 6: whether work already written is right, a
      trade-off inside the Definition of done included;
    - **ask the planner**: the brief is silent, or reads two ways, on what it
      asks of you -- which step is next, what a line means, whether a file is in
@@ -33,17 +33,23 @@ and, on a claim, the code the sub-issue names.
 5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.
-6. **Post a `REPORT` once per round**, on the pull request, pinning the sha.
-   A verdict or a fix report that does not pin its sha is unactionable.
-   After it the next move is the planner's -- the review, the next pull
-   request of a multi-PR Plan, or the next assignment -- so wait for its
-   prompt and launch nothing.
-7. **Launch the review** as `references/reviewing.md` says.
-8. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
-   **Then reach the install**, when the
-   repository has one here — the base always does:
-   `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>`,
-   and the `REPORT` quotes the line it prints, which names the install's sha.
+6. **Launch the review yourself after the push**, as
+   `.claude/skills/assuming-role/references/reviewing.md` § The call says:
+   full at the first sha, narrowed after a fix round. It checks that the
+   implementation is correct; a decision, or a doubt about one, goes to the
+   planner as a `BLOCKED` (step 4), never to the reviewer.
+   Post its `REVIEW` on the pull request, pinning the sha.
+7. **Then post a `REPORT` asking for the merge**, once per round, on the pull
+   request, pinning the sha, and send it to the planner. A verdict or a fix
+   report that does not pin its sha is unactionable. After it the next move is
+   the planner's -- the merge, the next pull request of a multi-PR Plan, or the
+   next assignment -- so wait for its prompt and launch nothing.
+8. **The merge is the planner's** ([planner](planner.md) step 9): it merges
+   on the three conditions of `AGENTS.md` § Merge conditions and reaches the
+   install. A worker that merges where no planner runs holds the same three
+   conditions, then runs
+   `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>` and
+   quotes the line it prints, which names the install's sha.
 9. **Release the claim** when the sub-issue is settled. The release compacts
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.

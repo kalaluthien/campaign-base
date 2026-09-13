@@ -44,6 +44,10 @@ Contents: the moments below, then
    Any other listed peer is asked which claim it holds, never killed. `retire` is
    decided before `compact`, so assign a released worker you mean to reuse
    before the next `--apply`, or it gets `/exit`.
+9. **Merge on a worker's `REPORT`**: read its `REVIEW` at the head sha, merge
+   on the three conditions, then `reach`. The worker launches its own review;
+   launch one only where a decision is in question or no worker holds the
+   claim.
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.

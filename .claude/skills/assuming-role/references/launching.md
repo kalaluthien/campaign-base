@@ -31,18 +31,11 @@ Launch in `<campaign>/repos/<repo>/`.
   is already in its own tree, so the flag adds a working directory that buys
   nothing.
 
-  **It does not buy back the duplicated rules #202 measured, and the probe says
-  why.** Probed 2026-09-06 in `<campaign>/repos/campaign-base/` with the flag
-  absent: the delegate listed its loaded instruction files as
-  `~/.claude/CLAUDE.md`, `~/.claude/RTK.md`, then `<base>/CLAUDE.md` and
-  `<base>/AGENTS.md`, then the campaign directory's pair, then the clone's own
-  pair. The base's rules arrive twice with the flag gone, because the campaign
-  directory lives *under* the base root and the outer copy loads as an ancestor
-  import. The duplication is the clone's location, not the flag, and removing
-  the flag recovers none of the 28,466 duplicated bytes #202 measured on
-  2026-09-05 — a figure pinned to that day's `AGENTS.md`, which every edit to it
-  moves. The probe's raw output is kept as a comment on #210; it is the
-  delegate's own report of what it loaded, not an observation of the loader.
+  **Leaving the flag off does not stop the base's rules loading twice**: the
+  campaign directory lives under the base root, so the base's `AGENTS.md`
+  loads as an ancestor import as well as the clone's own copy. The duplication
+  is the clone's location, not the flag (probed without the flag; the output
+  is on baseline#210).
 - Choose the session UUID in advance (`--session-id`) so the transcript path is
   known before the agent starts, and `--name` it `<slug>-worker-<n>` per
   § The session name -- a delegate is always the worker role. `--name`
@@ -63,7 +56,7 @@ strong spends it on turns that carry out a plan already clear.
 | defining a problem | Fable worker |
 | completing an issue body | Fable or Opus worker |
 | complex execution | Opus worker |
-| review and verification | Fable or Opus reviewer, which of the two by the depth of the change (`reviewing.md`) |
+| review and verification | Fable or Opus reviewer, which of the two by the depth of the change (`references/reviewing.md`) |
 | fixes and investigation | Sonnet worker |
 
 Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`

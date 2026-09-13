@@ -410,10 +410,10 @@ log and pairs each refusal with the same session's next allowed call on the
 same target, so a false positive is found by measurement rather than by
 whoever it hit. The model rule is `verdictIsDurable`.
 `scripts/check-commit-claim.py` is the `pre-commit`
-gate where a shell write lands: a commit on a base tree or under a campaign
-directory whose branch is not a claim is refused. A change landing outside every
-base tree and every campaign directory is not campaign work and neither refuses
-it; how each reads its target, and what it does when it cannot, is its
+gate where a shell write lands: a commit on a base tree, under a campaign
+directory, or in an install `## Repos` names, whose branch is not a claim is
+refused. A change landing outside all three is not campaign work and neither
+refuses it; how each reads its target, and what it does when it cannot, is its
 docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository

@@ -76,7 +76,10 @@ to the change rather than to the review. A change whose correctness is not local
 takes the heavier model, because a weaker reader returns "looks fine" on exactly
 the reasoning that needed a reader. Broad and shallow takes a lighter one. Judge
 the change; the launcher's own model is not the input, and a session running
-light does not license a lighter reviewer.
+light does not license a lighter reviewer. **The one exception is the closing
+review** (owner, pr#367): once a round returns refinement only, the one
+narrowed review of that last commit may run on Sonnet, and it is the last
+round -- a wording note it returns is accepted in the REPORT, not fixed.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes

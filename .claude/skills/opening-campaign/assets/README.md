@@ -15,14 +15,24 @@
      before the rule carries them.
 
      THE `standing` LABEL, not a section: a campaign wearing it is one a person
-     keeps open, and `closing-campaign` refuses the close until they take it
+     keeps open, and `campaign-close.py` refuses the close until they take it
      off. `campaign-tracker.py campaign-issues` prints it beside the row. -->
 
 ## Intent
 
-- <what is wrong or wanted now, and what says so>
+<!-- The one mechanism the findings share, as narrative, with the findings
+     cited by issue number as evidence; the items themselves go to Scope and
+     Definition of done. Scope matching (AGENTS.md § Routing an arriving
+     request) reads this sentence, and a list matches only its own items. -->
+
+- <the mechanism the findings share, and what is wrong with it>
+- <what is wanted of it; evidence: <slug>#N, <slug>#N>
 
 ## Scope
+
+<!-- Name mechanisms, never the details that change under them: no file
+     lists, no counts of entities, no step numbers. The sub-issues carry the
+     details, so the charter needs no correction at the close. -->
 
 In:
 

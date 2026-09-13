@@ -2265,11 +2265,35 @@ def compact_watch_cases(m):
         m.GUARD.role_of, m._heartbeat_module, m.run = real
 
 
+def sweep_cwd_cases(m):
+    """`sweep_roots` over a session's cwd: a cwd that is gone names no
+    checkout, since `checkout_of` walks up to a directory that exists and
+    would answer the repository above a removed worktree (pr#402's REVIEW)."""
+    real = (m.base_root, m.campaign_clones)
+    try:
+        m.base_root = lambda: ("/b", None)
+        m.campaign_clones = lambda root, only=None: ([], [])
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d).resolve() / "repo"
+            repo.mkdir()
+            git(repo, "init", "-q")
+            gone = {"S": {"cwd": str(repo / "wt-removed")}}
+            roots, _unread, _why = m.sweep_roots(gone)
+            check("a session whose cwd is gone adds no root, not the repository "
+                  "above it", roots == ["/b"], repr(roots))
+            here = {"S": {"cwd": str(repo)}}
+            roots, _unread, _why = m.sweep_roots(here)
+            check("...while one whose cwd is there adds its repository",
+                  roots == sorted(["/b", str(repo)]), repr(roots))
+    finally:
+        m.base_root, m.campaign_clones = real
+
+
 def main():
     m = harness.load(CLAIM, "campaign_claim")
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               compact_cases, compact_watch_cases,
+               compact_cases, compact_watch_cases, sweep_cwd_cases,
                local_sweep_cases, scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):

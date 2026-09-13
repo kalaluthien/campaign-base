@@ -94,6 +94,7 @@ Usage:
   scripts/campaign-token-tally.py tool-echo --since ...
 """
 import argparse
+import functools
 import json
 import os
 import re
@@ -153,9 +154,10 @@ SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$"
 INTERPRETERS = {"python", "python3"}
 
 
+@functools.cache
 def guard_module():
     """check-campaign-claim.py, imported for its shell splitter and its
-    `base_root`.
+    `base_root`. Cached, so one run loads the 3000-line guard once.
 
     That guard already owns the one reading of a Bash command's grammar in this
     repository -- `segments` (shlex, with `;|&(){}` as their own tokens, and a

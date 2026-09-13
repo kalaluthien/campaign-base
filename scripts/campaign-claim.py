@@ -1430,9 +1430,13 @@ def sweep_roots(sessions, only=None):
     roots.update(clones)
     for row in sessions.values():
         # A cwd in no repository is not a failure -- a session may sit
-        # anywhere -- so the note is dropped. `?` is herdr's unknown.
+        # anywhere -- so the note is dropped. `?` is herdr's unknown. A cwd
+        # that is gone names no checkout: `checkout_of` walks up to the
+        # nearest directory that exists, which answered the base for a
+        # removed worktree, so it is asked only of a directory that is there.
         cwd = row.get("cwd", "")
-        main = GUARD.checkout_of(Path(cwd))[0] if cwd not in ("", "?") else None
+        main = (GUARD.checkout_of(Path(cwd))[0]
+                if cwd not in ("", "?") and Path(cwd).is_dir() else None)
         if main:
             roots.add(str(main))
     return sorted(roots), unread, None

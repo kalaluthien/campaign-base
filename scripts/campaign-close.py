@@ -1157,7 +1157,7 @@ def workers(args):
         raise Refused("workers", f"herdr agent list did not read: {why}")
     rows = sorted((r["name"], r["pane"]) for r in sessions.values()
                   if NAMES.campaign_of(r["name"]) == slug
-                  and r["name"].rsplit("-", 2)[1] == "worker")
+                  and NAMES.role_word(r["name"]) == "worker")
     print(f"{'workers':<11} {len(rows)} worker(s) of {slug} (#{n}) among the "
           f"{len(sessions)} session(s) herdr lists")
     broke = []
@@ -1172,7 +1172,8 @@ def workers(args):
             word = "kept" if r.gate == "retire" else "failed"
             what = f"{r.gate}: {r.reason}" + (
                 "" if word == "kept" else f" ({r.changed})")
-            broke += [name] * (word == "failed")
+            if word == "failed":
+                broke.append(name)
         print(f"{word:<11} {name} {pane} -- {what}")
     if broke:
         raise Refused("workers", f"{len(broke)} of {len(rows)} worker(s) "

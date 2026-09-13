@@ -111,6 +111,18 @@ none, and so does a pull request whose head is not deleted yet; and an
 assignment whose prompt sits in an earlier file a resume left behind is
 none.
 
+A COMPACTION PENDING IS KEPT. The window runs from a `/compact` -- the
+queue's `enqueue` record written the moment it is sent into a busy pane, the
+bare user record, or the command's echo -- to the `compact_boundary` it ends
+in, a minute or more later; inside it the transcript still reads the context
+the compaction will replace. A `compact` or `quiet` whose transcript holds a
+`/compact` later than its last boundary reads `keep`, `compaction pending`,
+since a second `/compact` compacts the fresh context the first leaves
+(rule-check#296, 2026-09-13). A `/compact` refused -- too few messages, or an
+error such as the session limit -- ends the window as a boundary does. One
+taken off the queue unrun reads pending until the next compaction, which errs
+toward keep.
+
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
 
@@ -191,6 +203,10 @@ INSTALLED_SCRIPT = BASE / "scripts" / "campaign-installed.py"
 # toward `keep`.
 COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")
 QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is a person's prompt
+# A `/compact` that ran and wrote no boundary: a `local_command` record opening
+# with one of these (9 and 5 on this machine, 2026-09-13).
+COMPACT_REFUSALS = ("<local-command-stdout>Not enough messages to compact",
+                    "<local-command-stderr>Error during compaction")
 # A background task's notice reaching an IDLE pane: a plain user record, no
 # isMeta, its text opening with this tag (820 on this machine, 2026-09-11).
 # Busy, the same notice is a queued_command of another mode.
@@ -246,6 +262,12 @@ def texts(content):
             if isinstance(b, dict) and b.get("type") == "text"]
 
 
+def is_compact(content):
+    """Is this content a `/compact` of any shape: the bare one, or its echo?"""
+    said = "".join(texts(content)).strip()
+    return said == QUEUED_COMPACT or said.startswith(COMPACTION_ECHOES[0])
+
+
 def is_prompt(content):
     """Does this content carry text a person or a peer typed, rather than the
     compaction's own echo, the bare `/compact` release queues, or a
@@ -272,6 +294,12 @@ def transcript_reading(lines):
                  summary or a tool result quoting the sentence does not.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
+      compact_asked  the last `/compact`: a user record or a queued prompt
+                 that `is_compact`, or a `queue-operation` enqueueing the
+                 bare one. Later than `compacted` and `compact_refused`,
+                 a compaction is pending.
+      compact_refused  the last `local_command` record of COMPACT_REFUSALS:
+                 a `/compact` that ran and compacted nothing.
       other      the last prompt carrying no assignment sentence, at
                  `other_at`, as its first OTHER_CHARS characters. A prompt
                  is a user record carrying text that is not the
@@ -295,7 +323,7 @@ def transcript_reading(lines):
     "last" is the latest time. Records of a subagent (`isSidechain`) are its
     own context, not this session's."""
     out = {"assigned": None, "assigned_at": None, "compacted": None,
-           "other": None, "other_at": None, "acted": None, "context": None,
+           "compact_asked": None, "compact_refused": None, "other": None, "other_at": None, "acted": None, "context": None,
            "context_at": None, "records": 0}
 
     def later(key, ts):
@@ -331,6 +359,9 @@ def transcript_reading(lines):
         if kind == "system" and r.get("subtype") == "compact_boundary":
             later("compacted", ts)
             size(ts, (r.get("compactMetadata") or {}).get("postTokens"))
+        elif (kind == "system" and r.get("subtype") == "local_command"
+              and str(r.get("content")).startswith(COMPACT_REFUSALS)):
+            later("compact_refused", ts)
         elif kind == "assistant" and msg.get("model") != "<synthetic>":
             calls = msg.get("content")
             if isinstance(calls, list) and any(
@@ -347,15 +378,35 @@ def transcript_reading(lines):
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
             content = msg.get("content")
+            if is_compact(content):
+                later("compact_asked", ts)
             if is_prompt(content):
                 said(ts, content)
         elif kind == "attachment":
             a = r.get("attachment") or {}
             if (a.get("type") == "queued_command"
                     and a.get("commandMode") == "prompt"
-                    and not a.get("isMeta") and is_prompt(a.get("prompt"))):
-                said(ts, a.get("prompt"))
+                    and not a.get("isMeta")):
+                if is_compact(a.get("prompt")):
+                    later("compact_asked", ts)
+                if is_prompt(a.get("prompt")):
+                    said(ts, a.get("prompt"))
+        elif (kind == "queue-operation" and r.get("operation") == "enqueue"
+              and r.get("content") == QUEUED_COMPACT):
+            later("compact_asked", ts)
     return out
+
+
+def compaction_pending(reading):
+    """Why a compaction is pending, or None: a `/compact` later than the last
+    `compact_boundary` and the last refusal (the header's window)."""
+    asked = reading["compact_asked"]
+    done = max((t for t in (reading["compacted"], reading["compact_refused"])
+                if t), key=when, default=None)
+    if asked and (done is None or when(asked) > when(done)):
+        return (f"compaction pending: /compact at {asked}, no compact_boundary "
+                f"since" + (f" {done}" if done else ""))
+    return None
 
 
 def read_transcript(session_id):
@@ -476,6 +527,9 @@ def verdict(role, own, status, banner, reading, refs):
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
+        pending = compaction_pending(reading)
+        if pending:
+            return "keep", f"{pending}{passed}"
         return "compact", (f"context {reading['context']:,} >= "
                            f"{COMPACT_AT:,}{passed}")
     return "keep", f"context {reading['context']:,} < {COMPACT_AT:,}{passed}"
@@ -1086,7 +1140,10 @@ def main(argv=None):
         word, reason = verdict(role, is_own, row["status"], banner,
                                reading if reading else why, refs)
         if is_own and calm:
-            word, reason = "quiet", f"{slug} has nothing left to do"
+            pending = reading and compaction_pending(reading)
+            word, reason = ("keep", f"{pending}; {slug} has nothing left to do"
+                            ) if pending else (
+                "quiet", f"{slug} has nothing left to do")
         print(f"{word} {pane} {row['name']}: {reason}")
         print(f"  read: herdr {row['status']}; transcript {where}"
               + ("; own pane, banner not read" if is_own

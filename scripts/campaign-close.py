@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Close one piece of a campaign, or the whole of it, behind the gates every close shares.
+"""Close one piece of a campaign, or the whole of it, or sync a scope change into its body, behind shared gates.
 
     scripts/campaign-close.py [<target>] [--not-planned "<why>"] [--close] [--delete]
     scripts/campaign-close.py sub-issue <N> <issue> --not-planned "<why>"
@@ -8,9 +8,12 @@
     scripts/campaign-close.py repo <N> <owner/repo> [--delete]
     scripts/campaign-close.py here <N> [--delete]
     scripts/campaign-close.py campaign <N> [--close] [--delete]
+    scripts/campaign-close.py sync <N>
 
 Every close used to restate the same gates in prose: drop a sub-issue, retire
-a worker, drop a repository, let a directory go, close the campaign. This is
+a worker, drop a repository, let a directory go, close the campaign. The one
+write that is not a close lives here too, because it shares the close's sync:
+a scope change reaching the campaign issue body. This is
 where they are defined ONCE, each read off the script that owns it, by the
 WORD it prints and never by its exit status -- a reader that crashed exits
 non-zero too, so a status reads a bug as a verdict.
@@ -55,8 +58,9 @@ A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS -- every
 a run says so once, beside its first release.
 
 THE FRONT DOOR -- `/close <target>` -- reads the scope off the one target and
-prints which it read and from where, then runs that scope as below. The six
-scopes stay callable by name; the front door only chooses among them.
+prints which it read and from where, then runs that scope as below. The seven
+scopes stay callable by name; the front door only chooses among the six that
+close, and `sync` is reached by name alone.
 
   a number        `campaign-tracker.py check <n>`'s kind line: a campaign
                   issue is scope campaign; a sub-issue is scope sub-issue of
@@ -191,6 +195,17 @@ SCOPE campaign <N> [--close] [--delete]
                   holding `.campaign` and `runtime/`, `lsof +D` lists nothing
                   open under it, and after `rm -rf` it is gone; then `git
                   worktree prune`.
+
+SCOPE sync <N> -- a scope change reaches the campaign issue body, nothing closes
+
+  Every scope change but one: a repository LEAVING `## Repos` is scope
+  `repo`, whose gates stand between the drop and the same sync.
+
+  1. bound        Holds when: `here`.
+  2. directory    Holds when: a path; the README there is what is synced.
+  3. sync         As in `campaign` step 9. Nothing else is read: a scope
+                  change is the charter's, and a `standing` label or a
+                  session at work does not make it wait for the close.
 
 WHAT IT NEVER DOES: kill a session, touch the `standing` label, write the
 `## Repos` list, skip a gate, or take a --force.
@@ -1130,10 +1145,16 @@ def campaign(args):
     step_delete(campaign_dir_shape(directory))
 
 
+def sync(args):
+    n = args.campaign_issue
+    gate_bound(n, want_here=True)
+    step_sync(n, read_directory(n, need=True))
+
+
 # ------------------------------------------------------------- the front door
 
 
-SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign")
+SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign", "sync")
 NUMBER = re.compile(r"^#?(\d+)$")
 CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
                         r"third kind) \(label `[^`]+`: (?:yes|no), parent: "
@@ -1142,7 +1163,7 @@ CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
 # is an answer the person gave and nobody read.
 FLAGS = {"campaign": ("close", "delete"), "here": ("delete",),
          "repo": ("delete",), "sub-issue": ("not_planned",), "worker": (),
-         "workers": ()}
+         "workers": (), "sync": ()}
 
 
 def campaign_named(slug, whose):
@@ -1329,6 +1350,10 @@ def main(argv=None):
     c.add_argument("--delete", action="store_true",
                    help="the person's word to delete the directory")
     c.set_defaults(fn=campaign)
+    y = sub.add_parser("sync", help="write a scope change into the campaign "
+                                    "issue body, and nothing else")
+    y.add_argument("campaign_issue", type=number)
+    y.set_defaults(fn=sync)
     args = ap.parse_args(argv)
     return answered(lambda: args.fn(args))[0]
 

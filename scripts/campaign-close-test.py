@@ -563,6 +563,7 @@ CLOSE_YES = CLOSE + ["--close"]
 CLOSE_ALL = CLOSE + ["--close", "--delete"]
 HERE_SCOPE = ["here", N]
 DROP_REPO = ["repo", N, MEMBER]
+SYNC = ["sync", N]
 
 
 def writes(asked):
@@ -755,6 +756,34 @@ def case_repo_claim_in_clone(m):
     w["live"] = live(occupied=[("rc/40-x", str(w["dir"] / "repos" / "member"))])
     ok, asked, out = refused(m, DROP_REPO, w, "live", "rc/40-x is checked out")
     return ok and not writes(asked), out
+
+
+def case_sync_at_work(m):
+    """A standing campaign with an open sub-issue, a claim checked out and a
+    session at work still takes its scope change, and nothing else is read."""
+    w = whole(standing="standing\n",
+              settlement=settlement_all([(f"{TRACKER}#{ISSUE}", "open")]),
+              local=local(rows=[(True, "rc/40-x", MEMBER)], verdict="counted"),
+              live=live(occupied=[("rc/40-x", "/c/wt/40")],
+                        sessions=[("rc-worker-2", "working", OTHER)]))
+    code, out, asked, _ = drive(m, SYNC, w)
+    d = w["dir"]
+    edits = [a for a in asked if a[:3] == ["gh", "issue", "edit"]]
+    read = sorted({Path(a[1]).name + " " + a[2] for a in asked
+                   if a[0] == sys.executable})
+    return (code == 0 and len(edits) == 1 and writes(asked) == edits
+            and not releases(asked) and w["body"] == README_NEW + "\n"
+            and (d / "README.md").read_text() == README_NEW + "\n"
+            and (d / "runtime" / "campaign-issue-body-derived.md").read_text()
+            == README_NEW + "\n"
+            and read == ["campaign-directory.py 10", "campaign-tracker.py bound"]
+            ), (read, out)
+
+
+def case_sync_already(m):
+    w = whole(readme=README_OLD)
+    code, out, asked, _ = drive(m, SYNC, w)
+    return code == 0 and not writes(asked) and "already is the README" in out, out
 
 
 def repo_refusal(gate, *says, argv=DROP_REPO, **over):
@@ -1147,6 +1176,16 @@ CASES = {
     "refuse repo: the folder is not a clone of it": repo_refusal(
         "delete", "is not a clone of acme/member",
         origin="acme/else"),
+    # the whole: sync
+    "sync: standing, an open sub-issue, a claim and a session at work do not "
+    "stop a scope change": case_sync_at_work,
+    "sync: a body that already is the README is not written": case_sync_already,
+    "refuse sync: bound elsewhere": whole_refusal(
+        "bound", "reads `elsewhere", argv=SYNC, bound="elsewhere other-mac\n"),
+    "refuse sync: no directory on this machine": whole_refusal(
+        "directory", "answered 'none'", argv=SYNC, directory="none"),
+    "refuse sync: the body moved since the README was derived": whole_refusal(
+        "sync", "the body moved", argv=SYNC, derived="## Intent\n\n- else\n"),
 }
 
 MUTATIONS = [
@@ -1424,6 +1463,20 @@ MUTATIONS = [
      "tab: herdr pane list is read as pane to tab, and a shape it lacks is no reading"),
     ("front: `workers` alone", 'if t == "workers":', "if False:",
      "front: `workers` alone reads as scope workers of this session's campaign"),
+    ("sync: the bound machine's", "    gate_bound(n, want_here=True)\n    step_sync(",
+     "    step_sync(", "refuse sync: bound elsewhere"),
+    ("sync: standing is not read", "    gate_bound(n, want_here=True)\n    step_sync(",
+     "    gate_bound(n, want_here=True)\n    gate_standing(n)\n    step_sync(",
+     "sync: standing, an open sub-issue, a claim and a session at work do not "
+     "stop a scope change"),
+    ("sync: live is not read", "    gate_bound(n, want_here=True)\n    step_sync(",
+     "    gate_bound(n, want_here=True)\n    gate_live_whole(n, slug_of(n), "
+     "vacant_blocks=True)\n    step_sync(",
+     "sync: standing, an open sub-issue, a claim and a session at work do not "
+     "stop a scope change"),
+    ("sync: a scope by name", '"here", "campaign", "sync")', '"here", "campaign")',
+     "sync: standing, an open sub-issue, a claim and a session at work do not "
+     "stop a scope change"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

@@ -34,7 +34,8 @@ statement of that; anything restating it in prose has already drifted.
 3. Record a discovery on the issue it belongs to when you find it. A finding
    held in a session's memory dies with the pane.
 4. Carry the kind on a comment's first line: `KIND <session name>: <one line>`.
-5. Leave by fact, not by announcement: stop the pane.
+5. Leave by fact, not by announcement: `scripts/campaign-close.py leave <N>`
+   as the turn's last call exits this session and closes its tab.
 
 ## The two roles
 

@@ -81,10 +81,11 @@ first run.
    `campaign-claim live <N>`, and works in the same checkout. A successor
    named for another campaign stops here: the guard would refuse it this
    campaign's issues.
-4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
-   prompt`, and reads `herdr agent list` until the pane is gone; still listed
-   after a minute, it reports that on the sub-issue, never kills. The
-   predecessor never exits itself, so the claim always has a live holder.
+4. **Only then it runs `scripts/campaign-close.py leave <N> <pane>`** on the
+   predecessor's pane: `/exit`, the wait until herdr no longer lists it, and
+   its tab closed. Refused at `gone`, it reports that on the sub-issue, never
+   kills. The predecessor never exits itself, so the claim always has a live
+   holder.
 
 The state travels in the NOTE, the claim ref and its checkout, and the pull
 request; the old pane, its transcript and a scratchpad carry none of it.

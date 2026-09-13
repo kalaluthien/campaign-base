@@ -176,9 +176,10 @@ pred claimWithinScope {
    session to hold one; its launcher was gated already.
 
    `Work` is what the gate is on, and what makes a call `Work` is its TARGET,
-   not where the session sits: a change landing outside every base tree
-   and every campaign directory is not work on a sub-issue and is no step of
-   this relation. The guard reads the target over two bounded languages and
+   not where the session sits: a change landing outside every base tree,
+   every campaign directory and every install a `## Repos` entry names (the
+   last read by the commit half alone, #389) is not work on a sub-issue and
+   is no step of this relation. The guard reads the target over two bounded languages and
    no other: a file tool's path, and a `gh` command, which is one program with
    a stable grammar -- a write to the campaign plane through it has no
    filesystem target at all and is always `Work`, and a `gh` call the guard
@@ -931,8 +932,8 @@ pred R12i_TheCommitsOwnHostIsTheOneThatCounts {
 /* R12h. THE CASE THE COMMIT HALF DOES NOT COVER, stated rather than left to
    the reader of the conjunct: an agent committing on a task that belongs to
    no campaign is admitted with nothing acquired anywhere, as
-   check-commit-claim.py admits a checkout outside every base tree and every
-   campaign directory. Expect 1, and it goes UNSAT if `some campaignOf[a.task]`
+   check-commit-claim.py admits a checkout outside every base tree, every
+   campaign directory and every install a `## Repos` entry names. Expect 1, and it goes UNSAT if `some campaignOf[a.task]`
    is dropped from the rule. */
 pred R12h_ACommitOnNoCampaignsWorkIsOutsideTheRule {
   acquiredCloneOnly

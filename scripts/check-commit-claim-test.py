@@ -445,6 +445,22 @@ def main():
               and "is not a claim" in r.stderr and "in the install" in r.stderr,
               out(r)[:400])
 
+    # AN INSTALL LIST IT COULD NOT READ REFUSES, and says what it could not
+    # read (pr#395's REVIEW). The same install with no campaign-repos.py beside
+    # the guard was admitted as "not campaign work", the note never printed.
+    with tempfile.TemporaryDirectory() as d:
+        f = build(d)
+        _inst, trees = f.install(claims=("demo/12-x",), plain=("feature-z",))
+        gate = f.base / "scripts" / "check-commit-claim.py"
+        e = dict(os.environ, HOME=str(f.home))
+        e.pop("CLAUDE_CODE_SESSION_ID", None)
+        r = subprocess.run([str(gate), "--staged"], cwd=str(trees["feature-z"]),
+                           capture_output=True, text=True, env=e)
+        check("REFUSE --staged in an install's worktree when the install "
+              "lists could not be read, printing the note",
+              r.returncode == 1 and "could not be read" in r.stderr
+              and "campaign-repos.py would not load" in r.stderr, out(r)[:400])
+
     return harness.report()
 
 

@@ -173,7 +173,8 @@ def remote(url):
 
     ONE READER, TWO ASKERS: `campaign-installed.py` asks whether an install is
     a checkout of the repository `## Repos` names, and `check-campaign-claim.py`
-    whether a checkout is one of the repository a `gh pr` write names (#389)."""
+    whether a checkout is one of the repository a `gh pr` write names (#389).
+    `campaign-claim.py`'s `REMOTE` is a third reader, not yet moved here."""
     return "/".join(url.replace(":", "/").rstrip("/").split("/")[-2:])
 
 

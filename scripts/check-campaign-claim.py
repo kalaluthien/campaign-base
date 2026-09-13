@@ -878,6 +878,9 @@ def repos_reader():
 
 
 _INSTALLS = {}
+# What `installs` could not read, per base: the commit gate refuses on it
+# rather than admit a checkout it could not rule out as an install.
+_UNREAD = {}
 
 
 def installs(base):
@@ -899,30 +902,35 @@ def installs(base):
     the claims checked out in them."""
     key = str(base)
     if key not in _INSTALLS:
-        found = []
-        m = repos_reader()
-        if m is None:
-            NOTES.append(f"installs not read: campaign-repos.py would not "
-                         f"load ({REPOS_UNREADABLE})")
-        for d, _fields in (campaign_dirs_at(base) if m is not None else ()):
+        found, unread = [], []
+        dirs = list(campaign_dirs_at(base))
+        # No campaign directory names no install, so there is nothing to load.
+        m = repos_reader() if dirs else None
+        if dirs and m is None:
+            unread.append(f"installs not read: campaign-repos.py would not "
+                          f"load ({REPOS_UNREADABLE})")
+        for d, _fields in (dirs if m is not None else ()):
             try:
                 text = (d / "README.md").read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
             rows, why = m.read_repos(text)
             if why:
-                NOTES.append(f"installs not read from {d}/README.md: {why}")
+                unread.append(f"installs not read from {d}/README.md: {why}")
                 continue
             found += [(slug, Path(os.path.expanduser(path)).resolve(), d)
                       for slug, path, _apply in rows if path is not None]
-        _INSTALLS[key] = found
+        NOTES.extend(unread)
+        _INSTALLS[key], _UNREAD[key] = found, unread
     return _INSTALLS[key]
 
 
 def install_of(main: Path):
-    """(owner/repo, install path, campaign directory, base) when `main` -- a
-    main checkout under no base -- is an install a campaign of this guard's
-    own base names, else None.
+    """(install, unread): the install is (owner/repo, install path, campaign
+    directory, base) when `main` -- a main checkout under no base -- is one a
+    campaign of this guard's own base names, else None; `unread` lists what
+    `installs` could not read, so a None beside it is could-not-look and not
+    looked-and-found-none.
 
     THIS GUARD'S OWN BASE, because nothing else ties the two: an install sits
     wherever it is used, `~/homeops`, and no walk up from it reaches a base.
@@ -936,12 +944,13 @@ def install_of(main: Path):
     `kalaluthien/dotclaude`): reading installs there would put every memory
     and settings write behind a claim, which is an outage and not a gate."""
     if main is None:
-        return None
+        return None, []
     own = base_roots_for(HERE.parent)
     if not own:
-        return None
-    return next(((slug, path, d, own[0]) for slug, path, d in installs(own[0])
-                 if path == main), None)
+        return None, []
+    rows = installs(own[0])
+    return (next(((slug, path, d, own[0]) for slug, path, d in rows
+                  if path == main), None), _UNREAD[str(own[0])])
 
 
 def origin_key(top):

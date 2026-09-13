@@ -447,7 +447,7 @@ def land(repo, pr, base, guard, before):
     optional, where, why = profile_of(kind, change["root"])
     if why:
         return answer("unknown", why)
-    sections = set(tracker.SECTION.findall(body))
+    sections = set(tracker.REPOS.headings(body))
     held = {s for s in ("Intent", tracker.PLAN_SECTION) if s in sections}
     held |= change["stages"]
     criterion = not change["code"] and not change["suites"]

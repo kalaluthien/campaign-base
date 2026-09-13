@@ -618,21 +618,6 @@ def main():
     found = m.shape_findings(m.SUB_ISSUE, "t", missing, True)
     check("a missing `## Lands in` is refused in the delegate's own words",
           any("no `## Lands in` heading" in f for f in found))
-    # A DELEGATE THAT WILL NOT LOAD IS NOT A SECTION THAT IS RIGHT. The branch
-    # fires whenever `campaign-repos.py` is missing or unimportable, and it was
-    # declared dead when it is merely unreached: an absence read as a pass is
-    # what this whole file exists to refuse.
-    was = m.repos_module
-    try:
-        def boom():
-            raise ImportError("no campaign-repos.py")
-        m.repos_module = boom
-        found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True)
-    finally:
-        m.repos_module = was
-    check("a `## Lands in` reader that will not load is a finding, not a pass",
-          len(found) == 1 and "would not load" in found[0]
-          and "not a section that is right" in found[0])
     for label, body in (
             ("inside an HTML comment",
              good_sub.replace("## Lands in\n- none\n",
@@ -660,6 +645,20 @@ def main():
         found = m.shape_findings(m.CAMPAIGN, "t", body, False)
         check(f"a campaign issue with no `## {want}` is refused by that name",
               any(f"no `## {want}` section" in f for f in found))
+    # ONE HEADING READER (rule-check#370 row 20). A `## Repos` inside a
+    # comment, or with two spaces, is no heading to `read_repos`, and `check`
+    # used to say the shape held on both.
+    for label, body in (
+            ("inside an HTML comment",
+             good_campaign.replace("## Repos\n- none\n",
+                                   "<!--\n## Repos\n- none\n-->\n")),
+            ("with two spaces in the heading",
+             good_campaign.replace("## Repos\n", "##  Repos\n"))):
+        assert body != good_campaign, label
+        found = m.shape_findings(m.CAMPAIGN, "t", body, False)
+        check(f"a `## Repos` {label} is no `## Repos` section, as read_repos "
+              f"reads it", any("no `## Repos` section" in f for f in found),
+              repr(found))
     # A CAMPAIGN ISSUE OMITS A SECTION; IT DOES NOT RENAME ONE. `## Plan` and
     # `## Lands in` are a sub-issue's, and requiring them of a campaign would
     # be the vocabulary drifting back apart.

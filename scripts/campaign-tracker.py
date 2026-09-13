@@ -214,11 +214,12 @@ def load(src, alias):
     return m
 
 
-# THE BASE'S NAME IS campaign-repos.py's `BASE_REPO`, the reader that refuses
-# it in `## Repos` (rule-check#370 row 5); read here once, for every `--repo`
-# default and for the guard's carve-out.
-DEFAULT_REPO = load(Path(__file__).resolve().parent / "campaign-repos.py",
-                    "campaign_repos").BASE_REPO
+# campaign-repos.py OWNS THE BASE'S NAME AND HOW A BODY'S SECTIONS ARE FOUND:
+# `BASE_REPO`, the reader that refuses it in `## Repos`, and `headings`,
+# `section` and `lands_in` (rule-check#370 rows 5 and 20). Loaded here once.
+REPOS = load(Path(__file__).resolve().parent / "campaign-repos.py",
+             "campaign_repos")
+DEFAULT_REPO = REPOS.BASE_REPO
 CAMPAIGN_LABEL = "campaign"
 BOUND_LABEL_PREFIX = "bound:"
 # The campaign's slug, the same shape as the binding's label and for the same
@@ -796,19 +797,19 @@ BODY_CEILING = 2000
 TITLE_CEILING = 40
 BACKLOG_LABEL = "backlog"
 
-# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two
+# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is, but the two
+# a script reads the entries of, which are campaign-repos.py's; the two
 # ceilings below are stated once each as a constant, and the templates and
 # AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS
 # a section; it never renames one, which is what `## Requirements` beside a
 # sub-issue's `Definition of done` was doing -- two names for one purpose.
 # `## Plan` is conditional on the moment and so is not in either tuple; see
 # `required_sections`.
-CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done", "Repos")
-LANDS_SECTION = "Lands in"
+CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done",
+                     REPOS.REPOS_HEADING)
+LANDS_SECTION = REPOS.LANDS_HEADING
 SUB_ISSUE_SECTIONS = ("Intent", "Definition of done", LANDS_SECTION)
 PLAN_SECTION = "Plan"
-
-SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 
 # HOW AN ISSUE OR A PULL REQUEST IS NAMED (kalaluthien/campaign-base#217, the
 # owner's word on 2026-09-10). An issue is `<slug>#N` -- `machinery#1`,
@@ -876,20 +877,6 @@ def bare_reference_warning(bare):
             f"not a refusal: every body written before the rule carries them.")
 
 
-def repos_module():
-    """`campaign-repos.py`, imported for `lands_in`.
-
-    THE DESTINATION HAS ONE READER AND THIS IS NOT IT. `SECTION` above finds a
-    heading; `lands_in` decides whether the SECTION under it is an answer, and
-    the two disagreed on four bodies -- a `## Lands in` inside an HTML comment,
-    `##  Lands in` with two spaces, an empty section, and two entries. On each,
-    `check` printed "the shape holds" and `campaign-claim take` then refused the
-    claim, which is the drift a second reader always produces. So this row is
-    delegated rather than re-derived, and `check` and the claim path can no
-    longer answer differently (kalaluthien/campaign-base#217, review of
-    e73ec4b)."""
-    return load(Path(__file__).resolve().parent / "campaign-repos.py", "campaign_repos")
-
 CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
     "campaign issue", "sub-issue", "stray", "third kind")
 
@@ -946,20 +933,17 @@ def shape_findings(kind, title, body, want_plan, names=()):
         out.append(f"the body is {len(body)} characters, over {BODY_CEILING}. "
                    f"Design longer than that is a file on the claim's branch, "
                    f"linked from `## {PLAN_SECTION}`")
-    found = SECTION.findall(body)
+    found = REPOS.headings(body)
     for want in required_sections(kind, want_plan):
         # THE DESTINATION IS NOT A PRESENCE TEST. Every other section here is
         # judged by its heading alone -- what belongs under `## Intent` is
         # judgement and stays prose. `## Lands in` is the one row a script
-        # already decides in full, and it is asked rather than approximated.
+        # already decides in full, and it is asked rather than approximated:
+        # the two disagreed on four bodies, and `check` printed "the shape
+        # holds" where `campaign-claim take` then refused
+        # (kalaluthien/campaign-base#217).
         if want == LANDS_SECTION:
-            try:
-                _entry, why = repos_module().lands_in(body)
-            except Exception as e:                 # noqa: BLE001 -- any of them
-                out.append(f"the `## {want}` reader would not load "
-                           f"({e.__class__.__name__}), so this section was not "
-                           f"read; that is not a section that is right")
-                continue
+            _entry, why = REPOS.lands_in(body)
             if why:
                 out.append(f"`## {want}`: {why}")
             continue
@@ -1001,7 +985,7 @@ def cmd_check(args):
               file=sys.stderr)
         return 2
     kind = kind_of(CAMPAIGN_LABEL in names, parented)
-    found = SECTION.findall(body)
+    found = REPOS.headings(body)
     # WHAT WAS READ, ALWAYS, and before the verdict. A bare pass is the shape
     # that gets trusted for months while checking nothing.
     print(f"read {repo}#{number}: {kind}"

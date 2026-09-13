@@ -81,9 +81,8 @@ says so, because this guard runs for every session on this machine and a
 failed read must not wall them all.
 
 THE ROLE IS NOT A SECURITY BOUNDARY, and is not meant to be: `AGENTS.md`
-§ The session name says why, and #194 is the sub-issue for tying the name to
-something the named session did not choose. What this guard buys is that the
-role is EXPLICIT and the mistake is LOUD.
+§ The session name says why. What this guard buys is that the role is
+EXPLICIT and the mistake is LOUD.
 
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload

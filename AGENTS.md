@@ -190,10 +190,10 @@ second; the launch itself is
 `.claude/skills/assuming-role/references/launching.md`). What each role may
 write is `.claude/skills/assuming-role/scripts/campaign-roles.py`, and the
 moments of each lifecycle are that skill's two references; neither is restated
-here. The model is `Planner` in `spec/campaign/orchestration/system.als`, and it
-requires a planner only of a delegate launch.
+here. `Planner` is declared in `spec/campaign/session/system.als`, and
+`spec/campaign/orchestration/system.als` requires one only of a delegate launch.
 
-**#185 enforces the code-plane bar over a FILE TOOL's writes and no further**: a
+**`check-campaign-claim.py` enforces the code-plane bar over a FILE TOOL's writes and no further**: a
 shell command is read only for the `gh` writes in it, never for what it does to
 a file, and `check-commit-claim.py` reads no role — so `sed -i` and `git commit`
 from a planner are refused by nothing today.
@@ -211,7 +211,7 @@ directory, branch) and the role being `planner` or
 `worker`, for every session on this machine; `<n>` is one counter across both
 roles, assigned in the order sessions appear, so two do not both pick `-1` —
 this sentence is that counting rule's one home. **The role word is not a
-label**: since #185 `check-campaign-claim.py` resolves it from `herdr agent
+label**: `check-campaign-claim.py` resolves it from `herdr agent
 list` and decides both planes by it, so a name of the wrong shape is refused
 every campaign write; what a well-formed one licenses is
 `campaign-roles.py`'s. It is also what a person reads in `herdr agent list`,
@@ -221,8 +221,7 @@ atom is per launch and records the shape one sub-issue was worked in.
 **The name is not a security boundary, and is not meant to be.** A session can
 rename itself, and every session here shares one `gh` account — so one that
 renames itself a planner already holds the power the name would grant. What the
-role buys is that it is explicit and that the mistake is loud; #194 is the
-sub-issue for tying the name to something the named session did not choose.
+role buys is that it is explicit and that the mistake is loud.
 
 **Set it at
 the start of every session of a campaign, whichever path started it** — the
@@ -287,10 +286,10 @@ for the other, and a missing slug refuses rather than being guessed at.
   atomic across every machine, where a survey-then-file is not. **Every
   sub-issue cuts one**, work that lands no commit included — a repo-less
   campaign's on the base.
-- **The retired form is gone** — before #181 a session name and a branch
-  carried the campaign NUMBER. Nothing reads it since #237, and nothing
-  refuses it by name either: `campaign` is a barred slug segment, so
-  `campaign-1` is not a slug and no name or branch can be read as one.
+- **The retired form** — a session name or a branch carrying the campaign
+  NUMBER — is read by nothing and refused by no name: `campaign` is a barred
+  slug segment, so `campaign-1` is not a slug and no name or branch can be read
+  as one.
 
 **Before adopting a word for a renamed value, grep the tree *and* `git log -S`
 it**: a word absent from the tree may be pinned by an assertion that it is not
@@ -382,9 +381,7 @@ ones included, which is a cost every new number pays and a reopen does not.
 one commit fixes goes into the pull request already open on that file, or as a
 listed item into the next sub-issue that touches it, and never onto a number of
 its own: a sub-issue costs a claim, a pull request and a review whatever its
-size, and #195 measured three that could not cover it — #170, #171 and #175 were
-each closed within 27 minutes of being filed, and #171's single review round
-alone cost 57,374 input tokens for 21 changed lines.
+size.
 
 **A sub-issue whose work lives only under `<campaign>/scripts/` has no commit to
 land**: it closes as completed with no pull request, its closing comment saying
@@ -400,10 +397,10 @@ cloned like any other. **Work that lands no commit is claimed all the same**,
 with `campaign-claim take`: one ref, cut on the base. **Two readers make that
 true rather than remembered, one rule read at two moments.**
 `scripts/check-campaign-claim.py` is a `PreToolUse` guard answering "may this
-session make this change" — the claim for a worker, and since #185 the
-session's ROLE for both — for what has an unambiguous
-target — a file tool's path and a `gh` write — and allowing every other shell
-command unread, saying so. Since #196 it writes **one line per verdict** to
+session make this change" — the claim for a worker, and the session's ROLE for
+both — for what has an unambiguous target — a file tool's path and a `gh`
+write — and allowing every other shell command unread, saying so. It writes
+**one line per verdict** to
 `<campaign>/runtime/guard.log`, git-ignored scratch, and says beside every
 verdict whether that line was written; `scripts/guard-precision.py` reads the
 log and pairs each refusal with the same session's next allowed call on the
@@ -427,7 +424,7 @@ every shell write there landed unjudged.
 **Do it here, hand it to a subagent, or hand it to a delegate.** The session
 the request arrived at chooses the mode before the work starts, **first by the
 repository and only then by cost**. It is the planner only in the second shape
-(§ The binding). **The three modes are a WORKER's**: since #185 a planner
+(§ The binding). **The three modes are a WORKER's**: a planner
 changes no code by its own hands and none through a subagent, which carries its
 session id and so its role, so a planner's only shape here is the third —
 a delegate, or a separate worker session that takes the sub-issue.
@@ -452,15 +449,7 @@ Then, within what the repository allows, choose by cost:
   toolchain, will take many turns, or two repositories must move together.
 
 **Read only the part of a file you need** — the Read tool, or a bounded
-`sed -n a,bp`. #201 measured file reading through the shell at 7.9MB, 61% of
-everything this campaign read back, against 0.7MB through the Read tool: `sed`
-5.7MB over 914 calls, `grep` 1.3MB, `cat` 0.9MB. **That is a rule without its
-cause.** Those 914 `sed` calls averaged 6.2 KB, so they were already bounded, and
-the volume is how many reads happened rather than how wide each one was; #201's
-first step was to group the calls by file and say whether the cost is breadth or
-repetition, and that step was never run. The instruction asking for `cat`/`sed`/
-`grep` is the harness's own auto-mode text, which this repository cannot edit —
-so what is written here is the habit, and the setting is the owner's.
+`sed -n a,bp`.
 
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
 for the base it is the mode of last resort. All modes share the mechanics —
@@ -496,9 +485,9 @@ moment — at a scope change as `campaign-close.py sync <N>`, which reads no
 gate but the binding and the directory, so a `standing` campaign with workers
 listed takes it, except a repository leaving `## Repos`, which is scope `repo`
 and its gates (§ Watching and retiring); at the close as the `campaign`
-scope's step. It
-compares the body against the copy the campaign `README.md` was derived from and
-refuses when it has moved, so one write cannot silently discard another.
+scope's step. It compares the body against the copy the campaign `README.md`
+was derived from and refuses when it has moved, so one write cannot silently
+discard another.
 
 ## Delegate launch
 
@@ -512,15 +501,9 @@ there is nothing to keep in step with it and nothing that dies with a directory;
 the prompt is delivered by **`herdr agent prompt`** and never on the launch
 line, an instance of § The four messages' criterion rather than a second rule;
 and **read the pane once after every launch**, because the dialogs that halt a
-fresh delegate do not all report `blocked`. **`--add-dir <base>` is a member
-repository's**, whose cwd cannot reach `<base>/scripts/`; a delegate in the
-base's own clone reaches them in its own tree and is launched without the flag.
-It buys back none of the duplicated rules #202 measured, and `launching.md` has
-the probe that says why. The campaign's principles reach the
-delegate as **`CLAUDE.local.md` written into its clone** and excluded via
-`.git/info/exclude` — a file on disk, so nothing has to prove it arrived. A
-campaign's principles only ever *add*. The full procedure — the launch line, the
-outcome names, and the three dialogs — is
+fresh delegate do not all report `blocked`. The full procedure — the launch
+line and its flags, the campaign's principles in the clone's `CLAUDE.local.md`,
+the outcome names, and the three dialogs — is
 `.claude/skills/assuming-role/references/launching.md`.
 
 # The running agent
@@ -645,8 +628,9 @@ looks at that merge. **Posting the REVIEW re-runs the check**:
 `.github/workflows/review-rerun.yml` runs `scripts/rerun-check.py` on every
 comment and review, which re-runs a red `check` once a REVIEW names the head.
 `--report` asks the same sha from the writer's end — a `REPORT` pinning
-anything but it — and **`scripts/check-campaign-claim.py` calls it** on every
-`REPORT` a `gh pr` verb posts, refusing the post on `stale`.
+anything but it — and **`scripts/check-campaign-claim.py` calls it** on a
+`REPORT` a `gh pr` verb posts, refusing the post on `stale`; what it lets
+through unchecked is its docstring's.
 Whether it still bites is `main`'s `required_status_checks.contexts`, and
 `.github/workflows/check.yml`'s header says why. **A branch that has never been a
 pull request head has no `check` at all**, so fast-forwarding `main` onto a
@@ -668,9 +652,8 @@ names the new sha *and* asks; a session that asked and received nothing stops.
 `scripts/check-campaign-claim.py` refuses a `Skill` call of `code-review` above
 `low` and an `Agent` naming no `model` — **every** launch and not only a
 reviewer's, since no field of the payload says what a subagent is for — and
-`install-hooks.sh`'s matcher routes both to it, so a guard installed before
-#278 enforces neither; `scripts/check-merge-review.py` reads merge condition 1
-(§ Merge conditions). Every judgement about a review — the one mode, who
+`install-hooks.sh`'s matcher routes both to it; `scripts/check-merge-review.py`
+reads merge condition 1 (§ Merge conditions). Every judgement about a review — the one mode, who
 launches it, the model and the level, `low`, what the brief licenses, and the
 shape of a round, the fix round and the narrowed round included — is
 `.claude/skills/assuming-role/references/reviewing.md`'s, its one home.

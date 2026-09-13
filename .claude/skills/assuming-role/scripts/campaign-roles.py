@@ -42,8 +42,7 @@ WHAT IS NOT HERE, and why each is somewhere else:
 THE ROLE IS NOT A SECURITY BOUNDARY. A session can rename itself, so it can
 name itself a planner; every session here also shares one `gh` account, so one
 that renames itself already holds the power the name would grant. What the role
-buys is that it is EXPLICIT and that the mistake is LOUD. #194 is the sub-issue
-for tying the name to something the named session did not choose.
+buys is that it is EXPLICIT and that the mistake is LOUD.
 
 EXIT. 0 always; this file decides nothing on its own and refuses nothing.
 Its readers do.

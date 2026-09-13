@@ -13,7 +13,10 @@ one** -- not a default and not the cheapest option, the one mode. It is
 launched by whoever wants the merge, the author included, because merge
 condition 2 is on who *writes* it; `review` in
 `spec/campaign/orchestration/system.als` is why it has no guard on who
-commissions it.
+commissions it. **It checks that the implementation is correct** -- the
+brief's rows, behaviour kept, fail-first, the suites; a decision, or a doubt
+about one, goes to the planner as a `BLOCKED` and is never the reviewer's
+(owner, rule-check#272).
 
 ```
 Agent(subagent_type: "general-purpose", model: "<named below>",

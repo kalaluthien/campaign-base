@@ -156,9 +156,10 @@ def run(*args):
     return p.returncode, p.stdout, p.stderr
 
 
-def kind_of(body, pattern):
+def comment_kind(body, pattern):
     """The comment kind this body opens with, or None when its first line is
-    not one. The SHAPE is the imported pattern's; all this adds is which of the
+    not one. Named for the comment, since campaign-tracker.py's `kind_of` is
+    an issue's kind and `work_kind_of` its work's (rule-check#370 row 23). The SHAPE is the imported pattern's; all this adds is which of the
     kinds it admits actually matched, which the pattern guarantees is the first
     space-separated word."""
     lines = (body or "").lstrip().splitlines()
@@ -307,7 +308,7 @@ def gate(repo, pr, pattern, want_head):
                        "not there."])
     reviews, read, other = [], [], []
     for where, author, body in found:
-        kind = kind_of(body, pattern)
+        kind = comment_kind(body, pattern)
         if kind != "REVIEW":
             other.append(f"{where} by {author}: {kind or 'no kind on its first line'}")
             continue
@@ -339,7 +340,7 @@ def report(repo, pr, body, pattern, want_head):
         return answer("unknown", why,
                       ["A head that could not be read cannot say whether a "
                        "REPORT pins it."])
-    kind = kind_of(body, pattern)
+    kind = comment_kind(body, pattern)
     if kind != "REPORT":
         return answer("unknown",
                       f"this body opens {kind or 'no kind'}, not REPORT, so "

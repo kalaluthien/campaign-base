@@ -561,7 +561,8 @@ def main():
             shim = Path(d) / "scripts"
             shim.mkdir()
             (shim / "campaign-token-tally.py").write_text(SCRIPT.read_text())
-            # The default `--repo` is campaign-repos.py's, through the guard.
+            # The default `--repo` is campaign-repos.py's; the guard reads the
+            # shell grammar.
             for t in ("check-campaign-claim.py", "campaign-repos.py"):
                 (shim / t).write_text((SCRIPT.parent / t).read_text())
             for name, body, want in (
@@ -601,6 +602,29 @@ def main():
     info = getattr(m.guard_module, "cache_info", lambda: None)()
     check("five guard_module calls load the guard once",
           info is not None and info.misses == 1 and info.hits == 4, repr(info))
+
+    # `--repo`'S DEFAULT IS ONE CONSTANT, AND LOADS ONLY ITS FILE: with
+    # `--base` named, parsing reads campaign-repos.py and not the guard
+    # (pr#406's REVIEW).
+    m = harness.load(SCRIPT, "campaign_token_tally")
+    a = m.parse_args(["issues", "--base", "/nowhere"])
+    check("the default --repo is campaign-repos.py's, the guard not loaded",
+          a.repo == harness.load(SCRIPT.parent / "campaign-repos.py",
+                                 "crepos_t").BASE_REPO
+          and m.guard_module.cache_info().misses == 0,
+          f"{a.repo} {m.guard_module.cache_info()}")
+    # ...and a tree without that file refuses by name, not by a traceback.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as d:
+        (Path(d) / "campaign-token-tally.py").write_text(SCRIPT.read_text())
+        (Path(d) / "check-campaign-claim.py").write_text(
+            (SCRIPT.parent / "check-campaign-claim.py").read_text())
+        r = subprocess.run([sys.executable, str(Path(d) / "campaign-token-tally.py"),
+                            "issues", "--base", d, "--offline"],
+                           capture_output=True, text=True)
+        check("a tree missing campaign-repos.py says --repo has no default",
+              r.returncode == 2 and "--repo has no default" in r.stderr
+              and "Traceback" not in r.stderr, r.stderr[-300:])
 
     return harness.report()
 

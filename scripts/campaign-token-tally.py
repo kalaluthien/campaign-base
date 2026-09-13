@@ -169,10 +169,21 @@ def guard_module():
     missed `; do python3 scripts/x.py` because `do` was not in its prefix list.
     All three are cases that guard already had right.
     """
+    return load("check-campaign-claim.py", "check_campaign_claim")
+
+
+@functools.cache
+def repos_module():
+    """campaign-repos.py, for the base's name alone: `--repo`'s default needs
+    that one constant, not the guard (pr#406's REVIEW)."""
+    return load("campaign-repos.py", "campaign_repos")
+
+
+def load(name, alias):
+    """A sibling script, imported by path."""
     import importlib.util
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "check-campaign-claim.py")
-    spec = importlib.util.spec_from_file_location("check_campaign_claim", path)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    spec = importlib.util.spec_from_file_location(alias, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -949,9 +960,13 @@ def parse_args(argv):
     p.add_argument("--offline", action="store_true",
                    help="do not call gh; leave the pull-request map empty")
     args = p.parse_args(argv)
-    # The base's name is campaign-repos.py's, reached through the guard this
-    # run loads anyway (rule-check#370 row 5).
-    args.repo = args.repo or guard_module().repos_reader().BASE_REPO
+    # The base's name is campaign-repos.py's (rule-check#370 row 5).
+    if args.repo is None:
+        try:
+            args.repo = repos_module().BASE_REPO
+        except Exception as e:          # noqa: BLE001 -- reported, not raised
+            die(f"--repo has no default: campaign-repos.py would not load "
+                f"({e.__class__.__name__}); name the tracker with --repo")
     for name in ("since", "until"):
         args.__dict__[name] = checked_bound(getattr(args, name), name)
     if not args.root:

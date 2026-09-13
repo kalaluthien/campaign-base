@@ -573,7 +573,7 @@ form. `ListAgents` resolves the address; herdr's pane label is not one.
 | `STATUS` | campaign → agent | doing what, blocked on what, what exists only on this machine, safe to stop |
 | `REPORT` | agent → campaign | a pull request URL and the sha it sits at, once per round, unsolicited |
 | `BLOCKED` | agent → campaign | a decision that is not the agent's to make, or a question about its brief |
-| `STAND DOWN` | campaign → agent | finish the turn and stop |
+| `STAND DOWN` | campaign → agent | finish the turn and leave |
 
 Four messages between sessions, carrying **only what the agent alone knows**:
 anything about finished work duplicates a GitHub fact, and the copy is what goes
@@ -589,9 +589,10 @@ mechanically; a `BLOCKED`, a `DECISION` and a `NOTE` on the sub-issue.
 `STATUS` and `STAND DOWN` have no comment kind at all: they are prompts into a
 pane, by the two-channel criterion below, and there is nothing durable in
 either.
-**A finished peer leaves the campaign by fact, not by saying so**: it stops its
-pane. `campaign-claim live` counts a session by its name alone — named for this
-campaign, wherever it sits — and **a name that says nothing is no campaign's**:
+**A finished peer leaves the campaign by fact, not by saying so**:
+`scripts/campaign-close.py leave <N>` exits it, then closes its tab, the one
+leave every path takes. `campaign-claim live` counts a session by its name
+alone — named for this campaign, wherever it sits — and **a name that says nothing is no campaign's**:
 it is listed apart when it sits under the base root and never counted, since
 the base root is under every campaign at once; a claim such a session stands
 in still counts, as an occupied checkout. There is no `STOOD DOWN` comment,
@@ -704,8 +705,8 @@ listed; nor may a repository be dropped while an agent works one of its
 sub-issues. **A listed peer is asked, never killed** — it is the only thing that
 can say which claim it holds — except a worker the planner's heartbeat reads
 as done, its last assigned sub-issue's ref gone and no assignment since, idle
-or mid-turn, which it retires through `campaign-close.py worker`: `/exit`, then
-the tab it sat in closed.
+or mid-turn, which it retires through `campaign-close.py worker`: the retire
+reading, then the same leave.
 `scripts/check-campaign-claim.py` refuses
 `herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
 matching it, which is the incident's shape. It reads the verb and not the

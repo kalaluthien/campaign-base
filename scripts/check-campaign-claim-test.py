@@ -1450,6 +1450,17 @@ def main():
         check("ALLOW beside the malformed-row refusal: other rows and unknown "
               "fields are not malformed",
               r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+        # ...but ONE malformed row ANYWHERE is could-not-look, this session's
+        # own well-formed row read first included: the parser reads the whole
+        # listing (rule-check#370 row 3, stated at the guard's call).
+        spoiled = herdr_stub_raw(d, json.dumps({"result": {"agents": [
+            {"agent_session": {"value": "sid-1"}, "name": "demo-planner-3"},
+            {"agent_session": "not-an-object", "name": "x"},
+        ]}}))
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=spoiled)
+        check("a malformed row after this session's own still leaves the role "
+              "unread",
+              r.returncode == 2 and "not an object" in r.stderr, out(r)[:400])
         r = ask(d, tool="Bash", command="gh issue close 9", env=gone)
         check("...and outside every base it still allows, as it always did",
               r.returncode == 0, out(r)[:300])
@@ -3261,6 +3272,47 @@ def main():
                   r.returncode == 2 and "over" in out(r)
                   and "3000 characters" in out(r), out(r)[:300])
 
+    # THE TABLE DECIDES THE PLANES, not the role word (rule-check#370, NOTE
+    # issuecomment-5648370952): a copy of the guard beside a campaign-roles.py
+    # whose planner has a code plane and only its own campaign's, and the two
+    # planner verdicts above turn. A guard reading the word keeps both.
+    with tempfile.TemporaryDirectory() as d:
+        tree = Path(d) / "tree"
+        (tree / "scripts").mkdir(parents=True)
+        skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
+        skill.mkdir(parents=True)
+        shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+        for t in ("campaign-tracker.py", "campaign-repos.py"):
+            shutil.copy(HERE / t, tree / "scripts" / t)
+        for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                  / "scripts").glob("*.py"):
+            shutil.copy(s, skill / s.name)
+        table = skill / "campaign-roles.py"
+        src = table.read_text()
+        for a, b in (('"campaign_plane": "any"', '"campaign_plane": "own"'),
+                     ('"code_plane": False', '"code_plane": True')):
+            check(f"the swapped table's fixture finds `{a}` once",
+                  src.count(a) == 1, str(src.count(a)))
+            src = src.replace(a, b)
+        table.write_text(src)
+        copy = tree / "scripts" / GUARD.name
+        f = Fixture(d, claims=("demo/7-x",))
+        planner = herdr_stub(d, {"sid-1": "demo-planner-3"})
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner, guard=copy)
+        # The role must be READ for either absence to mean anything: a copy
+        # that could not read it would print neither string too (review of
+        # f3ef3e5). The refusal below names no role, so it is held to the
+        # fallback line's absence instead.
+        check("a planner the table gives a code plane is not refused code",
+              "is demo-planner-3" in out(r)
+              and "may not change code" not in out(r), out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=planner,
+                guard=copy)
+        check("...and one it bounds to its own campaign has no any-campaign "
+              "licence", r.returncode == 2
+              and "the role could not be read" not in out(r)
+              and "any campaign" not in out(r), out(r)[:400])
+
     # THE REFERENCE RULE IS THE SECOND IMPORT, and it gets its own tree: the
     # loop above deletes a skill script and leaves `campaign-tracker.py` absent
     # as a side effect, so nothing there pins WHICH rule went. Here the skill
@@ -3454,7 +3506,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 476
+    EXPECTED = 481
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

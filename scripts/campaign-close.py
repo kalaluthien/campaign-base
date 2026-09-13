@@ -201,8 +201,8 @@ SCOPE campaign <N> [--close] [--delete]
                   and no session of the campaign is listed.
   5. local-work   Holds when: the last line reads `clear`.
   6. installed    Holds when: the last line reads `clear`.
-  7. settlement   Holds when: <N> is a campaign issue -- no REPORT that it
-                  lacks the label or is itself a sub-issue -- and it ends
+  7. settlement   Holds when: <N> is a campaign issue -- no line opening
+                  the tracker's `NOT_CAMPAIGN` -- and it ends
                   `; closable` or the index is empty. An open row halts,
                   listed: its disposition is the person's.
   8. author       As in `sub-issue` step 4.

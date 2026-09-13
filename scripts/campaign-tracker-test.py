@@ -875,6 +875,19 @@ def main():
                                           PATH=f"{d2}:{os.environ['PATH']}"))
         check("bind reports a shape it could not read as unread, and still binds",
               r.returncode == 0 and "the shape was NOT read" in r.stdout)
+        # ITS WRITES READ A FAILURE THE WAY EVERY gh CALL HERE DOES: through
+        # `gh_read`, so a refusal names gh's exit and its message, stdout when
+        # stderr is empty (pr#406's REVIEW).
+        d3 = Path(tmp) / "bindfail"
+        d3.mkdir()
+        (d3 / "gh").write_text(
+            "#!/bin/sh\ncase \"$*\" in 'label create'*) echo nope; exit 3 ;; esac\n"
+            "exit 0\n")
+        (d3 / "gh").chmod(0o755)
+        r = tracker("bind", "5", env=dict(os.environ,
+                                          PATH=f"{d3}:{os.environ['PATH']}"))
+        check("bind refuses a failed label create with gh's exit and message",
+              r.returncode == 1 and "gh exited 3: nope" in r.stderr)
 
     # ------------------------------------------------ standing: the person's hold
     # A LABEL READING, so on and off are both cases with no network in them.

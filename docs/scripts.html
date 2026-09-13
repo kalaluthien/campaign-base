@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What runs each script</title>
+<style>
+  :root { --ink:#111; --mute:#555; --hair:#d8d8d8; --paper:#ffffff; --link:#14459b; --lane:#f3f3f3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8e8e8; --mute:#a8a8a8; --hair:#3a3a3a; --paper:#161616; --link:#8fb0f0; --lane:#202020; }
+  }
+  body { margin: 0; padding: 2.5rem 1rem 4rem; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 .6rem; }
+  p { margin: .6rem 0; }
+  a { color: var(--link); }
+  a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+  figure { margin: 1.6rem 0; }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 44rem; height: auto; }
+  svg text { fill: currentColor; font: 13px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  svg .lbl { fill: var(--mute); font-size: 12px; }
+  svg .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+  svg .ttl { font-weight: 700; font-size: 14px; }
+  svg .lane { fill: var(--lane); stroke: var(--hair); stroke-width: 1; }
+  svg .box { fill: var(--paper); stroke: currentColor; stroke-width: 1.3; }
+  svg .edge { fill: none; stroke: currentColor; stroke-width: 1.2; }
+  figcaption, .src { font-size: .88rem; color: var(--mute); }
+</style>
+</head>
+<body class="view">
+<main>
+<h1>What runs each script</h1>
+<p>Every script here has one caller, and the caller is what decides whether it
+runs unasked. Git and the harness run their scripts on an event nobody
+chooses; CI runs its own on every push; the rest wait for a flow to ask.</p>
+
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 800 640" role="img" aria-labelledby="t d">
+  <title id="t">Structure diagram: which caller runs each script of campaign-base, and on which event</title>
+  <desc id="d">Four columns, one per caller. Git, hooks written by install-hooks.sh: pre-commit runs, in order, check-rule-readers, check-tree-shape, check-cross-references, check-sdlc-tie, alloy-check and check-commit-claim; post-commit runs push-campaign-branch. The harness, from the machine-wide settings: PreToolUse runs check-campaign-claim, the one hook that refuses; SessionStart and UserPromptSubmit run campaign-role-brief and herdr-session-link; and from this tree's own settings, SessionStart runs campaign-primitives with the brief flag. CI, the workflows under .github: check.yml runs the guards, every suite, one alloy solve per module, and check-merge-review at the head; review-rerun.yml runs rerun-check on every comment and review. A flow: the scripts a skill or a session calls by name, listed by campaign-primitives, grouped by where they sit: scripts at the top level, the assuming-role skill's, and the opening-campaign skill's.</desc>
+
+  <text class="ttl" x="10" y="22">Structure diagram · callers, events, scripts</text>
+
+  <!-- lanes -->
+  <rect class="lane" x="10" y="36" width="188" height="594" rx="6"/>
+  <rect class="lane" x="208" y="36" width="188" height="594" rx="6"/>
+  <rect class="lane" x="406" y="36" width="188" height="594" rx="6"/>
+  <rect class="lane" x="604" y="36" width="186" height="594" rx="6"/>
+
+  <!-- git -->
+  <text class="ttl" x="104" y="58" text-anchor="middle">git</text>
+  <text class="lbl" x="104" y="74" text-anchor="middle">hooks install-hooks.sh writes</text>
+  <rect class="box" x="16" y="90" width="176" height="164" rx="8"/>
+  <text x="104" y="108" text-anchor="middle">pre-commit</text>
+  <text class="lbl" x="104" y="122" text-anchor="middle">in its # runs: order</text>
+  <text class="mono" x="24" y="142">check-rule-readers.py</text>
+  <text class="mono" x="24" y="158">check-tree-shape.py</text>
+  <text class="mono" x="24" y="174">check-cross-references.py</text>
+  <text class="mono" x="24" y="190">check-sdlc-tie.py</text>
+  <text class="mono" x="24" y="206">alloy-check.py</text>
+  <text class="mono" x="24" y="222">check-commit-claim.py</text>
+  <text class="lbl" x="24" y="242">after the no-main guard</text>
+  <rect class="box" x="16" y="270" width="176" height="52" rx="8"/>
+  <text x="104" y="288" text-anchor="middle">post-commit</text>
+  <text class="mono" x="24" y="308">push-campaign-branch.sh</text>
+  <text class="lbl" x="20" y="350">a delegate's clone gets the</text>
+  <text class="lbl" x="20" y="364">commit gate from</text>
+  <text class="lbl" x="20" y="378">acquire-repo.sh, by absolute</text>
+  <text class="lbl" x="20" y="392">path into the base</text>
+
+  <!-- harness -->
+  <text class="ttl" x="302" y="58" text-anchor="middle">the harness</text>
+  <text class="lbl" x="302" y="74" text-anchor="middle">settings.json, machine-wide</text>
+  <rect class="box" x="214" y="90" width="176" height="52" rx="8"/>
+  <text x="302" y="108" text-anchor="middle">PreToolUse</text>
+  <text class="mono" x="222" y="128">check-campaign-claim.py</text>
+  <text class="lbl" x="222" y="160">the only hook here</text>
+  <text class="lbl" x="222" y="174">that refuses; the</text>
+  <text class="lbl" x="222" y="188">others announce</text>
+  <rect class="box" x="214" y="204" width="176" height="68" rx="8"/>
+  <text x="302" y="222" text-anchor="middle">SessionStart,</text>
+  <text x="302" y="236" text-anchor="middle">UserPromptSubmit</text>
+  <text class="mono" x="222" y="254">campaign-role-brief.py</text>
+  <text class="mono" x="222" y="268">herdr-session-link.py</text>
+  <text class="lbl" x="302" y="304" text-anchor="middle">settings.json in this tree</text>
+  <rect class="box" x="214" y="314" width="176" height="66" rx="8"/>
+  <text x="302" y="332" text-anchor="middle">SessionStart</text>
+  <text class="mono" x="222" y="352">campaign-primitives.py</text>
+  <text class="mono" x="222" y="366">  --brief</text>
+
+  <!-- CI -->
+  <text class="ttl" x="500" y="58" text-anchor="middle">CI</text>
+  <text class="lbl" x="500" y="74" text-anchor="middle">.github/workflows, on GitHub</text>
+  <rect class="box" x="412" y="90" width="176" height="116" rx="8"/>
+  <text x="500" y="108" text-anchor="middle">check.yml · every push</text>
+  <text class="lbl" x="420" y="128">the guards, whole tree</text>
+  <text class="lbl" x="420" y="142">every *-test.* suite</text>
+  <text class="lbl" x="420" y="156">one alloy solve per module</text>
+  <text class="mono" x="420" y="176">check-merge-review.py</text>
+  <text class="lbl" x="420" y="192">at the head: condition 1</text>
+  <rect class="box" x="412" y="222" width="176" height="68" rx="8"/>
+  <text x="500" y="240" text-anchor="middle">review-rerun.yml</text>
+  <text class="lbl" x="500" y="254" text-anchor="middle">every comment and review</text>
+  <text class="mono" x="420" y="274">rerun-check.py</text>
+  <text class="lbl" x="416" y="312">both are also called by a</text>
+  <text class="lbl" x="416" y="326">flow, so campaign-primitives</text>
+  <text class="lbl" x="416" y="340">lists them there</text>
+
+  <!-- a flow -->
+  <text class="ttl" x="697" y="58" text-anchor="middle">a flow</text>
+  <text class="lbl" x="697" y="74" text-anchor="middle">a skill or a session, by name</text>
+  <rect class="box" x="610" y="90" width="176" height="268" rx="8"/>
+  <text x="698" y="108" text-anchor="middle">scripts/</text>
+  <text class="mono" x="616" y="126">campaign-assign.py</text>
+  <text class="mono" x="616" y="140">campaign-claim.py</text>
+  <text class="mono" x="616" y="154">campaign-close.py</text>
+  <text class="mono" x="616" y="168">campaign-directory.py</text>
+  <text class="mono" x="616" y="182">campaign-installed.py</text>
+  <text class="mono" x="616" y="196">campaign-local-work.py</text>
+  <text class="mono" x="616" y="210">campaign-repos.py</text>
+  <text class="mono" x="616" y="224">campaign-token-tally.py</text>
+  <text class="mono" x="616" y="238">campaign-token-tally-</text>
+  <text class="mono" x="624" y="252">mutations.py</text>
+  <text class="mono" x="616" y="266">campaign-tracker.py</text>
+  <text class="mono" x="616" y="280">check-merge-review.py</text>
+  <text class="mono" x="616" y="294">guard-corpus.py</text>
+  <text class="mono" x="616" y="308">guard-precision.py</text>
+  <text class="mono" x="616" y="322">install-hooks.sh</text>
+  <text class="mono" x="616" y="336">rerun-check.py</text>
+  <rect class="box" x="610" y="372" width="176" height="94" rx="8"/>
+  <text class="mono" x="698" y="390" text-anchor="middle">assuming-role/scripts/</text>
+  <text class="mono" x="616" y="408">campaign-heartbeat.py</text>
+  <text class="mono" x="616" y="422">campaign-limit-reset.py</text>
+  <text class="mono" x="616" y="436">campaign-name-session.py</text>
+  <text class="mono" x="616" y="450">campaign-roles.py</text>
+  <rect class="box" x="610" y="480" width="176" height="42" rx="8"/>
+  <text class="mono" x="698" y="498" text-anchor="middle">opening-campaign/scripts/</text>
+  <text class="mono" x="616" y="514">acquire-repo.sh</text>
+  <text class="lbl" x="614" y="550">what each answers is the</text>
+  <text class="lbl" x="614" y="564">line under its shebang, and</text>
+  <text class="lbl" x="614" y="578">campaign-primitives.py</text>
+  <text class="lbl" x="614" y="592">prints them all, grouped so</text>
+</svg>
+</div>
+<figcaption>Ask the machine before writing a check by hand: a rule one of these
+scripts owns is linked, never restated, and <code>check-rule-readers.py</code>
+refuses the copy.</figcaption>
+</figure>
+
+<p class="src">Kind: view, composed as dotclaude's
+<a href="https://github.com/kalaluthien/dotclaude/blob/main/spec/document-kinds.md">document-kinds spec</a>
+says, after its <a href="https://github.com/kalaluthien/dotclaude/blob/main/docs/memory-pool-lookup.html">memory-pool-lookup</a> page.
+Sources: <a href="../scripts/campaign-primitives.py"><code>scripts/campaign-primitives.py</code></a>, run on this machine;
+<a href="../scripts/install-hooks.sh"><code>scripts/install-hooks.sh</code></a>'s <code># runs:</code> lines;
+<a href="../.github/workflows/check.yml"><code>.github/workflows/check.yml</code></a> and
+<a href="../.github/workflows/review-rerun.yml"><code>review-rerun.yml</code></a>;
+<a href="../AGENTS.md#authoring-a-script-or-a-skill"><code>AGENTS.md</code> § Authoring a script or a skill</a>;
+read at <time datetime="2026-09-13">2026-09-13</time>, commit <code>2cc3ee7</code>.</p>
+</main>
+</body>
+</html>

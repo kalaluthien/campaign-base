@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The three planes</title>
+<style>
+  :root { --ink:#111; --mute:#555; --hair:#d8d8d8; --paper:#ffffff; --link:#14459b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8e8e8; --mute:#a8a8a8; --hair:#3a3a3a; --paper:#161616; --link:#8fb0f0; }
+  }
+  body { margin: 0; padding: 2.5rem 1rem 4rem; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 .6rem; }
+  p { margin: .6rem 0; }
+  a { color: var(--link); }
+  a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+  figure { margin: 1.6rem 0; }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 40rem; height: auto; }
+  svg text { fill: currentColor; font: 13px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  svg .lbl { fill: var(--mute); font-size: 12px; }
+  svg .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  svg .ttl { font-weight: 700; font-size: 14px; }
+  svg .box { fill: var(--paper); stroke: currentColor; stroke-width: 1.3; }
+  svg .out { stroke-dasharray: 5 4; }
+  svg .edge { fill: none; stroke: currentColor; stroke-width: 1.2; }
+  figcaption, .src { font-size: .88rem; color: var(--mute); }
+</style>
+</head>
+<body class="view">
+<main>
+<h1>The three planes</h1>
+<p>Every artifact of a campaign belongs to exactly one plane, and the plane
+decides where it is stored and whether it survives the machine. The campaign
+directory is no plane: it is one machine's cache of what GitHub and the
+repositories already hold.</p>
+
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 800 570" role="img" aria-labelledby="t d">
+  <title id="t">Structure diagram: the three planes of a campaign and one machine's cache of them</title>
+  <desc id="d">Three solid boxes are the durable planes. The campaign plane is GitHub issues on kalaluthien/campaign-base: a campaign issue carrying the campaign, campaign:slug and bound:machine labels, and its sub-issues, each with a kind label, whose comments are REPORT, REVIEW, BLOCKED, DECISION and NOTE. The member-repository plane is each repository's own remote, which receives only pull requests whose body closes the sub-issue and branches named slug/issue-topic. The base plane is this repository: AGENTS.md, spec, scripts, .claude/skills, .github and docs, installed at the base root. A dashed box is this machine's campaign directory, git-ignored: a .campaign marker naming the campaign, a README.md derived from the campaign issue body, runtime scratch, clones under repos, and worktrees. Arrows: a pull request closes its sub-issue; the campaign issue body is derived into README.md; a member remote is cloned under repos, where the claim is checked out; install-hooks.sh writes the base's git hooks and the harness guard for the machine.</desc>
+  <defs>
+    <marker id="head" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="10" y="22">Structure diagram · the three planes, and one machine's cache</text>
+
+  <!-- campaign plane -->
+  <rect class="box" x="10" y="44" width="380" height="186"/>
+  <text class="ttl" x="20" y="64">campaign plane · GitHub issues</text>
+  <text class="lbl" x="20" y="80">issues on kalaluthien/campaign-base</text>
+  <rect class="box" x="20" y="92" width="175" height="70" rx="10"/>
+  <text x="107" y="110" text-anchor="middle">campaign issue</text>
+  <text class="mono" x="107" y="126" text-anchor="middle">campaign</text>
+  <text class="mono" x="107" y="140" text-anchor="middle">campaign:&lt;slug&gt;</text>
+  <text class="mono" x="107" y="154" text-anchor="middle">bound:&lt;machine&gt;</text>
+  <rect class="box" x="205" y="92" width="175" height="70" rx="10"/>
+  <text x="292" y="110" text-anchor="middle">sub-issue</text>
+  <text class="mono" x="292" y="126" text-anchor="middle">kind:&lt;k&gt;</text>
+  <text class="lbl" x="292" y="142" text-anchor="middle">under the campaign issue</text>
+  <text class="lbl" x="20" y="184">comments, one kind each:</text>
+  <text class="lbl" x="20" y="200">REPORT  REVIEW  BLOCKED  DECISION  NOTE</text>
+  <text class="lbl" x="20" y="220">what a campaign is, and how far along</text>
+
+  <!-- member repository plane -->
+  <rect class="box" x="410" y="44" width="380" height="186"/>
+  <text class="ttl" x="420" y="64">member-repository plane · its own remote</text>
+  <text class="lbl" x="420" y="80">the code and its history; receives only these two</text>
+  <rect class="box" x="420" y="92" width="175" height="70" rx="10"/>
+  <text x="507" y="110" text-anchor="middle">pull request</text>
+  <text class="lbl" x="507" y="126" text-anchor="middle">its body closes</text>
+  <text class="lbl" x="507" y="140" text-anchor="middle">the sub-issue</text>
+  <rect class="box" x="605" y="92" width="175" height="70" rx="10"/>
+  <text x="692" y="110" text-anchor="middle">branch</text>
+  <text class="mono" x="692" y="126" text-anchor="middle">&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;</text>
+  <text class="lbl" x="692" y="142" text-anchor="middle">the claim, and the workspace</text>
+  <text class="lbl" x="420" y="184">its issue conventions untouched</text>
+  <text class="lbl" x="420" y="200">unowned repositories included</text>
+
+  <!-- base plane -->
+  <rect class="box" x="10" y="320" width="380" height="130"/>
+  <text class="ttl" x="20" y="340">base plane · this repository</text>
+  <text class="lbl" x="20" y="356">how campaigns are run; installed at the base root</text>
+  <text class="mono" x="20" y="378">AGENTS.md  README.md  spec/  scripts/</text>
+  <text class="mono" x="20" y="394">.claude/skills/  .github/  docs/</text>
+  <text class="lbl" x="20" y="416">a repo-less campaign's claims are cut here</text>
+  <text class="lbl" x="20" y="438">install-hooks.sh: git hooks, the harness guard</text>
+
+  <!-- the machine's cache -->
+  <rect class="box out" x="410" y="320" width="380" height="236"/>
+  <text class="ttl" x="420" y="340">this machine · the campaign directory</text>
+  <text class="lbl" x="420" y="356">git-ignored; deleted at the close, and nothing is lost</text>
+  <text class="mono" x="420" y="380">campaign-&lt;slug&gt;-&lt;date&gt;/</text>
+  <text class="mono" x="436" y="398">.campaign</text>
+  <text class="lbl" x="540" y="398">the marker naming the campaign</text>
+  <text class="mono" x="436" y="416">README.md</text>
+  <text class="lbl" x="540" y="416">the campaign issue body, derived</text>
+  <text class="mono" x="436" y="434">runtime/</text>
+  <text class="lbl" x="540" y="434">a pid, a log, a lock; derived state</text>
+  <text class="mono" x="436" y="452">repos/&lt;repo&gt;/</text>
+  <text class="lbl" x="540" y="452">a clone per member repository</text>
+  <text class="mono" x="436" y="470">worktrees/</text>
+  <text class="lbl" x="540" y="470">a worker's checkout of a base claim</text>
+  <text class="lbl" x="420" y="500">the claim guard and the git hooks run here,</text>
+  <text class="lbl" x="420" y="516">installed from the base plane</text>
+  <text class="lbl" x="420" y="540">no record of the work lives only here: it goes on its issue</text>
+
+  <!-- edges -->
+  <path class="edge" d="M420,120 H382" marker-end="url(#head)"/>
+  <text class="lbl" x="381" y="112" text-anchor="middle">closes</text>
+
+  <path class="edge" d="M107,230 V275 H480 V318" marker-end="url(#head)"/>
+  <text class="lbl" x="116" y="262">the campaign issue body, derived into README.md</text>
+
+  <path class="edge" d="M692,230 V318" marker-end="url(#head)"/>
+  <text class="lbl" x="684" y="270" text-anchor="end">cloned; the claim is checked out here</text>
+
+  <path class="edge" d="M390,438 H408" marker-end="url(#head)"/>
+
+  <!-- key -->
+  <g transform="translate(640,8)">
+    <rect class="box" x="0" y="0" width="22" height="14"/>
+    <text class="lbl" x="30" y="12">a plane: durable</text>
+    <rect class="box out" x="0" y="18" width="22" height="14"/>
+    <text class="lbl" x="30" y="30">a cache: derivable</text>
+  </g>
+</svg>
+</div>
+<figcaption>Identify the plane before any git command. A campaign directory with
+no <code>.campaign</code> marker is a campaign nothing on this machine can see.</figcaption>
+</figure>
+
+<p class="src">Kind: view, composed as dotclaude's
+<a href="https://github.com/kalaluthien/dotclaude/blob/main/spec/document-kinds.md">document-kinds spec</a>
+says, after its <a href="https://github.com/kalaluthien/dotclaude/blob/main/docs/memory-pool-lookup.html">memory-pool-lookup</a> page.
+Sources: <a href="../AGENTS.md#the-three-planes"><code>AGENTS.md</code> § The three planes</a>,
+<a href="../README.md#where-things-live"><code>README.md</code> § Where things live</a>,
+<a href="../spec/campaign/directory/system.als"><code>spec/campaign/directory/system.als</code></a>;
+read at <time datetime="2026-09-13">2026-09-13</time>, commit <code>2cc3ee7</code>.</p>
+</main>
+</body>
+</html>

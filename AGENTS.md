@@ -64,7 +64,7 @@ and whether it survives the machine. Identify the plane before any git command.
 
 | plane | holds | stored in |
 | --- | --- | --- |
-| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `scripts/`, `.github/` | this repository |
+| **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `scripts/`, `.github/`, `docs/` | this repository |
 | **member repository** | the code and its history | each repository's own remote |
 | **campaign** | which repositories, what for, how far along | GitHub issues |
 

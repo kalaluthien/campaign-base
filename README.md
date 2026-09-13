@@ -17,7 +17,7 @@ everything durable was already somewhere else.
 campaign-base/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
-  .claude/skills/closing-campaign
+  .claude/skills/close
   spec/  scripts/
   campaign-auth-refactor-260901/ a campaign, git-ignored; the bare `auth-refactor/`
                                  is the accepted older form; neither NAME is read

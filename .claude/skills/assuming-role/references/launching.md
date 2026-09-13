@@ -51,6 +51,25 @@ Launch in `<campaign>/repos/<repo>/`.
 - Set `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` to the base's pool. A memory pool
   inside a git-ignored campaign directory dies with the directory.
 
+### The model, by the kind of work
+
+Pick it by the work the session will do, not by the sub-issue: a session
+started too weak meets the hard part with nothing left, and one started too
+strong spends it on turns that carry out a plan already clear.
+
+| work | who runs it |
+| --- | --- |
+| coordinating a campaign and deciding | Fable planner |
+| defining a problem | Fable worker |
+| completing an issue body | Fable or Opus worker |
+| complex execution | Opus worker |
+| review and verification | Fable or Opus reviewer, which of the two by the depth of the change (`reviewing.md`) |
+| fixes and investigation | Sonnet worker |
+
+Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`
+(`.claude/skills/herdr/references/facts.md`); the level is never a sentence in
+the prompt.
+
 ## Delivering the prompt
 
 **`herdr agent prompt <pane> "<text>"`.** This is the launch's own step and

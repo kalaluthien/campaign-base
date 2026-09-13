@@ -123,7 +123,7 @@ ROLES = {
         # (#207). No claim can ever cover the campaign issue -- it is nobody's
         # sub-issue -- so this is carved out. Keyed on the VERB and not on the
         # issue number, which is the conjunct the first cut was missing:
-        # `edit` is the charter body, which only `closing-campaign` step 4
+        # `edit` is the charter body, which only `campaign-close.py`'s `sync`
         # writes; `close` closes the CAMPAIGN, a person's decision; `delete`
         # and `transfer` are irreversible. A claim on some other sub-issue
         # makes none of them safer, so the claim was never the missing test.

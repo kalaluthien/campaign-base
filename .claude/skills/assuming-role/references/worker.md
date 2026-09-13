@@ -44,11 +44,12 @@ and, on a claim, the code the sub-issue names.
    report that does not pin its sha is unactionable. After it the next move is
    the planner's -- the merge, the next pull request of a multi-PR Plan, or the
    next assignment -- so wait for its prompt and launch nothing.
-8. **Merge only on the three conditions** of `AGENTS.md` § Merge conditions.
-   **Then reach the install**, when the
-   repository has one here — the base always does:
-   `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>`,
-   and the `REPORT` quotes the line it prints, which names the install's sha.
+8. **The merge is the planner's** ([planner](planner.md) step 9): it merges
+   on the three conditions of `AGENTS.md` § Merge conditions and reaches the
+   install. A worker that merges where no planner runs holds the same three
+   conditions, then runs
+   `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>` and
+   quotes the line it prints, which names the install's sha.
 9. **Release the claim** when the sub-issue is settled. The release compacts
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.

@@ -143,12 +143,12 @@ resolution earns a full one, and its brief says it reads the combination:
 branches actually met.
 
 **What a round costs, so that "one more round" is a priced decision**:
-one narrowed round runs **57,374 to 134,222 input tokens** at `medium` or
-`high` on Opus (kalaluthien/campaign-base#200, `campaign-token-tally.py
-reviews`), read before `reviews` rolled up nested transcripts, so it
-undercounts a round that fanned out; a fanned round has run up to 2,112,272
-(pr#255, rolled up in baseline#273's NOTE). Re-reading the whole pull request
-each round is what multiplies it.
+one round runs **57,374 to 134,222 input tokens** at `medium` or `high` on
+Opus (kalaluthien/campaign-base#200, `campaign-token-tally.py reviews`), read
+before `reviews` rolled up nested transcripts, so it undercounts a round that
+fanned out; a fanned round has run up to 2,112,272 (pr#255, rule-check#272
+NOTE issuecomment-5607270923). Re-reading the whole pull request each round is
+what multiplies it.
 
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect

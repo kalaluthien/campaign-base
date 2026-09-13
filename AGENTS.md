@@ -69,8 +69,8 @@ and whether it survives the machine. Identify the plane before any git command.
 | **campaign** | which repositories, what for, how far along, and each claim ref | GitHub issues; a claim ref in the remote of the repository the sub-issue lands in |
 
 The spec's two planes are this table folded: its code plane is the first two
-rows, and its campaign plane the third with the campaign directory's derived
-files. `spec/` keeps its own words.
+rows, and its campaign plane the third; the campaign directory's derived files
+are copies of it. `spec/` keeps its own words.
 
 `spec/` is normative and is Alloy whose comments are the spec. Each entity
 is `system.als`, the model, and `checks.als`, every command over it, plus any
@@ -649,9 +649,10 @@ blocks the resolution commit the other direction needs.
 merges, so it is held by whoever writes the review saying honestly that it did not
 write the code.
 
-**The push that retires a review does not start the next one, and whoever pushed
-it asks**, because **a silent wait is indistinguishable from work**: the `REPORT`
-names the new sha *and* asks; a session that asked and received nothing stops.
+**The push that retires a review does not start the next one, so whoever pushed
+it launches it and then asks for the merge**, because **a silent wait is
+indistinguishable from work**: the `REPORT` names the new sha *and* asks; a
+session that asked and received nothing stops.
 
 ## Review
 

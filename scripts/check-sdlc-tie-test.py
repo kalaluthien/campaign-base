@@ -30,8 +30,7 @@ growing carry their own copy of the guard, whose `LEGACY` is theirs.
 A mutation that deletes one branch of the guard fails the case named for it;
 the PR that added this suite ran that sweep and its REPORT quotes the result.
 """
-import importlib.machinery
-import importlib.util
+import importlib
 import json
 import subprocess
 import sys
@@ -47,11 +46,7 @@ def guard_module():
     list must not pin its LENGTH: the list shrinks by one line per repair, and a
     literal count here would make every such commit edit a case named for
     something else."""
-    spec = importlib.util.spec_from_loader(
-        "tie", importlib.machinery.SourceFileLoader("tie", str(GUARD)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return harness.load(GUARD, "tie")
 
 
 LEGACY = guard_module().LEGACY

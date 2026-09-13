@@ -1167,11 +1167,8 @@ def _(m):
 STUB_DIRECTORY = """import sys
 print(%r)
 """
-STUB_INSTALLED = """import importlib.util
-_s = importlib.util.spec_from_file_location("ci_real", %r)
-_m = importlib.util.module_from_spec(_s)
-_s.loader.exec_module(_m)
-readable = _m.readable
+STUB_INSTALLED = """import importlib
+readable = importlib.import_module("suite-harness-test").load(%r, "ci_real").readable
 def rows(readme):
     return [("o/base", "/x", "sh a"), ("o/m", "/y", None)], None
 def read_install(repo, path):

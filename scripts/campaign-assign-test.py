@@ -360,13 +360,7 @@ def end_to_end_cases():
 
 
 def main():
-    import importlib.machinery
-    import importlib.util
-    spec = importlib.util.spec_from_loader(
-        "campaign_assign",
-        importlib.machinery.SourceFileLoader("campaign_assign", str(ASSIGN)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = harness.load(ASSIGN, "campaign_assign")
 
     pure_cases(m)
     end_to_end_cases()

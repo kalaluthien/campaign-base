@@ -9,10 +9,9 @@ nothing guards it.
 
 Usage: scripts/campaign-primitives-test.py
 """
-import importlib.machinery
+import importlib
 import json
 import os
-import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -37,11 +36,7 @@ PROSE_ONLY = "#!/bin/sh\n# see scripts/check-rule-readers.py and scripts/check-t
 
 
 def load():
-    spec = importlib.util.spec_from_loader(
-        "prim", importlib.machinery.SourceFileLoader("prim", str(PRIM)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return harness.load(PRIM, "prim")
 
 
 def main():

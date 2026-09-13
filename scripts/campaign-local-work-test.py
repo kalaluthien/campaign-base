@@ -9,8 +9,7 @@ No case may reach the network or a real campaign directory.
 
 Usage: scripts/campaign-local-work-test.py
 """
-import importlib.machinery
-import importlib.util
+import importlib
 import os
 import subprocess
 import sys
@@ -78,10 +77,7 @@ def a_clone(root, *files):
 
 
 def main():
-    spec = importlib.util.spec_from_loader(
-        "clw", importlib.machinery.SourceFileLoader("clw", str(SCRIPT)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = harness.load(SCRIPT, "clw")
 
     # WHICH BRANCH PREFIXES ARE SWEPT, and why the reading narrowed when it
     # did. A slug that did not read means a `<slug>/` branch is invisible below,
@@ -93,11 +89,7 @@ def main():
         shim = Path(d) / "scripts"
         shim.mkdir()
         (shim / "campaign-local-work.py").write_text(SCRIPT.read_text())
-        spec2 = importlib.util.spec_from_loader(
-            "clw2", importlib.machinery.SourceFileLoader(
-                "clw2", str(shim / "campaign-local-work.py")))
-        m2 = importlib.util.module_from_spec(spec2)
-        spec2.loader.exec_module(m2)
+        m2 = harness.load(shim / "campaign-local-work.py", "clw2")
         # ONE PREFIX SINCE #237, and an unreadable slug leaves NONE -- where it
         # used to fall back to `campaign-<N>/`. The empty list is the point:
         # the sweep read nothing, and says so, rather than reporting a machine

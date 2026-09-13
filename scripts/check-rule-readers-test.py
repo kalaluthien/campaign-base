@@ -456,11 +456,7 @@ def main():
     # Asserted against the tree rather than against a copied list: a later move
     # that forgets to update the field fails here instead of printing a dead
     # path for months.
-    import importlib.machinery, importlib.util
-    spec = importlib.util.spec_from_loader(
-        "crr", importlib.machinery.SourceFileLoader("crr", str(GUARD)))
-    crr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(crr)
+    crr = harness.load(GUARD, "crr")
     base = GUARD.resolve().parent.parent
     for token, path, _, _ in crr.FORMS:
         check(f"the `{token}` form's owner {path} is a file", (base / path).is_file())

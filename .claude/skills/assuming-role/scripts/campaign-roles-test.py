@@ -11,8 +11,7 @@ verdicts change.
 Usage: .claude/skills/assuming-role/scripts/campaign-roles-test.py
 """
 import contextlib
-import importlib.machinery
-import importlib.util
+import importlib
 import io
 import re
 import sys
@@ -26,17 +25,9 @@ check = harness.check
 GUARD = BASE / "scripts" / "check-campaign-claim.py"
 
 
-def load(path, name):
-    spec = importlib.util.spec_from_loader(
-        name, importlib.machinery.SourceFileLoader(name, str(path)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
-
-
 def main():
-    m = load(HERE / "campaign-roles.py", "croles")
-    tracker = load(BASE / "scripts" / "campaign-tracker.py", "ctracker")
+    m = harness.load(HERE / "campaign-roles.py", "croles")
+    tracker = harness.load(BASE / "scripts" / "campaign-tracker.py", "ctracker")
     check("the role words are the table's keys, in its order",
           m.ROLE_WORDS == tuple(m.ROLES), m.ROLE_WORDS)
     check("no-role is not a role word, so a nameless session holds no row",

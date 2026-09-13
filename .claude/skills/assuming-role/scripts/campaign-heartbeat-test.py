@@ -233,7 +233,7 @@ def _(m):
 def _(m):
     r = reading(m, prompt(1, work(9)), queued(4, work(9),
                                               origin={"kind": "human"}))
-    v = m.verdict("worker", False, (True, None), "no limit", r, gone(3))
+    v = m.verdict("worker", False, "idle", "no limit", r, gone(3))
     return r["assigned_at"] == ts(4) and v[0] == "keep", (r, v)
 
 
@@ -308,8 +308,7 @@ def _(m):
 
 # verdict
 
-IDLE = (True, None)
-BUSY = (False, "status is working, not idle")
+IDLE, BUSY, BLOCKED = "idle", "working", "blocked"   # herdr's words
 NONE = "no limit (herdr lists w1:p2 idle)"
 # Assigned #9 at minute 1, worked until minute 2, its ref gone at minute 3.
 # A prompt of another shape and a tool call before the delete, read past
@@ -364,7 +363,31 @@ def _(m):
     v = m.verdict("worker", False, IDLE, NONE, DONE, gone(3))
     return (v[0] == "retire" and "assigned #9" in v[1]
             and "tk/9-* on o/r" in v[1] and gh_ts(3) in v[1]
-            and "no assignment prompt since, nothing else since" in v[1]), v
+            and "no assignment prompt since, nothing else since" in v[1]
+            and "queues" not in v[1]), v
+
+
+@case("retire: a working worker, its ref gone and nothing since, and /exit queues behind the turn")
+def _(m):
+    v = m.verdict("worker", False, BUSY, NONE, DONE, gone(3))
+    return (v[0] == "retire" and "nothing else since" in v[1]
+            and v[1].endswith("; working: /exit queues behind the turn")), v
+
+
+@case("a blocked worker whose ref went is kept: /exit would answer its dialog")
+def _(m):
+    refs = gone(3)
+    v = m.verdict("worker", False, BLOCKED, NONE, DONE, refs)
+    return (v[0] == "keep" and "status is blocked" in v[1]
+            and refs.asked == []), (v, refs.asked)
+
+
+@case("a working worker not done is kept, never compacted, and says why")
+def _(m):
+    v = m.verdict("worker", False, BUSY, NONE, dict(DONE, context=900_000),
+                  gone(None, ["tk/9-x"]))
+    return (v[0] == "keep" and v[1].startswith("status is working")
+            and "not retired: assigned #9; tk/9-x standing" in v[1]), v
 
 
 @case("a ref still standing is not retired")
@@ -451,7 +474,8 @@ def _(m):
 @case("keep: a working pane, whatever its context")
 def _(m):
     v = m.verdict("worker", False, BUSY, NONE, big(900_000), gone(3))
-    return v[0] == "keep", v
+    w = m.verdict("planner", False, BUSY, NONE, big(900_000), gone(3))
+    return (v[0], w[0]) == ("keep", "keep") and "status is working" in w[1], (v, w)
 
 
 @case("keep: an unread banner, whatever its context")
@@ -488,6 +512,16 @@ if a[:2] == ["agent", "prompt"]:
                  %% (os.environ.get("HERDR_ENV", "unset"), a[2], a[3]))
     sys.exit(int(open(os.path.join(d, "prompt-exit")).read()))
 sys.exit(1)
+'''
+# campaign-close.py, as the heartbeat's retire asks it: its argv and guard
+# logged, its exit the case's.
+CLOSE = r'''import os, sys
+d = os.path.dirname(os.path.abspath(sys.argv[0]))
+with open(os.path.join(d, "close.log"), "a") as fh:
+    fh.write("HERDR_ENV=%s argv=%s\n" % (os.environ.get("HERDR_ENV", "unset"),
+                                          " ".join(sys.argv[1:])))
+print("exit        holds -- sent /exit to " + sys.argv[-1])
+sys.exit(int(open(os.path.join(d, "close-exit")).read()))
 '''
 GH = r'''#!%(py)s
 import json, os, sys
@@ -613,10 +647,12 @@ FLEET = [  # (sid, name, pane, status, records, screen)
 ]
 
 
-def fleet(d, prompt_exit=0, sh=True):
+def fleet(d, prompt_exit=0, sh=True, close_exit=0):
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True)
+    (d / "close.py").write_text(CLOSE)
+    (d / "close-exit").write_text(str(close_exit))
     for name, body in (("herdr", HERDR), ("gh", GH)):
         harness.fake(b, name, body % {"py": sys.executable})
     harness.fake(b, "sleep", "#!/bin/sh\nexit 0\n")
@@ -660,6 +696,7 @@ def heartbeat(m, d, *args, own="w1:p1"):
     if own:
         env["HERDR_PANE_ID"] = own
     saved, cwd = dict(os.environ), os.getcwd()
+    close, m.CLOSE_SCRIPT = m.CLOSE_SCRIPT, d / "close.py"
     os.environ.pop("HERDR_ENV", None)
     os.environ.pop("HERDR_PANE_ID", None)
     os.environ.update(env)
@@ -669,6 +706,7 @@ def heartbeat(m, d, *args, own="w1:p1"):
         with contextlib.redirect_stdout(out):
             code = m.main(list(args))
     finally:
+        m.CLOSE_SCRIPT = close
         os.chdir(cwd)
         os.environ.clear()
         os.environ.update(saved)
@@ -806,10 +844,12 @@ def _(m):
 @case("without --apply nothing is sent and each action says what it would do")
 def _(m):
     with tempfile.TemporaryDirectory() as d:
-        code, out, sent = heartbeat(m, fleet(d), "7")
-    return (code == 0 and sent == []
+        d = fleet(d)
+        code, out, sent = heartbeat(m, d, "7")
+        closed = (d / "close.log").exists()
+    return (code == 0 and sent == [] and not closed
             and "would send /compact to w1:p1" in out
-            and "would send /exit to w1:p2" in out
+            and "would run campaign-close.py worker 7 w1:p2" in out
             and "would run campaign-limit-reset.py w1:p4 --fire w1:p1" in out), (sent, out)
 
 
@@ -819,9 +859,30 @@ def _(m):
         d = fleet(d)
         code, out, sent = heartbeat(m, d, "7", "--apply")
     want = {"HERDR_ENV=1 pane=w1:p1 prompt=/compact",
-            "HERDR_ENV=1 pane=w1:p2 prompt=/exit",
             "HERDR_ENV=1 pane=w1:p3 prompt=/compact"}
-    return code == 0 and want <= set(sent) and "sent /exit to w1:p2" in out, (sent, out)
+    return code == 0 and want <= set(sent) and "sent /compact to w1:p3" in out, (sent, out)
+
+
+@case("--apply retires through campaign-close's scope worker, guarded, one run per worker")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = fleet(d)
+        code, out, sent = heartbeat(m, d, "7", "--apply")
+        log = d / "close.log"
+        closed = log.read_text().splitlines() if log.exists() else []
+    return (code == 0 and closed == [f"HERDR_ENV=1 argv=worker 7 {p}"
+                                     for p in ("w1:p2", "w1:pD", "w1:pE")]
+            and not any("prompt=/exit" in ln for ln in sent)
+            and "retired w1:p2: campaign-close.py worker 7 w1:p2 exited 0" in out
+            and "  exit        holds -- sent /exit to w1:p2" in out), (closed, out)
+
+
+@case("a retire scope worker refused says so and exits 1")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        code, out, _ = heartbeat(m, fleet(d, close_exit=1), "7", "--apply")
+    return (code == 1 and "could not retire w1:p2: campaign-close.py worker 7 "
+            "w1:p2 exited 1" in out), out
 
 
 @case("two banners schedule one wake, into the own pane")
@@ -841,7 +902,7 @@ def _(m):
 def _(m):
     with tempfile.TemporaryDirectory() as d:
         code, out, _ = heartbeat(m, fleet(d, prompt_exit=3), "7", "--apply")
-    return code == 1 and "could not send /exit to w1:p2" in out, out
+    return code == 1 and "could not send /compact to w1:p3" in out, out
 
 
 @case("with no own pane, --apply cannot wake anyone and exits 1")
@@ -1481,6 +1542,28 @@ MUTATIONS = [
      'refs = refs_reader((None, "x"), slug)', "the run retires off the refs and the feed, and names N and what it read"),
     ("keep a working pane", "if not idle[0]:", "if False:",
      "keep: a working pane, whatever its context"),
+    ("a working worker is read on", "if not idle[0] and status != WORKING:",
+     "if not idle[0]:",
+     "retire: a working worker, its ref gone and nothing since, and /exit queues behind the turn"),
+    ("only a working pane is read on", "if not idle[0] and status != WORKING:",
+     "if False:", "a blocked worker whose ref went is kept: /exit would answer its dialog"),
+    ("a working retire says /exit queues", '+ ("" if idle[0] else', '+ ("" if True else',
+     "retire: a working worker, its ref gone and nothing since, and /exit queues behind the turn"),
+    ("...and an idle one does not", '+ ("" if idle[0] else', '+ ("" if False else',
+     "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
+    ("a retire runs scope worker", 'if word == "retire":\n            argv = ["worker", issue, pane]',
+     'if False:\n            argv = ["worker", issue, pane]',
+     "--apply retires through campaign-close's scope worker, guarded, one run per worker"),
+    ("the scope worker run is guarded",
+     'r = run(sys.executable, str(CLOSE_SCRIPT), *argv,\n                    env=dict(os.environ, HERDR_ENV="1"))',
+     "r = run(sys.executable, str(CLOSE_SCRIPT), *argv)",
+     "--apply retires through campaign-close's scope worker, guarded, one run per worker"),
+    ("no scope worker without --apply",
+     '            if not args.apply:\n                print(f"would run campaign-close.py',
+     '            if False:\n                print(f"would run campaign-close.py',
+     "without --apply nothing is sent and each action says what it would do"),
+    ("a refused retire is exit 1", "failed |= not ok", "pass",
+     "a retire scope worker refused says so and exits 1"),
     ("keep an unread banner", 'if word == "unread":', "if False:",
      "keep: an unread banner, whatever its context"),
     ("keep an unread transcript", "if isinstance(reading, str):", "if False:",

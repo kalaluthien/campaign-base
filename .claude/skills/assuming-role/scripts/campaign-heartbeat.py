@@ -13,12 +13,13 @@ verdict first, then what it read and from where:
              <pane> --fire <own pane>` schedules the planner's wake, once per
              run, since every session shares one account and one reset
     compact  idle, and its context is at least COMPACT_AT tokens: `/compact`
-    retire   a worker, idle, whose last assignment prompt names sub-issue N,
-             with no `<slug>/<N>-` ref standing and no assignment prompt
-             since the last such ref went: done by a GitHub fact, `/exit`.
-             A prompt of another shape, or a tool call, after it is not
-             work (the owner, rule-check#349, 2026-09-13); the line names
-             the last of each it read past
+    retire   a worker, idle or working, whose last assignment prompt names
+             sub-issue N, with no `<slug>/<N>-` ref standing and no
+             assignment prompt since the last such ref went: done by a
+             GitHub fact, `campaign-close.py worker <N> <pane>` -- `/exit`,
+             then its tab closed. A prompt of another shape, or a tool call,
+             after it is not work (the owner, rule-check#349, 2026-09-13);
+             the line names the last of each it read past
     quiet    the own pane, when the campaign has nothing left to do: `/compact`,
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
@@ -32,7 +33,9 @@ verdict first, then what it read and from where:
 
 A line after the header says whether the campaign is quiet and what the three
 readings were. Then one line per action: `sent`, `would send` (no --apply) or
-`could not send`. Without --apply nothing is sent and no wake is scheduled.
+`could not send`; a `retire` says `retired`, `would run` or `could not
+retire`, with the lines scope `worker` printed under it. Without --apply
+nothing is sent and no wake is scheduled.
 
     exit 0   the sessions were listed and every action asked for was sent
     exit 1   the slug or the listing could not be read, or an action failed
@@ -52,8 +55,8 @@ WHAT IS READ, AND FROM WHERE
   the refs             the campaign's claim refs, as the watch reads them
                        (`claim_reading`): a `<slug>/<N>-` ref standing is
                        sub-issue N still claimed.
-  the pull requests    when N's claim went, asked only for an idle worker's
-                       N with no ref standing, on every repository the refs
+  the pull requests    when N's claim went, asked only for an idle or working
+                       worker's N with no ref standing, on every repository the refs
                        were read on: the latest `head_ref_deleted` in the
                        timeline of each pull request whose head is under
                        `<slug>/<N>-` (`gh pr list`, the newest 100).
@@ -76,14 +79,31 @@ planner is awake, so a wake scheduled for now would only prompt it again,
 and every later run would read the same banner and prompt again. The line
 says the stop has passed, and the pane is judged like any other.
 
+A WORKER MID-TURN IS RETIRED, AND LOSES NOTHING. Its claim is gone, so no
+turn it is in holds work a claim covers; `/exit` queues behind that turn and
+ends the session the moment it does. Waiting for idle cost a tick: the
+release's own `/compact` kept the pane busy, a `/exit` minutes after it left
+the session listed on claude.ai/code, and one right after the last turn did
+not (the owner, rule-check#349, round 3). `blocked` still keeps, as does any
+word herdr prints that is neither idle nor `working`: `/exit` typed into a
+permission dialog answers the dialog, and clearing it is a person's.
+
+RETIRE RUNS SCOPE `worker`, one retired worker after another, so the tab goes
+with the agent: `campaign-close.py worker <N> <pane>` reads this once more,
+sends `/exit`, waits for the agent to leave `herdr agent list`, and closes the
+tab it sat in when nothing else sits there. The cost, per retired worker, is
+one more run of this reading and up to the close's WAIT_POLLS x WAIT_EVERY
+(3 min) of this run's time, which a compaction's length decides.
+
 WHAT `retire` CANNOT SEE, both ways. Only an assignment prompt is read as
-work, so nothing else that reaches an idle worker after its ref went is:
+work, so nothing else that reaches a worker after its ref went is:
 not who released the ref, not which checkout the session stands in
 (AGENTS.md § Completion), and not what a prompt of another shape set it
 doing. A worker that took another claim before its assigned one's ref went,
 or was handed work in words of the planner's own -- a sub-issue named in no
-assignment sentence, a question -- reads as done once it is idle; the line
-names the last such prompt, so what was read past is on the screen. The
+assignment sentence, a question -- reads as done, mid-turn or not, and
+loses its context, never its checkout; the line names the last such prompt,
+so what was read past is on the screen. The
 rest err the safe way, `keep`: a claim with no pull request -- or one older
 than the newest 100 -- falls to the feed, which holds the last 300 events
 however long that is and drops some deletes, so one it dropped reads as
@@ -187,7 +207,12 @@ def load(path, name):
     return module
 
 
-ASSIGNMENT = load(ASSIGN_SCRIPT, "campaign_assign").ASSIGNMENT
+_ASSIGN = load(ASSIGN_SCRIPT, "campaign_assign")
+ASSIGNMENT, IDLE_VERDICT = _ASSIGN.ASSIGNMENT, _ASSIGN.idle_verdict
+# The one word herdr prints for a turn in flight that `retire` reads on:
+# `/exit` queues behind it. Every other not-idle word keeps (the header).
+WORKING = "working"
+CLOSE_SCRIPT = BASE / "scripts" / "campaign-close.py"
 
 
 def run(*args, **kw):
@@ -402,19 +427,24 @@ def banner_word(line):
     return "unread"
 
 
-def verdict(role, own, idle, banner, reading, refs):
-    """(verdict, why). Pure. `banner` is limit-reset's first line, or None
-    for the own pane; `reading` is `transcript_reading`'s dict, or a string
-    saying why there is none; `idle` is campaign-assign's idle reading;
-    `refs` is `ref_went`'s, asked only of another pane's idle worker. A
-    worker not retired says why beside the verdict it got."""
+def verdict(role, own, status, banner, reading, refs):
+    """(verdict, why). Pure. `status` is herdr's word for the pane, read
+    through campaign-assign's idle reading and never for the own pane;
+    `banner` is limit-reset's first line, or None for the own pane;
+    `reading` is `transcript_reading`'s dict, or a string saying why there
+    is none; `refs` is `ref_went`'s, asked only of another pane's worker,
+    idle or WORKING. A worker not retired says why beside the verdict it
+    got."""
+    idle = (True, None) if own else IDLE_VERDICT({"status": status})
     if not own:
         word = banner_word(banner)
         if word == "unread":
             return "keep", f"banner not read: {banner}"
         if word == "limit":
             return "fire", f"banner: {banner}"
-        if not idle[0]:
+        # A WORKING pane is read on, since a worker's retire queues behind
+        # its turn; anything but a retire, `not idle[0]` below keeps.
+        if not idle[0] and status != WORKING:
             return "keep", idle[1]
     if isinstance(reading, str):
         return "keep", f"transcript not read: {reading}"
@@ -434,10 +464,14 @@ def verdict(role, own, idle, banner, reading, refs):
                 past[0] += f" ({reading['other']!r})"
             return "retire", (f"{why}; no assignment prompt since, "
                               + (f"read past {' and '.join(past)}" if past
-                                 else "nothing else since") + passed)
+                                 else "nothing else since") + passed
+                              + ("" if idle[0] else
+                                 f"; {WORKING}: /exit queues behind the turn"))
         passed += "; not retired: " + (
             f"an assignment prompt at {reading['assigned_at']} after {went}"
             if again else why)
+    if not idle[0]:
+        return "keep", f"{idle[1]}{passed}"
     if reading["context"] is None:
         return "keep", f"no context size in the transcript{passed}"
     if reading["context"] >= COMPACT_AT:
@@ -684,6 +718,8 @@ def run_watch(watch, read, every, polls=None, clock=None, sleep=None):
 # --------------------------------------------------------- the shell
 
 
+# `retire`'s text is sent by campaign-close's scope `worker`, which reads it
+# here; this run sends the other two itself.
 ACTIONS = {"compact": "/compact", "retire": "/exit", "quiet": "/compact"}
 
 
@@ -1018,7 +1054,6 @@ def main(argv=None):
         return run_watch(Watch(slug, own),
                          watch_reader(issue, slug, own, claim, names, {}),
                          WATCH_EVERY)
-    assign = load(ASSIGN_SCRIPT, "campaign_assign")
     sessions, why = claim.herdr_sessions()
     if sessions is None:
         print(f"could not list the sessions: {why}")
@@ -1047,8 +1082,8 @@ def main(argv=None):
             r = limit_reset(pane)
             banner = (r.stdout.strip().splitlines() or ["(no answer)"])[0]
         reading, where, why = read_transcript(sid)
-        word, reason = verdict(role, is_own, assign.idle_verdict(row),
-                               banner, reading if reading else why, refs)
+        word, reason = verdict(role, is_own, row["status"], banner,
+                               reading if reading else why, refs)
         if is_own and calm:
             word, reason = "quiet", f"{slug} has nothing left to do"
         print(f"{word} {pane} {row['name']}: {reason}")
@@ -1079,6 +1114,20 @@ def main(argv=None):
             r = limit_reset(*argv)
             print(r.stdout.rstrip())
             failed |= r.returncode != 0
+            continue
+        if word == "retire":
+            argv = ["worker", issue, pane]
+            if not args.apply:
+                print(f"would run campaign-close.py {' '.join(argv)}")
+                continue
+            r = run(sys.executable, str(CLOSE_SCRIPT), *argv,
+                    env=dict(os.environ, HERDR_ENV="1"))
+            ok = r.returncode == 0
+            print(f"{'retired' if ok else 'could not retire'} {pane}: "
+                  f"campaign-close.py {' '.join(argv)} exited {r.returncode}")
+            for ln in (r.stdout + r.stderr).splitlines():
+                print(f"  {ln}")
+            failed |= not ok
             continue
         text = ACTIONS[word]
         if not args.apply:

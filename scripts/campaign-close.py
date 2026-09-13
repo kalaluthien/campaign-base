@@ -107,6 +107,11 @@ SCOPE worker <N> <pane>
   4. gone         `herdr agent list`, WAIT_POLLS polls WAIT_EVERY seconds
                   apart. Holds when: no row names <pane>. Still listed is
                   reported with the time measured, and never killed.
+  5. tab          `herdr pane list`, the one listing that names a pane's tab:
+                  an exited agent leaves its pane there. Refuses when another
+                  pane sits in the tab, since `herdr tab close` closes every
+                  pane in it; else `herdr tab close <tab>`. Holds when: no
+                  pane is listed in the tab, or <pane> was not listed at all.
 
 SCOPE workers <N> -- every finished worker at once
 
@@ -197,6 +202,7 @@ WHAT IT NEVER DOES: kill a session, touch the `standing` label, write the
 """
 import argparse
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -238,7 +244,9 @@ RETIRE = "retire"
 EXIT_TEXT = HEARTBEAT.ACTIONS[RETIRE]
 
 WAIT_EVERY = 5
-WAIT_POLLS = 12
+# 3 min: `/exit` queues behind a worker's running turn, and the release's own
+# `/compact` measured 48 s and 95 s of it (rule-check#349's BLOCKED).
+WAIT_POLLS = 36
 
 WHY = {
     "slug": "every claim branch and session name of the campaign is read "
@@ -275,6 +283,8 @@ WHY = {
              "(HERDR_ENV=1), so it cannot act on somebody else's session",
     "exit": "a session leaves by fact, and the fact is its pane stopping",
     "gone": "a session still listed is asked, never killed",
+    "tab": "an exited agent leaves its tab listed, and closing a tab closes "
+           "every pane in it, so only a tab holding nothing else goes",
     "target": "the scope is read off the target, and a target read as nothing "
               "closes nothing",
 }
@@ -915,6 +925,53 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
     return False, note
 
 
+def parse_panes(text):
+    """({pane: its tab}, None) of `herdr pane list`'s JSON, or (None, why)."""
+    try:
+        return {p["pane_id"]: p["tab_id"]
+                for p in json.loads(text)["result"]["panes"]}, None
+    except (ValueError, KeyError, TypeError) as e:
+        return None, f"could not parse herdr pane list ({e.__class__.__name__})"
+
+
+def herdr_panes():
+    r = run("herdr", "pane", "list")
+    if r.returncode != 0:
+        return None, (f"herdr pane list exited {r.returncode}: "
+                      f"{(r.stderr or '').strip()[:120]}")
+    return parse_panes(r.stdout)
+
+
+def step_tab(pane, say):
+    """Close the tab <pane> sat in, once its agent is gone, and only when no
+    other pane sits in it."""
+    gone = f"{EXIT_TEXT} was sent to {pane}, and it left herdr agent list"
+    tabs, why = herdr_panes()
+    if tabs is None:
+        raise Refused("tab", f"herdr pane list did not read: {why}",
+                      changed=gone)
+    tab = tabs.get(pane)
+    if tab is None:
+        say("tab", f"{pane} is not in herdr pane list; no tab is left")
+        return
+    others = sorted(p for p, t in tabs.items() if t == tab and p != pane)
+    if others:
+        raise Refused("tab", f"tab {tab} holds {', '.join(others)} beside "
+                             f"{pane}; closing it would close them too",
+                      changed=gone)
+    r = run("herdr", "tab", "close", tab)
+    if r.returncode != 0:
+        raise Refused("tab", f"herdr tab close {tab} exited {r.returncode}: "
+                             f"{(r.stderr or '').strip()[:200]}", changed=gone)
+    tabs, why = herdr_panes()
+    if tabs is None or tab in tabs.values():
+        raise Refused("tab", f"herdr tab close {tab} exited 0, and "
+                             + (f"herdr pane list did not read after: {why}"
+                                if tabs is None else "the tab is still listed"),
+                      changed=f"{gone}; herdr tab close {tab} ran")
+    say("tab", f"closed {tab}; no pane is listed in it")
+
+
 # ------------------------------------------------------------- the scopes
 
 
@@ -962,6 +1019,7 @@ def worker(args, say=holds):
                               f"say so on the sub-issue it worked, and ask",
                       changed=f"{EXIT_TEXT} was sent to {pane}")
     say("gone", note)
+    step_tab(pane, say)
 
 
 def workers(args):
@@ -985,7 +1043,7 @@ def workers(args):
             worker(argparse.Namespace(campaign_issue=n, pane=pane),
                    say=lambda step, evidence: steps.append((step, evidence)))
             word, what = "exited", "; ".join(f"{s}: {e}" for s, e in steps
-                                             if s in ("retire", "gone"))
+                                             if s in ("retire", "gone", "tab"))
         except Refused as r:
             word = "kept" if r.gate == "retire" else "failed"
             what = f"{r.gate}: {r.reason}" + (

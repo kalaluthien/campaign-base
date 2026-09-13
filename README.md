@@ -18,7 +18,7 @@ campaign-base/
   AGENTS.md CLAUDE.md README.md .gitignore    tracked here
   .claude/skills/opening-campaign
   .claude/skills/close
-  spec/  scripts/
+  spec/  scripts/  docs/
   campaign-auth-refactor-260901/ a campaign, git-ignored; the bare `auth-refactor/`
                                  is the accepted older form; neither NAME is read
     .campaign                    the campaign issue number and the slug; what
@@ -89,7 +89,11 @@ Requires `git`, `gh` (authenticated), `herdr`, `uv`, and Python 3.
 
 ## Reading order
 
-`AGENTS.md` for the rules. `spec/campaign/github/system.als` for why they are
+Before the rules, [`docs/planes.html`](docs/planes.html) for where an artifact
+lives and whether it survives the machine, and
+[`docs/sub-issue-lifecycle.html`](docs/sub-issue-lifecycle.html) for each step
+of a sub-issue, who takes it and which reader settles it. `AGENTS.md` for the
+rules. `spec/campaign/github/system.als` for why they are
 those rules, what was rejected, and which risks are still open — it is the entry
 point to `spec/`, which is Alloy models, with no markdown and HTML only as
 a scenario's form beside its entity; each model's comments carry the part of

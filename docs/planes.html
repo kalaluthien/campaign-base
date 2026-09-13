@@ -1,0 +1,200 @@
+<title>The three planes</title>
+<!-- A `narrative`, from show-me's assets/narrative.html at dotclaude 9c84679;
+     ~/.claude/types/doctype.md gives the parts, § Page and § Figures the rules.
+     Evidence links pin the base at the sha in the footer. -->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf7; --fg: #1d1d1f; --muted: #5b5f66; --line: #cfccc4;
+    --box: #ffffff; --accent: #2458c6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+      --box: #222427; --accent: #8fb4ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+    --box: #222427; --accent: #8fb4ff;
+  }
+  body { background: var(--bg); color: var(--fg); margin: 0;
+         font: 16px/1.55 system-ui, sans-serif; padding-block: 24px; padding-inline: 16px; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  .thesis { font-size: 1.15rem; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+  figure { margin: 0; overflow-x: auto; }
+  svg { display: block; }
+  svg .box { fill: var(--box); stroke: var(--fg); }
+  svg .cache { fill: var(--bg); stroke: var(--fg); stroke-dasharray: 6 4; }
+  svg .edge { stroke: var(--muted); fill: none; marker-end: url(#arrow); }
+  svg #arrow path { fill: var(--muted); }
+  svg text { fill: var(--fg); font: 13px system-ui, sans-serif; }
+  svg .name { font-weight: 600; }
+  svg .label { fill: var(--muted); }
+  nav ol { padding-inline-start: 1.25rem; }
+  code { overflow-wrap: anywhere; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: .75rem 0; }
+  dt { font-weight: 600; }
+  dd { margin: 0; }
+  details { margin-top: .5rem; }
+  blockquote { margin: .5rem 0; padding-inline-start: .75rem; border-inline-start: 3px solid var(--line); color: var(--muted); }
+  .key { color: var(--muted); font-size: .9rem; }
+  .absent { color: var(--muted); }
+  footer { color: var(--muted); font-size: .9rem; margin-top: 2rem; }
+  a { color: var(--accent); }
+  a:focus-visible, summary:focus-visible, figure:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<main>
+  <header>
+    <h1>The three planes</h1>
+    <p class="thesis">Every artifact of a campaign sits on one of three planes, the base, a member repository or the campaign, and each is stored on a remote, so it survives the machine; the campaign directory is no plane, only one machine's cache of the three.</p>
+  </header>
+
+  <section aria-labelledby="map">
+    <h2 id="map">Map</h2>
+    <figure tabindex="0" aria-labelledby="map-title">
+      <svg width="640" height="250" viewBox="0 0 640 250" role="img" aria-labelledby="map-title" aria-describedby="map-desc">
+        <title id="map-title">The three planes and the campaign directory</title>
+        <desc id="map-desc">Three solid boxes: the base, stored in this repository; a member repository, stored in its own remote; the campaign, stored in GitHub issues. Below them a dashed box, the campaign directory on one machine, with an arrow to each plane: it sits in the base root, it clones member repositories into repos/, and it derives its README.md from the campaign issue.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="10" y="10" width="190" height="62" rx="6"/>
+        <text class="name" x="105" y="36" text-anchor="middle">base</text>
+        <text x="105" y="58" text-anchor="middle">this repository</text>
+        <rect class="box" x="225" y="10" width="190" height="62" rx="6"/>
+        <text class="name" x="320" y="36" text-anchor="middle">member repository</text>
+        <text x="320" y="58" text-anchor="middle">its own remote</text>
+        <rect class="box" x="440" y="10" width="190" height="62" rx="6"/>
+        <text class="name" x="535" y="36" text-anchor="middle">campaign</text>
+        <text x="535" y="58" text-anchor="middle">GitHub issues</text>
+        <rect class="cache" x="150" y="178" width="340" height="62" rx="6"/>
+        <text class="name" x="320" y="204" text-anchor="middle">campaign directory</text>
+        <text x="320" y="226" text-anchor="middle">one machine's cache, loses nothing if deleted</text>
+        <path class="edge" d="M200,178 L120,74"/>
+        <text class="label" x="60" y="130">sits in its root</text>
+        <path class="edge" d="M320,178 L320,74"/>
+        <text class="label" x="328" y="130">clones into repos/</text>
+        <path class="edge" d="M440,178 L520,74"/>
+        <text class="label" x="490" y="150">derives README.md</text>
+      </svg>
+      <figcaption class="key">Solid box: a plane, stored on a remote, survives the machine. Dashed box: a cache on one machine; deleting it loses nothing. Arrow: from the directory to a plane it depends on, labelled with how.</figcaption>
+    </figure>
+    <nav aria-label="Chapters">
+      <ol>
+        <li><a href="#base">What does the base hold?</a></li>
+        <li><a href="#member">What does a member repository hold?</a></li>
+        <li><a href="#campaign">What does the campaign hold?</a></li>
+        <li><a href="#directory">What does the campaign directory hold, and why is nothing durable only there?</a></li>
+        <li><a href="#installed">How does a merge reach a repository installed on this machine?</a></li>
+      </ol>
+    </nav>
+  </section>
+
+  <section aria-labelledby="base">
+    <h2 id="base">What does the base hold?</h2>
+    <dl>
+      <dt>Holds</dt><dd><code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>README.md</code>, <code>.gitignore</code>, <code>.claude/</code>, <code>spec/</code>, <code>scripts/</code>, <code>.github/</code>, <code>docs/</code>: how campaigns are run.</dd>
+      <dt>Stored in</dt><dd>this repository, <code>kalaluthien/campaign-base</code></dd>
+      <dt>Survives the machine</dt><dd>yes</dd>
+    </dl>
+    <p><code>.gitignore</code> is an allowlist: it ignores everything at the root and admits only the base's own entries, so a campaign directory and every clone inside it stay untracked and cannot be committed here by accident. <code>scripts/check-tree-shape.py</code> refuses a commit that tracks a top-level entry the allowlist does not name.</p>
+    <details>
+      <summary>Evidence: <code>AGENTS.md</code> § The three planes</summary>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#the-three-planes"><code>AGENTS.md</code> § The three planes</a>, the base row</li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/README.md#shape"><code>README.md</code> § Shape</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/check-tree-shape.py#L16"><code>scripts/check-tree-shape.py</code>, its docstring, R2</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="member">
+    <h2 id="member">What does a member repository hold?</h2>
+    <dl>
+      <dt>Holds</dt><dd>the code being changed and its history; from a campaign, only a claim branch and its pull request</dd>
+      <dt>Stored in</dt><dd>each repository's own remote</dd>
+      <dt>Survives the machine</dt><dd>yes, once pushed; the clone under <code>repos/</code> does not</dd>
+    </dl>
+    <p>Every sub-issue is filed on the base's tracker, whichever repository its code lands in, so a member repository's own issue conventions are never touched. Its <code>## Lands in</code> section says where the work goes, because where the issue is filed no longer does.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/github/system.als</code> § Issue</summary>
+      <blockquote>Every issue is FILED on the Base's tracker, whatever its `repo`; a member repository receives only branches and pull requests, so the tracker is a constant here and not a field.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L7-L12"><code>spec/campaign/github/system.als</code>, header, Issue</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#sub-issues"><code>AGENTS.md</code> § Sub-issues</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="campaign">
+    <h2 id="campaign">What does the campaign hold?</h2>
+    <dl>
+      <dt>Holds</dt><dd>the campaign issue, whose body is the charter (<code>## Intent</code>, <code>## Scope</code>, <code>## Definition of done</code>, <code>## Repos</code>); its labels, <code>campaign</code>, <code>campaign:&lt;slug&gt;</code> and <code>bound:&lt;machine&gt;</code>; its sub-issues, linked as sub-issues, which is the whole index; every comment, each opening with its kind; and each claim, a <code>&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;</code> ref on the remote</dd>
+      <dt>Stored in</dt><dd>GitHub issues on <code>kalaluthien/campaign-base</code>, and the claim refs on the remotes</dd>
+      <dt>Survives the machine</dt><dd>yes: any machine, or a phone, reads it without anything local agreeing</dd>
+    </dl>
+    <p>A campaign is its campaign issue. Progress is not written anywhere: <code>scripts/campaign-tracker.py settlement</code> derives it from the sub-issue index, so the body changes only when the scope does and at the close.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/github/system.als</code> § Campaign, Claimed</summary>
+      <blockquote>the sub-issues whose branch is on the remote. A branch is a ref, readable from any machine, so the claim is a GitHub fact and not a local one -- which is why it lives here.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L13-L19"><code>spec/campaign/github/system.als</code>, header, Campaign and Claimed</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#the-campaign-issue-body"><code>AGENTS.md</code> § The campaign issue body</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#id-slug-directory-branch"><code>AGENTS.md</code> § ID, slug, directory, branch</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="directory">
+    <h2 id="directory">What does the campaign directory hold, and why is nothing durable only there?</h2>
+    <dl>
+      <dt>Holds</dt><dd><code>.campaign</code>, the marker naming the campaign; <code>AGENTS.md</code> and <code>CLAUDE.md</code>, the campaign's principles; <code>README.md</code>, derived from the campaign issue body; <code>runtime/</code>, derived state and process artifacts such as a pid, a log, a lock; <code>scripts/</code>, scratch; <code>repos/</code>, the member clones</dd>
+      <dt>Stored in</dt><dd><code>campaign-&lt;slug&gt;-&lt;date&gt;/</code> at the base root, git-ignored, on one machine</dd>
+      <dt>Survives the machine</dt><dd>no, and it need not: at the close <code>scripts/campaign-close.py</code> deletes it on the person's <code>--delete</code>, and nothing is lost</dd>
+    </dl>
+    <p>A sub-issue's plan, a session's state at a stop and the campaign's progress go on the issue they are about, as a comment, where every session and every machine reads them. What stays in the directory is what no issue can hold, or what can be derived again from one at any time. That is what lets the directory be optional off the bound machine.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/directory/system.als</code>, header</summary>
+      <blockquote>A campaign directory holds no fact another machine reads, which is what lets it be optional.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L29-L35"><code>spec/campaign/directory/system.als</code>, header</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#the-three-planes"><code>AGENTS.md</code> § The three planes</a></li>
+        <li><code>scripts/campaign-directory.py</code>: which directory on this machine is a campaign's, read from its marker</li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-close.py#L1203-L1216"><code>scripts/campaign-close.py</code>, <code>here</code>: the delete is the person's word</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="installed">
+    <h2 id="installed">How does a merge reach a repository installed on this machine?</h2>
+    <dl>
+      <dt>Two checkouts</dt><dd>the install, where the repository is used, and the clone under the campaign directory, where it is worked</dd>
+      <dt>The base's row</dt><dd>installed at the base root; its <code>apply</code> is <code>scripts/install-hooks.sh</code></dd>
+      <dt>Any other</dt><dd>a <code>## Repos</code> entry carrying <code>(installed: &lt;path&gt;, apply: &lt;command&gt;)</code></dd>
+    </dl>
+    <p>A merge is not finished until the install shows it. Whoever merges runs <code>scripts/campaign-installed.py reach</code> for the repository the merge landed in; <code>check</code> reads whether an install is behind, and the campaign's close refuses while one is.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/directory/system.als</code> § Machine, reach</summary>
+      <blockquote>An installed repository has two checkouts on a machine -- the install, where it is used, and the clone under the campaign directory, where it is worked -- and a merge is not finished until the install shows it.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L19-L27"><code>spec/campaign/directory/system.als</code>, header</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L200-L213"><code>spec/campaign/directory/system.als</code>, <code>reach</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#installed-repositories"><code>AGENTS.md</code> § Installed repositories</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="absent">
+    <h2 id="absent">Not stated in the source</h2>
+    <ul class="absent">
+      <li>How the three planes relate to the two in <code>spec/campaign/orchestration/system.als</code>: there the campaign plane holds "the issues, the index, the claims, the directories" and the code plane the commits, while <code>AGENTS.md</code> says the campaign directory holds no plane of its own.</li>
+      <li>Which plane a claim ref is on: <code>AGENTS.md</code>'s table has no row for it, the spec calls a claim a GitHub fact, and the ref itself sits in the remote of the repository the work lands in.</li>
+    </ul>
+  </section>
+
+  <footer>Source: <a href="https://github.com/kalaluthien/campaign-base/tree/33c63dfd161d5c497a02213498474eddd0bb52a7">kalaluthien/campaign-base</a> at <code>33c63df</code>; the list of scripts is <code>scripts/campaign-primitives.py</code>'s.</footer>
+</main>

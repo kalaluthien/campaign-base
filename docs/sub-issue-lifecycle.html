@@ -1,0 +1,248 @@
+<title>A sub-issue's lifecycle</title>
+<!-- A `narrative`, from show-me's assets/narrative.html at dotclaude 9c84679;
+     ~/.claude/types/doctype.md gives the parts, § Page and § Figures the rules.
+     Evidence links pin the base at the sha in the footer. -->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf7; --fg: #1d1d1f; --muted: #5b5f66; --line: #cfccc4;
+    --box: #ffffff; --accent: #2458c6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+      --box: #222427; --accent: #8fb4ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+    --box: #222427; --accent: #8fb4ff;
+  }
+  body { background: var(--bg); color: var(--fg); margin: 0;
+         font: 16px/1.55 system-ui, sans-serif; padding-block: 24px; padding-inline: 16px; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  .thesis { font-size: 1.15rem; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+  figure { margin: 0; overflow-x: auto; }
+  svg { display: block; }
+  svg .box { fill: var(--box); stroke: var(--fg); }
+  svg .edge { stroke: var(--muted); fill: none; marker-end: url(#arrow); }
+  svg #arrow path { fill: var(--muted); }
+  svg text { fill: var(--fg); font: 13px system-ui, sans-serif; }
+  svg .name { font-weight: 600; }
+  svg .who { fill: var(--muted); font-size: 12px; }
+  nav ol { padding-inline-start: 1.25rem; }
+  code { overflow-wrap: anywhere; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: .75rem 0; }
+  dt { font-weight: 600; }
+  dd { margin: 0; }
+  details { margin-top: .5rem; }
+  blockquote { margin: .5rem 0; padding-inline-start: .75rem; border-inline-start: 3px solid var(--line); color: var(--muted); }
+  .key { color: var(--muted); font-size: .9rem; }
+  .absent { color: var(--muted); }
+  footer { color: var(--muted); font-size: .9rem; margin-top: 2rem; }
+  a { color: var(--accent); }
+  a:focus-visible, summary:focus-visible, figure:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<main>
+  <header>
+    <h1>A sub-issue's lifecycle</h1>
+    <p class="thesis">A sub-issue is filed, claimed, committed, reviewed, merged, reached and closed, and at each step a named reader on GitHub or on disk, never a terminal screen, says whether the step happened.</p>
+  </header>
+
+  <section aria-labelledby="map">
+    <h2 id="map">Map</h2>
+    <figure tabindex="0" aria-labelledby="map-title">
+      <svg width="900" height="100" viewBox="0 0 900 100" role="img" aria-labelledby="map-title" aria-describedby="map-desc">
+        <title id="map-title">The steps of a sub-issue, in order</title>
+        <desc id="map-desc">A row of boxes joined by arrows: file, taken by any session; claim, by the worker; first commit, by the worker; review, by an agent that did not write the commits; merge, by anyone who meets the merge conditions; reach, by whoever merged; close, by GitHub on the merge, with the claim then released by either role.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="10" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="66" y="45" text-anchor="middle">file</text>
+        <text class="who" x="66" y="65" text-anchor="middle">any session</text>
+        <path class="edge" d="M122,50 L136,50"/>
+        <rect class="box" x="138" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="194" y="45" text-anchor="middle">claim</text>
+        <text class="who" x="194" y="65" text-anchor="middle">worker</text>
+        <path class="edge" d="M250,50 L264,50"/>
+        <rect class="box" x="266" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="322" y="45" text-anchor="middle">first commit</text>
+        <text class="who" x="322" y="65" text-anchor="middle">worker</text>
+        <path class="edge" d="M378,50 L392,50"/>
+        <rect class="box" x="394" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="450" y="45" text-anchor="middle">review</text>
+        <text class="who" x="450" y="65" text-anchor="middle">not the author</text>
+        <path class="edge" d="M506,50 L520,50"/>
+        <rect class="box" x="522" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="578" y="45" text-anchor="middle">merge</text>
+        <text class="who" x="578" y="65" text-anchor="middle">anyone qualified</text>
+        <path class="edge" d="M634,50 L648,50"/>
+        <rect class="box" x="650" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="706" y="45" text-anchor="middle">reach</text>
+        <text class="who" x="706" y="65" text-anchor="middle">the merger</text>
+        <path class="edge" d="M762,50 L776,50"/>
+        <rect class="box" x="778" y="20" width="112" height="60" rx="6"/>
+        <text class="name" x="834" y="45" text-anchor="middle">close</text>
+        <text class="who" x="834" y="65" text-anchor="middle">GitHub, any role</text>
+      </svg>
+      <figcaption class="key">Box: a step, its name above and who takes it below. Arrow: the next step.</figcaption>
+    </figure>
+    <nav aria-label="Chapters">
+      <ol>
+        <li><a href="#file">File: how does a sub-issue come to exist?</a></li>
+        <li><a href="#claim">Claim: how does one session come to own it?</a></li>
+        <li><a href="#commit">First commit: when does the work become visible?</a></li>
+        <li><a href="#review">Review: who judges the work, and at which revision?</a></li>
+        <li><a href="#merge">Merge: who may land it?</a></li>
+        <li><a href="#reach">Reach: when is a merge finished on this machine?</a></li>
+        <li><a href="#close">Close: when is the sub-issue settled?</a></li>
+      </ol>
+    </nav>
+  </section>
+
+  <section aria-labelledby="file">
+    <h2 id="file">File: how does a sub-issue come to exist?</h2>
+    <dl>
+      <dt>Next step</dt><dd>create it on the base's tracker as a sub-issue of the campaign issue, <code>gh issue create --parent</code>, its body from the sub-issue template and one <code>kind:</code> label</dd>
+      <dt>Who</dt><dd>any session on any machine, one outside the campaign included; the planner, when the work is decomposed</dd>
+      <dt>Settled by</dt><dd><code>scripts/campaign-tracker.py index &lt;N&gt;</code> reads the link back; <code>campaign-tracker.py check &lt;issue&gt;</code> reads the shape</dd>
+    </dl>
+    <p>The sub-issue link is the whole index: nothing else lists a campaign's sub-issues. Filing is a record, not a claim, so it asks for no binding. A sub-issue labelled <code>backlog</code> waits for the owner to take the label off.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/github/system.als</code> § addMember</summary>
+      <blockquote>Deliberately no session, machine or binding precondition: filing a sub-issue is a record, not a claim, so any session on any machine may do it (AGENTS.md § The binding).</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L296-L305"><code>spec/campaign/github/system.als</code>, <code>addMember</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#sub-issues"><code>AGENTS.md</code> § Sub-issues</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-tracker.py"><code>scripts/campaign-tracker.py</code>, its docstring</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="claim">
+    <h2 id="claim">Claim: how does one session come to own it?</h2>
+    <dl>
+      <dt>Next step</dt><dd><code>scripts/campaign-claim.py take &lt;N&gt; &lt;issue&gt; &lt;topic&gt;</code> cuts the branch <code>&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;</code> from the remote, on the repository the work lands in, or on the base when it lands nowhere</dd>
+      <dt>Who</dt><dd>the worker; the planner, before it launches a delegate onto the branch</dd>
+      <dt>Settled by</dt><dd>GitHub's create-ref, which refuses a ref that exists, so the claim is atomic across machines; <code>campaign-claim.py live &lt;N&gt;</code> says which claims are checked out on this machine</dd>
+    </dl>
+    <p>The branch is the whole claim and its workspace. Work that lands no commit is claimed all the same, and a sub-issue has one claim whatever the topic.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/github/system.als</code> § claim</summary>
+      <blockquote>the ref that carries a claim is named `&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;`, so create-ref's server-side refusal serialises ref NAMES and admits two topics on one sub-issue. [...] What closes it is in the script: `take` reads the campaign's refs again AFTER its own create, and where two name one sub-issue, EVERY taker that sees a rival deletes what it just cut.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L367-L392"><code>spec/campaign/github/system.als</code>, <code>claim</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#id-slug-directory-branch"><code>AGENTS.md</code> § ID, slug, directory, branch</a>, Branch</li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-claim.py"><code>scripts/campaign-claim.py</code>, its docstring</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="commit">
+    <h2 id="commit">First commit: when does the work become visible?</h2>
+    <dl>
+      <dt>Next step</dt><dd>commit on the claim branch in the checkout it names, then open the pull request at once, its body closing the sub-issue by full name, <code>Closes kalaluthien/campaign-base#&lt;issue&gt;</code></dd>
+      <dt>Who</dt><dd>the worker</dd>
+      <dt>Settled by</dt><dd>the <code>pre-commit</code> hook's <code>scripts/check-commit-claim.py</code>, which refuses a commit on campaign work whose branch is not a claim; the <code>post-commit</code> hook's <code>scripts/push-campaign-branch.sh</code>, which pushes and says what happened</dd>
+    </dl>
+    <p>The push has already published the branch, so a late pull request only hides published work. The open pull request is where the review writes its findings, and it outlives the session that opened it.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/orchestration/system.als</code> § push</summary>
+      <blockquote>it clears `Reviewed`, because A REVIEW IS OF A PULL REQUEST AT A REVISION.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/orchestration/system.als#L437-L448"><code>spec/campaign/orchestration/system.als</code>, <code>push</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#execution-mode"><code>AGENTS.md</code> § Execution mode</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/check-commit-claim.py"><code>scripts/check-commit-claim.py</code>, its docstring</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="review">
+    <h2 id="review">Review: who judges the work, and at which revision?</h2>
+    <dl>
+      <dt>Next step</dt><dd>a <code>REVIEW</code> comment on the pull request naming the head sha, written by an in-process subagent</dd>
+      <dt>Who</dt><dd>written by an agent that did not write the commits; launched by whoever wants the merge, the author included</dd>
+      <dt>Settled by</dt><dd><code>scripts/check-merge-review.py</code>, which answers <code>reviewed</code>, <code>unreviewed</code> or <code>unknown</code> for a sha; <code>scripts/rerun-check.py</code> re-runs the pull request's <code>check</code> once a <code>REVIEW</code> names its head</dd>
+    </dl>
+    <p>Every push retires the review, so the author posts a <code>REPORT</code> pinning the new sha and asks for the next one. A silent wait looks the same as work.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/orchestration/system.als</code> § review</summary>
+      <blockquote>No guard on who commissions it -- the property needs independence of JUDGEMENT, not of TASKING, and a one-session campaign has nobody else to launch it. The named limit: the launcher writes the reviewer's brief.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/orchestration/system.als#L529-L543"><code>spec/campaign/orchestration/system.als</code>, <code>review</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/.claude/skills/assuming-role/references/reviewing.md#the-call"><code>assuming-role/references/reviewing.md</code> § The call</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/check-merge-review.py"><code>scripts/check-merge-review.py</code>, its docstring</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="merge">
+    <h2 id="merge">Merge: who may land it?</h2>
+    <dl>
+      <dt>Next step</dt><dd>merge the pull request once a review was read at the sha being merged, written by an agent that did not write the commits, and the branch contains the current <code>main</code>; when <code>main</code> has moved, merge it into the topic branch first, which is a push and so needs a fresh review</dd>
+      <dt>Who</dt><dd>anyone who satisfies all of those, the author included; no role is named</dd>
+      <dt>Settled by</dt><dd>GitHub's required <code>check</code> job, which holds the review-at-sha and contains-main conditions; the not-the-author condition has no automatic reader and rests on the reviewer saying so honestly</dd>
+    </dl>
+    <p>A branch that was never a pull request head has no <code>check</code>, so fast-forwarding <code>main</code> onto it is refused; landing goes through the pull request.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/orchestration/system.als</code> § Plane</summary>
+      <blockquote>`MergePullRequest` is on neither plane deliberately: AGENTS.md's three merge conditions hold it and none of them names a role, so putting it on the code plane would make a planner unable to land a reviewed pull request and putting it on the campaign plane would let one land any.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/orchestration/system.als#L85-L97"><code>spec/campaign/orchestration/system.als</code>, the Plane comment</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#merge-conditions"><code>AGENTS.md</code> § Merge conditions</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="reach">
+    <h2 id="reach">Reach: when is a merge finished on this machine?</h2>
+    <dl>
+      <dt>Next step</dt><dd><code>scripts/campaign-installed.py reach &lt;body&gt; &lt;owner/repo&gt; &lt;sha&gt;</code> for the repository the merge landed in: it fast-forwards the install and runs its <code>apply</code>, and the <code>REPORT</code> quotes the line it prints; a repository not installed on this machine has nothing to reach, and the base always is</dd>
+      <dt>Who</dt><dd>whoever merged</dd>
+      <dt>Settled by</dt><dd><code>campaign-installed.py check</code>, which reads whether each install contains everything merged; <code>scripts/campaign-close.py</code>'s <code>installed</code> gate refuses a campaign's close while one does not</dd>
+    </dl>
+    <p>A merge leaves the install behind on every machine that has it, whether or not that machine holds the campaign, and only a reach catches it up.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/directory/system.als</code> § reach, reachDiscipline</summary>
+      <blockquote>It is what refills `current`, and the only thing that does, so a merge on an installed repository is followed by exactly this or the campaign holding it does not close (`reachDiscipline`).</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L200-L213"><code>spec/campaign/directory/system.als</code>, <code>reach</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L125-L143"><code>spec/campaign/directory/system.als</code>, <code>reachDiscipline</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#installed-repositories"><code>AGENTS.md</code> § Installed repositories</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="close">
+    <h2 id="close">Close: when is the sub-issue settled?</h2>
+    <dl>
+      <dt>Next step</dt><dd>the merge closes the sub-issue through the pull request's <code>Closes</code> line; a dropped one is closed as not planned; one whose work lives only under <code>&lt;campaign&gt;/scripts/</code> closes as completed with no pull request; then the claim is released with <code>scripts/campaign-claim.py release</code>, which deletes the ref and, when a worker releases, compacts its pane</dd>
+      <dt>Who</dt><dd>GitHub, on the merge; for the release, either role, since no role row restricts it: the worker ends its lifecycle with it, and on the base the planner releases after every merge</dd>
+      <dt>Settled by</dt><dd><code>scripts/campaign-tracker.py settlement &lt;N&gt;</code>, which reads closed with its pull request merged, or closed as not planned; <code>release</code> reads <code>check-merge-review.py</code> again before it deletes a merged claim's ref</dd>
+    </dl>
+    <p>Completion is a GitHub fact. Nothing on a terminal screen is evidence that a sub-issue is done, and both ways of closing are needed, or a sub-issue dropped on purpose never reads settled and its campaign can never close.</p>
+    <details>
+      <summary>Evidence: <code>spec/campaign/github/system.als</code> § closeIssue, release</summary>
+      <blockquote>Nothing forbids closing an issue whose pull request never merged.</blockquote>
+      <ul>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L345-L353"><code>spec/campaign/github/system.als</code>, <code>closeIssue</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L394-L402"><code>spec/campaign/github/system.als</code>, <code>release</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-claim.py#L1144-L1150"><code>scripts/campaign-claim.py</code>, <code>release</code>'s compaction note: who releases</a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#completion-liveness-and-local-only-work"><code>AGENTS.md</code> § Completion, liveness, and local-only work</a></li>
+      </ul>
+    </details>
+  </section>
+
+  <section aria-labelledby="absent">
+    <h2 id="absent">Not stated in the source</h2>
+    <ul class="absent">
+      <li>Whether a sub-issue may read settled before its merge is reached: the <code>Closes</code> line closes it at the merge, before <code>reach</code> runs, and <code>reachDiscipline</code> gates only the campaign issue's close.</li>
+    </ul>
+  </section>
+
+  <footer>Source: <a href="https://github.com/kalaluthien/campaign-base/tree/33c63dfd161d5c497a02213498474eddd0bb52a7">kalaluthien/campaign-base</a> at <code>33c63df</code>; the list of scripts is <code>scripts/campaign-primitives.py</code>'s, and what each role may write is <code>campaign-roles.py</code>'s.</footer>
+</main>

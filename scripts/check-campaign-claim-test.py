@@ -1450,6 +1450,17 @@ def main():
         check("ALLOW beside the malformed-row refusal: other rows and unknown "
               "fields are not malformed",
               r.returncode == 0 and "any campaign" in r.stdout, out(r)[:400])
+        # ...but ONE malformed row ANYWHERE is could-not-look, this session's
+        # own well-formed row read first included: the parser reads the whole
+        # listing (rule-check#370 row 3, stated at the guard's call).
+        spoiled = herdr_stub_raw(d, json.dumps({"result": {"agents": [
+            {"agent_session": {"value": "sid-1"}, "name": "demo-planner-3"},
+            {"agent_session": "not-an-object", "name": "x"},
+        ]}}))
+        r = ask(f.base, tool="Bash", command="gh issue close 116", env=spoiled)
+        check("a malformed row after this session's own still leaves the role "
+              "unread",
+              r.returncode == 2 and "not an object" in r.stderr, out(r)[:400])
         r = ask(d, tool="Bash", command="gh issue close 9", env=gone)
         check("...and outside every base it still allows, as it always did",
               r.returncode == 0, out(r)[:300])
@@ -3454,7 +3465,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 476
+    EXPECTED = 477
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

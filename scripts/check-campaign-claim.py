@@ -591,6 +591,11 @@ def role_of(session_id):
     # The listing and the role word are campaign-name-session.py's
     # (rule-check#370 row 3); a malformed listing comes back a why, never a
     # traceback, which a PreToolUse hook would exit 1 on and the call PROCEED.
+    # THE WHOLE LISTING, one malformed row of another session's included: the
+    # loop this replaced read rows only up to this session's, so row 3 widened
+    # could-not-look to every row. Kept, because could-not-look falls back to
+    # the claim reading, a gate and not a bypass, and the one parser serves
+    # `campaign-claim live`, whose count a dropped row would shrink.
     sessions, why = rule.herdr_sessions()
     if sessions is None:
         return None, None, why

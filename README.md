@@ -71,9 +71,9 @@ guard with this repository's own guards (the `# runs:` line the installer
 writes is the one list), the `post-commit` that pushes a campaign branch on
 its first commit, and the harness claim guard in `~/.claude/settings.json`. It
 refuses rather than overwrites a hook it did not write, with one exception it
-announces: the shim `acquire-repo.sh` leaves in a clone, in either of its two
-shapes, which it adopts because the hook it writes runs the same guard and the
-same claim gate.
+announces: the shims `acquire-repo.sh` leaves in a clone -- its pre-commit, in
+either of two shapes, and its post-commit -- which it adopts because the hooks
+it writes run the same guard, the same claim gate and the same push.
 
 A delegate clone gets its hooks from `acquire-repo.sh`. Where the repository
 ships this installer, that means running it with `--git-only`; where it ships

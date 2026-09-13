@@ -340,6 +340,22 @@ def main():
               c.returncode == 0, f"exit {c.returncode}; {both[:240]}")
         check("...saying so, and not merely staying quiet",
               "is a claim" in both, both[:240])
+        # THE PUSH HALF, read on the remote and not off the hook's text: a
+        # member clone ships no installer, and before rule-check#370 its
+        # commits stayed local until somebody pushed them by hand.
+        remote = Path(d) / "remotes" / "acme" / "widget.git"
+        pushed = subprocess.run(
+            ["git", "-C", str(remote), "rev-parse", "refs/heads/demo/190-fixture"],
+            capture_output=True, text=True, env=GIT_ENV).stdout.strip()
+        head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, env=GIT_ENV).stdout.strip()
+        check("...and pushes that commit to the remote through a post-commit",
+              pushed == head and "pushed demo/190-fixture" in both,
+              f"remote {pushed[:12]}, clone {head[:12]}; {both[-240:]}")
+        post = text_of(clone / ".git" / "hooks" / "post-commit") or ""
+        check("...whose push script is named by its absolute path in the base",
+              f'exec "{BASE / "scripts" / "push-campaign-branch.sh"}"' in post,
+              repr(post[-160:]))
 
     # ---- THE GUARD'S REFUSAL IS THE HOOK'S ANSWER, not a line it printed on
     # the way to the gate. Before #190 the shim was `exec "$guard"`, so its
@@ -433,12 +449,14 @@ def main():
 
         r = run_acquire(slug, clone, home)
         first = text_of(clone / ".git" / "hooks" / "pre-commit") or ""
+        post1 = text_of(clone / ".git" / "hooks" / "post-commit") or ""
         r2 = run_acquire(slug, clone, home)
         second = text_of(clone / ".git" / "hooks" / "pre-commit") or ""
+        post2 = text_of(clone / ".git" / "hooks" / "post-commit") or ""
         check("a second acquire over the shim it just wrote converges rather "
               "than refusing",
               r.returncode == 0 and r2.returncode == 0 and second == first
-              and str(GATE) in second,
+              and str(GATE) in second and post1 and post2 == post1,
               f"exit {r.returncode}/{r2.returncode}; "
               f"{(r2.stdout + r2.stderr)[-240:]}")
 
@@ -453,6 +471,24 @@ def main():
         check("the pre-#190 two-line shim is upgraded, not refused",
               r.returncode == 0 and str(GATE) in body,
               f"exit {r.returncode}; {(r.stdout + r.stderr)[-240:]}")
+
+    # A POST-COMMIT THIS SCRIPT DID NOT WRITE is somebody's decision, refused as
+    # a foreign pre-commit is -- and before either hook is written.
+    with tempfile.TemporaryDirectory() as d:
+        base, camp = a_base_with_campaign(d)
+        home = a_home(d)
+        slug, clone = a_member_repo(d, camp)
+        foreign = "#!/usr/bin/env sh\n# our team's post-commit\nexit 0\n"
+        (clone / ".git" / "hooks" / "post-commit").write_text(foreign)
+        r = run_acquire(slug, clone, home)
+        out = r.stdout + r.stderr
+        check("a foreign post-commit is refused, and left as it was",
+              r.returncode != 0
+              and "refusing to overwrite an existing post-commit hook" in out
+              and text_of(clone / ".git" / "hooks" / "post-commit") == foreign,
+              f"exit {r.returncode}; {out[-240:]}")
+        check("...before the pre-commit is written, so neither hook is half-installed",
+              not (clone / ".git" / "hooks" / "pre-commit").exists(), out[-240:])
 
     # ...and the near misses, one per conjunct of `is_guard_shim`. A row of
     # refusals needs one case per branch or it is pinned by whichever conjunct

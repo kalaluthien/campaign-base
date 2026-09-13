@@ -78,6 +78,15 @@ import sys
 
 DEFAULT_REPO = "kalaluthien/campaign-base"
 
+
+def load(path, alias):
+    """The script at `path` as a module: these are scripts, not a package."""
+    spec = importlib.util.spec_from_file_location(alias, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def claim_module():
     """campaign-claim.py, imported for its reader of herdr's listing.
 
@@ -85,12 +94,8 @@ def claim_module():
     it -- AGENTS.md, "Do not write a second reader of a rule a script owns".
     The listing's shape is one such rule: which key holds the session id, and
     that a row herdr cannot identify is counted rather than dropped."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "campaign-claim.py")
-    spec = importlib.util.spec_from_file_location("campaign_claim", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "campaign-claim.py"), "campaign_claim")
 
 
 def run(*args, **kw):
@@ -137,13 +142,9 @@ def heartbeat_module():
     """campaign-heartbeat.py, imported for its reader of a session's
     transcript and of when a claim went, which its `retire` asks too. Loaded
     by path from the `assuming-role` skill."""
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
+    return load(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
         __file__))), ".claude", "skills", "assuming-role", "scripts",
-        "campaign-heartbeat.py")
-    spec = importlib.util.spec_from_file_location("campaign_heartbeat", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+        "campaign-heartbeat.py"), "campaign_heartbeat")
 
 
 def refs_of(m, hb, issue):

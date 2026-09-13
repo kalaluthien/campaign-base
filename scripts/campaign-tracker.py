@@ -503,6 +503,16 @@ def cmd_bound(args):
 # ------------------------------------------------------------------------ slug
 
 
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package.
+    Raises what loading raised; each caller decides what that means."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def name_rule():
     """`campaign-name-session.py`, imported for `slug_ok` and `SLUG_CEILING`.
 
@@ -512,14 +522,8 @@ def name_rule():
     exec'ing that leaf; were the rule here instead, that path would exec this
     script's `gh` plumbing on every call. Its header says the same from the
     other side."""
-    src = (Path(__file__).resolve().parent.parent / ".claude" / "skills" / "assuming-role" / "scripts"
-           / "campaign-name-session.py")
-    spec = importlib.util.spec_from_loader(
-        "campaign_name_session", importlib.machinery.SourceFileLoader(
-            "campaign_name_session", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(Path(__file__).resolve().parent.parent / ".claude" / "skills" / "assuming-role"
+                / "scripts" / "campaign-name-session.py", "campaign_name_session")
 
 
 def slug_labels(names):
@@ -882,13 +886,7 @@ def repos_module():
     delegated rather than re-derived, and `check` and the claim path can no
     longer answer differently (kalaluthien/campaign-base#217, review of
     e73ec4b)."""
-    src = Path(__file__).resolve().parent / "campaign-repos.py"
-    spec = importlib.util.spec_from_loader(
-        "campaign_repos", importlib.machinery.SourceFileLoader(
-            "campaign_repos", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return load(Path(__file__).resolve().parent / "campaign-repos.py", "campaign_repos")
 
 CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
     "campaign issue", "sub-issue", "stray", "third kind")
@@ -1224,11 +1222,7 @@ def claim_reader():
     campaign-claim just cut."""
     path = Path(__file__).resolve().parent / "campaign-claim.py"
     try:
-        spec = importlib.util.spec_from_loader(
-            "campaign_claim",
-            importlib.machinery.SourceFileLoader("campaign_claim", str(path)))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        module = load(path, "campaign_claim")
     except Exception as e:                      # noqa: BLE001 -- any of them
         return None, f"{path}: {e.__class__.__name__}: {e}"
     return module, None

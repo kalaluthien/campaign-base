@@ -2143,13 +2143,7 @@ exit 1
               f"exit {r.returncode}")
 
 def main():
-    import importlib.machinery
-    import importlib.util
-    spec = importlib.util.spec_from_loader(
-        "campaign_claim",
-        importlib.machinery.SourceFileLoader("campaign_claim", str(CLAIM)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = harness.load(CLAIM, "campaign_claim")
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
                compact_cases,

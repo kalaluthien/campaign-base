@@ -2,10 +2,11 @@
 """The one harness the suites import: the tally, its verdict, and the fixture helpers.
 
 A suite records each case with `check` and returns `report()` from `main`;
-`run_case` and `mutate` run a table of cases and break a script's branches in
-turn; `git`, `write_tree` and `guard_in_repo` build a fixture repository, and
-`fake` puts a stand-in command on a case's PATH. Each was a copy in every
-suite that used it, and a copy is what drifts.
+`load` makes a script a module by its path; `run_case` and `mutate` run a
+table of cases and break a script's branches in turn; `git`, `write_tree` and
+`guard_in_repo` build a fixture repository, and `fake` puts a stand-in command
+on a case's PATH. Each was a copy in every suite that used it, and a copy is
+what drifts.
 
 It is named as a suite and is one: run, it proves the tally and the helpers
 below. Named as a code path it would owe a scenario, and it is test code that
@@ -17,6 +18,8 @@ Usage: scripts/suite-harness-test.py
 """
 import atexit
 import contextlib
+import importlib.machinery
+import importlib.util
 import io
 import shutil
 import subprocess
@@ -44,6 +47,17 @@ def report():
         return 1
     print(f"{len(RAN) - len(FAILED)}/{len(RAN)} cases pass")
     return 1 if FAILED else 0
+
+
+def load(path, alias):
+    """The script at `path` as a module named `alias`, executed afresh on every
+    call: these are scripts and not a package, and a suite that loads a copy
+    or loads twice must get a module of its own each time."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(path)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
 
 
 def run_case(case, *args):
@@ -165,13 +179,40 @@ def main():
           run_case(lambda: ([], "d")) == (False, "d") and run_case(lambda: ([], "d"))[0] is False)
     check("run_case reports a crash as None, never red", run_case(boom) == (None, "ValueError: x"))
 
-    def load(text):
+    with tempfile.TemporaryDirectory() as d:
+        script = Path(d) / "a-b.py"
+        script.write_text("N = []\nN.append(__name__)\n")
+        one, two = load(script, "ab"), load(script, "ab")
+        check("load executes a hyphenated script afresh on every call, under its alias",
+              one is not two and one.N == ["ab"] and two.N == ["ab"]
+              and one.__file__ == str(script) and "ab" not in sys.modules,
+              f"{one.N} {two.N} {one.__file__}")
+
+    # The loader's floor, rule-check#370 row 4: every suite loads through
+    # `load` above, and a code file holds one loader of its own, since it
+    # cannot import one it would first have to load by path. It reads one
+    # spelling over tracked files, so another spelling or an untracked file
+    # passes unseen, and each detail names what it read.
+    pattern = "module_from_spec[(]"
+    read = f"`git grep {pattern}` over tracked *.py, fixtures excluded"
+    r = git(Path(__file__).resolve().parent.parent, "grep", "-c",
+            pattern, "--", "*.py", ":!*fixtures*")
+    sites = dict(line.rsplit(":", 1) for line in r.stdout.split())
+    suites = sorted(p for p in sites if p.endswith("-test.py"))
+    check("only this harness builds a module from a path among the suites",
+          r.returncode == 0 and [Path(p).name for p in suites] == [Path(__file__).name]
+          and sites[suites[0]] == "1", f"read {read}: {r.stderr.strip()} {suites}")
+    check("a code file builds a module from a path in one place at most",
+          sites and all(n == "1" for n in sites.values()),
+          f"read {read}: {({p: n for p, n in sites.items() if n != '1'})}")
+
+    def run_text(text):
         ns = {}
         exec(text, ns)
         return ns
 
     with apart():
-        mutate("def f():\n    return 1\n", load,
+        mutate("def f():\n    return 1\n", run_text,
                {"f is 1": lambda m: (m["f"]() == 1, ""),
                 "f is 2": lambda m: (m["f"]() == 2, "f is 1")},
                [("caught", "return 1", "return 2", "f is 1"),

@@ -240,6 +240,7 @@ HEARTBEAT_SCRIPT = SKILL_SCRIPTS / "campaign-heartbeat.py"
 
 
 def load(path, name):
+    """The script at `path` as a module: these are scripts, not a package."""
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

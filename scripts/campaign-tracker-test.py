@@ -18,8 +18,7 @@ closes it.
 Usage: scripts/campaign-tracker-test.py
 """
 import contextlib
-import importlib.machinery
-import importlib.util
+import importlib
 import io
 import json
 import os
@@ -38,12 +37,7 @@ TRACKER = HERE / "campaign-tracker.py"
 
 
 def load():
-    spec = importlib.util.spec_from_loader(
-        "campaign_tracker",
-        importlib.machinery.SourceFileLoader("campaign_tracker", str(TRACKER)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return harness.load(TRACKER, "campaign_tracker")
 
 
 def tracker(*args, env=None):

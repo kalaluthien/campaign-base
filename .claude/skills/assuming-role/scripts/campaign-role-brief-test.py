@@ -182,13 +182,7 @@ def assignment(issue=ISSUE, repo=REPO):
     """The assignment sentence, from `campaign-assign.py` itself. A literal
     here would be a third copy of the shape `ASSIGNMENT` owns, and the drift
     this delivery exists to avoid would pass unmeasured."""
-    import importlib.machinery
-    import importlib.util
-    path = BASE / "scripts" / "campaign-assign.py"
-    spec = importlib.util.spec_from_loader(
-        "ca", importlib.machinery.SourceFileLoader("ca", str(path)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = harness.load(BASE / "scripts" / "campaign-assign.py", "ca")
     return m.prompt_for(repo, issue)
 
 

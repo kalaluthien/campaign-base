@@ -29,7 +29,6 @@ Usage: .claude/skills/assuming-role/scripts/campaign-limit-reset-test.py
 """
 import datetime as dt
 import importlib
-import importlib.util
 import os
 import shutil
 import signal
@@ -63,10 +62,7 @@ def load(script):
     """The script as a module, from its path, so a mutated copy loads too;
     once per path, so a case's `mod.Unparsed` is the class `read` raised."""
     if script not in LOADED:
-        spec = importlib.util.spec_from_file_location(f"clr_{len(LOADED)}", script)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        LOADED[script] = mod
+        LOADED[script] = harness.load(script, f"clr_{len(LOADED)}")
     return LOADED[script]
 
 

@@ -159,10 +159,7 @@ def read_install(slug, path):
     rc, url, err = git(path, "remote", "get-url", "origin")
     if rc != 0:
         return "not a checkout", f"{path} has no origin: {err}"
-    # The last two path components name the repository however the URL is
-    # spelled: `git@github.com:owner/repo.git`, `https://.../owner/repo`, or a
-    # local path ending in `owner/repo.git`, which is what the suite builds.
-    remote = "/".join(url.replace(":", "/").rstrip("/").split("/")[-2:])
+    remote = REPOS.remote(url)
     if REPOS.key(remote) != REPOS.key(slug):
         return f"a checkout of {REPOS.slug(remote) or remote}", f"{path} origin {url}"
     branch = default_branch(path)

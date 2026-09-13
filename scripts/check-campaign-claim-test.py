@@ -60,7 +60,11 @@ class Fixture:
     def __init__(self, d, claims=("demo/7-x",), unpushed=(), feature=None,
                  camp_name="demo"):
         self.d = Path(d)
-        self.remote = self.d / "r.git"
+        # AT `o/r.git`, so the base's origin names `o/r` the way a GitHub URL
+        # names `owner/repo`: a `gh pr` write naming a repository is licensed
+        # by a checkout whose origin is that one (#389), and the cases below
+        # write `-R o/r` meaning this base.
+        self.remote = self.d / "o" / "r.git"
         self.base = self.d / "base"
         # `main` pinned by hand: the cases assert the branch by name, and a
         # runner's init.defaultBranch is whatever its git ships (`master` on
@@ -142,6 +146,38 @@ class Fixture:
         if branch:
             git(dest, "switch", "-q", "--track", f"origin/{branch}")
         return dest.resolve()
+
+    def install(self, claims=(), plain=(), slug="kalaluthien/homeops"):
+        """An INSTALLED member repository (#389): its own remote at
+        `<owner>/<repo>.git`, checked out outside the base, named by the
+        campaign README's `## Repos` with the `installed` marker, and worked in
+        worktrees of its own under `.worktrees/` -- the layout homeops#229's
+        DECISION of 2026-09-13 names. `claims` are pushed to its remote;
+        `plain` are branches that are not claims. (install path, {branch:
+        worktree})."""
+        remote = self.d / f"{slug}.git"
+        subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main",
+                        str(remote)], check=True)
+        inst = self.d / "home" / slug.split("/")[1]
+        subprocess.run(["git", "clone", "-q", str(remote), str(inst)],
+                       capture_output=True, check=True)
+        git(inst, "symbolic-ref", "HEAD", "refs/heads/main")
+        (inst / "code.txt").write_text("x\n")
+        git(inst, "add", "-A")
+        git(inst, "commit", "-qm", "init")
+        git(inst, "push", "-q", "origin", "HEAD")
+        trees = {}
+        for b in (*claims, *plain):
+            git(inst, "branch", b)
+            if b in claims:
+                git(inst, "push", "-q", "origin", b)
+            path = inst / ".worktrees" / b.replace("/", "-")
+            r = git(inst, "worktree", "add", "-q", str(path), b)
+            assert r.returncode == 0, r.stderr
+            trees[b] = path.resolve()
+        (self.camp / "README.md").write_text(
+            f"# demo\n\n## Repos\n\n- {slug} (installed: {inst})\n")
+        return inst.resolve(), trees
 
 
 def herdr_stub(d, sessions):
@@ -1693,6 +1729,88 @@ def main():
         r = post("gh issue comment 7 -b 'REPORT demo-worker-1: at abcdef1'")
         check("CONTROL: a REPORT on an issue has no head to pin and is not read",
               r.returncode == 0 and not PIN_READ.search(r.stdout), out(r)[:600])
+
+    # ---------------------------------------------------------------- #389
+    # AN INSTALL'S WORKTREES HOLD CLAIMS, AND ONLY A CHECKOUT OF A MEMBER
+    # REPOSITORY LICENSES ITS PULL REQUEST. The recorded false allow,
+    # runtime/guard.log 2026-09-13T07:18:07: a planner's reviewer at the base
+    # root posted `gh pr comment 21 -R kalaluthien/homeops --body-file ...`,
+    # and a worktree of the BASE on an unrelated claim was named as the cover.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        inst, trees = f.install()
+        planner = herdr_stub(d, {"sid-1": "demo-planner-2"})
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
+        body = Path(d) / "r-21.md"
+        body.write_text("REVIEW demo-planner-2: approve at b36a032\n")
+        review = (f"gh pr comment 21 -R kalaluthien/homeops "
+                  f"--body-file {body}")
+        r = ask(f.base, tool="Bash", command=review, env=planner)
+        check("REFUSE the recorded false allow: a member repository's pull "
+              "request is not licensed by a claim on the base",
+              r.returncode == 2
+              and "in a checkout of kalaluthien/homeops" in r.stderr,
+              out(r)[:600])
+        r = ask(f.trees["demo/7-x"], tool="Bash", env=worker,
+                command=review.replace("demo-planner-2", "demo-worker-1"))
+        check("...nor by the base worktree the session stands in",
+              r.returncode == 2
+              and "in a checkout of kalaluthien/homeops" in r.stderr,
+              out(r)[:600])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh pr comment https://github.com/kalaluthien/"
+                        "homeops/pull/21 -b 'NOTE demo-worker-1: x'")
+        check("...nor when the pull request is named by its URL",
+              r.returncode == 2
+              and "in a checkout of kalaluthien/homeops" in r.stderr,
+              out(r)[:600])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh pr comment 5 -R kalaluthien/campaign-base "
+                        "-b 'NOTE demo-worker-1: x'")
+        check("CONTROL: the base's own pull request keeps the base's claim",
+              r.returncode == 0 and "demo/7-x" in r.stdout, out(r)[:600])
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        inst, trees = f.install(claims=("demo/12-x",))
+        planner = herdr_stub(d, {"sid-1": "demo-planner-2"})
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
+        body = Path(d) / "r-21.md"
+        body.write_text("REVIEW demo-planner-2: approve at b36a032\n")
+        r = ask(f.base, tool="Bash", env=planner,
+                command=f"gh pr comment 21 -R kalaluthien/homeops "
+                        f"--body-file {body}")
+        check("ALLOW the same write once the install's own worktree holds a "
+              "claim, naming that worktree",
+              r.returncode == 0 and str(trees["demo/12-x"]) in r.stdout
+              and "in a checkout of kalaluthien/homeops" in r.stdout,
+              out(r)[:600])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh issue comment 12 -b 'NOTE demo-worker-1: x'")
+        check("ALLOW a write to the sub-issue an install's worktree claims, "
+              "from the base root",
+              r.returncode == 0 and "It covers #12" in r.stdout, out(r)[:600])
+        # THE FILE HALF READS NO INSTALL, on purpose: `~/.claude` is one, and
+        # every session's memory write would need a claim. Run from a copy in
+        # the fixture's base, the base it finds installs through, so the
+        # install is one it could have read.
+        skill = f.base / ".claude" / "skills" / "assuming-role" / "scripts"
+        skill.mkdir(parents=True)
+        for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                  / "scripts").glob("*.py"):
+            shutil.copy(s, skill / s.name)
+        for s in (GUARD, HERE / "campaign-repos.py",
+                  HERE / "campaign-tracker.py"):
+            shutil.copy(s, f.base / "scripts" / s.name)
+        copy = f.base / "scripts" / GUARD.name
+        r = ask(inst, env=planner, guard=copy, path=str(inst / "code.txt"))
+        check("CONTROL: a planner's edit in an install is not campaign work "
+              "to the file half", r.returncode == 0
+              and "not campaign work" in r.stdout, out(r)[:600])
+        r = ask(f.base, tool="Bash", env=worker, guard=copy,
+                command="gh issue comment 12 -b 'NOTE demo-worker-1: x'")
+        check("...while the copy still reads the install's claims for a `gh` "
+              "write", r.returncode == 0 and "It covers #12" in r.stdout,
+              out(r)[:600])
 
     # ---------------------------------------------------------------- #193
     # A HEREDOC BODY IS DATA. Reproduced 2026-09-05 on
@@ -3316,7 +3434,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 465
+    EXPECTED = 473
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

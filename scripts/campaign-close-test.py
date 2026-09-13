@@ -22,6 +22,7 @@ Usage: scripts/campaign-close-test.py
 import contextlib
 import importlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -36,6 +37,9 @@ harness = importlib.import_module("suite-harness-test")
 N, ISSUE, SLUG, SID = "10", "32", "rc", "S1"
 TRACKER = "kalaluthien/campaign-base"
 PANE, OTHER = "w1:p2", "w1:p3"
+# PANE's tab, and OTHER's: `herdr pane list` before the tab close, then after.
+TAB = "w1:t2"
+PANES = [{PANE: TAB, OTHER: "w1:t3"}, {OTHER: "w1:t3"}]
 
 
 def load(source):
@@ -192,7 +196,7 @@ def world(**over):
          "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
          "origin": MEMBER, "lands": {},
          "root": "/c", "released": {}, "issue": "none\n",
-         "check": ""}
+         "check": "", "panes": list(PANES)}
     w.update(over)
     return w
 
@@ -234,6 +238,16 @@ def answer(w, a):
     if a[:3] == ["gh", "issue", "close"]:
         return subprocess.CompletedProcess(a, w.get("gh_close", w["gh"]), "",
                                            "gh failed")
+    if a[:3] == ["herdr", "pane", "list"]:
+        seq = w["panes"]
+        got = seq.pop(0) if len(seq) > 1 else seq[0]
+        if got is None:
+            return subprocess.CompletedProcess(a, 1, "", "no socket")
+        return ok(json.dumps({"result": {"panes": [
+            {"pane_id": p, "tab_id": t} for p, t in got.items()]}}))
+    if a[:3] == ["herdr", "tab", "close"]:
+        return subprocess.CompletedProcess(a, w.get("tab_close", 0), "",
+                                           "tab close failed")
     if a[0] in ("gh", "herdr"):
         return subprocess.CompletedProcess(a, w[a[0]], "", f"{a[0]} failed")
     if a[0] == "lsof":
@@ -304,6 +318,10 @@ def releases(asked):
 
 def prompts(asked):
     return [a for a in asked if a[:3] == ["herdr", "agent", "prompt"]]
+
+
+def tab_closes(asked):
+    return [a for a in asked if a[:3] == ["herdr", "tab", "close"]]
 
 
 def refused(m, argv, w, gate, *says):
@@ -391,7 +409,45 @@ def case_retire(m):
         ({SID: dict(ROW, pane=PANE)}, None), ({SID: ROW}, None)]))
     return (code == 0 and prompts(asked) == [["herdr", "agent", "prompt", PANE,
                                               "/exit"]]
-            and sleeps == [m.WAIT_EVERY]), out
+            and sleeps == [m.WAIT_EVERY]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]
+            and f"tab         holds -- closed {TAB}; no pane is listed in it" in out), out
+
+
+GONE = [({SID: dict(ROW, pane=PANE)}, None), ({SID: ROW}, None)]
+
+
+def case_tab_shared(m):
+    ok, asked, out = refused(m, RETIRE, world(
+        polls=GONE, panes=[{PANE: TAB, "w1:p9": TAB}]), "tab",
+        f"tab {TAB} holds w1:p9 beside {PANE}; closing it would close them too",
+        f"/exit was sent to {PANE}, and it left herdr agent list")
+    return ok and len(prompts(asked)) == 1 and not tab_closes(asked), out
+
+
+def case_tab_still_listed(m):
+    ok, asked, out = refused(m, RETIRE, world(
+        polls=GONE, panes=[{PANE: TAB}, {PANE: TAB}]), "tab",
+        f"herdr tab close {TAB} exited 0, and the tab is still listed",
+        f"herdr tab close {TAB} ran")
+    return ok and len(tab_closes(asked)) == 1, out
+
+
+def case_tab_not_listed(m):
+    code, out, asked, _ = drive(m, RETIRE, world(polls=GONE,
+                                                 panes=[{OTHER: "w1:t3"}]))
+    return (code == 0 and not tab_closes(asked)
+            and f"tab         holds -- {PANE} is not in herdr pane list; "
+                "no tab is left" in out), out
+
+
+def case_parse_panes(m):
+    bad = [m.parse_panes(t)[0] for t in ("not json", '{"result": {}}',
+                                         '{"result": {"panes": [{"pane_id": "p"}]}}',
+                                         '{"result": {"panes": null}}')]
+    good = m.parse_panes(json.dumps({"result": {"panes": [
+        {"pane_id": PANE, "tab_id": TAB, "agent_status": "unknown"}]}}))
+    return bad == [None] * 4 and good == ({PANE: TAB}, None), (bad, good)
 
 
 def case_unread_poll_retries(m):
@@ -443,7 +499,7 @@ def case_workers(m):
     return (code == 0 and "2 worker(s) of rc (#10) among the 4 session(s)" in out
             and len(lines) == 2 and len(heartbeats(asked)) == 2
             and lines[0].startswith(f"exited      rc-worker-2 {PANE} -- retire: ")
-            and f"gone: poll 2: {PANE} is not listed" in lines[0]
+            and f"gone: poll 2: {PANE} is not listed; tab: closed {TAB}" in lines[0]
             and lines[1].startswith(f"kept        rc-worker-3 {OTHER} -- retire: "
                                     "the heartbeat reads rc-worker-3 as `keep`")
             and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
@@ -487,11 +543,11 @@ def case_status_asked(m):
 
 
 def case_no_kill(m):
-    # THE CEILING IS A LITERAL: 12 polls 5s apart is 11 sleeps, 55s measured.
+    # THE CEILING IS A LITERAL: 36 polls 5s apart is 35 sleeps, 175s measured.
     # Built from the script's own constants, the case moved with them.
     ok, asked, out = refused(m, RETIRE, world(polls=[
-        ({SID: dict(ROW, pane=PANE)}, None)] * 12), "gone",
-        f"poll 12: {PANE} is still listed after 55s",
+        ({SID: dict(ROW, pane=PANE)}, None)] * 36), "gone",
+        f"poll 36: {PANE} is still listed after 175s",
         "/exit was sent to w1:p2")
     return (ok and len(prompts(asked)) == 1
             and not any(a[0] in ("kill", "pkill", "killall")
@@ -901,6 +957,17 @@ CASES = {
     "refuse: herdr could not send /exit": refusal(
         "exit", "herdr exited 1", argv=RETIRE, herdr=1, acted=True),
     "refuse: still listed after the wait, and never killed": case_no_kill,
+    "tab: a tab holding a second pane is refused, and not closed": case_tab_shared,
+    "tab: a tab still listed after the close is refused": case_tab_still_listed,
+    "tab: a pane herdr no longer lists leaves no tab to close": case_tab_not_listed,
+    "tab: herdr pane list is read as pane to tab, and a shape it lacks is no reading":
+        case_parse_panes,
+    "refuse tab: herdr pane list did not read": refusal(
+        "tab", "herdr pane list did not read: herdr pane list exited 1: no socket",
+        argv=RETIRE, polls=GONE, panes=[None], acted=True),
+    "refuse tab: herdr tab close failed": refusal(
+        "tab", f"herdr tab close {TAB} exited 1: tab close failed",
+        argv=RETIRE, polls=GONE, tab_close=1, acted=True),
     # the whole: campaign
     "campaign: every gate held and no --close halts before any write":
         case_campaign_halts,
@@ -1150,7 +1217,7 @@ MUTATIONS = [
      'if False:\n        raise Refused("exit"', "refuse: herdr could not send /exit"),
     ("gone", "if not gone:", "if False:",
      "refuse: still listed after the wait, and never killed"),
-    ("the poll ceiling", "WAIT_POLLS = 12", "WAIT_POLLS = 36",
+    ("the poll ceiling", "WAIT_POLLS = 36", "WAIT_POLLS = 12",
      "refuse: still listed after the wait, and never killed"),
     ("the poll spacing", "WAIT_EVERY = 5", "WAIT_EVERY = 6",
      "refuse: still listed after the wait, and never killed"),
@@ -1334,9 +1401,27 @@ MUTATIONS = [
      "one line each; a done one exits, the rest are kept"),
     ("workers: a failure refuses", "    if broke:\n", "    if False:\n",
      "refuse workers: a step past retire failed, and the run says so"),
-    ("workers: the exit's evidence is on the line", 'if s in ("retire", "gone"))',
-     'if s in ("retire",))', "workers: each of the campaign's workers is judged "
+    ("workers: the exit's evidence is on the line", 'if s in ("retire", "gone", "tab"))',
+     'if s in ("retire", "gone"))', "workers: each of the campaign's workers is judged "
      "alone, one line each; a done one exits, the rest are kept"),
+    ("tab: after gone", "    step_tab(pane, say)\n", "",
+     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+    ("tab: another pane refuses", "    if others:\n", "    if False:\n",
+     "tab: a tab holding a second pane is refused, and not closed"),
+    ("tab: only another pane", "if t == tab and p != pane)", "if t == tab)",
+     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+    ("tab: closed is read back", "if tabs is None or tab in tabs.values():",
+     "if tabs is None:", "tab: a tab still listed after the close is refused"),
+    ("tab: an unlisted pane has no tab", "    if tab is None:\n        say(",
+     "    if False:\n        say(",
+     "tab: a pane herdr no longer lists leaves no tab to close"),
+    ("tab: unread is not empty", "    if tabs is None:\n        raise Refused(\"tab\"",
+     "    if tabs is None:\n        tabs = {}\n    if False:\n        raise Refused(\"tab\"",
+     "refuse tab: herdr pane list did not read"),
+    ("tab: the close's exit is read", "    if r.returncode != 0:\n        raise Refused(\"tab\"",
+     "    if False:\n        raise Refused(\"tab\"", "refuse tab: herdr tab close failed"),
+    ("tab: pane to tab", '{p["pane_id"]: p["tab_id"]', '{p["tab_id"]: p["pane_id"]',
+     "tab: herdr pane list is read as pane to tab, and a shape it lacks is no reading"),
     ("front: `workers` alone", 'if t == "workers":', "if False:",
      "front: `workers` alone reads as scope workers of this session's campaign"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",

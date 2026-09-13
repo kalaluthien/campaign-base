@@ -695,8 +695,11 @@ pred agentRelease {
    has no ref standing, and the pull request timeline, or the events feed
    where there is no pull request, says when the last went -- and stands in
    for the second with no assignment prompt since then: a prompt of another
-   shape, or a tool call, is not work (the owner, rule-check#349). No
-   compaction is asked: `/exit` ends the context whatever its size. */
+   shape, or a tool call, is not work (the owner, rule-check#349). Idle is
+   not asked either: `/exit` queues behind a running turn, which holds no
+   claim, and the script closes the tab the agent sat in after, a herdr
+   fact this model does not hold. No compaction is asked: `/exit` ends the
+   context whatever its size. */
 pred exitSession[s: Session] {
   Now.event = SessionExit and Who.session = s
   some a: peer.s | once (Now.event = Release and Now.issue = a.task)

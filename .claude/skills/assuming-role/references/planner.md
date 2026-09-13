@@ -35,11 +35,12 @@ Contents: the moments below, then
    goes into the sub-issue template or the kind's reference. What reaches you
    is [worker](worker.md) step 4's. A relay is never the authority; point at
    the durable artifact instead.
-8. **Retire agents as the campaign runs.** The heartbeat retires an idle
-   worker whose last assigned sub-issue has no claim ref left, with no
-   assignment prompt since the ref went, whoever released it -- a prompt of
+8. **Retire agents as the campaign runs.** The heartbeat retires a worker,
+   idle or mid-turn, whose last assigned sub-issue has no claim ref left, with
+   no assignment prompt since the ref went, whoever released it -- a prompt of
    another shape, or a tool call, is not work, so hand a worker more only by
-   `campaign-assign.py`; `/close workers` exits every such worker at once.
+   `campaign-assign.py`. Each retire is `/close`'s scope worker: `/exit`, then
+   its tab closed. `/close workers` exits every such worker at once.
    Any other listed peer is asked which claim it holds, never killed. `retire` is
    decided before `compact`, so assign a released worker you mean to reuse
    before the next `--apply`, or it gets `/exit`.

@@ -69,7 +69,13 @@ ISSUE_KINDS = CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
 # are the whole difference #185 drew: a planner keeps the campaign plane of ANY
 # campaign -- a comment, a sub-issue, a close, a claim cut for a delegate --
 # because deciding what work exists is what a planner is for, while a worker
-# writes the campaign it is named for and no other.
+# writes the campaign it is named for and no other. "own" also bounds which
+# claims the role stands on, on either plane, since a claim is a
+# campaign-plane object.
+#
+# The guard reads both keys through its `row_of` and never the role word
+# (rule-check#370), so changing a value here changes a verdict, and
+# check-campaign-claim-test.py has the case that swaps them.
 #
 # `code_plane` is whether the role may change code AT ALL. False for a planner
 # is #185's rule, "a planner changes no code", and the guard enforces it over a

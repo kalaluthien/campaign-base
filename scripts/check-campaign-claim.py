@@ -450,6 +450,15 @@ def roles():
     return _roles
 
 
+def row_of(role):
+    """The role table's row for `role`, {} when the role was not read. Every
+    plane decision below asks this -- `code_plane`, `campaign_plane` -- and
+    none asks the role word, so a value changed in the table changes a verdict
+    (rule-check#370, NOTE issuecomment-5648370952). Called after the NO_ROLE
+    exit, so `role` is a word of the table or None."""
+    return roles().ROLES[role] if role else {}
+
+
 _NAME_RULE = None
 # Set by `claim_match` when the name rule would not load, and printed beside
 # every "not a campaign branch" reading so the two are never confused.
@@ -2476,8 +2485,14 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
     # removed, the unguarded form refused a claimed worker's own worktree.
     if role is not None and role == roles().NO_ROLE:
         return refuse(read + [NAMELESS])
-    if role == "planner":
-        # A PLANNER NEVER TOUCHES CODE, and a checkout is where code lives:
+    row = row_of(role)
+    # A role bound to its OWN campaign stands only on that campaign's claims,
+    # on either plane: a claim is a campaign-plane object (`Claim` is in
+    # `campaignPlaneEvents`, spec/campaign/orchestration/system.als).
+    own_only = row.get("campaign_plane") == "own"
+    if row and not row["code_plane"]:
+        # A ROLE WITH NO CODE PLANE -- the planner, by the table -- NEVER
+        # TOUCHES CODE, and a checkout is where code lives:
         # a base tree, a linked worktree, a delegate clone, a member
         # repository. A campaign DIRECTORY is campaign-plane scratch, which a
         # planner is precisely for -- refusing it would stop a planner keeping
@@ -2490,12 +2505,12 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         # directory AND in no checkout of its own.
         if not scratch and top is not None:
             return refuse(read + [
-                f"a planner may not change code, and {target} is in the "
+                f"a {role} may not change code, and {target} is in the "
                 f"checkout {top}.",
                 "Hand it to a worker: a session of its own on this "
                 "machine, or a herdr delegate in the repository clone.",
             ])
-        return allow(read + ["a planner writes the campaign plane, and a "
+        return allow(read + [f"a {role} writes the campaign plane, and a "
                              "campaign directory outside every checkout is "
                              "campaign-plane scratch."])
     if top is not None:
@@ -2506,7 +2521,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
         # with its role read correctly, edited this campaign's worktree. The
         # docstring said otherwise, which is what makes it a finding rather
         # than a gap.
-        if is_claim and role == "worker" and campaign is not None \
+        if is_claim and own_only and campaign is not None \
                 and claim_token(branch) != campaign:
             return refuse(read + [
                 f"Clause 1 would hold -- {top} is on {branch} -- but that is a "
@@ -2520,7 +2535,7 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
     if root is None:
         return refuse(read + [how, "No checkout to read a claim from.", TAKE])
     holders, detail = held(root)
-    if role == "worker" and campaign is not None:
+    if own_only and campaign is not None:
         # ITS OWN CAMPAIGN AND NO OTHER. The clauses ask whether SOME claim
         # covers the target; the name says which campaign this session is of,
         # so a claim of another campaign is not this session's to stand on.
@@ -2705,7 +2720,9 @@ def bash_call(command, cwd: Path, session_id=""):
     # removed, the unguarded form refused a claimed worker's own worktree.
     if role is not None and role == roles().NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
-    if role == "planner":
+    row = row_of(role)
+    own_only = row.get("campaign_plane") == "own"
+    if row.get("campaign_plane") == "any":
         # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
         # ANY campaign -- a comment on a campaign issue it does not work, a
         # sub-issue body, a close, a claim cut for a delegate. There is no
@@ -2720,7 +2737,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # is what is being asked. The table's `gh` is keyed on the subcommand
         # because the plane is a property of it; its `gh_except` is keyed on
         # the pair because the exception is a property of one verb.
-        licence = roles().ROLES["planner"]
+        licence = row
         pairs = set()
         for rest, is_write, _ in gh:
             if not is_write:
@@ -2731,10 +2748,10 @@ def bash_call(command, cwd: Path, session_id=""):
         excepted = sorted(f"{sub} {verb}"
                           for sub, verb in pairs & licence["gh_except"])
         if verbs and verbs <= licence["gh"] and not excepted and not stray:
-            return allow([f"{what}: {how_role}, and a planner writes the "
+            return allow([f"{what}: {how_role}, and a {role} writes the "
                           f"campaign plane of any campaign."])
         read_on = [f"{how_role}, but `gh {v}` is not the campaign plane, so "
-                   f"the planner licence does not cover it"
+                   f"the {role} licence does not cover it"
                    for v in sorted(verbs - licence["gh"])]
         # A REFUSAL AND NOT A SENTENCE. The first cut of this only appended to
         # `read_on` and fell through to the claim reading, which allowed a
@@ -2762,12 +2779,12 @@ def bash_call(command, cwd: Path, session_id=""):
             return refuse([f"{what}.", how, *(read_on or [how_role]), *[
                 f"`gh {v}` cuts a branch in the sub-issue's own repository "
                 f"without reading the binding, the sub-issue's parent, or the "
-                f"campaign issue's `## Repos`, so the planner licence does not "
+                f"campaign issue's `## Repos`, so the {role} licence does not "
                 f"cover it. This reads no flags, so a `--list` is refused with "
                 f"it." for v in excepted], TAKE])
         if not read_on:
             read_on = [f"{how_role}, but a gh call this cannot read is not "
-                       f"covered by the planner licence"]
+                       f"covered by the {role} licence"]
     # EVERY issue named must be covered, not one of them. Collapsing two to
     # `None` and asking for any claim at all is a WIDENING: it let a claim on
     # #7 admit `gh issue close 9; gh issue close 7`, and a decoy naming a
@@ -2794,12 +2811,12 @@ def bash_call(command, cwd: Path, session_id=""):
         holders, d = held(root, i)
         if (not holders and own is not None
                 and claim_issue(own[1]) == i
-                and (role != "worker" or campaign is None
+                and (not own_only or campaign is None
                      or claim_token(own[1]) == campaign)):
             holders = [own]
         verbs_on_i = {(sub, verb) for j, sub, verb in per_write if j == i}
-        licence = (roles().ROLES["worker"]["own_campaign_gh"]
-                   if role == "worker" and own_number is not None else None)
+        licence = (row["own_campaign_gh"]
+                   if own_only and own_number is not None else None)
         # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
         # cover it: the campaign issue is nobody's sub-issue, so `held` finds
         # nothing there for anyone and every worker was refused a comment on
@@ -2821,7 +2838,7 @@ def bash_call(command, cwd: Path, session_id=""):
         # another campaign's sub-issue, the foreign claim named as the cover.
         # `file_call` filtered per call from the start; this half did not, and
         # the two disagreed on exactly that shape.
-        if role == "worker" and campaign is not None:
+        if own_only and campaign is not None:
             foreign = [h for h in holders
                        if claim_token(h[1]) != campaign]
             holders = [h for h in holders if h not in foreign]
@@ -2887,11 +2904,11 @@ def bash_call(command, cwd: Path, session_id=""):
         covered = []
         for repo in members + ([None] if rest else []):
             holders, d = held(root, repo=repo)
-            if role == "worker" and campaign is not None:
+            if own_only and campaign is not None:
                 holders = [h for h in holders
                            if claim_token(h[1]) == campaign]
             if (not holders and own is not None
-                    and (role != "worker" or campaign is None
+                    and (not own_only or campaign is None
                          or claim_token(own[1]) == campaign)
                     and (repo is None or same_repo(own[0], repo))):
                 holders = [own]

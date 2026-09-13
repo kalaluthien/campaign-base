@@ -3272,6 +3272,40 @@ def main():
                   r.returncode == 2 and "over" in out(r)
                   and "3000 characters" in out(r), out(r)[:300])
 
+    # THE TABLE DECIDES THE PLANES, not the role word (rule-check#370, NOTE
+    # issuecomment-5648370952): a copy of the guard beside a campaign-roles.py
+    # whose planner has a code plane and only its own campaign's, and the two
+    # planner verdicts above turn. A guard reading the word keeps both.
+    with tempfile.TemporaryDirectory() as d:
+        tree = Path(d) / "tree"
+        (tree / "scripts").mkdir(parents=True)
+        skill = tree / ".claude" / "skills" / "assuming-role" / "scripts"
+        skill.mkdir(parents=True)
+        shutil.copy(GUARD, tree / "scripts" / GUARD.name)
+        for t in ("campaign-tracker.py", "campaign-repos.py"):
+            shutil.copy(HERE / t, tree / "scripts" / t)
+        for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
+                  / "scripts").glob("*.py"):
+            shutil.copy(s, skill / s.name)
+        table = skill / "campaign-roles.py"
+        src = table.read_text()
+        for a, b in (('"campaign_plane": "any"', '"campaign_plane": "own"'),
+                     ('"code_plane": False', '"code_plane": True')):
+            check(f"the swapped table's fixture finds `{a}` once",
+                  src.count(a) == 1, str(src.count(a)))
+            src = src.replace(a, b)
+        table.write_text(src)
+        copy = tree / "scripts" / GUARD.name
+        f = Fixture(d, claims=("demo/7-x",))
+        planner = herdr_stub(d, {"sid-1": "demo-planner-3"})
+        r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner, guard=copy)
+        check("a planner the table gives a code plane is not refused code",
+              "may not change code" not in out(r), out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue close 9", env=planner,
+                guard=copy)
+        check("...and one it bounds to its own campaign has no any-campaign "
+              "licence", "any campaign" not in out(r), out(r)[:400])
+
     # THE REFERENCE RULE IS THE SECOND IMPORT, and it gets its own tree: the
     # loop above deletes a skill script and leaves `campaign-tracker.py` absent
     # as a side effect, so nothing there pins WHICH rule went. Here the skill
@@ -3465,7 +3499,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 477
+    EXPECTED = 481
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

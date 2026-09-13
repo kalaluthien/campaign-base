@@ -57,7 +57,7 @@
     <figure tabindex="0" aria-labelledby="map-title">
       <svg width="900" height="100" viewBox="0 0 900 100" role="img" aria-labelledby="map-title" aria-describedby="map-desc">
         <title id="map-title">The steps of a sub-issue, in order</title>
-        <desc id="map-desc">A row of boxes joined by arrows: file, taken by any session; claim, by the worker; first commit, by the worker; review, by an agent that did not write the commits; merge, by anyone who meets the merge conditions; reach, by whoever merged; close, by GitHub on the merge, with the worker releasing the claim.</desc>
+        <desc id="map-desc">A row of boxes joined by arrows: file, taken by any session; claim, by the worker; first commit, by the worker; review, by an agent that did not write the commits; merge, by anyone who meets the merge conditions; reach, by whoever merged; close, by GitHub on the merge, with the claim then released by either role.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
         </defs>
@@ -87,7 +87,7 @@
         <path class="edge" d="M762,50 L776,50"/>
         <rect class="box" x="778" y="20" width="112" height="60" rx="6"/>
         <text class="name" x="834" y="45" text-anchor="middle">close</text>
-        <text class="who" x="834" y="65" text-anchor="middle">GitHub, worker</text>
+        <text class="who" x="834" y="65" text-anchor="middle">GitHub, any role</text>
       </svg>
       <figcaption class="key">Box: a step, its name above and who takes it below. Arrow: the next step.</figcaption>
     </figure>
@@ -220,8 +220,8 @@
   <section aria-labelledby="close">
     <h2 id="close">Close: when is the sub-issue settled?</h2>
     <dl>
-      <dt>Next step</dt><dd>the merge closes the sub-issue through the pull request's <code>Closes</code> line; a dropped one is closed as not planned; one whose work lives only under <code>&lt;campaign&gt;/scripts/</code> closes as completed with no pull request; then the claim is released with <code>scripts/campaign-claim.py release</code>, which deletes the ref and compacts the worker's pane</dd>
-      <dt>Who</dt><dd>GitHub, on the merge; the worker, for the release</dd>
+      <dt>Next step</dt><dd>the merge closes the sub-issue through the pull request's <code>Closes</code> line; a dropped one is closed as not planned; one whose work lives only under <code>&lt;campaign&gt;/scripts/</code> closes as completed with no pull request; then the claim is released with <code>scripts/campaign-claim.py release</code>, which deletes the ref and, when a worker releases, compacts its pane</dd>
+      <dt>Who</dt><dd>GitHub, on the merge; for the release, either role, since no role row restricts it: the worker ends its lifecycle with it, and on the base the planner releases after every merge</dd>
       <dt>Settled by</dt><dd><code>scripts/campaign-tracker.py settlement &lt;N&gt;</code>, which reads closed with its pull request merged, or closed as not planned; <code>release</code> reads <code>check-merge-review.py</code> again before it deletes a merged claim's ref</dd>
     </dl>
     <p>Completion is a GitHub fact. Nothing on a terminal screen is evidence that a sub-issue is done, and both ways of closing are needed, or a sub-issue dropped on purpose never reads settled and its campaign can never close.</p>
@@ -231,6 +231,7 @@
       <ul>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L345-L353"><code>spec/campaign/github/system.als</code>, <code>closeIssue</code></a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L394-L402"><code>spec/campaign/github/system.als</code>, <code>release</code></a></li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-claim.py#L1144-L1150"><code>scripts/campaign-claim.py</code>, <code>release</code>'s compaction note: who releases</a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#completion-liveness-and-local-only-work"><code>AGENTS.md</code> § Completion, liveness, and local-only work</a></li>
       </ul>
     </details>

@@ -73,7 +73,7 @@
         <text x="535" y="58" text-anchor="middle">GitHub issues</text>
         <rect class="cache" x="150" y="178" width="340" height="62" rx="6"/>
         <text class="name" x="320" y="204" text-anchor="middle">campaign directory</text>
-        <text x="320" y="226" text-anchor="middle">one machine's cache, deleted at close</text>
+        <text x="320" y="226" text-anchor="middle">one machine's cache, loses nothing if deleted</text>
         <path class="edge" d="M200,178 L120,74"/>
         <text class="label" x="60" y="130">sits in its root</text>
         <path class="edge" d="M320,178 L320,74"/>
@@ -81,7 +81,7 @@
         <path class="edge" d="M440,178 L520,74"/>
         <text class="label" x="490" y="150">derives README.md</text>
       </svg>
-      <figcaption class="key">Solid box: a plane, stored on a remote, survives the machine. Dashed box: a cache on one machine, deleted when the campaign closes. Arrow: what the directory takes from that plane.</figcaption>
+      <figcaption class="key">Solid box: a plane, stored on a remote, survives the machine. Dashed box: a cache on one machine; deleting it loses nothing. Arrow: from the directory to a plane it depends on, labelled with how.</figcaption>
     </figure>
     <nav aria-label="Chapters">
       <ol>
@@ -140,7 +140,7 @@
     <p>A campaign is its campaign issue. Progress is not written anywhere: <code>scripts/campaign-tracker.py settlement</code> derives it from the sub-issue index, so the body changes only when the scope does and at the close.</p>
     <details>
       <summary>Evidence: <code>spec/campaign/github/system.als</code> § Campaign, Claimed</summary>
-      <blockquote>Claimed — the sub-issues whose branch is on the remote. A branch is a ref, readable from any machine, so the claim is a GitHub fact and not a local one -- which is why it lives here.</blockquote>
+      <blockquote>the sub-issues whose branch is on the remote. A branch is a ref, readable from any machine, so the claim is a GitHub fact and not a local one -- which is why it lives here.</blockquote>
       <ul>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L13-L19"><code>spec/campaign/github/system.als</code>, header, Campaign and Claimed</a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#the-campaign-issue-body"><code>AGENTS.md</code> § The campaign issue body</a></li>
@@ -154,7 +154,7 @@
     <dl>
       <dt>Holds</dt><dd><code>.campaign</code>, the marker naming the campaign; <code>AGENTS.md</code> and <code>CLAUDE.md</code>, the campaign's principles; <code>README.md</code>, derived from the campaign issue body; <code>runtime/</code>, derived state and process artifacts such as a pid, a log, a lock; <code>scripts/</code>, scratch; <code>repos/</code>, the member clones</dd>
       <dt>Stored in</dt><dd><code>campaign-&lt;slug&gt;-&lt;date&gt;/</code> at the base root, git-ignored, on one machine</dd>
-      <dt>Survives the machine</dt><dd>no: it is deleted at the close and nothing is lost</dd>
+      <dt>Survives the machine</dt><dd>no, and it need not: at the close <code>scripts/campaign-close.py</code> deletes it on the person's <code>--delete</code>, and nothing is lost</dd>
     </dl>
     <p>A sub-issue's plan, a session's state at a stop and the campaign's progress go on the issue they are about, as a comment, where every session and every machine reads them. What stays in the directory is what no issue can hold, or what can be derived again from one at any time. That is what lets the directory be optional off the bound machine.</p>
     <details>
@@ -164,6 +164,7 @@
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/directory/system.als#L29-L35"><code>spec/campaign/directory/system.als</code>, header</a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#the-three-planes"><code>AGENTS.md</code> § The three planes</a></li>
         <li><code>scripts/campaign-directory.py</code>: which directory on this machine is a campaign's, read from its marker</li>
+        <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/scripts/campaign-close.py#L1203-L1216"><code>scripts/campaign-close.py</code>, <code>here</code>: the delete is the person's word</a></li>
       </ul>
     </details>
   </section>

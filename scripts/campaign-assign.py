@@ -46,12 +46,16 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
                     left unsent and this sentence went in as `/compactWork
                     ...`, an unknown command, and neither happened
                     (rule-check#370 issuecomment-5648017196). No flag
-                    reaches it: joining two prompts is never what was meant.
+                    reaches it, either way: joining two prompts is never what
+                    was meant, and a screen with no box is no chat's -- a
+                    `claude remote-control` pane reads so (2026-09-13), and
+                    there a typed space or `w` is a keystroke.
 
-  TWO DOORS, NOT ONE. `--assume-fresh` is for what the reading cannot reach, a
-  first assignment included; `--force` is for a pane that WAS read and has
-  not compacted. One flag for both made bypassing the single case this guard
-  exists for the same keystroke as the routine first assignment.
+  TWO DOORS, NOT ONE, BOTH ON THE TRANSCRIPT'S READING. `--assume-fresh` is
+  for what that reading cannot reach, a first assignment included; `--force`
+  is for a pane that WAS read and has not compacted. One flag for both made
+  bypassing the single case this guard exists for the same keystroke as the
+  routine first assignment. The input box has no door.
 
 IT READS THE TRANSCRIPT AND GITHUB, AND OF THE PANE ONLY ITS INPUT BOX, which
 is the one thing a transcript cannot show: text typed and not yet sent.
@@ -86,8 +90,6 @@ import re
 import subprocess
 import sys
 
-DEFAULT_REPO = "kalaluthien/campaign-base"
-
 
 def load(path, alias):
     """The script at `path` as a module: these are scripts, not a package."""
@@ -98,10 +100,12 @@ def load(path, alias):
 
 
 def claim_module():
-    """campaign-claim.py, imported for its reader of herdr's listing.
+    """campaign-claim.py, imported for its reader of herdr's listing and of a
+    sub-issue's campaign.
 
-    `parse_agents` is that script's, and a second copy here would drift from
-    it -- AGENTS.md, "Do not write a second reader of a rule a script owns".
+    `herdr_sessions` is campaign-name-session.py's, bound there, and a second
+    copy here would drift from it -- AGENTS.md, "Do not write a second reader
+    of a rule a script owns".
     The listing's shape is one such rule: which key holds the session id, and
     that a row herdr cannot identify is counted rather than dropped."""
     return load(os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -142,8 +146,9 @@ def row_for(sessions, pane):
 # with the prompt mark. Read 2026-09-13 off six panes: an empty box is the
 # mark alone, text typed and not sent follows it after a no-break space, and
 # the top rule can carry the session's name (`───── rule-check-planner-10 ─`),
-# so a rule is a line OPENING with the rule character.
-RULE = re.compile(r"^\u2500{10,}")
+# so a rule is a line OPENING with the rule character: `RULE.match`, which
+# anchors at the line's start.
+RULE = re.compile(r"\u2500{10,}")
 PROMPT_MARK = "\u276f"
 
 
@@ -214,14 +219,16 @@ def prompt_for(repo, issue):
 
 
 def main():
+    m = claim_module()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("pane")
     ap.add_argument("issue")
-    ap.add_argument("--repo", default=DEFAULT_REPO)
+    ap.add_argument("--repo", default=m.DEFAULT_REPO)
     # TWO DOORS, NOT ONE, because the states behind them are not alike.
     # `--assume-fresh` covers what an honest reading CANNOT REACH: no time the
     # last sub-issue's claim went, or a transcript that would not read.
-    # `--force` covers what it read and found wanting.
+    # `--force` covers what it read and found wanting. Neither reaches the
+    # input box.
     ap.add_argument("--assume-fresh", action="store_true",
                     help="assign a pane for which no time its last "
                          "sub-issue's claim went was read, or whose transcript "
@@ -243,7 +250,6 @@ def main():
               f"the same.", file=sys.stderr)
         return 1
 
-    m = claim_module()
     sessions, why = m.herdr_sessions()
     if sessions is None:
         print(f"refusing: {why}\n  A listing that did not happen is not a pane "

@@ -250,7 +250,6 @@ import json
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -286,6 +285,8 @@ CLAIM = load(CLAIM_SCRIPT, "campaign_claim")
 REPOS = CLAIM.REPOS
 GUARD = CLAIM.GUARD
 NAMES = load(SKILL_SCRIPTS / "campaign-name-session.py", "cns")
+# The tracker, for the words it prints: an issue's kind on `check`'s line.
+TRACKER_MODULE = load(TRACKER_SCRIPT, "campaign_tracker")
 HEARTBEAT = load(HEARTBEAT_SCRIPT, "campaign_heartbeat")
 RETIRE = "retire"
 EXIT_TEXT = HEARTBEAT.ACTIONS[RETIRE]
@@ -387,11 +388,10 @@ def holds(step, evidence):
 SETTLED = re.compile(r"-- \d+/\d+ settled")
 SETTLEMENT_HEAD = re.compile(r"^campaign issue \S+#\d+\s+\[(\w+)\]")
 SETTLEMENT_ROW = re.compile(r"^  (\S+/\S+#\d+)\s+(\S+)")
-# campaign-tracker's two REPORTs that the number is no campaign issue: no
-# `campaign` label, or a parent of its own. Closing either closes the wrong
-# thing, so both refuse.
-NOT_A_CAMPAIGN = ("may be a sub-issue read as a campaign issue",
-                  "is itself a sub-issue of")
+# campaign-tracker's two lines that the number is no campaign issue -- no
+# `campaign` label, or a parent of its own -- open with its NOT_CAMPAIGN.
+# Closing either closes the wrong thing, so both refuse.
+NOT_CAMPAIGN = f"-- {TRACKER_MODULE.NOT_CAMPAIGN}"
 
 
 def settlement_word(text, issue):
@@ -415,7 +415,7 @@ def settlement_rows(text):
     out = {"state": None, "rows": [], "finished": False, "closable": False,
            "not_campaign": []}
     for line in text.splitlines():
-        if any(x in line for x in NOT_A_CAMPAIGN):
+        if line.strip().startswith(NOT_CAMPAIGN):
             out["not_campaign"].append(line.strip())
         head = SETTLEMENT_HEAD.match(line)
         if head:
@@ -888,7 +888,9 @@ def step_sync(n, directory):
 
 
 def step_announce(n, author, directory, changed):
-    where = socket.gethostname().split(".")[0]
+    # The machine as the binding names it: the tracker's `hostname -s`, the
+    # one reading (rule-check#370 row 27).
+    where = TRACKER_MODULE.this_machine()
     listing = "\n".join(leftovers(directory)) if directory else ""
     body = (f"NOTE {author}: closing campaign #{n} from {where}. Say so here "
             f"if you are still in it.\n\n"
@@ -1263,8 +1265,9 @@ def sync(args):
 SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign", "sync",
           "leave")
 NUMBER = re.compile(r"^#?(\d+)$")
-CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
-                        r"third kind) \(label `[^`]+`: (?:yes|no), parent: "
+CHECK_LINE = re.compile(r"^read \S+#(\d+): ("
+                        + "|".join(map(re.escape, TRACKER_MODULE.ISSUE_KINDS))
+                        + r") \(label `[^`]+`: (?:yes|no), parent: "
                         r"(#\d+|no)\)", re.M)
 # The flags each scope takes. Any other one refuses: a flag dropped in silence
 # is an answer the person gave and nobody read.
@@ -1328,16 +1331,17 @@ def front_door(args):
             raise Refused("target", f"campaign-tracker check {n} answered for "
                                     f"#{m.group(1)}")
         kind, parent = m.group(2), m.group(3)
-        if kind == "campaign issue":
+        if kind == TRACKER_MODULE.CAMPAIGN:
             scope, argv = "campaign", ["campaign", n]
-        elif kind == "sub-issue":
+        elif kind == TRACKER_MODULE.SUB_ISSUE:
             scope, argv = "sub-issue", ["sub-issue", parent.lstrip("#"), n]
         else:
             raise Refused("target", f"#{n} reads as a {kind} (campaign-tracker "
                                     f"check), neither a campaign issue nor a "
                                     f"sub-issue")
-        how = (f"#{n} is a {kind}" + (f" of {parent}" if kind == "sub-issue"
-                                      else "") + ", by campaign-tracker check")
+        how = (f"#{n} is a {kind}"
+               + (f" of {parent}" if kind == TRACKER_MODULE.SUB_ISSUE else "")
+               + ", by campaign-tracker check")
     elif "/" in t:
         repo = REPOS.slug(t)
         if repo is None:

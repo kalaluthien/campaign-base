@@ -199,6 +199,10 @@ def pure_cases(m):
     got = m.input_line(RULE + "\nDo you want to proceed?\n" + RULE + "\n")
     check("...nor is text between two rules that does not open with the mark",
           got[0] is None and "Do you want to proceed?" in got[1], repr(got))
+    got = m.input_line("  " + RULE + "\n\u276f\n  " + RULE + "\n")
+    check("...and a run of the rule character that does not open its line is "
+          "no rule line",
+          got[0] is None and "0 rule line(s)" in got[1], repr(got))
 
     sentence = m.prompt_for("kalaluthien/campaign-base", "42")
     check("the prompt names the sub-issue and defers to its body",
@@ -362,9 +366,10 @@ def end_to_end_cases():
               and prompts(typed) == [], f"exit {r.returncode}: {out[:300]}")
         nobox = shims(Path(d) / "nobox", rows, COMPACTED,
                       screen="1. Stop and wait for limit to reset\n")
-        r = assign(["w1:p2", "198", "--assume-fresh"], nobox)
+        r = assign(["w1:p2", "198", "--assume-fresh", "--force"], nobox)
         out = r.stdout + r.stderr
-        check("a screen with no input box refuses, saying what it read",
+        check("a screen with no input box refuses past both doors, saying "
+              "what it read",
               r.returncode == 1 and "no input box: 0 rule line(s)" in out
               and prompts(nobox) == [], f"exit {r.returncode}: {out[:300]}")
 

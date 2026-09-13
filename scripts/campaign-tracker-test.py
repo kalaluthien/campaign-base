@@ -546,6 +546,10 @@ def main():
         code, out, err = settlement(dict(base, head=head(parent={"number": 7})), tmp)
         check("a campaign issue that is itself a sub-issue is reported",
               code == 0 and "sub-issue of #7" in out)
+        check("...on a line opening with NOT_CAMPAIGN, which campaign-close "
+              "reads, and no comment kind",
+              f"  -- {m.NOT_CAMPAIGN} it is itself a sub-issue of #7" in out
+              and "REPORT" not in out, out)
 
         code, out, err = settlement(dict(base, index=[sub(10), sub(11, nested=3)]), tmp)
         check("a sub-issue with members of its own is reported, not counted",
@@ -618,21 +622,6 @@ def main():
     found = m.shape_findings(m.SUB_ISSUE, "t", missing, True)
     check("a missing `## Lands in` is refused in the delegate's own words",
           any("no `## Lands in` heading" in f for f in found))
-    # A DELEGATE THAT WILL NOT LOAD IS NOT A SECTION THAT IS RIGHT. The branch
-    # fires whenever `campaign-repos.py` is missing or unimportable, and it was
-    # declared dead when it is merely unreached: an absence read as a pass is
-    # what this whole file exists to refuse.
-    was = m.repos_module
-    try:
-        def boom():
-            raise ImportError("no campaign-repos.py")
-        m.repos_module = boom
-        found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True)
-    finally:
-        m.repos_module = was
-    check("a `## Lands in` reader that will not load is a finding, not a pass",
-          len(found) == 1 and "would not load" in found[0]
-          and "not a section that is right" in found[0])
     for label, body in (
             ("inside an HTML comment",
              good_sub.replace("## Lands in\n- none\n",
@@ -660,6 +649,20 @@ def main():
         found = m.shape_findings(m.CAMPAIGN, "t", body, False)
         check(f"a campaign issue with no `## {want}` is refused by that name",
               any(f"no `## {want}` section" in f for f in found))
+    # ONE HEADING READER (rule-check#370 row 20). A `## Repos` inside a
+    # comment, or with two spaces, is no heading to `read_repos`, and `check`
+    # used to say the shape held on both.
+    for label, body in (
+            ("inside an HTML comment",
+             good_campaign.replace("## Repos\n- none\n",
+                                   "<!--\n## Repos\n- none\n-->\n")),
+            ("with two spaces in the heading",
+             good_campaign.replace("## Repos\n", "##  Repos\n"))):
+        assert body != good_campaign, label
+        found = m.shape_findings(m.CAMPAIGN, "t", body, False)
+        check(f"a `## Repos` {label} is no `## Repos` section, as read_repos "
+              f"reads it", any("no `## Repos` section" in f for f in found),
+              repr(found))
     # A CAMPAIGN ISSUE OMITS A SECTION; IT DOES NOT RENAME ONE. `## Plan` and
     # `## Lands in` are a sub-issue's, and requiring them of a campaign would
     # be the vocabulary drifting back apart.
@@ -884,6 +887,8 @@ def main():
     check("a slug label is not a hold", m.is_standing(["campaign:standing"]) is False)
     check("label_names drops a label with no name rather than raising",
           m.label_names({"labels": [{"name": "a"}, {}, {"name": 2}]}) == ["a"])
+    check("...and a row that is not a label object at all",
+          m.label_names({"labels": ["b", {"name": "a"}]}) == ["a"])
 
     def printed(fn, *a):
         buf = io.StringIO()

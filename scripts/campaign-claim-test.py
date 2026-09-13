@@ -212,9 +212,14 @@ JSON
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
     # WHAT CLAUDE CODE WRITES when a prompt reaches a busy pane: the queue's
     # `enqueue` record, in the session's transcript (probed 2026-09-13, 0.42 s
-    # after herdr returned). Only where a case names the transcript.
+    # after herdr returned). Only where a case names the transcript, and
+    # SHIM_ENQUEUE_DELAY seconds late where it names one: detached from the
+    # pipes, or the caller's capture would wait out the delay inside herdr.
     if [ -n "${SHIM_TRANSCRIPT:-}" ]; then
-      printf '{"type":"queue-operation","operation":"enqueue","timestamp":"2099-01-01T00:00:00.000Z","content":"%%s"}\n' "$4" >> "$SHIM_TRANSCRIPT"
+      ( sleep "${SHIM_ENQUEUE_DELAY:-0}"
+        printf '{"type":"queue-operation","operation":"enqueue","timestamp":"2099-01-01T00:00:00.000Z","content":"%%s"}\n' "$4" >> "$SHIM_TRANSCRIPT"
+      ) </dev/null >/dev/null 2>&1 &
+      [ -n "${SHIM_ENQUEUE_DELAY:-}" ] || wait
     fi
     exit %s ;;
 esac
@@ -248,7 +253,7 @@ def shims(d, gh=GH, herdr=None, prompt_exit=0):
     # Everything else a case legitimately runs, linked in, because PATH is this
     # directory ALONE: with the real PATH behind it, "herdr is not installed"
     # would silently run the real herdr and prove nothing.
-    for tool in ("git", "hostname", "sh", "cat", "printf", "uname"):
+    for tool in ("git", "hostname", "sh", "cat", "printf", "uname", "sleep"):
         found = shutil.which(tool)
         if found and not (b / tool).exists():
             (b / tool).symlink_to(found)
@@ -2158,6 +2163,20 @@ exit 1
         check("...and says the /compact it sent is queued in the transcript",
               "it runs when this turn ends (compaction pending: /compact at "
               "2099-01-01" in out, out[:600])
+
+        # THE WAIT, PINNED: the record lands a second after herdr returns,
+        # longer than the 0.42 s probed, so a release that read once and
+        # stopped reads no /compact queued.
+        late = shims(Path(d) / "late", gh=gone_gh, herdr=two)
+        env, _ = transcript(Path(d) / "late", "S2")
+        r = claim(["release", "9999", "4"], late,
+                  {"CLAUDE_CODE_SESSION_ID": "S2", "SHIM_ENQUEUE_DELAY": "1",
+                   **env})
+        out = r.stdout + r.stderr
+        check("a /compact queued a second after the send is waited for",
+              r.returncode == 0 and len(prompts(late)) == 1
+              and "it runs when this turn ends (compaction pending" in out,
+              f"exit {r.returncode}: {out[:600]}")
 
         # ONLY A WORKER'S PANE (rule-check#370 row 19). A planner releases
         # after every merge, and each release compacted it.

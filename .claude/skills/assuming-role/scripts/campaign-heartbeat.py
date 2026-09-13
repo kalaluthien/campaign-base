@@ -1034,7 +1034,7 @@ def watch_readers(issue, slug, own, claim, names, cache):
             return None, why
         out = {}
         for i in items:
-            names = [lb.get("name") for lb in i.get("labels") or []]
+            names = tracker.label_names(i)
             out[i["number"]] = (
                 i["state"], tracker.BACKLOG_LABEL in names,
                 tracker.is_standing(names))

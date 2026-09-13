@@ -696,7 +696,8 @@ def case_campaign_closes(m):
     return (ok and len(edits) == 1 and rel == [f"rc/{ISSUE}-drop", "rc/33-other"]
             and c and c[0][c[0].index("--comment") + 1]
             == "NOTE rc-planner-1: campaign closed."
-            and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} from ")
+            and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} "
+                                        f"from {m.TRACKER_MODULE.this_machine()}. ")
             and "AGENTS.md" in w["comment"] and "scripts/.gitkeep" in w["comment"]
             and "runtime" not in w["comment"].split("```")[1]
             and (d / "README.md").read_text() == README_NEW + "\n"
@@ -1195,14 +1196,14 @@ CASES = {
     "refuse campaign: the number has a parent of its own": whole_refusal(
         "settlement", "#10 is not a campaign issue", "is itself a sub-issue of #9",
         settlement=settlement_all().replace(
-            "  -- claims:", "  -- REPORT: this campaign issue is itself a "
+            "  -- claims:", "  -- not a campaign issue: it is itself a "
             "sub-issue of #9 -- closing that campaign will not settle this one"
             "\n  -- claims:")),
     "refuse campaign: the number carries no campaign label": whole_refusal(
         "settlement", "#10 is not a campaign issue", "may be a sub-issue read",
         settlement=settlement_all().replace(
-            "  -- claims:", "  -- REPORT: no `campaign` label, so this may be a "
-            "sub-issue read as a campaign issue\n  -- claims:")),
+            "  -- claims:", "  -- not a campaign issue: no `campaign` label, so "
+            "this may be a sub-issue read as a campaign issue\n  -- claims:")),
     "campaign: the release reads live again after the writes":
         case_release_rereads_live,
     "live: stale worktree entries are pruned under the base before live reads":
@@ -1501,8 +1502,9 @@ MUTATIONS = [
      "refuse: a release that printed neither word did not release"),
     ("not a campaign refuses", 'if s["not_campaign"]:', "if False:",
      "refuse campaign: the number has a parent of its own"),
-    ("both reports are read", '"may be a sub-issue read as a campaign issue",',
-     '"<never printed>",', "refuse campaign: the number carries no campaign label"),
+    ("both reports are read", "if line.strip().startswith(NOT_CAMPAIGN):",
+     'if "is itself a sub-issue of" in line:',
+     "refuse campaign: the number carries no campaign label"),
     ("prune before live", 'r = run("git", "-C", str(root), "worktree", "prune")',
      'r = run("true")',
      "live: stale worktree entries are pruned under the base before live reads"),
@@ -1518,9 +1520,10 @@ MUTATIONS = [
     ("release reads live again", "step_release_all(n, read_live(n, slug),",
      "step_release_all(n, reading,",
      "campaign: the release reads live again after the writes"),
-    ("front: campaign kind", 'if kind == "campaign issue":', "if False:",
+    ("front: campaign kind", "if kind == TRACKER_MODULE.CAMPAIGN:", "if False:",
      "front: a campaign issue number reads as scope campaign"),
-    ("front: sub-issue kind", 'elif kind == "sub-issue":', "elif False:",
+    ("front: sub-issue kind", "elif kind == TRACKER_MODULE.SUB_ISSUE:",
+     "elif False:",
      "front: a sub-issue number reads as scope sub-issue of its parent"),
     ("front: of its parent", '["sub-issue", parent.lstrip("#"), n]',
      '["sub-issue", n, n]',

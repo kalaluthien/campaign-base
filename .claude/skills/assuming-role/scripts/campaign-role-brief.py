@@ -144,27 +144,20 @@ def role_of(session_id):
         rule = load(HERE / "campaign-name-session.py", "cns")
     except Exception as e:                  # noqa: BLE001 -- reported, not raised
         return None, None, f"could not read the name rule ({e.__class__.__name__})"
-    try:
-        r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
-                           text=True, timeout=10)
-        rows = json.loads(r.stdout)["result"]["agents"] if r.returncode == 0 else None
-    except Exception as e:                  # noqa: BLE001
-        return None, None, f"could not read herdr ({e.__class__.__name__})"
-    if rows is None:
-        return None, None, f"could not read herdr: agent list exited {r.returncode}"
-    for a in rows:
-        if not isinstance(a, dict):
-            return None, None, "could not read herdr: a row was not an object"
-        if ((a.get("agent_session") or {}) if isinstance(a.get("agent_session"), dict)
-                else {}).get("value") != session_id:
-            continue
-        name = a.get("name") or ""
-        campaign = rule.campaign_of(name) if isinstance(name, str) else None
-        if campaign is None:
-            return None, None, (f"no role read for {session_id}: herdr names it "
-                                f"{name or 'nothing'}")
-        return ("planner" if "-planner-" in name else "worker"), campaign, name
-    return None, None, f"no role read for {session_id}: herdr holds no row for it"
+    # The listing and the role word are the name rule's (rule-check#370 row
+    # 3). A session herdr holds no row for reads as no role HERE, where the
+    # guard floors it as could-not-look: the brief's repair is the name.
+    sessions, why = rule.herdr_sessions()
+    if sessions is None:
+        return None, None, f"could not read herdr: {why}"
+    row = sessions.get(session_id)
+    if row is None:
+        return None, None, f"no role read for {session_id}: herdr holds no row for it"
+    name = row["name"]
+    campaign = rule.campaign_of(name)
+    if campaign is None:
+        return None, None, f"no role read for {session_id}: herdr names it {name}"
+    return rule.role_word(name), campaign, name
 
 
 def body(path):

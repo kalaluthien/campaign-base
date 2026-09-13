@@ -203,7 +203,23 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_REPO = "kalaluthien/campaign-base"
+
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package.
+    Raises what loading raised; each caller decides what that means."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+# campaign-repos.py OWNS THE BASE'S NAME AND HOW A BODY'S SECTIONS ARE FOUND:
+# `BASE_REPO`, the reader that refuses it in `## Repos`, and `headings`,
+# `section` and `lands_in` (rule-check#370 rows 5 and 20). Loaded here once.
+REPOS = load(Path(__file__).resolve().parent / "campaign-repos.py",
+             "campaign_repos")
+DEFAULT_REPO = REPOS.BASE_REPO
 CAMPAIGN_LABEL = "campaign"
 BOUND_LABEL_PREFIX = "bound:"
 # The campaign's slug, the same shape as the binding's label and for the same
@@ -252,11 +268,12 @@ def gh_read(cmd, timeout=None):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (FileNotFoundError, PermissionError) as e:
-        return None, f"could not run gh ({e.__class__.__name__})"
+        return None, f"could not run {cmd[0]} ({e.__class__.__name__})"
     except subprocess.TimeoutExpired:
-        return None, f"gh did not answer within {timeout}s"
+        return None, f"{cmd[0]} did not answer within {timeout}s"
     if r.returncode != 0:
-        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
+        return None, (f"{cmd[0]} exited {r.returncode}: "
+                      f"{(r.stderr.strip() or r.stdout.strip() or 'no message')[:200]}")
     return r.stdout, None
 
 
@@ -282,19 +299,20 @@ def classify(issues):
     """Split one listing by its two readings. Returns (campaign issues, stray, bare).
 
     Every issue carries both properties, so each row is decided by what that
-    issue itself says -- never by its absence from somewhere else."""
-    def labelled(i):
-        return any(l.get("name") == CAMPAIGN_LABEL for l in i.get("labels") or [])
-    campaign_issues = [i for i in issues if labelled(i) and not i.get("parent")]
-    stray = [i for i in issues if labelled(i) and i.get("parent")]
-    bare = [i for i in issues if not labelled(i) and not i.get("parent")]
-    return campaign_issues, stray, bare
+    issue itself says -- never by its absence from somewhere else. The kind is
+    `kind_of`'s, and a sub-issue is in none of the three."""
+    kinds = [(i, kind_of(CAMPAIGN_LABEL in label_names(i), bool(i.get("parent"))))
+             for i in issues]
+    return tuple([i for i, k in kinds if k == want]
+                 for want in (CAMPAIGN, STRAY, THIRD_KIND))
 
 
 def label_names(issue):
-    """Every label name on one listing row, as strings."""
+    """Every label name on one issue, as strings, off gh's `--json labels`.
+    The one reading of it (rule-check#370 row 22): the survey, `check`,
+    `settlement`, `slugs` and the heartbeat each built the list themselves."""
     return [l.get("name") for l in issue.get("labels") or []
-            if isinstance(l.get("name"), str)]
+            if isinstance(l, dict) and isinstance(l.get("name"), str)]
 
 
 def is_standing(names):
@@ -415,14 +433,11 @@ def refuse_label_reading(message):
 
 
 def run_or_refuse(*args):
-    try:
-        out = subprocess.run(args, capture_output=True, text=True, check=False)
-    except OSError as exc:
-        refuse_label_reading(f"cannot run {args[0]}: {exc}")
-    if out.returncode != 0:
-        refuse_label_reading(f"{' '.join(args)} exited {out.returncode}: "
-                     f"{out.stderr.strip() or out.stdout.strip() or 'no message'}")
-    return out.stdout
+    """`gh_read`, refusing where it could not read."""
+    text, why = gh_read(list(args))
+    if why:
+        refuse_label_reading(f"{' '.join(args)}: {why}")
+    return text
 
 
 def labels_of(repo, number):
@@ -501,16 +516,6 @@ def cmd_bound(args):
 
 
 # ------------------------------------------------------------------------ slug
-
-
-def load(src, alias):
-    """The script at `src` as a module: these are scripts, not a package.
-    Raises what loading raised; each caller decides what that means."""
-    spec = importlib.util.spec_from_loader(
-        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
 
 
 def name_rule():
@@ -628,12 +633,16 @@ def cmd_slugs(args):
               file=sys.stderr)
         return 2
     try:
-        labels = [l["name"] for l in json.loads(text)]
-    except (ValueError, KeyError, TypeError) as e:
+        listed = json.loads(text)
+        if not isinstance(listed, list):
+            raise TypeError(type(listed).__name__)
+    except (ValueError, TypeError) as e:
         print(f"campaign-tracker slugs: could not parse gh's output "
               f"({e.__class__.__name__})", file=sys.stderr)
         return 2
-    if len(labels) >= args.limit:
+    # A label listing is the `labels` array an issue carries.
+    labels = label_names({"labels": listed})
+    if len(listed) >= args.limit:
         print(f"campaign-tracker slugs: the label listing came back at --limit "
               f"{args.limit}, so it may be truncated, and a truncated listing "
               f"reads exactly like a complete one. Raise --limit and re-run.",
@@ -794,19 +803,19 @@ BODY_CEILING = 2000
 TITLE_CEILING = 40
 BACKLOG_LABEL = "backlog"
 
-# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is; the two
+# THE SECTION VOCABULARY, stated once, here -- the NAMES, that is, but the two
+# a script reads the entries of, which are campaign-repos.py's; the two
 # ceilings below are stated once each as a constant, and the templates and
 # AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS
 # a section; it never renames one, which is what `## Requirements` beside a
 # sub-issue's `Definition of done` was doing -- two names for one purpose.
 # `## Plan` is conditional on the moment and so is not in either tuple; see
 # `required_sections`.
-CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done", "Repos")
-LANDS_SECTION = "Lands in"
+CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done",
+                     REPOS.REPOS_HEADING)
+LANDS_SECTION = REPOS.LANDS_HEADING
 SUB_ISSUE_SECTIONS = ("Intent", "Definition of done", LANDS_SECTION)
 PLAN_SECTION = "Plan"
-
-SECTION = re.compile(r"^## +(.+?)\s*$", re.MULTILINE)
 
 # HOW AN ISSUE OR A PULL REQUEST IS NAMED (kalaluthien/campaign-base#217, the
 # owner's word on 2026-09-10). An issue is `<slug>#N` -- `machinery#1`,
@@ -874,22 +883,12 @@ def bare_reference_warning(bare):
             f"not a refusal: every body written before the rule carries them.")
 
 
-def repos_module():
-    """`campaign-repos.py`, imported for `lands_in`.
-
-    THE DESTINATION HAS ONE READER AND THIS IS NOT IT. `SECTION` above finds a
-    heading; `lands_in` decides whether the SECTION under it is an answer, and
-    the two disagreed on four bodies -- a `## Lands in` inside an HTML comment,
-    `##  Lands in` with two spaces, an empty section, and two entries. On each,
-    `check` printed "the shape holds" and `campaign-claim take` then refused the
-    claim, which is the drift a second reader always produces. So this row is
-    delegated rather than re-derived, and `check` and the claim path can no
-    longer answer differently (kalaluthien/campaign-base#217, review of
-    e73ec4b)."""
-    return load(Path(__file__).resolve().parent / "campaign-repos.py", "campaign_repos")
-
-CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = (
-    "campaign issue", "sub-issue", "stray", "third kind")
+# THE WORDS ARE campaign-roles.py's ISSUE_KINDS (rule-check#370 row 21): its
+# licences are keyed by them, and the guard reads that leaf on every call.
+ISSUE_KINDS = load(Path(__file__).resolve().parent.parent / ".claude" / "skills"
+                   / "assuming-role" / "scripts" / "campaign-roles.py",
+                   "campaign_roles").ISSUE_KINDS
+CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = ISSUE_KINDS
 
 
 def kind_of(labelled, parented):
@@ -944,20 +943,17 @@ def shape_findings(kind, title, body, want_plan, names=()):
         out.append(f"the body is {len(body)} characters, over {BODY_CEILING}. "
                    f"Design longer than that is a file on the claim's branch, "
                    f"linked from `## {PLAN_SECTION}`")
-    found = SECTION.findall(body)
+    found = REPOS.headings(body)
     for want in required_sections(kind, want_plan):
         # THE DESTINATION IS NOT A PRESENCE TEST. Every other section here is
         # judged by its heading alone -- what belongs under `## Intent` is
         # judgement and stays prose. `## Lands in` is the one row a script
-        # already decides in full, and it is asked rather than approximated.
+        # already decides in full, and it is asked rather than approximated:
+        # the two disagreed on four bodies, and `check` printed "the shape
+        # holds" where `campaign-claim take` then refused
+        # (kalaluthien/campaign-base#217).
         if want == LANDS_SECTION:
-            try:
-                _entry, why = repos_module().lands_in(body)
-            except Exception as e:                 # noqa: BLE001 -- any of them
-                out.append(f"the `## {want}` reader would not load "
-                           f"({e.__class__.__name__}), so this section was not "
-                           f"read; that is not a section that is right")
-                continue
+            _entry, why = REPOS.lands_in(body)
             if why:
                 out.append(f"`## {want}`: {why}")
             continue
@@ -985,7 +981,7 @@ def issue_shape(repo, number, timeout=None):
         data = json.loads(text)
     except ValueError as e:
         return None, None, None, None, f"could not parse gh's output ({e})"
-    names = [l.get("name") for l in data.get("labels") or []]
+    names = label_names(data)
     return (data.get("title") or "", data.get("body") or "", names,
             (data.get("parent") or {}).get("number"), None)
 
@@ -999,7 +995,7 @@ def cmd_check(args):
               file=sys.stderr)
         return 2
     kind = kind_of(CAMPAIGN_LABEL in names, parented)
-    found = SECTION.findall(body)
+    found = REPOS.headings(body)
     # WHAT WAS READ, ALWAYS, and before the verdict. A bare pass is the shape
     # that gets trusted for months while checking nothing.
     print(f"read {repo}#{number}: {kind}"
@@ -1110,19 +1106,16 @@ def gh_json(*args):
     This is the shape the whole file uses, and settlement is why: one sub-issue
     whose repository went private would otherwise abort the table before the
     reader saw any verdict at all, and a close reads that table."""
+    what = f"gh {' '.join(args)}"
+    text, why = gh_read(["gh", *args])
+    if why:
+        return None, f"{what}: {why}"
+    if not text.strip():
+        return None, f"{what} printed nothing"
     try:
-        out = subprocess.run(["gh", *args], capture_output=True, text=True)
-    except OSError as exc:
-        return None, f"cannot run gh: {exc}"
-    if out.returncode != 0:
-        return None, (f"gh {' '.join(args)} exited {out.returncode}: "
-                      f"{out.stderr.strip().splitlines()[0][:100] if out.stderr.strip() else 'no message'}")
-    if not out.stdout.strip():
-        return None, f"gh {' '.join(args)} printed nothing"
-    try:
-        return json.loads(out.stdout), None
+        return json.loads(text), None
     except ValueError as exc:
-        return None, (f"gh {' '.join(args)} returned something that is not JSON "
+        return None, (f"{what} returned something that is not JSON "
                       f"({exc.__class__.__name__})")
 
 
@@ -1228,6 +1221,13 @@ def claim_reader():
     return module, None
 
 
+# WHAT `settlement` PRINTS BESIDE ITS TABLE opens with a word of its own. The
+# four lines opened `REPORT:`, which is a comment kind, and campaign-close.py
+# told the two that refuse a close from the rest by matching the prose after
+# it (rule-check#370 row 26); it reads NOT_CAMPAIGN now.
+NOT_CAMPAIGN = "not a campaign issue:"
+
+
 def campaign_issue_reports(head):
     """What says the number handed in is not a campaign issue. Costs no extra call.
 
@@ -1235,12 +1235,13 @@ def campaign_issue_reports(head):
     in may be a sub-issue and a sub-issue may be a campaign issue. Neither is visible in a
     settlement table. These reports read labels and the parent relation, never
     the body: prose is editable and the parent relation is not."""
-    if CAMPAIGN_LABEL not in [l["name"] for l in head["labels"]]:
-        yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a sub-issue read"
-               " as a campaign issue")
+    if CAMPAIGN_LABEL not in label_names(head):
+        yield (f"{NOT_CAMPAIGN} no `{CAMPAIGN_LABEL}` label, so this may be a "
+               "sub-issue read as a campaign issue")
     if head["parent"]:
-        yield (f"REPORT: this campaign issue is itself a sub-issue of #{head['parent']['number']}"
-               " -- closing that campaign will not settle this one")
+        yield (f"{NOT_CAMPAIGN} it is itself a sub-issue of "
+               f"#{head['parent']['number']} -- closing that campaign will not "
+               "settle this one")
 
 
 def cmd_settlement(args):
@@ -1287,8 +1288,8 @@ def cmd_settlement(args):
         print(f"  {ref:<{width}}  {v:<9} {title}" + (f"  [{note}]" if note else ""))
 
     for ref, total in nested:
-        print(f"  -- REPORT: {ref} has {total} sub-issue(s) of its own, not listed"
-              " above; run this on it too")
+        print(f"  -- nested: {ref} has {total} sub-issue(s) of its own, not "
+              "listed above; run this on it too")
 
     # Two ways not to be closable, named apart because they want different
     # repairs: an open sub-issue is work to finish, an unread one is a reading to
@@ -1304,7 +1305,8 @@ def cmd_settlement(args):
           + (f", {unread} unread" if unread else "") + "; "
           + ("closable" if closable else "NOT closable: " + "; ".join(blockers)))
     if head["state"] == "CLOSED" and not closable:
-        print("  -- REPORT: the campaign issue is closed with sub-issues still open")
+        print("  -- closed early: the campaign issue is closed with sub-issues "
+              "still open")
     return 0
 
 

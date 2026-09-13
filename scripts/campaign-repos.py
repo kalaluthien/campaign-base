@@ -90,6 +90,12 @@ import sys
 REPOS_HEADING = "Repos"
 LANDS_HEADING = "Lands in"
 NEXT_SECTION = re.compile(r"^## ")
+# A HEADING, as every reader of an issue body's sections reads one: `## `, one
+# space, a name, outside any `<!-- -->`. campaign-tracker.py's `check` and
+# check-merge-review.py ask `headings` rather than matching their own shape,
+# which read `##  Repos` and a commented-out `## Repos` as present while
+# `read_repos` said the list was not there (rule-check#370 row 20).
+HEADING = re.compile(r"^## (\S.*?)\s*$")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 ITEM = re.compile(r"^- (\S.*)$")
 # An entry is `owner/repo` or the sentinel, and the sentinel is spelled exactly.
@@ -186,10 +192,10 @@ def section(text, heading=REPOS_HEADING):
     differ in what their entries MEAN and not in how a section is found, and a
     second copy of the walk would be the one that stopped honouring `<!-- -->`
     or the next `## `."""
-    want = re.compile(rf"^## {re.escape(heading)}\s*$")
     out, inside = [], False
     for line in COMMENT.sub("", text).splitlines():
-        if want.match(line):
+        m = HEADING.match(line)
+        if m and m.group(1) == heading:
             inside = True
             continue
         if inside:
@@ -198,6 +204,13 @@ def section(text, heading=REPOS_HEADING):
             if line.strip():
                 out.append(line.rstrip())
     return out if inside else None
+
+
+def headings(text):
+    """Every section heading's name in `text`, in order, as `section` finds
+    them."""
+    return [m.group(1) for line in COMMENT.sub("", text).splitlines()
+            if (m := HEADING.match(line))]
 
 
 def lands_in(text):

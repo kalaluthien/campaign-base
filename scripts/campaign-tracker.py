@@ -1221,6 +1221,13 @@ def claim_reader():
     return module, None
 
 
+# WHAT `settlement` PRINTS BESIDE ITS TABLE opens with a word of its own. The
+# four lines opened `REPORT:`, which is a comment kind, and campaign-close.py
+# told the two that refuse a close from the rest by matching the prose after
+# it (rule-check#370 row 26); it reads NOT_CAMPAIGN now.
+NOT_CAMPAIGN = "not a campaign issue:"
+
+
 def campaign_issue_reports(head):
     """What says the number handed in is not a campaign issue. Costs no extra call.
 
@@ -1229,11 +1236,12 @@ def campaign_issue_reports(head):
     settlement table. These reports read labels and the parent relation, never
     the body: prose is editable and the parent relation is not."""
     if CAMPAIGN_LABEL not in label_names(head):
-        yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a sub-issue read"
-               " as a campaign issue")
+        yield (f"{NOT_CAMPAIGN} no `{CAMPAIGN_LABEL}` label, so this may be a "
+               "sub-issue read as a campaign issue")
     if head["parent"]:
-        yield (f"REPORT: this campaign issue is itself a sub-issue of #{head['parent']['number']}"
-               " -- closing that campaign will not settle this one")
+        yield (f"{NOT_CAMPAIGN} it is itself a sub-issue of "
+               f"#{head['parent']['number']} -- closing that campaign will not "
+               "settle this one")
 
 
 def cmd_settlement(args):
@@ -1280,8 +1288,8 @@ def cmd_settlement(args):
         print(f"  {ref:<{width}}  {v:<9} {title}" + (f"  [{note}]" if note else ""))
 
     for ref, total in nested:
-        print(f"  -- REPORT: {ref} has {total} sub-issue(s) of its own, not listed"
-              " above; run this on it too")
+        print(f"  -- nested: {ref} has {total} sub-issue(s) of its own, not "
+              "listed above; run this on it too")
 
     # Two ways not to be closable, named apart because they want different
     # repairs: an open sub-issue is work to finish, an unread one is a reading to
@@ -1297,7 +1305,8 @@ def cmd_settlement(args):
           + (f", {unread} unread" if unread else "") + "; "
           + ("closable" if closable else "NOT closable: " + "; ".join(blockers)))
     if head["state"] == "CLOSED" and not closable:
-        print("  -- REPORT: the campaign issue is closed with sub-issues still open")
+        print("  -- closed early: the campaign issue is closed with sub-issues "
+              "still open")
     return 0
 
 

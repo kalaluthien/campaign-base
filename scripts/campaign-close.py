@@ -389,11 +389,10 @@ def holds(step, evidence):
 SETTLED = re.compile(r"-- \d+/\d+ settled")
 SETTLEMENT_HEAD = re.compile(r"^campaign issue \S+#\d+\s+\[(\w+)\]")
 SETTLEMENT_ROW = re.compile(r"^  (\S+/\S+#\d+)\s+(\S+)")
-# campaign-tracker's two REPORTs that the number is no campaign issue: no
-# `campaign` label, or a parent of its own. Closing either closes the wrong
-# thing, so both refuse.
-NOT_A_CAMPAIGN = ("may be a sub-issue read as a campaign issue",
-                  "is itself a sub-issue of")
+# campaign-tracker's two lines that the number is no campaign issue -- no
+# `campaign` label, or a parent of its own -- open with its NOT_CAMPAIGN.
+# Closing either closes the wrong thing, so both refuse.
+NOT_CAMPAIGN = f"-- {TRACKER_MODULE.NOT_CAMPAIGN}"
 
 
 def settlement_word(text, issue):
@@ -417,7 +416,7 @@ def settlement_rows(text):
     out = {"state": None, "rows": [], "finished": False, "closable": False,
            "not_campaign": []}
     for line in text.splitlines():
-        if any(x in line for x in NOT_A_CAMPAIGN):
+        if line.strip().startswith(NOT_CAMPAIGN):
             out["not_campaign"].append(line.strip())
         head = SETTLEMENT_HEAD.match(line)
         if head:

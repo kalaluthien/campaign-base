@@ -546,6 +546,10 @@ def main():
         code, out, err = settlement(dict(base, head=head(parent={"number": 7})), tmp)
         check("a campaign issue that is itself a sub-issue is reported",
               code == 0 and "sub-issue of #7" in out)
+        check("...on a line opening with NOT_CAMPAIGN, which campaign-close "
+              "reads, and no comment kind",
+              f"  -- {m.NOT_CAMPAIGN} it is itself a sub-issue of #7" in out
+              and "REPORT" not in out, out)
 
         code, out, err = settlement(dict(base, index=[sub(10), sub(11, nested=3)]), tmp)
         check("a sub-issue with members of its own is reported, not counted",

@@ -769,14 +769,14 @@ def case_sync_at_work(m):
     code, out, asked, _ = drive(m, SYNC, w)
     d = w["dir"]
     edits = [a for a in asked if a[:3] == ["gh", "issue", "edit"]]
-    read = sorted({Path(a[1]).name + " " + a[2] for a in asked
-                   if a[0] == sys.executable})
+    read = [Path(a[1]).name + " " + a[2] for a in asked
+            if a[0] == sys.executable]
     return (code == 0 and len(edits) == 1 and writes(asked) == edits
             and not releases(asked) and w["body"] == README_NEW + "\n"
             and (d / "README.md").read_text() == README_NEW + "\n"
             and (d / "runtime" / "campaign-issue-body-derived.md").read_text()
             == README_NEW + "\n"
-            and read == ["campaign-directory.py 10", "campaign-tracker.py bound"]
+            and read == ["campaign-tracker.py bound", "campaign-directory.py 10"]
             ), (read, out)
 
 

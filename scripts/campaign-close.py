@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Close one piece of a campaign, or the whole of it, behind the gates every close shares.
+"""Close one piece of a campaign, or the whole of it, or sync a scope change into its body, behind shared gates.
 
     scripts/campaign-close.py [<target>] [--not-planned "<why>"] [--close] [--delete]
     scripts/campaign-close.py sub-issue <N> <issue> --not-planned "<why>"
@@ -197,6 +197,9 @@ SCOPE campaign <N> [--close] [--delete]
                   worktree prune`.
 
 SCOPE sync <N> -- a scope change reaches the campaign issue body, nothing closes
+
+  Every scope change but one: a repository LEAVING `## Repos` is scope
+  `repo`, whose gates stand between the drop and the same sync.
 
   1. bound        Holds when: `here`.
   2. directory    Holds when: a path; the README there is what is synced.
@@ -1159,7 +1162,7 @@ CHECK_LINE = re.compile(r"^read \S+#(\d+): (campaign issue|sub-issue|stray|"
 # is an answer the person gave and nobody read.
 FLAGS = {"campaign": ("close", "delete"), "here": ("delete",),
          "repo": ("delete",), "sub-issue": ("not_planned",), "worker": (),
-         "workers": ()}
+         "workers": (), "sync": ()}
 
 
 def campaign_named(slug, whose):

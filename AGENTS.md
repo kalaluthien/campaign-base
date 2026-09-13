@@ -494,7 +494,9 @@ close it is invisible to every other session.
 `campaign-close.py`'s `sync` step is the only sanctioned write, at either
 moment — at a scope change as `campaign-close.py sync <N>`, which reads no
 gate but the binding and the directory, so a `standing` campaign with workers
-listed takes it; at the close as the `campaign` scope's step. It
+listed takes it, except a repository leaving `## Repos`, which is scope `repo`
+and its gates (§ Watching and retiring); at the close as the `campaign`
+scope's step. It
 compares the body against the copy the campaign `README.md` was derived from and
 refuses when it has moved, so one write cannot silently discard another.
 

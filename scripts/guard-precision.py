@@ -81,7 +81,6 @@ of the first pair is printed under each row.
 import argparse
 import collections
 import datetime
-import glob
 import importlib.machinery
 import importlib.util
 import json
@@ -247,16 +246,19 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     base = Path(os.path.expanduser(a.base))
-    # EVERY CAMPAIGN DIRECTORY'S LOG, found by its `.campaign` marker rather
-    # than by a name: a campaign directory wears `campaign-<slug>-<date>` or
-    # the older bare `<slug>`, and a glob over the second is a glob over every
-    # directory here. The marker is
-    # the same one check-campaign-claim.py reads, so a log this misses is a
-    # directory that guard would not call a campaign's either.
-    paths = a.logs or sorted(
-        {str(base / LOG_NAME)}
-        | {str(Path(marker).parent / LOG_NAME)
-           for marker in glob.glob(str(base / "*" / ".campaign"))})
+    g = guard()
+    # EVERY CAMPAIGN DIRECTORY'S LOG, found by the guard's own
+    # `is_campaign_dir` rather than by a name: a campaign directory wears
+    # `campaign-<slug>-<date>` or the older bare `<slug>`, and a glob over the
+    # second is a glob over every directory here. One predicate, so a log this
+    # misses is a directory that guard would not call a campaign's either. A
+    # base that will not list leaves only its own log, which `read_logs` notes.
+    try:
+        dirs = [d for d in sorted(base.iterdir()) if g.is_campaign_dir(d)]
+    except OSError:
+        dirs = []
+    paths = a.logs or sorted({str(base / LOG_NAME)}
+                             | {str(d / LOG_NAME) for d in dirs})
     rows, notes = read_logs(paths)
     keep = (True if a.all else
             {x.strip() for x in a.sessions.split(",") if x.strip()}
@@ -288,7 +290,6 @@ def main(argv=None):
               f"the filter, so no real session has been logged yet")
         return 1
 
-    g = guard()
     pairs, held, unpairable = pair_up(g, rows, a.minutes)
     refusals = [r for r in rows if r.get("verdict") == "REFUSED"]
     allows = [r for r in rows if r.get("verdict") == "allowed"]

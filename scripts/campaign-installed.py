@@ -26,8 +26,9 @@ does not close while a machine holding it has an install behind.
 
 THE BASE IS ALWAYS THE FIRST ROW. `## Repos` refuses an entry naming it, so
 its marker cannot be written in any list; it is `BASE_ROW` below, at the base
-root `campaign-claim.py`'s `base_root` resolves -- the main checkout, from a
-worktree or from a clone under a campaign directory alike -- with
+root the claim guard's `base_root` resolves, asked through
+`campaign-claim.py` -- the main checkout, from a worktree or from a clone
+under a campaign directory alike -- with
 `scripts/install-hooks.sh` as its `apply`. That is AGENTS.md's former "base as
 its own member" section as one row of this rule.
 

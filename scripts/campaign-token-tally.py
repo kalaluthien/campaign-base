@@ -99,6 +99,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 WORKTREE = re.compile(r"/worktrees/(\d+)(?:/|$)")
 REVIEW_CMD = re.compile(
@@ -152,8 +153,9 @@ SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$"
 INTERPRETERS = {"python", "python3"}
 
 
-def shell_grammar():
-    """check-campaign-claim.py, imported for its shell splitter.
+def guard_module():
+    """check-campaign-claim.py, imported for its shell splitter and its
+    `base_root`.
 
     That guard already owns the one reading of a Bash command's grammar in this
     repository -- `segments` (shlex, with `;|&(){}` as their own tokens, and a
@@ -211,12 +213,13 @@ def die(why):
 
 
 def base_root():
-    """The main checkout, resolved the one sanctioned way (AGENTS.md § The three planes)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    common = subprocess.run(
-        ["git", "-C", here, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        capture_output=True, text=True, check=True).stdout.strip()
-    return os.path.realpath(os.path.dirname(common))
+    """The base root, as the claim guard's `base_root` reads it from this file
+    (rule-check#370 row 2)."""
+    here = Path(__file__).resolve().parent
+    root, note = guard_module().base_root(here)
+    if root is None:
+        die(f"the base root did not resolve from {here}: {note}")
+    return str(root)
 
 
 def usage_of(message):
@@ -857,7 +860,7 @@ def scan_script_calls(corpus):
     tool result in the kept turns, so a share can be read rather than asserted.
     """
     keep = {t["message_id"] for t in corpus.turns}
-    grammar = shell_grammar()
+    grammar = guard_module()
     by_script = {}
     charged = 0
     all_bytes = 0

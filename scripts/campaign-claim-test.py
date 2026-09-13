@@ -502,12 +502,14 @@ def git_cases(m):
               len(unread) == 1 and "nothing" in unread[0]
               and where.get("probe/1-alpha"))
 
-        root, why = m.repo_root(trees["probe/1-alpha"])
+        # A session's cwd is read through the guard's `checkout_of`, which
+        # `sweep_roots` calls; these pin what it relies on.
+        root, _top, why = m.GUARD.checkout_of(Path(trees["probe/1-alpha"]))
         check("a linked worktree resolves to the repository that owns it",
-              why is None and root == str(repo))
-        root, why = m.repo_root(str(Path(d) / "nothing"))
-        check("a directory in no repository is not a failure, just no root",
-              root is None and why is None)
+              why is None and root == Path(repo).resolve())
+        root, _top, why = m.GUARD.checkout_of(Path(d) / "nothing")
+        check("a directory in no repository has no root",
+              root is None and why)
 
 
 def live_cases(m):
@@ -1378,8 +1380,8 @@ def scope_cases(m):
 
         def campaign_dir(*parts):
             p = root.joinpath(*parts)
-            (p / m.CAMPAIGN_MARKER).parent.mkdir(parents=True, exist_ok=True)
-            (p / m.CAMPAIGN_MARKER).write_text("9999 demo\n")
+            (p / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(parents=True, exist_ok=True)
+            (p / m.GUARD.CAMPAIGN_MARKER).write_text("9999 demo\n")
             return p
 
         demo = campaign_dir("demo")
@@ -1607,9 +1609,9 @@ def sweep_cases(m):
         # are kept only so the rest of this case reads as it was written.
         # `not-a-campaign` gets none, which is the row it exists for.
         for name in ("demo-260904", "repoless-260904"):
-            (root / name / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+            (root / name / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(parents=True,
                                                            exist_ok=True)
-            (root / name / m.CAMPAIGN_MARKER).write_text("1 demo\n")
+            (root / name / m.GUARD.CAMPAIGN_MARKER).write_text("1 demo\n")
         clones, unread = m.campaign_clones(str(root))
         check("a member clone under a campaign directory is a sweep root",
               clones == [str(root / "demo-260904" / "repos" / "acme")]
@@ -1626,9 +1628,9 @@ def sweep_cases(m):
         # reads as standing in no workspace.
         bad = root / "locked-260904" / "repos"
         bad.mkdir(parents=True)
-        (root / "locked-260904" / m.CAMPAIGN_MARKER).parent.mkdir(
+        (root / "locked-260904" / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(
             parents=True, exist_ok=True)
-        (root / "locked-260904" / m.CAMPAIGN_MARKER).write_text("2 locked\n")
+        (root / "locked-260904" / m.GUARD.CAMPAIGN_MARKER).write_text("2 locked\n")
         bad.chmod(0o000)
         real = m.base_root
         try:
@@ -1645,9 +1647,9 @@ def sweep_cases(m):
             # every campaign on the machine; scoped, it is not read at all.
             mine = root / "mine-260905" / "repos" / "acme"
             mine.mkdir(parents=True)
-            (root / "mine-260905" / m.CAMPAIGN_MARKER).parent.mkdir(
+            (root / "mine-260905" / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(
                 parents=True, exist_ok=True)
-            (root / "mine-260905" / m.CAMPAIGN_MARKER).write_text("3 mine\n")
+            (root / "mine-260905" / m.GUARD.CAMPAIGN_MARKER).write_text("3 mine\n")
             clones, unread = m.campaign_clones(str(root), root / "mine-260905")
             check("a neighbour's unreadable repos/ does not deny this campaign",
                   not unread, str(unread))
@@ -1771,9 +1773,9 @@ def root_cases(m):
         root = Path(d).resolve()
         here = root / "demo-260904" / "repos" / "campaign-base" / "scripts"
         here.mkdir(parents=True)
-        (root / "demo-260904" / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+        (root / "demo-260904" / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(parents=True,
                                                                 exist_ok=True)
-        (root / "demo-260904" / m.CAMPAIGN_MARKER).write_text("1 demo\n")
+        (root / "demo-260904" / m.GUARD.CAMPAIGN_MARKER).write_text("1 demo\n")
         real = m.HERE
         try:
             m.HERE = here
@@ -1803,9 +1805,9 @@ def repos_cases(m):
         root = Path(d).resolve()
         clone = root / "demo-260904" / "repos" / "acme"
         clone.mkdir(parents=True)
-        (root / "demo-260904" / m.CAMPAIGN_MARKER).parent.mkdir(parents=True,
+        (root / "demo-260904" / m.GUARD.CAMPAIGN_MARKER).parent.mkdir(parents=True,
                                                                 exist_ok=True)
-        (root / "demo-260904" / m.CAMPAIGN_MARKER).write_text("1 demo\n")
+        (root / "demo-260904" / m.GUARD.CAMPAIGN_MARKER).write_text("1 demo\n")
         subprocess.run(["git", "-C", str(clone), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(clone), "remote", "add", "origin",
                         "git@github.com:o/acme.git"], check=True)

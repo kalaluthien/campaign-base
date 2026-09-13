@@ -266,39 +266,12 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 # owns the rule; this asks it.
 NAMES = _name_rule_module()
 
-# THE MARKER THAT MAKES A DIRECTORY A CAMPAIGN'S, relative to the directory.
-# A campaign directory was once recognised by a `-YYMMDD` suffix, and nothing
-# on disk said WHICH campaign it was. #181 round 2 put the suffix back on the
-# name for a person reading `ls`, but the bare `<slug>` form it replaced is
-# still on disk and no shape can tell an arbitrary slug from `scripts/`, so
-# neither form is read. The directory says so
-# itself, in a file `opening-campaign` writes at scaffold: one line, `<N>
-# <slug>`, derived from the campaign issue and re-derivable at any time. It sits
-# at the directory root rather than under `runtime/`, which is scratch sessions
-# rewrite and sweep; check-campaign-claim.py, which owns this reading, says why.
-#
-# Nothing here derives the list from GitHub, because the question is which
-# directories are on THIS machine. The same marker the claim guard reads.
-CAMPAIGN_MARKER = Path(".campaign")
-
-
-def is_campaign_dir(path):
-    """Whether `path` is a campaign directory on this machine, read as the
-    marker's presence and not as the name's shape.
-
-    ONE RULE, TWO READERS, and the other one owns it: `check-campaign-claim.py`
-    asks the same question of the same file and is the PreToolUse hook, so it
-    cannot afford to exec this file's `gh` plumbing to ask. This is the same
-    two-line predicate over `CAMPAIGN_MARKER`, which is imported from there.
-
-    A directory that cannot be stat'd is not a campaign directory rather than a
-    refusal, and that is deliberate: this is asked of every entry at the base
-    root, where an unreadable one is somebody else's problem and refusing would
-    deny every reading on the machine."""
-    try:
-        return (Path(path) / CAMPAIGN_MARKER).is_file()
-    except OSError:
-        return False
+# The claim guard, imported for the path readings it owns (rule-check#370
+# row 2): which directory is a campaign's (`is_campaign_dir`), which checkout
+# holds a path (`checkout_of`), and where the base root is (`base_root`). It
+# is the PreToolUse hook and reads them on every tool call, so the home is
+# there and this file asks, as check-commit-claim.py does.
+GUARD = load(HERE / "check-campaign-claim.py", "check_campaign_claim")
 
 
 def run(*args, **kw):
@@ -1216,50 +1189,20 @@ def parse_worktrees(text):
 
 def base_root():
     """(path, why_unreadable) -- the base checkout whose campaign directories
-    this sweeps.
-
-    TWO RULES, and the first exists because the base is a member of its own
-    campaigns. `<campaign>/repos/campaign-base/` is a second checkout of this
-    very repository, script and all, so `git rev-parse --git-common-dir` run
-    from THAT copy answers with the clone -- a base root holding no campaign
-    directory at all, which comes back as a clean sweep of nothing and lets
-    `release` delete a ref somebody is standing in.
-
-    So: if any ancestor of this file is a campaign directory -- one carrying
-    the marker `.campaign` -- the base root is that directory's parent,
-    whichever checkout is running.
-    Only when none is -- the ordinary case, the base's own `scripts/` -- does
-    the git rule apply, and there it is AGENTS.md's one form, which returns the
-    main checkout even from a linked worktree."""
-    for parent in HERE.parents:
-        if is_campaign_dir(parent):
-            return str(parent.parent), None
-    r = run("git", "-C", str(HERE), "rev-parse", "--path-format=absolute",
-            "--git-common-dir")
-    if r.returncode != 0:
-        return None, (f"could not resolve the base root from {HERE}: "
-                      f"{' '.join(r.stderr.split())[:120]}")
-    return str(Path(r.stdout.strip()).parent), None
-
-
-def repo_root(cwd):
-    """The repository root of one session's directory, or why not. A `cwd` that
-    is not in a repository is not a failure -- a session may sit anywhere -- so
-    it comes back as (None, None)."""
-    if not cwd or cwd == "?":
-        return None, None
-    r = run("git", "-C", cwd, "rev-parse", "--path-format=absolute",
-            "--git-common-dir")
-    if r.returncode != 0:
-        return None, None
-    return str(Path(r.stdout.strip()).parent), None
+    this sweeps: the guard's `base_root` read from this file, whose docstring
+    says why a campaign directory above it decides before git does. Read at
+    call time from `HERE`, so a case can move it."""
+    root, note = GUARD.base_root(HERE)
+    if root is None:
+        return None, f"could not resolve the base root from {HERE}: {note}"
+    return str(root), None
 
 
 def own_campaign_dir(start=None):
     """This session's own campaign directory, or None when it is not under one.
 
-    THE SAME WALK `base_root` MAKES, kept rather than thrown away. `base_root`
-    already looks for a marker-bearing ancestor of this file and returns its
+    THE SAME WALK the guard's `base_root` MAKES, kept rather than thrown away.
+    It already looks for a marker-bearing ancestor of this file and returns its
     PARENT; the directory it walked past is the one campaign this invocation is
     actually about, and #187 question 4 is what it cost to discard it.
 
@@ -1270,7 +1213,7 @@ def own_campaign_dir(start=None):
     from `HERE` alone it could only be tested by where this file happens to
     sit, which is a different answer in a worktree, in a clone, and on CI."""
     for parent in (start or HERE).parents:
-        if is_campaign_dir(parent):
+        if GUARD.is_campaign_dir(parent):
             return parent
     return None
 
@@ -1307,7 +1250,7 @@ def campaign_clones(root, only=None):
     else:
         try:
             dirs = [d for d in sorted(Path(root).iterdir())
-                    if is_campaign_dir(d)]
+                    if GUARD.is_campaign_dir(d)]
         except OSError as e:
             return [], [f"{root}: could not list campaign directories "
                         f"({e.__class__.__name__})"]
@@ -1422,9 +1365,12 @@ def sweep_roots(sessions, only=None):
     clones, unread = campaign_clones(root, only)
     roots.update(clones)
     for row in sessions.values():
-        r, _ = repo_root(row.get("cwd", ""))
-        if r:
-            roots.add(r)
+        # A cwd in no repository is not a failure -- a session may sit
+        # anywhere -- so the note is dropped. `?` is herdr's unknown.
+        cwd = row.get("cwd", "")
+        main = GUARD.checkout_of(Path(cwd))[0] if cwd not in ("", "?") else None
+        if main:
+            roots.add(str(main))
     return sorted(roots), unread, None
 
 

@@ -86,9 +86,12 @@ Usage: scripts/campaign-local-work.py <campaign-issue-number> [campaign-dir]
 not have to know, which is the point -- the caller who would have got it wrong
 is the one not reading this.
 """
+import importlib.machinery
+import importlib.util
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def refuse(why):
@@ -111,11 +114,25 @@ def git(repo, *args, check=True):
     return run(repo, "git", "-C", repo, *args, check=check)
 
 
+def load(path, alias):
+    """The script at `path` as a module: these are scripts, not a package."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(path)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def base_root():
-    """The main checkout, resolved the one sanctioned way (AGENTS.md § The three planes)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    common = git(here, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    return os.path.realpath(os.path.dirname(common))
+    """The base root, as the claim guard's `base_root` reads it from this file
+    (rule-check#370 row 2). Loaded here, at the one call, and not at import:
+    the suite loads a copy of this file standing alone."""
+    here = Path(__file__).resolve().parent
+    root, note = load(here / "check-campaign-claim.py",
+                      "check_campaign_claim").base_root(here)
+    if root is None:
+        refuse(f"the base root did not resolve from {here}: {note}")
+    return str(root)
 
 
 def slug(repo):

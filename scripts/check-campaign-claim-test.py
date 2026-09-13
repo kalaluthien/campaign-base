@@ -1998,6 +1998,27 @@ def main():
               and named.group(1) == str(inner / "innerdemo"),
               f"{named and named.group(1)!r}")
 
+    # `base_root`, the one home of the base root (rule-check#370 row 2):
+    # campaign-claim, campaign-local-work and campaign-token-tally ask it with
+    # their own directory. In process, since no hook call reaches it.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/9-x",))
+        g = guard_module()
+        base = f.base.resolve()
+        clone = f.clone()
+        got = g.base_root(clone / "scripts")
+        check("base_root from the base's clone under a campaign directory is "
+              "the base holding that directory, not the clone git names",
+              got == (base, None), f"{got}")
+        got = g.base_root(f.trees["demo/9-x"] / "scripts")
+        check("base_root from a linked worktree outside any campaign directory "
+              "is its main checkout", got == (base, None), f"{got}")
+        loose = Path(d) / "loose" / "scripts"
+        loose.mkdir(parents=True)
+        root, note = g.base_root(loose)
+        check("base_root in no repository and no campaign directory is None, "
+              "with git's reason", root is None and bool(note), f"{note}")
+
     # #192 ITEM 1: `own_claim`'s reach, kept and named. An unrelated
     # repository on a claim-shaped branch with a local bare origin is
     # ADMITTED, which is #176's own property -- a claim is a branch name plus
@@ -3428,7 +3449,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 473
+    EXPECTED = 476
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

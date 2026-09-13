@@ -3299,12 +3299,19 @@ def main():
         f = Fixture(d, claims=("demo/7-x",))
         planner = herdr_stub(d, {"sid-1": "demo-planner-3"})
         r = ask(f.base, path=str(f.base / "AGENTS.md"), env=planner, guard=copy)
+        # The role must be READ for either absence to mean anything: a copy
+        # that could not read it would print neither string too (review of
+        # f3ef3e5). The refusal below names no role, so it is held to the
+        # fallback line's absence instead.
         check("a planner the table gives a code plane is not refused code",
-              "may not change code" not in out(r), out(r)[:400])
+              "is demo-planner-3" in out(r)
+              and "may not change code" not in out(r), out(r)[:400])
         r = ask(f.base, tool="Bash", command="gh issue close 9", env=planner,
                 guard=copy)
         check("...and one it bounds to its own campaign has no any-campaign "
-              "licence", "any campaign" not in out(r), out(r)[:400])
+              "licence", r.returncode == 2
+              and "the role could not be read" not in out(r)
+              and "any campaign" not in out(r), out(r)[:400])
 
     # THE REFERENCE RULE IS THE SECOND IMPORT, and it gets its own tree: the
     # loop above deletes a skill script and leaves `campaign-tracker.py` absent

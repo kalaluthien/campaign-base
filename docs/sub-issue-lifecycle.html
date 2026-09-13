@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A sub-issue's lifecycle</title>
+<style>
+  :root { --ink:#111; --mute:#555; --hair:#d8d8d8; --paper:#ffffff; --link:#14459b; --lane:#f3f3f3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8e8e8; --mute:#a8a8a8; --hair:#3a3a3a; --paper:#161616; --link:#8fb0f0; --lane:#202020; }
+  }
+  body { margin: 0; padding: 2.5rem 1rem 4rem; background: var(--paper); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 .6rem; }
+  p { margin: .6rem 0; }
+  a { color: var(--link); }
+  a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+  figure { margin: 1.6rem 0; }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 42rem; height: auto; }
+  svg text { fill: currentColor; font: 13px system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  svg .lbl { fill: var(--mute); font-size: 12px; }
+  svg .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  svg .ttl { font-weight: 700; font-size: 14px; }
+  svg .lane { fill: var(--lane); stroke: var(--hair); stroke-width: 1; }
+  svg .box { fill: var(--paper); stroke: currentColor; stroke-width: 1.3; }
+  svg .fact { fill: var(--paper); stroke: currentColor; stroke-width: 1.3; stroke-dasharray: 5 4; }
+  svg .edge { fill: none; stroke: currentColor; stroke-width: 1.2; }
+  svg .msg { fill: none; stroke: var(--mute); stroke-width: 1.2; stroke-dasharray: 2 3; }
+  figcaption, .src { font-size: .88rem; color: var(--mute); }
+</style>
+</head>
+<body class="view">
+<main>
+<h1>A sub-issue's lifecycle</h1>
+<p>One sub-issue, from filing to release, in three lanes. The planner and the
+worker are the two roles a session of a campaign holds; the third lane is
+GitHub, where every fact that outlives a session is written.</p>
+
+<figure>
+<div class="scroll">
+<svg viewBox="0 0 760 700" role="img" aria-labelledby="t d">
+  <title id="t">Swimlane diagram: a sub-issue from filing to release, in the planner's, the worker's and GitHub's lanes</title>
+  <desc id="d">Left lane, the planner: files the sub-issue under the campaign issue with a kind label; takes the claim, which cuts a ref named slug/issue-topic on the remote; assigns it, as a prompt into a worker's pane or a delegate launch; later launches the review, whose REVIEW lands on the pull request at the head sha. Middle lane, the worker: works in the checkout the claim names, a worktree or a clone; commits, where pre-commit judges and post-commit pushes; opens the pull request on the first commit, whose body closes the sub-issue; posts a REPORT pinning the sha; on a fix round commits again. Then whoever meets the three merge conditions merges, reaches the install, and releases the claim, which deletes the ref. Right lane, GitHub, holds the durable facts each step writes: the sub-issue, the ref, the branch, the pull request, the REPORT, the REVIEW, the merge that closes the sub-issue, and the deleted ref. A dotted two-way edge between the worker and the planner carries BLOCKED up and DECISION down, both as comments on the sub-issue.</desc>
+  <defs>
+    <marker id="head" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="ttl" x="10" y="22">Swimlane diagram · one sub-issue, filing to release</text>
+
+  <!-- lanes -->
+  <rect class="lane" x="10" y="36" width="236" height="654" rx="6"/>
+  <rect class="lane" x="262" y="36" width="236" height="654" rx="6"/>
+  <rect class="lane" x="514" y="36" width="236" height="654" rx="6"/>
+  <text class="ttl" x="128" y="56" text-anchor="middle">planner</text>
+  <text class="lbl" x="128" y="72" text-anchor="middle">writes the campaign plane, no code</text>
+  <text class="ttl" x="380" y="56" text-anchor="middle">worker</text>
+  <text class="lbl" x="380" y="72" text-anchor="middle">writes code, bounded by its claim</text>
+  <text class="ttl" x="632" y="56" text-anchor="middle">GitHub</text>
+  <text class="lbl" x="632" y="72" text-anchor="middle">the durable facts</text>
+
+  <!-- 1 file -->
+  <rect class="box" x="24" y="90" width="208" height="46" rx="10"/>
+  <text x="128" y="109" text-anchor="middle">file the sub-issue</text>
+  <text class="mono" x="128" y="126" text-anchor="middle">--parent, kind:&lt;k&gt;</text>
+  <rect class="fact" x="528" y="90" width="208" height="46"/>
+  <text x="632" y="109" text-anchor="middle">sub-issue</text>
+  <text class="lbl" x="632" y="126" text-anchor="middle">under the campaign issue</text>
+  <path class="edge" d="M232,113 H526" marker-end="url(#head)"/>
+
+  <!-- 2 claim -->
+  <rect class="box" x="24" y="160" width="208" height="46" rx="10"/>
+  <text x="128" y="179" text-anchor="middle">take the claim</text>
+  <text class="mono" x="128" y="196" text-anchor="middle">campaign-claim take</text>
+  <rect class="fact" x="528" y="160" width="208" height="46"/>
+  <text x="632" y="179" text-anchor="middle">ref, cut from main</text>
+  <text class="mono" x="632" y="196" text-anchor="middle">&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;</text>
+  <path class="edge" d="M232,183 H526" marker-end="url(#head)"/>
+  <text class="lbl" x="300" y="176">atomic across machines</text>
+
+  <!-- 3 assign -->
+  <rect class="box" x="24" y="230" width="208" height="46" rx="10"/>
+  <text x="128" y="249" text-anchor="middle">assign</text>
+  <text class="lbl" x="128" y="266" text-anchor="middle">a prompt into a pane, or a launch</text>
+  <path class="edge" d="M232,253 H274" marker-end="url(#head)"/>
+
+  <!-- 4 work -->
+  <rect class="box" x="276" y="230" width="208" height="46" rx="10"/>
+  <text x="380" y="249" text-anchor="middle">work in the claim's checkout</text>
+  <text class="lbl" x="380" y="266" text-anchor="middle">a worktree of the base, or the clone</text>
+
+  <!-- 5 commit -->
+  <rect class="box" x="276" y="300" width="208" height="46" rx="10"/>
+  <text x="380" y="319" text-anchor="middle">commit</text>
+  <text class="lbl" x="380" y="336" text-anchor="middle">the hooks judge it, then push it</text>
+  <rect class="fact" x="528" y="300" width="208" height="46"/>
+  <text x="632" y="319" text-anchor="middle">the branch</text>
+  <text class="lbl" x="632" y="336" text-anchor="middle">pushed on its first commit</text>
+  <path class="edge" d="M380,276 V298" marker-end="url(#head)"/>
+  <path class="edge" d="M484,323 H526" marker-end="url(#head)"/>
+
+  <!-- 6 pull request + report -->
+  <rect class="box" x="276" y="370" width="208" height="46" rx="10"/>
+  <text x="380" y="389" text-anchor="middle">open the pull request, REPORT</text>
+  <text class="lbl" x="380" y="406" text-anchor="middle">on the first commit; the sha pinned</text>
+  <rect class="fact" x="528" y="370" width="208" height="46"/>
+  <text x="632" y="389" text-anchor="middle">pull request, REPORT</text>
+  <text class="lbl" x="632" y="406" text-anchor="middle">its body closes the sub-issue</text>
+  <path class="edge" d="M380,346 V368" marker-end="url(#head)"/>
+  <path class="edge" d="M484,393 H526" marker-end="url(#head)"/>
+
+  <!-- 7 review -->
+  <rect class="box" x="24" y="440" width="208" height="46" rx="10"/>
+  <text x="128" y="459" text-anchor="middle">launch the review</text>
+  <text class="lbl" x="128" y="476" text-anchor="middle">another agent, at the head sha</text>
+  <rect class="fact" x="528" y="440" width="208" height="46"/>
+  <text x="632" y="459" text-anchor="middle">REVIEW on the pull request</text>
+  <text class="lbl" x="632" y="476" text-anchor="middle">names the sha; re-runs the check</text>
+  <path class="edge" d="M380,416 V430 H128 V438" marker-end="url(#head)"/>
+  <text class="lbl" x="136" y="428">the next move is the planner's</text>
+  <path class="edge" d="M232,463 H526" marker-end="url(#head)"/>
+  <text class="lbl" x="300" y="456">a push retires it</text>
+
+  <!-- fix round -->
+  <path class="edge" d="M632,486 V500 H380 V348" marker-end="url(#head)"/>
+  <text class="lbl" x="390" y="512">a fix round: commit again, REPORT the new sha</text>
+
+  <!-- 8 merge -->
+  <rect class="box" x="276" y="540" width="208" height="46" rx="10"/>
+  <text x="380" y="559" text-anchor="middle">merge, then reach the install</text>
+  <text class="lbl" x="380" y="576" text-anchor="middle">whoever meets the three conditions</text>
+  <rect class="fact" x="528" y="540" width="208" height="46"/>
+  <text x="632" y="559" text-anchor="middle">merged; the sub-issue closes</text>
+  <text class="lbl" x="632" y="576" text-anchor="middle">by the keyword in the body</text>
+  <path class="edge" d="M128,486 V526 H380 V538" marker-end="url(#head)"/>
+  <path class="edge" d="M484,563 H526" marker-end="url(#head)"/>
+
+  <!-- 9 release -->
+  <rect class="box" x="276" y="610" width="208" height="46" rx="10"/>
+  <text x="380" y="629" text-anchor="middle">release the claim</text>
+  <text class="mono" x="380" y="646" text-anchor="middle">campaign-claim release</text>
+  <rect class="fact" x="528" y="610" width="208" height="46"/>
+  <text x="632" y="629" text-anchor="middle">ref deleted</text>
+  <text class="lbl" x="632" y="646" text-anchor="middle">settled once the issue is closed</text>
+  <path class="edge" d="M380,586 V608" marker-end="url(#head)"/>
+  <path class="edge" d="M484,633 H526" marker-end="url(#head)"/>
+
+  <!-- blocked / decision -->
+  <path class="msg" d="M276,323 H128 V276"/>
+  <text class="lbl" x="34" y="300">BLOCKED up, DECISION down:</text>
+  <text class="lbl" x="34" y="314">comments on the sub-issue</text>
+
+  <!-- key -->
+  <g transform="translate(20,668)">
+    <rect class="box" x="0" y="0" width="22" height="14" rx="5"/>
+    <text class="lbl" x="30" y="12">a step</text>
+    <rect class="fact" x="100" y="0" width="22" height="14"/>
+    <text class="lbl" x="130" y="12">a fact GitHub holds</text>
+    <path class="msg" d="M250,7 H272"/>
+    <text class="lbl" x="280" y="12">a question and its answer</text>
+  </g>
+</svg>
+</div>
+<figcaption>Completion is a GitHub fact: a sub-issue is settled when its issue is
+closed, and nothing on a terminal screen is evidence. Work that lands no commit
+still takes the claim, and closes as completed with no pull request.</figcaption>
+</figure>
+
+<p class="src">Kind: view, composed as dotclaude's
+<a href="https://github.com/kalaluthien/dotclaude/blob/main/spec/document-kinds.md">document-kinds spec</a>
+says, after its <a href="https://github.com/kalaluthien/dotclaude/blob/main/docs/memory-pool-lookup.html">memory-pool-lookup</a> page.
+Sources: <a href="../AGENTS.md#sub-issues"><code>AGENTS.md</code> § Sub-issues</a>,
+<a href="../AGENTS.md#merge-conditions"><code>AGENTS.md</code> § Merge conditions</a>,
+<a href="../.claude/skills/assuming-role/references/worker.md">the worker's lifecycle</a>,
+<a href="../.claude/skills/assuming-role/references/planner.md">the planner's</a>;
+what each role may write is <a href="../.claude/skills/assuming-role/scripts/campaign-roles.py"><code>campaign-roles.py</code></a>'s;
+read at <time datetime="2026-09-13">2026-09-13</time>, commit <code>2cc3ee7</code>.</p>
+</main>
+</body>
+</html>

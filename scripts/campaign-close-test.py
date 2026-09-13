@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: S2_SubIssueDropped, R7e_WorkerRuleAdmitsTheDroppedSubIssue, H1_HeartbeatRetiresADoneWorker
+# witnesses: S2_SubIssueDropped, R7e_WorkerRuleAdmitsTheDroppedSubIssue, H1_HeartbeatRetiresADoneWorker, Cov_Handoff
 """Prove campaign-close refuses on every gate, with its reason beside it, and
 lets the ordinary close through.
 
@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 
@@ -245,6 +246,12 @@ def answer(w, a):
             return subprocess.CompletedProcess(a, 1, "", "no socket")
         return ok(json.dumps({"result": {"panes": [
             {"pane_id": p, "tab_id": t} for p, t in got.items()]}}))
+    if a[:3] == ["herdr", "pane", "current"]:
+        cur = w.get("current", PANE)
+        if cur is None:
+            return subprocess.CompletedProcess(a, 1, "", "no socket")
+        return ok(json.dumps({"result": {"pane": {"pane_id": cur,
+                                                  "tab_id": TAB}}}))
     if a[:3] == ["herdr", "tab", "close"]:
         return subprocess.CompletedProcess(a, w.get("tab_close", 0), "",
                                            "tab close failed")
@@ -266,6 +273,14 @@ def drive(m, argv, w):
         asked.append(list(a))
         return answer(w, list(a))
     m.run = fake_run
+    real_spawn, spawned = m.spawn, w.setdefault("spawned", [])
+
+    def fake_spawn(argv, log):
+        if "spawn_error" in w:
+            raise OSError(w["spawn_error"])
+        spawned.append((list(argv), str(log)))
+        return 4242
+    m.spawn = fake_spawn
     m.CLAIM.campaign_slug = lambda n: ((w["slug"], "ok") if w["slug"]
                                        else (None, "no campaign: label"))
     polls = iter(w.get("polls", []))
@@ -296,6 +311,7 @@ def drive(m, argv, w):
             except SystemExit as e:
                 code = e.code
     finally:
+        m.spawn = real_spawn
         os.chdir(was)
         for k, v in saved.items():
             os.environ.pop(k, None)
@@ -526,6 +542,84 @@ def case_front_workers(m):
             and worker_lines(out) == [f"kept        rc-worker-3 {OTHER} -- retire: "
                                       "the heartbeat reads rc-worker-3 as `keep`: "
                                       "context 9 < 200"]), out
+
+
+# ------------------------------------------------------------- leave
+
+# The session leaving, on PANE; its successor, on OTHER.
+LEAVER = {"S2": dict(ROW, name="rc-worker-2", pane=PANE),
+          "S3": dict(ROW, name="rc-worker-3", pane=OTHER)}
+LEFT = {"S3": LEAVER["S3"]}
+SELF_LEAVE = ["leave", N]
+HANDOVER = ["leave", N, PANE]
+
+
+def leaves(**over):
+    """A world where the leave's gate reads LEAVER, then the wait finds PANE
+    once and gone on the next poll."""
+    over.setdefault("polls", [(LEAVER, None), (LEAVER, None), (LEFT, None)])
+    return world(**over)
+
+
+def case_leave_self(m):
+    w = leaves()
+    code, out, asked, _ = drive(m, SELF_LEAVE, w)
+    return (code == 0 and w["spawned"] and len(w["spawned"]) == 1
+            and w["spawned"][0][0] == [sys.executable, str(SCRIPT), "leave", N,
+                                       PANE, "--detached"]
+            and w["spawned"][0][1].endswith("campaign-leave-w1-p2.log")
+            and not prompts(asked) and not tab_closes(asked)
+            and f"session     holds -- rc-worker-2 on {PANE}, of rc (#{N})" in out
+            and f"detach      holds -- pid 4242 sends /exit to {PANE}" in out), out
+
+
+def case_leave_handover(m):
+    w = leaves(current=OTHER)
+    code, out, asked, sleeps = drive(m, HANDOVER, w)
+    return (code == 0 and not w["spawned"]
+            and f"self        holds -- this runs in {OTHER}; it closes {PANE}" in out
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
+            and sleeps == [m.WAIT_EVERY]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_leave_detached(m):
+    w = leaves()
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    return (code == 0 and not w["spawned"]
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_leave_tab_shared(m):
+    w = leaves(current=OTHER, panes=[{PANE: TAB, OTHER: TAB}])
+    ok, asked, out = refused(m, HANDOVER, w, "tab",
+                             f"tab {TAB} holds {OTHER} beside {PANE}")
+    return ok and len(prompts(asked)) == 1 and not tab_closes(asked), out
+
+
+def leave_refusal(gate, *says, argv=SELF_LEAVE, **over):
+    """A leave refused before anything is sent: no prompt, no process."""
+    def case(m):
+        w = leaves(**over)
+        ok, asked, out = refused(m, argv, w, gate, *says)
+        return ok and not prompts(asked) and not w["spawned"], out
+    return case
+
+
+def case_spawn_detaches(m):
+    """The real spawn: the child leads a session of its own, so closing the
+    tab it was started from does not take it, and it writes to the log."""
+    log = Path(tempfile.mkdtemp()) / "leave.log"
+    TMP.append(log.parent)
+    pid = m.spawn([sys.executable, "-c", "import os; print(os.getsid(0) == "
+                   "os.getpid(), os.getsid(0) != os.getsid(os.getppid()))"], log)
+    for _ in range(50):
+        if log.exists() and log.read_text().strip():
+            break
+        time.sleep(0.1)
+    return isinstance(pid, int) and log.read_text().split() == ["True", "True"], \
+        log.read_text()
 
 
 # ------------------------------------------------------------- the refusals
@@ -938,6 +1032,32 @@ CASES = {
         polls=[(None, "herdr is down")]),
     "front: `workers` alone reads as scope workers of this session's campaign":
         case_front_workers,
+    "leave: its own pane is left by a detached run of the same scope":
+        case_leave_self,
+    "leave: another pane, the handover, is left in the foreground":
+        case_leave_handover,
+    "leave: the detached run exits its pane, waits, and closes the tab":
+        case_leave_detached,
+    "leave: a tab holding a second pane is refused, and not closed":
+        case_leave_tab_shared,
+    "leave: the spawned run leads a session of its own and writes the log":
+        case_spawn_detaches,
+    "refuse leave: HERDR_ENV is not 1": leave_refusal("herdr", "not 1", env={}),
+    "refuse leave: herdr pane current did not read": leave_refusal(
+        "self", "herdr pane current exited 1: no socket", current=None),
+    "refuse leave: the pane holds a session of another campaign": leave_refusal(
+        "session", f"herdr lists zz-worker-4 on {PANE}; the leave needs one "
+        "session of rc (#10)", polls=[({"S4": dict(ROW, name="zz-worker-4",
+                                                    pane=PANE)}, None)]),
+    "refuse leave: the pane holds no session": leave_refusal(
+        "session", f"herdr lists no session on {PANE}", argv=HANDOVER,
+        current=OTHER, polls=[(LEFT, None)]),
+    "refuse leave: herdr agent list did not read": leave_refusal(
+        "session", "herdr agent list did not read: herdr is down",
+        polls=[(None, "herdr is down")]),
+    "refuse leave: the detached run could not start": leave_refusal(
+        "detach", "could not start the leave: fork failed",
+        spawn_error="fork failed"),
     # refusals
     "refuse: the slug did not read": refusal("slug", "did not read", slug=None),
     "refuse: settlement did not finish": refusal(
@@ -1474,9 +1594,45 @@ MUTATIONS = [
      "vacant_blocks=True)\n    step_sync(",
      "sync: standing, an open sub-issue, a claim and a session at work do not "
      "stop a scope change"),
-    ("sync: a scope by name", '"here", "campaign", "sync")', '"here", "campaign")',
+    ("sync: a scope by name", '"campaign", "sync",\n', '"campaign",\n',
      "sync: standing, an open sub-issue, a claim and a session at work do not "
      "stop a scope change"),
+    ("leave: the worker's retire is the leave", "    gate_herdr(say)\n    step_leave(pane, say)\n\n\n",
+     "    gate_herdr(say)\n\n\n",
+     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+    ("leave: the own pane detaches", "if pane != own or args.detached:", "if True:",
+     "leave: its own pane is left by a detached run of the same scope"),
+    ("leave: another pane is not detached", "if pane != own or args.detached:",
+     "if args.detached:", "leave: another pane, the handover, is left in the foreground"),
+    ("leave: the detached run does not detach again", "if pane != own or args.detached:",
+     "if pane != own:", "leave: the detached run exits its pane, waits, and closes the tab"),
+    ("leave: the pane defaults to its own", "pane = args.pane or own", "pane = args.pane",
+     "leave: its own pane is left by a detached run of the same scope"),
+    ("leave: the herdr guard is read", "    slug = slug_of(n)\n    gate_herdr(say)\n",
+     "    slug = slug_of(n)\n", "refuse leave: HERDR_ENV is not 1"),
+    ("leave: its own pane is read", "    if own is None:\n        raise Refused(\"self\"",
+     "    if False:\n        raise Refused(\"self\"",
+     "refuse leave: herdr pane current did not read"),
+    ("leave: only this campaign's session",
+     "if len(names) != 1 or NAMES.campaign_of(names[0]) != slug:",
+     "if len(names) != 1:", "refuse leave: the pane holds a session of another campaign"),
+    ("leave: a session must sit there",
+     "if len(names) != 1 or NAMES.campaign_of(names[0]) != slug:",
+     "if names and NAMES.campaign_of(names[0]) != slug:",
+     "refuse leave: the pane holds no session"),
+    ("leave: an unread listing refuses",
+     "    if sessions is None:\n        raise Refused(\"session\"",
+     "    if sessions is None:\n        sessions = {}\n    if False:\n        raise Refused(\"session\"",
+     "refuse leave: herdr agent list did not read"),
+    ("leave: a spawn that failed refuses",
+     'raise Refused("detach", f"could not start the leave: {e}")',
+     'pid = f"<not started: {e}>"', "refuse leave: the detached run could not start"),
+    ("leave: the spawn is a session of its own", "start_new_session=True", "start_new_session=False",
+     "leave: the spawned run leads a session of its own and writes the log"),
+    ("leave: the spawn writes the log", "stdout=out,", "stdout=subprocess.DEVNULL,",
+     "leave: the spawned run leads a session of its own and writes the log"),
+    ("leave: the spawn is this scope, detached", '"leave", n, pane,\n            "--detached"]',
+     '"leave", n, pane]', "leave: its own pane is left by a detached run of the same scope"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

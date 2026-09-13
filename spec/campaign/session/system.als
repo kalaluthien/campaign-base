@@ -307,7 +307,7 @@ pred sessionHandoff[t, p: Session] {
 }
 
 /* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
-   holds no claim. The session half; orchestration/system.als's `exitSession`
+   holds no claim, through the one leave in `scripts/campaign-close.py`. The session half; orchestration/system.als's `exitSession`
    adds that a sub-issue it took was released and it holds no live agent. A
    planner is never retired: it is the one running the heartbeat. */
 pred sessionExit[s: Session] {

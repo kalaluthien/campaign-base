@@ -624,10 +624,11 @@ fun heirOf[p, t: Session]: Agent -> Agent {
    looked at the heir yet.
 
    WHAT IS NOT MODELLED: the predecessor's `NOTE <old>: handed off to <new>`,
-   and that the successor reads it on GitHub before it sends `/exit`. The
-   ordering is the procedure's, in
-   `.claude/skills/assuming-role/references/planner.md` § Handing off and its
-   worker twin; this event is the instant the `/exit` lands.
+   and that the successor reads it on GitHub before it runs
+   `scripts/campaign-close.py leave <N> <pane>`. The ordering is the
+   procedure's, in `.claude/skills/assuming-role/references/planner.md`
+   § Handing off and its worker twin; this event is the instant that leave's
+   `/exit` lands.
 
    Retiring here is not `retire`: no stand-down, and no workspace destroyed,
    because the heir stands in it. Being in `Retired` is what keeps a later
@@ -697,9 +698,15 @@ pred agentRelease {
    for the second with no assignment prompt since then: a prompt of another
    shape, or a tool call, is not work (the owner, rule-check#349). Idle is
    not asked either: `/exit` queues behind a running turn, which holds no
-   claim, and the script closes the tab the agent sat in after, a herdr
-   fact this model does not hold. No compaction is asked: `/exit` ends the
-   context whatever its size. */
+   claim. No compaction is asked: `/exit` ends the context whatever its size.
+
+   THE LEAVE is `scripts/campaign-close.py`'s one step behind every way a
+   session ends -- this retire, a handover's (`handoff` above), and a session
+   leaving by itself, which runs it detached so it outlives its own pane:
+   `/exit`, the wait until herdr no longer lists the agent, then the tab it
+   sat in closed, refused when another pane shares it. The tab is a herdr
+   fact this model does not hold, and so is the self-leave, which no event
+   here stands for. */
 pred exitSession[s: Session] {
   Now.event = SessionExit and Who.session = s
   some a: peer.s | once (Now.event = Release and Now.issue = a.task)

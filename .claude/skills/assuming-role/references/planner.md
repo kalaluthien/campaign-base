@@ -124,11 +124,11 @@ Rewrite the `.campaign` marker with the label. The worker's side is in
 3. **The successor reads that NOTE on GitHub**, then `bound <N>` and
    `campaign-claim live <N>`. It checks its own name carries this campaign's
    slug: no guard refuses a planner of another campaign.
-4. **Only then it sends `/exit`** to the predecessor's pane with `herdr agent
-   prompt`, and reads `herdr agent list` until the pane is gone; still listed
-   after a minute, it reports that on the campaign issue, never kills. The
-   predecessor never exits itself, so there is never an instant with no
-   planner.
+4. **Only then it runs `scripts/campaign-close.py leave <N> <pane>`** on the
+   predecessor's pane: `/exit`, the wait until herdr no longer lists it, and
+   its tab closed. Refused at `gone`, it reports that on the campaign issue,
+   never kills. The predecessor never exits itself, so there is never an
+   instant with no planner.
 
 The state travels in the NOTE, the claim refs, and the sub-issue index; the
 old pane, its transcript and a scratchpad carry none of it.
@@ -140,6 +140,6 @@ under a `kind:maintenance` sub-issue wearing `standing`. It is started the way
 [handing off](#handing-off) step 2 starts a successor, named
 `<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It
 files sub-issues, investigates, and posts `NOTE`s; it launches nothing and
-assigns nothing, which stay the campaign planner's. It leaves by stopping its
-own pane, since `quiet` and the close both wait on every listed session of the
-campaign.
+assigns nothing, which stay the campaign planner's. It leaves by
+`scripts/campaign-close.py leave <N>`, since `quiet` and the close both wait on
+every listed session of the campaign.

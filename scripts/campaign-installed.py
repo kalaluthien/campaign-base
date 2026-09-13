@@ -100,17 +100,17 @@ BASE_APPLY = "scripts/install-hooks.sh"
 APPLY_FAILED = "APPLY_FAILED"
 
 
-def load(name, filename):
-    src = HERE / filename
+def load(path, alias):
+    """The script at `path` as a module: these are scripts, not a package."""
     spec = importlib.util.spec_from_loader(
-        name, importlib.machinery.SourceFileLoader(name, str(src)))
+        alias, importlib.machinery.SourceFileLoader(alias, str(path)))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
 
 
-REPOS = load("campaign_repos", "campaign-repos.py")
-CLAIM = load("campaign_claim", "campaign-claim.py")
+REPOS = load(HERE / "campaign-repos.py", "campaign_repos")
+CLAIM = load(HERE / "campaign-claim.py", "campaign_claim")
 
 
 def git(path, *args):

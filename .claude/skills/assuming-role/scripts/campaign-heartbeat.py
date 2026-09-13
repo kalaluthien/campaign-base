@@ -170,7 +170,7 @@ BASE = HERE.parents[3]   # .claude/skills/assuming-role/scripts -> the base
 # THE COMPACTION THRESHOLD, in context tokens: the owner's number,
 # 2026-09-10. Above it every turn re-reads a context that a compaction would
 # cut to a summary, and the heartbeat is the only thing that looks.
-COMPACT_AT = 200_000
+COMPACT_AT = 250_000
 
 # The claim refs and herdr's listing, through that script's readers.
 RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
@@ -201,6 +201,7 @@ OTHER_CHARS = 80
 
 
 def load(path, name):
+    """The script at `path` as a module: these are scripts, not a package."""
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

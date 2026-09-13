@@ -190,17 +190,21 @@ def main():
 
     # The loader's floor, rule-check#370 row 4: every suite loads through
     # `load` above, and a code file holds one loader of its own, since it
-    # cannot import one it would first have to load by path.
+    # cannot import one it would first have to load by path. It reads one
+    # spelling over tracked files, so another spelling or an untracked file
+    # passes unseen, and each detail names what it read.
+    pattern = "module_from_spec[(]"
+    read = f"`git grep {pattern}` over tracked *.py, fixtures excluded"
     r = git(Path(__file__).resolve().parent.parent, "grep", "-c",
-            "module_from_spec[(]", "--", "*.py", ":!*fixtures*")
+            pattern, "--", "*.py", ":!*fixtures*")
     sites = dict(line.rsplit(":", 1) for line in r.stdout.split())
     suites = sorted(p for p in sites if p.endswith("-test.py"))
     check("only this harness builds a module from a path among the suites",
           r.returncode == 0 and [Path(p).name for p in suites] == [Path(__file__).name]
-          and sites[suites[0]] == "1", f"{r.stderr.strip()} {suites}")
+          and sites[suites[0]] == "1", f"read {read}: {r.stderr.strip()} {suites}")
     check("a code file builds a module from a path in one place at most",
           sites and all(n == "1" for n in sites.values()),
-          {p: n for p, n in sites.items() if n != "1"})
+          f"read {read}: {({p: n for p, n in sites.items() if n != '1'})}")
 
     def run_text(text):
         ns = {}

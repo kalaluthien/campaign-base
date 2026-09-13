@@ -323,8 +323,8 @@ git -C "$CAMPAIGN/repos/<name>" fetch origin "$B" &&
 
 **A repository the campaign issue's `## Repos` list does not name** is a scope change, so
 it syncs at that moment rather than at the close: edit the campaign `README.md`,
-re-run the reader over it as step 4 does, sync with `campaign-close.py`'s `sync`
-compare-then-write in full, then acquire it as in step 5. The first repository
+re-run the reader over it as step 4 does, sync with `campaign-close.py sync <N>`,
+then acquire it as in step 5. The first repository
 **replaces** `- none`, and `campaign-repos` refuses a list mixing the two.
 
 ## Gotchas

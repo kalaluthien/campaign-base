@@ -250,7 +250,6 @@ import json
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -889,7 +888,9 @@ def step_sync(n, directory):
 
 
 def step_announce(n, author, directory, changed):
-    where = socket.gethostname().split(".")[0]
+    # The machine as the binding names it: the tracker's `hostname -s`, the
+    # one reading (rule-check#370 row 27).
+    where = TRACKER_MODULE.this_machine()
     listing = "\n".join(leftovers(directory)) if directory else ""
     body = (f"NOTE {author}: closing campaign #{n} from {where}. Say so here "
             f"if you are still in it.\n\n"

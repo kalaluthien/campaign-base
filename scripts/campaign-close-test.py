@@ -696,7 +696,8 @@ def case_campaign_closes(m):
     return (ok and len(edits) == 1 and rel == [f"rc/{ISSUE}-drop", "rc/33-other"]
             and c and c[0][c[0].index("--comment") + 1]
             == "NOTE rc-planner-1: campaign closed."
-            and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} from ")
+            and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} "
+                                        f"from {m.TRACKER_MODULE.this_machine()}. ")
             and "AGENTS.md" in w["comment"] and "scripts/.gitkeep" in w["comment"]
             and "runtime" not in w["comment"].split("```")[1]
             and (d / "README.md").read_text() == README_NEW + "\n"

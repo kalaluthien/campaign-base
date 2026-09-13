@@ -27,8 +27,7 @@ named for its row.
 Usage: scripts/check-campaign-claim-test.py
 """
 import contextlib
-import importlib.machinery
-import importlib.util
+import importlib
 import io
 import json
 import os
@@ -292,12 +291,7 @@ def guard_module():
     interpreter start each is half a minute of nothing, and the replay is a
     sweep rather than a case. `corpus: in-process and subprocess agree` below
     is what keeps that from being a fixture standing in for the real thing."""
-    src = HERE / "check-campaign-claim.py"
-    spec = importlib.util.spec_from_loader(
-        "ccc", importlib.machinery.SourceFileLoader("ccc", str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return harness.load(HERE / "check-campaign-claim.py", "ccc")
 
 
 def ask_inproc(mod, payload, env):

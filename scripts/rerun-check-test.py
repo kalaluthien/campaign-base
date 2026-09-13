@@ -15,8 +15,7 @@ gate's verdict is the input this script is about.
 
 Usage: scripts/rerun-check-test.py
 """
-import importlib.machinery
-import importlib.util
+import importlib
 import json
 import os
 import subprocess
@@ -77,11 +76,7 @@ sys.exit(99)
 
 
 def gate_step():
-    spec = importlib.util.spec_from_loader(
-        "rerun_check", importlib.machinery.SourceFileLoader("rerun_check", str(SCRIPT)))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.GATE_STEP
+    return harness.load(SCRIPT, "rerun_check").GATE_STEP
 
 
 def review(sha):

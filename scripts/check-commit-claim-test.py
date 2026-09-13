@@ -13,8 +13,7 @@ read one claim shape.
 
 Usage: scripts/check-commit-claim-test.py
 """
-import importlib.machinery
-import importlib.util
+import importlib
 import os
 import subprocess
 import sys
@@ -58,12 +57,7 @@ def place(n, root):
 
 
 def load_fixture():
-    path = HERE / "check-campaign-claim-test.py"
-    spec = importlib.util.spec_from_loader(
-        "guard_test", importlib.machinery.SourceFileLoader("guard_test", str(path)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
+    return harness.load(HERE / "check-campaign-claim-test.py", "guard_test")
 
 
 def build(d, **kw):

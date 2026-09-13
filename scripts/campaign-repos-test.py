@@ -131,13 +131,7 @@ def main():
     # same repository. campaign-claim.py's `## Lands in` entry goes through
     # these, so each spelling that reaches it in prose has a row.
     sys.path.insert(0, str(HERE))
-    import importlib.machinery
-    import importlib.util
-    spec = importlib.util.spec_from_loader(
-        "campaign_repos", importlib.machinery.SourceFileLoader(
-            "campaign_repos", str(REPOS)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
+    m = harness.load(REPOS, "campaign_repos")
 
     for text, want in [
         ("owner/repo", "owner/repo"),

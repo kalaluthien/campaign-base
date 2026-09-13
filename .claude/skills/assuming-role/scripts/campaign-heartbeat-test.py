@@ -671,7 +671,7 @@ FLEET = [  # (sid, name, pane, status, records, screen)
     # came after it: done.
     ("S2", "tk-worker-2", "w1:p2", "idle",
      [prompt(1, work(9)), call(2), prompt(4, "/compact"), boundary(5)], ""),
-    ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 210_000)], ""),
+    ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 260_000)], ""),
     ("S4", "tk-worker-4", "w1:p4", "idle", [usage(1, 10)], banner(2)),
     ("S5", "tk-worker-5", "w1:p5", "idle", [usage(1, 10)], banner(2)),
     ("S6", "tk-worker-6", "w1:p6", "working", [usage(1, 900_000)], ""),
@@ -1229,11 +1229,11 @@ def _(m):
 STUB_DIRECTORY = """import sys
 print(%r)
 """
-STUB_INSTALLED = """import importlib.util
-_s = importlib.util.spec_from_file_location("ci_real", %r)
-_m = importlib.util.module_from_spec(_s)
-_s.loader.exec_module(_m)
-readable = _m.readable
+# This stub finds `suite-harness-test` only because `m.load` runs it in this
+# process, where the suite has already imported the harness; run as a
+# subprocess, its import of the harness would fail.
+STUB_INSTALLED = """import importlib
+readable = importlib.import_module("suite-harness-test").load(%r, "ci_real").readable
 def rows(readme):
     return [("o/base", "/x", "sh a"), ("o/m", "/y", None)], None
 def read_install(repo, path):
@@ -1288,7 +1288,7 @@ def _(m):
                 "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
                 "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
                 "tk-worker-12", "tk-worker-13", "tk-worker-14", "tk-worker-10"}
-            and ss["tk-worker-3"]["context"] == 210_000
+            and ss["tk-worker-3"]["context"] == 260_000
             and ss["tk-worker-6"]["context"] is None
             and ss["tk-worker-4"]["banner"].startswith("session")
             and ss["tk-planner-1"]["banner"] is None), got

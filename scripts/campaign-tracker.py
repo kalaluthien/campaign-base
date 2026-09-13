@@ -308,9 +308,11 @@ def classify(issues):
 
 
 def label_names(issue):
-    """Every label name on one listing row, as strings."""
+    """Every label name on one issue, as strings, off gh's `--json labels`.
+    The one reading of it (rule-check#370 row 22): the survey, `check`,
+    `settlement`, `slugs` and the heartbeat each built the list themselves."""
     return [l.get("name") for l in issue.get("labels") or []
-            if isinstance(l.get("name"), str)]
+            if isinstance(l, dict) and isinstance(l.get("name"), str)]
 
 
 def is_standing(names):
@@ -631,12 +633,16 @@ def cmd_slugs(args):
               file=sys.stderr)
         return 2
     try:
-        labels = [l["name"] for l in json.loads(text)]
-    except (ValueError, KeyError, TypeError) as e:
+        listed = json.loads(text)
+        if not isinstance(listed, list):
+            raise TypeError(type(listed).__name__)
+    except (ValueError, TypeError) as e:
         print(f"campaign-tracker slugs: could not parse gh's output "
               f"({e.__class__.__name__})", file=sys.stderr)
         return 2
-    if len(labels) >= args.limit:
+    # A label listing is the `labels` array an issue carries.
+    labels = label_names({"labels": listed})
+    if len(listed) >= args.limit:
         print(f"campaign-tracker slugs: the label listing came back at --limit "
               f"{args.limit}, so it may be truncated, and a truncated listing "
               f"reads exactly like a complete one. Raise --limit and re-run.",
@@ -975,7 +981,7 @@ def issue_shape(repo, number, timeout=None):
         data = json.loads(text)
     except ValueError as e:
         return None, None, None, None, f"could not parse gh's output ({e})"
-    names = [l.get("name") for l in data.get("labels") or []]
+    names = label_names(data)
     return (data.get("title") or "", data.get("body") or "", names,
             (data.get("parent") or {}).get("number"), None)
 
@@ -1222,7 +1228,7 @@ def campaign_issue_reports(head):
     in may be a sub-issue and a sub-issue may be a campaign issue. Neither is visible in a
     settlement table. These reports read labels and the parent relation, never
     the body: prose is editable and the parent relation is not."""
-    if CAMPAIGN_LABEL not in [l["name"] for l in head["labels"]]:
+    if CAMPAIGN_LABEL not in label_names(head):
         yield (f"REPORT: no `{CAMPAIGN_LABEL}` label, so this may be a sub-issue read"
                " as a campaign issue")
     if head["parent"]:

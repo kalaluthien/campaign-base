@@ -883,6 +883,8 @@ def main():
     check("a slug label is not a hold", m.is_standing(["campaign:standing"]) is False)
     check("label_names drops a label with no name rather than raising",
           m.label_names({"labels": [{"name": "a"}, {}, {"name": 2}]}) == ["a"])
+    check("...and a row that is not a label object at all",
+          m.label_names({"labels": ["b", {"name": "a"}]}) == ["a"])
 
     def printed(fn, *a):
         buf = io.StringIO()

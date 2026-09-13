@@ -114,7 +114,7 @@
     <p>The sub-issue link is the whole index: nothing else lists a campaign's sub-issues. Filing is a record, not a claim, so it asks for no binding. A sub-issue labelled <code>backlog</code> waits for the owner to take the label off.</p>
     <details>
       <summary>Evidence: <code>spec/campaign/github/system.als</code> § addMember</summary>
-      <blockquote>Deliberately no session, machine or binding precondition: filing a sub-issue is a record, not a claim, so any session on any machine may do it.</blockquote>
+      <blockquote>Deliberately no session, machine or binding precondition: filing a sub-issue is a record, not a claim, so any session on any machine may do it (AGENTS.md § The binding).</blockquote>
       <ul>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L296-L305"><code>spec/campaign/github/system.als</code>, <code>addMember</code></a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#sub-issues"><code>AGENTS.md</code> § Sub-issues</a></li>
@@ -133,7 +133,7 @@
     <p>The branch is the whole claim and its workspace. Work that lands no commit is claimed all the same, and a sub-issue has one claim whatever the topic.</p>
     <details>
       <summary>Evidence: <code>spec/campaign/github/system.als</code> § claim</summary>
-      <blockquote>the ref that carries a claim is named `&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;`, so create-ref's server-side refusal serialises ref NAMES and admits two topics on one sub-issue. [...] What closes it is in the script.</blockquote>
+      <blockquote>the ref that carries a claim is named `&lt;slug&gt;/&lt;issue&gt;-&lt;topic&gt;`, so create-ref's server-side refusal serialises ref NAMES and admits two topics on one sub-issue. [...] What closes it is in the script: `take` reads the campaign's refs again AFTER its own create, and where two name one sub-issue, EVERY taker that sees a rival deletes what it just cut.</blockquote>
       <ul>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/spec/campaign/github/system.als#L367-L392"><code>spec/campaign/github/system.als</code>, <code>claim</code></a></li>
         <li><a href="https://github.com/kalaluthien/campaign-base/blob/33c63dfd161d5c497a02213498474eddd0bb52a7/AGENTS.md#id-slug-directory-branch"><code>AGENTS.md</code> § ID, slug, directory, branch</a>, Branch</li>

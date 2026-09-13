@@ -276,6 +276,45 @@ def _(m):
     return r["other_at"] == ts(4), r
 
 
+def enqueued(minute, text="/compact"):
+    """A command sent into a busy pane, in the measured shape (2026-09-13):
+    a `queue-operation` record, written before any user record carries it."""
+    return {"type": "queue-operation", "operation": "enqueue",
+            "timestamp": ts(minute), "content": text}
+
+
+@case("every shape of /compact is asked, and pending until a boundary after it")
+def _(m):
+    shapes = [enqueued(2), prompt(2, "/compact"), queued(2, "/compact"),
+              prompt(2, "<command-name>/compact</command-name>\n")]
+    open_ = [reading(m, boundary(1), s) for s in shapes]
+    shut = [reading(m, boundary(1), s, boundary(3)) for s in shapes]
+    other = reading(m, boundary(1), enqueued(2, "wait"))
+    return (all(r["compact_asked"] == ts(2) and m.compaction_pending(r)
+                for r in open_)
+            and not any(m.compaction_pending(r) for r in shut)
+            and other["compact_asked"] is None), (open_, shut, other)
+
+
+def local(minute, text):
+    return {"type": "system", "subtype": "local_command",
+            "timestamp": ts(minute), "content": text}
+
+
+@case("a /compact refused or failed ends the window, and other command output does not")
+def _(m):
+    ends = [reading(m, prompt(2, "/compact"), local(3, t)) for t in (
+        "<local-command-stdout>Not enough messages to compact.</local-command-stdout>",
+        "<local-command-stderr>Error during compaction: You've hit your session limit")]
+    other = reading(m, prompt(2, "/compact"), local(3,
+        "<local-command-stdout> Context Usage\n Autocompact buffer"))
+    earlier = reading(m, local(1, "<local-command-stdout>Not enough messages "
+                               "to compact."), prompt(2, "/compact"))
+    return (not any(m.compaction_pending(r) for r in ends)
+            and m.compaction_pending(other) and m.compaction_pending(earlier)
+            ), (ends, other, earlier)
+
+
 @case("an assistant turn with text and no tool call is not acting")
 def _(m):
     r = reading(m, {"type": "assistant", "timestamp": ts(2),
@@ -314,7 +353,7 @@ NONE = "no limit (herdr lists w1:p2 idle)"
 # A prompt of another shape and a tool call before the delete, read past
 # by nobody.
 DONE = {"assigned": 9, "assigned_at": ts(1), "compacted": None,
-        "other": "hello", "other_at": ts(2), "acted": ts(2), "context": 9000,
+        "compact_asked": None, "compact_refused": None, "other": "hello", "other_at": ts(2), "acted": ts(2), "context": 9000,
         "context_at": ts(2), "records": 3}
 
 
@@ -350,6 +389,18 @@ def _(m):
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, big(m.COMPACT_AT - 1), gone(3))
     return v[0] == "keep", v
+
+
+@case("keep, not compact: a /compact later than the last boundary is a compaction pending")
+def _(m):
+    over = big(m.COMPACT_AT + 16_000)
+    waiting = dict(over, compacted=ts(2), compact_asked=ts(3))
+    done = dict(over, compacted=ts(4), compact_asked=ts(3))
+    a = m.verdict("worker", False, IDLE, NONE, waiting, gone(3))
+    b = m.verdict("planner", True, BUSY, None, waiting, gone(3))
+    c = m.verdict("worker", False, IDLE, NONE, done, gone(3))
+    return ((a[0], b[0], c[0]) == ("keep", "keep", "compact")
+            and "compaction pending: /compact at " + ts(3) in a[1]), (a, b, c)
 
 
 @case("the own pane is compacted while it works, its banner unread")
@@ -932,6 +983,17 @@ def _(m):
         code, out, sent = heartbeat(m, quiet_fleet(d), "7", "--apply")
     return (code == 0 and sent == ["HERDR_ENV=1 pane=w1:p1 prompt=/compact"]
             and QUIET_LINE in out and "quiet w1:p1 tk-planner-1:" in out), (sent, out)
+
+
+@case("a quiet campaign's own pane with a compaction pending is kept, and sent nothing")
+def _(m):
+    with tempfile.TemporaryDirectory() as d:
+        d = quiet_fleet(d)
+        (d / "home" / ".claude" / "projects" / "-tmp" / "S1.jsonl").write_text(
+            "\n".join(lines(usage(1, 250_000), enqueued(2))) + "\n")
+        code, out, sent = heartbeat(m, d, "7", "--apply")
+    return (code == 0 and sent == [] and QUIET_LINE in out
+            and "keep w1:p1 tk-planner-1: compaction pending" in out), (sent, out)
 
 
 @case("without --apply a quiet campaign says what it would send")
@@ -1585,11 +1647,11 @@ MUTATIONS = [
      "a prompt of another shape is a user record carrying text, quoted"),
     ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
      "an assignment typed into a busy pane after the ref went keeps the worker"),
-    ("a queued peer message", 'and not a.get("isMeta") and is_prompt', "and is_prompt",
+    ("a queued peer message", 'and not a.get("isMeta")):', "):",
      "a peer's message queued into the pane is not a prompt"),
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
      "a queued command in any mode but prompt is not a prompt"),
-    ("a queued echo", ' and is_prompt(a.get("prompt"))', "",
+    ("a queued echo", 'if is_prompt(a.get("prompt")):', "if True:",
      "the release's /compact, queued while busy, is not a prompt"),
     ("keep with no context size", 'if reading["context"] is None:', "if False:",
      "keep: a transcript with no context size"),
@@ -1690,6 +1752,32 @@ MUTATIONS = [
      "the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit"),
     ("quiet compacts, never exits", '"quiet": "/compact"}', '"quiet": "/exit"}',
      "the run gives a quiet campaign's own pane quiet and sends it /compact, never /exit"),
+    ("quiet keeps a pending compaction", "pending = reading and compaction_pending(reading)",
+     "pending = None", "a quiet campaign's own pane with a compaction pending is kept, and sent nothing"),
+    ("compact keeps a pending compaction",
+     '        if pending:\n            return "keep", f"{pending}{passed}"',
+     '        if False:\n            return "keep", f"{pending}{passed}"',
+     "keep, not compact: a /compact later than the last boundary is a compaction pending"),
+    ("pending is after the last boundary", "when(asked) > when(done)", "True",
+     "keep, not compact: a /compact later than the last boundary is a compaction pending"),
+    ("a /compact enqueued into a busy pane", 'elif (kind == "queue-operation"', "elif (False",
+     "every shape of /compact is asked, and pending until a boundary after it"),
+    ("the bare /compact is asked", "if is_compact(content):\n                later",
+     "if False:\n                later",
+     "every shape of /compact is asked, and pending until a boundary after it"),
+    ("its echo is asked", " or said.startswith(COMPACTION_ECHOES[0])", "",
+     "every shape of /compact is asked, and pending until a boundary after it"),
+    ("a queued /compact is asked", 'if is_compact(a.get("prompt")):', "if False:",
+     "every shape of /compact is asked, and pending until a boundary after it"),
+    ("a refusal ends the window", 'later("compact_refused", ts)', "pass",
+     "a /compact refused or failed ends the window, and other command output does not"),
+    ("a failure ends it too", '"<local-command-stderr>Error during compaction")', ")",
+     "a /compact refused or failed ends the window, and other command output does not"),
+    ("only a refusal ends it", "str(r.get(\"content\")).startswith(COMPACT_REFUSALS)",
+     "True", "a /compact refused or failed ends the window, and other command output does not"),
+    ("a refusal ends only an earlier /compact",
+     "(done is None or when(asked) > when(done))", "done is None",
+     "a /compact refused or failed ends the window, and other command output does not"),
     ("unworked", "if len(claims) > len(workers):", "if False:",
      "watch: unworked is more claims than workers, and a planner is no worker"),
     ("unworked is strictly more", "if len(claims) > len(workers):", "if len(claims) >= len(workers):",

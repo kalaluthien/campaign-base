@@ -127,18 +127,23 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
   one, the session running this leaves by itself. No retire is read: the
   handover's NOTE, or the session's own word, is the decision.
 
-  1. herdr        As in `worker` step 2.
-  2. self         `herdr pane current`. Holds when: it names a pane, the one
+  1. slug         Holds when: <N>'s `campaign:` label reads.
+  2. herdr        As in `worker` step 2.
+  3. self         `herdr pane current`. Holds when: it names a pane, the one
                   <pane> defaults to.
-  3. session      `herdr agent list`. Holds when: exactly one row sits on
+  4. session      `herdr agent list`. Holds when: exactly one row sits on
                   <pane>, named for <N>'s slug.
-  4. detach       Only for the caller's own pane, whose turn must end before
+  5. detach       Only for the caller's own pane, whose turn must end before
                   its `/exit` can land: this scope again with --detached, in
                   a session of its own, its lines to a log in the temporary
-                  directory. Holds when: the process started. Nothing waits
-                  for it: end the turn.
-  5-7.            The leave, `worker` steps 3-5, in the foreground for
-                  another pane, in the detached run for the own one.
+                  directory. Holds when: the process started, which is not
+                  the leave done; its line says when to look and which log
+                  says why a pane is still open. Nothing waits for it: end
+                  the turn.
+  6-8.            The leave, `worker` steps 3-5, in the foreground for
+                  another pane. For the own one it is the whole detached run,
+                  which reads no gate again: the caller held every one, and
+                  nothing but the log would read a refusal there.
 
 SCOPE workers <N> -- every finished worker at once
 
@@ -1098,6 +1103,9 @@ def spawn(argv, log):
 
 
 def leave(args, say=holds):
+    if args.detached:
+        step_leave(args.pane, say)
+        return
     n = args.campaign_issue
     slug = slug_of(n)
     gate_herdr(say)
@@ -1116,7 +1124,7 @@ def leave(args, say=holds):
                                  f"on {pane}; the leave needs one session of "
                                  f"{slug} (#{n})")
     say("session", f"{', '.join(names)} on {pane}, of {slug} (#{n})")
-    if pane != own or args.detached:
+    if pane != own:
         step_leave(pane, say)
         return
     log = Path(tempfile.gettempdir()) / f"campaign-leave-{pane.replace(':', '-')}.log"
@@ -1126,9 +1134,10 @@ def leave(args, say=holds):
         pid = spawn(argv, log)
     except OSError as e:
         raise Refused("detach", f"could not start the leave: {e}")
-    say("detach", f"pid {pid} sends {EXIT_TEXT} to {pane}, where it lands "
-                  f"once this turn ends, then waits and closes the tab; its "
-                  f"lines go to {log}")
+    say("detach", f"pid {pid} started, which is not the leave done: it sends "
+                  f"{EXIT_TEXT} to {pane} once this turn ends, so end it now; "
+                  f"{pane} still open {WAIT_POLLS * WAIT_EVERY}s later was "
+                  f"refused, and the last line of {log} says which step")
 
 
 def workers(args):

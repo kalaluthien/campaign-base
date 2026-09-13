@@ -570,7 +570,11 @@ def case_leave_self(m):
             and w["spawned"][0][1].endswith("campaign-leave-w1-p2.log")
             and not prompts(asked) and not tab_closes(asked)
             and f"session     holds -- rc-worker-2 on {PANE}, of rc (#{N})" in out
-            and f"detach      holds -- pid 4242 sends /exit to {PANE}" in out), out
+            and f"detach      holds -- pid 4242 started, which is not the leave "
+                f"done: it sends /exit to {PANE} once this turn ends" in out
+            and f"{PANE} still open {m.WAIT_POLLS * m.WAIT_EVERY}s later was "
+                f"refused, and the last line of {w['spawned'][0][1]} says which "
+                f"step" in out), out
 
 
 def case_leave_handover(m):
@@ -584,9 +588,12 @@ def case_leave_handover(m):
 
 
 def case_leave_detached(m):
-    w = leaves()
+    """The caller held every gate; here each would refuse, and none is read."""
+    w = leaves(slug=None, env={}, current=None,
+               polls=[(LEAVER, None), (LEFT, None)])
     code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
     return (code == 0 and not w["spawned"]
+            and [ln.split()[0] for ln in out.splitlines()] == ["exit", "gone", "tab"]
             and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
 
@@ -1600,12 +1607,15 @@ MUTATIONS = [
     ("leave: the worker's retire is the leave", "    gate_herdr(say)\n    step_leave(pane, say)\n\n\n",
      "    gate_herdr(say)\n\n\n",
      "retire: a worker read as retire gets /exit and is gone on a later poll"),
-    ("leave: the own pane detaches", "if pane != own or args.detached:", "if True:",
+    ("leave: the own pane detaches", "    if pane != own:\n        step_leave",
+     "    if True:\n        step_leave",
      "leave: its own pane is left by a detached run of the same scope"),
-    ("leave: another pane is not detached", "if pane != own or args.detached:",
-     "if args.detached:", "leave: another pane, the handover, is left in the foreground"),
-    ("leave: the detached run does not detach again", "if pane != own or args.detached:",
-     "if pane != own:", "leave: the detached run exits its pane, waits, and closes the tab"),
+    ("leave: another pane is not detached", "    if pane != own:\n        step_leave",
+     "    if False:\n        step_leave",
+     "leave: another pane, the handover, is left in the foreground"),
+    ("leave: the detached run reads no gate", "    if args.detached:\n        step_leave",
+     "    if False:\n        step_leave",
+     "leave: the detached run exits its pane, waits, and closes the tab"),
     ("leave: the pane defaults to its own", "pane = args.pane or own", "pane = args.pane",
      "leave: its own pane is left by a detached run of the same scope"),
     ("leave: the herdr guard is read", "    slug = slug_of(n)\n    gate_herdr(say)\n",

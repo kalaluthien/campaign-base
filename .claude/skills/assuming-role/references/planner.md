@@ -39,8 +39,8 @@ Contents: the moments below, then
    idle or mid-turn, whose last assigned sub-issue has no claim ref left, with
    no assignment prompt since the ref went, whoever released it -- a prompt of
    another shape, or a tool call, is not work, so hand a worker more only by
-   `campaign-assign.py`. Each retire is `/close`'s scope worker: `/exit`, then
-   its tab closed. `/close workers` exits every such worker at once.
+   `campaign-assign.py`. Each retire is `/close`'s scope worker: the retire
+   reading, then the same leave. `/close workers` exits every such worker at once.
    Any other listed peer is asked which claim it holds, never killed. `retire` is
    decided before `compact`, so assign a released worker you mean to reuse
    before the next `--apply`, or it gets `/exit`.

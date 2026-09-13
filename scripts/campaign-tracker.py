@@ -203,7 +203,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_REPO = "kalaluthien/campaign-base"
+
+def load(src, alias):
+    """The script at `src` as a module: these are scripts, not a package.
+    Raises what loading raised; each caller decides what that means."""
+    spec = importlib.util.spec_from_loader(
+        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+# THE BASE'S NAME IS campaign-repos.py's `BASE_REPO`, the reader that refuses
+# it in `## Repos` (rule-check#370 row 5); read here once, for every `--repo`
+# default and for the guard's carve-out.
+DEFAULT_REPO = load(Path(__file__).resolve().parent / "campaign-repos.py",
+                    "campaign_repos").BASE_REPO
 CAMPAIGN_LABEL = "campaign"
 BOUND_LABEL_PREFIX = "bound:"
 # The campaign's slug, the same shape as the binding's label and for the same
@@ -252,11 +267,12 @@ def gh_read(cmd, timeout=None):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (FileNotFoundError, PermissionError) as e:
-        return None, f"could not run gh ({e.__class__.__name__})"
+        return None, f"could not run {cmd[0]} ({e.__class__.__name__})"
     except subprocess.TimeoutExpired:
-        return None, f"gh did not answer within {timeout}s"
+        return None, f"{cmd[0]} did not answer within {timeout}s"
     if r.returncode != 0:
-        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
+        return None, (f"{cmd[0]} exited {r.returncode}: "
+                      f"{(r.stderr.strip() or r.stdout.strip() or 'no message')[:200]}")
     return r.stdout, None
 
 
@@ -282,13 +298,12 @@ def classify(issues):
     """Split one listing by its two readings. Returns (campaign issues, stray, bare).
 
     Every issue carries both properties, so each row is decided by what that
-    issue itself says -- never by its absence from somewhere else."""
-    def labelled(i):
-        return any(l.get("name") == CAMPAIGN_LABEL for l in i.get("labels") or [])
-    campaign_issues = [i for i in issues if labelled(i) and not i.get("parent")]
-    stray = [i for i in issues if labelled(i) and i.get("parent")]
-    bare = [i for i in issues if not labelled(i) and not i.get("parent")]
-    return campaign_issues, stray, bare
+    issue itself says -- never by its absence from somewhere else. The kind is
+    `kind_of`'s, and a sub-issue is in none of the three."""
+    kinds = [(i, kind_of(CAMPAIGN_LABEL in label_names(i), bool(i.get("parent"))))
+             for i in issues]
+    return tuple([i for i, k in kinds if k == want]
+                 for want in (CAMPAIGN, STRAY, THIRD_KIND))
 
 
 def label_names(issue):
@@ -415,14 +430,11 @@ def refuse_label_reading(message):
 
 
 def run_or_refuse(*args):
-    try:
-        out = subprocess.run(args, capture_output=True, text=True, check=False)
-    except OSError as exc:
-        refuse_label_reading(f"cannot run {args[0]}: {exc}")
-    if out.returncode != 0:
-        refuse_label_reading(f"{' '.join(args)} exited {out.returncode}: "
-                     f"{out.stderr.strip() or out.stdout.strip() or 'no message'}")
-    return out.stdout
+    """`gh_read`, refusing where it could not read."""
+    text, why = gh_read(list(args))
+    if why:
+        refuse_label_reading(f"{' '.join(args)}: {why}")
+    return text
 
 
 def labels_of(repo, number):
@@ -501,16 +513,6 @@ def cmd_bound(args):
 
 
 # ------------------------------------------------------------------------ slug
-
-
-def load(src, alias):
-    """The script at `src` as a module: these are scripts, not a package.
-    Raises what loading raised; each caller decides what that means."""
-    spec = importlib.util.spec_from_loader(
-        alias, importlib.machinery.SourceFileLoader(alias, str(src)))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
 
 
 def name_rule():
@@ -1110,19 +1112,16 @@ def gh_json(*args):
     This is the shape the whole file uses, and settlement is why: one sub-issue
     whose repository went private would otherwise abort the table before the
     reader saw any verdict at all, and a close reads that table."""
+    what = f"gh {' '.join(args)}"
+    text, why = gh_read(["gh", *args])
+    if why:
+        return None, f"{what}: {why}"
+    if not text.strip():
+        return None, f"{what} printed nothing"
     try:
-        out = subprocess.run(["gh", *args], capture_output=True, text=True)
-    except OSError as exc:
-        return None, f"cannot run gh: {exc}"
-    if out.returncode != 0:
-        return None, (f"gh {' '.join(args)} exited {out.returncode}: "
-                      f"{out.stderr.strip().splitlines()[0][:100] if out.stderr.strip() else 'no message'}")
-    if not out.stdout.strip():
-        return None, f"gh {' '.join(args)} printed nothing"
-    try:
-        return json.loads(out.stdout), None
+        return json.loads(text), None
     except ValueError as exc:
-        return None, (f"gh {' '.join(args)} returned something that is not JSON "
+        return None, (f"{what} returned something that is not JSON "
                       f"({exc.__class__.__name__})")
 
 

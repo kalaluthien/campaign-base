@@ -939,7 +939,8 @@ def parse_args(argv):
                         "read fails NO branch is attributed, which is SAID "
                         "rather than assumed. Used as a literal, so a window "
                         "predating #181 is read with --slug campaign-<N>")
-    p.add_argument("--repo", default="kalaluthien/campaign-base")
+    p.add_argument("--repo", default=None,
+                   help="the tracker (default: campaign-repos.py's BASE_REPO)")
     p.add_argument("--root", action="append", default=[],
                    help="transcript root (default ~/.claude/projects)")
     p.add_argument("--base", action="append", default=[],
@@ -948,6 +949,9 @@ def parse_args(argv):
     p.add_argument("--offline", action="store_true",
                    help="do not call gh; leave the pull-request map empty")
     args = p.parse_args(argv)
+    # The base's name is campaign-repos.py's, reached through the guard this
+    # run loads anyway (rule-check#370 row 5).
+    args.repo = args.repo or guard_module().repos_reader().BASE_REPO
     for name in ("since", "until"):
         args.__dict__[name] = checked_bound(getattr(args, name), name)
     if not args.root:

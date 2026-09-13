@@ -3216,8 +3216,10 @@ def main():
             # out, the reference rule was unloadable in every arm and its
             # "would not load" satisfied the assertions below whichever skill
             # script was actually missing (review of 7c0d175).
-            shutil.copy(HERE / "campaign-tracker.py",
-                        tree / "scripts" / "campaign-tracker.py")
+            # And campaign-repos.py, which the tracker reads its default
+            # repository from at import (rule-check#370 row 5).
+            for t in ("campaign-tracker.py", "campaign-repos.py"):
+                shutil.copy(HERE / t, tree / "scripts" / t)
             for s in (HERE.parent / ".claude" / "skills" / "assuming-role"
                       / "scripts").glob("*.py"):
                 if s.name != missing:

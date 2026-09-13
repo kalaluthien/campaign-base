@@ -90,8 +90,6 @@ import re
 import subprocess
 import sys
 
-DEFAULT_REPO = "kalaluthien/campaign-base"
-
 
 def load(path, alias):
     """The script at `path` as a module: these are scripts, not a package."""
@@ -221,10 +219,11 @@ def prompt_for(repo, issue):
 
 
 def main():
+    m = claim_module()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("pane")
     ap.add_argument("issue")
-    ap.add_argument("--repo", default=DEFAULT_REPO)
+    ap.add_argument("--repo", default=m.DEFAULT_REPO)
     # TWO DOORS, NOT ONE, because the states behind them are not alike.
     # `--assume-fresh` covers what an honest reading CANNOT REACH: no time the
     # last sub-issue's claim went, or a transcript that would not read.
@@ -251,7 +250,6 @@ def main():
               f"the same.", file=sys.stderr)
         return 1
 
-    m = claim_module()
     sessions, why = m.herdr_sessions()
     if sessions is None:
         print(f"refusing: {why}\n  A listing that did not happen is not a pane "

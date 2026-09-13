@@ -561,6 +561,9 @@ def main():
             shim = Path(d) / "scripts"
             shim.mkdir()
             (shim / "campaign-token-tally.py").write_text(SCRIPT.read_text())
+            # The default `--repo` is campaign-repos.py's, through the guard.
+            for t in ("check-campaign-claim.py", "campaign-repos.py"):
+                (shim / t).write_text((SCRIPT.parent / t).read_text())
             for name, body, want in (
                     ("read", "print('demo')\n", "slug demo, from #1's campaign: label"),
                     ("none", "print('none')\nraise SystemExit(1)\n",

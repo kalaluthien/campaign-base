@@ -97,8 +97,8 @@ unread is not a pull request with a review on it.
 """
 import argparse
 import importlib.machinery
+import functools
 import importlib.util
-import json
 import re
 import subprocess
 import sys
@@ -179,7 +179,7 @@ def names(body, head):
     return hit, miss
 
 
-def gh_json(what, *args):
+def gh_json(*args):
     """(value, why). A `gh` call whose answer must be JSON.
 
     `--paginate` IS NOT AN OPTIMISATION HERE. `gh pr view --json comments` is
@@ -190,13 +190,17 @@ def gh_json(what, *args):
     JSON array merges the pages into ONE array: probed 2026-09-10 with
     `per_page=5` over a 14-comment issue, which came back as a single array of
     14 rather than three concatenated ones."""
-    code, out, err = run(*args)
-    if code != 0:
-        return None, f"{what} exited {code}: {(err or '').strip()[:200]}"
-    try:
-        return json.loads(out or "null"), None
-    except json.JSONDecodeError as e:
-        return None, f"{what} answered with something that is not JSON: {e}"
+    tracker, why = tracker_module()
+    if why:
+        return None, f"could not import the gh reader -- {why}"
+    return tracker.gh_json(*args)
+
+
+@functools.cache
+def tracker_module():
+    """(campaign-tracker.py, why), loaded once: its `gh_json` is the one
+    reader of a `gh` answer that must be JSON (rule-check#370 row 5)."""
+    return load(TRACKER, "campaign_tracker")
 
 
 def head_ref(repo, pr):
@@ -204,8 +208,8 @@ def head_ref(repo, pr):
     which is the sha a merge of this pull request lands -- not the runner's
     merge commit, which exists only inside a checkout. The branch name rides
     along for rerun-check.py, so the pull request's head has one reader."""
-    data, why = gh_json(f"gh pr view {pr} -R {repo}", "gh", "pr", "view", str(pr),
-                        "-R", repo, "--json", "headRefOid,headRefName")
+    data, why = gh_json("pr", "view", str(pr), "-R", repo,
+                        "--json", "headRefOid,headRefName")
     if why:
         return None, why
     head = (data or {}).get("headRefOid") if isinstance(data, dict) else None
@@ -232,7 +236,7 @@ def bodies_of(repo, pr):
     found = []
     for where, path in (("comment", f"repos/{repo}/issues/{pr}/comments"),
                         ("review", f"repos/{repo}/pulls/{pr}/reviews")):
-        rows, why = gh_json(f"gh api {path}", "gh", "api", "--paginate", path)
+        rows, why = gh_json("api", "--paginate", path)
         if why:
             return None, why
         if not isinstance(rows, list):
@@ -428,7 +432,7 @@ def land(repo, pr, base, guard, before):
         return answer("unknown", f"the head branch `{branch}` of {repo}#{pr} is "
                                  f"no claim, so there is no sub-issue to read "
                                  f"the Intent, Plan and kind of")
-    tracker, why = load(TRACKER, "campaign_tracker")
+    tracker, why = tracker_module()
     if why:
         return answer("unknown", f"could not import the sub-issue readers -- {why}")
     _title, body, names, _parent, why = tracker.issue_shape(base, issue)

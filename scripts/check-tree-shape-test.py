@@ -58,8 +58,8 @@ CASES = [
      {"scratch/x.txt": "hi\n"}, "R2"),
     ("R2 an entry written with its trailing slash still matches",
      {".claude/skills/s/SKILL.md": "hi\n"}, None),
-    ("R2 this repository's .gitignore does not admit docs/",
-     {".gitignore": REAL_IGNORE, "docs/m.html": "<p>hi</p>\n"}, "R2"),
+    ("R2 this repository's .gitignore does not admit notes/",
+     {".gitignore": REAL_IGNORE, "notes/m.html": "<p>hi</p>\n"}, "R2"),
 
     # R8 -- an entity is its two modules, plus any HTML form beside them.
     ("R8 an entity of its two modules",

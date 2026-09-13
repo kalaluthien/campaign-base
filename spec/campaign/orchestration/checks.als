@@ -2071,7 +2071,8 @@ assert DelegateLaunchedByPlanner {
 
    Deleting either of
    `launch`'s two clauses reddens THIS command, UNSAT -> SAT. Deleting the
-   release's `Compacted' = Compacted + Who.session` does NOT: with nothing to
+   release's `Compacted' = Compacted + (Who.session & (Session <: role).Worker)`
+   does NOT: with nothing to
    return the bit, a session's second launch becomes unreachable and this
    assert stays green over an empty set. So that clause is pinned by P8 below
    and by nothing here, which is the whole reason P8 exists -- a green assert
@@ -2215,8 +2216,8 @@ pred P10_HeirWorksAfterHandoff {
                                until (Now.event = Work and Target.agent = b)))
 }
 /* THE CONTROL FOR THE ASSERT ABOVE. Without it, deleting the release's
-   `Compacted' = Compacted + Who.session` makes a session's second launch
-   unreachable and the assert stays green on a vacuity nobody would read. This
+   `Compacted' = Compacted + (Who.session & (Session <: role).Worker)` makes a
+   session's second launch unreachable and the assert stays green on a vacuity nobody would read. This
    says two launches by one session do happen, so a green assert is a rule and
    not an empty set. */
 /* THE CONTROL FOR THE GUARD'S SCOPE, and P8 cannot be it. P8's two launches

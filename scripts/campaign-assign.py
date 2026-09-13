@@ -32,20 +32,30 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
   `stale`           that claim went and the pane has not compacted since, so
                     the next sub-issue would re-read the last one's whole
                     transcript on every turn. `campaign-claim.py release`
-                    enqueues that compaction in the releasing pane, which on
-                    the base is often the planner's; this is the reader that
-                    says whether this pane's happened. --force is the way
+                    enqueues that compaction in a worker's own pane, and
+                    sends none from a planner's, which on the base is often
+                    the releasing one; this is the reader that says whether
+                    this pane's happened. --force is the way
                     past, and it prints what it is overriding.
   (unread)          the transcript could not be found or read. Either flag
                     gets past it, since it is a reading not made rather than
                     one that came back bad.
+  (input box)       the pane's input box holds text, or no box was found in
+                    what `herdr pane read` returned. A prompt typed after
+                    text there is submitted WITH it as one line: `/compact`
+                    left unsent and this sentence went in as `/compactWork
+                    ...`, an unknown command, and neither happened
+                    (rule-check#370 issuecomment-5648017196). No flag
+                    reaches it: joining two prompts is never what was meant.
 
   TWO DOORS, NOT ONE. `--assume-fresh` is for what the reading cannot reach, a
   first assignment included; `--force` is for a pane that WAS read and has
   not compacted. One flag for both made bypassing the single case this guard
   exists for the same keystroke as the routine first assignment.
 
-IT READS THE TRANSCRIPT AND GITHUB, NOT THE PANE. The last assignment prompt
+IT READS THE TRANSCRIPT AND GITHUB, AND OF THE PANE ONLY ITS INPUT BOX, which
+is the one thing a transcript cannot show: text typed and not yet sent.
+The last assignment prompt
 and the compaction come from the session's own transcript, through
 `campaign-heartbeat.py`'s `transcript_reading`; when the claim went comes from
 GitHub, through the heartbeat's `ref_went`, which its `retire` asks too. The
@@ -125,6 +135,33 @@ def row_for(sessions, pane):
     sid, row = matches[0]
     return dict(row, sid=sid), (f"pane {pane} is {row['name']} ({sid}), "
                                 f"status {row['status']}")
+
+
+# THE INPUT BOX, as `herdr pane read --source detection` shows Claude Code's:
+# the last two rule lines of the screen, the first line between them opening
+# with the prompt mark. Read 2026-09-13 off six panes: an empty box is the
+# mark alone, text typed and not sent follows it after a no-break space, and
+# the top rule can carry the session's name (`───── rule-check-planner-10 ─`),
+# so a rule is a line OPENING with the rule character.
+RULE = re.compile(r"^\u2500{10,}")
+PROMPT_MARK = "\u276f"
+
+
+def input_line(screen):
+    """(text, None) -- what sits in the pane's input box, "" when it is empty
+    -- or (None, why) when no box is found. Pure, over the screen's text."""
+    lines = screen.splitlines()
+    rules = [i for i, line in enumerate(lines) if RULE.match(line)]
+    if len(rules) < 2:
+        return None, (f"no input box: {len(rules)} rule line(s) in the "
+                      f"{len(lines)} line(s) read")
+    inside = lines[rules[-2] + 1:rules[-1]]
+    if not inside or not inside[0].startswith(PROMPT_MARK):
+        first = inside[0].strip()[:60] if inside else "nothing"
+        return None, (f"no input box: the last two rule lines hold {first!r}, "
+                      f"not a line opening with {PROMPT_MARK}")
+    return " ".join(" ".join([inside[0][len(PROMPT_MARK):], *inside[1:]])
+                    .split()), None
 
 
 def idle_verdict(row):
@@ -224,6 +261,24 @@ def main():
     if not ok:
         print(f"refusing: {why}", file=sys.stderr)
         return 1
+
+    r = run("herdr", "pane", "read", args.pane, "--source", "detection")
+    text, why = (input_line(r.stdout) if r.returncode == 0 else
+                 (None, f"`herdr pane read` exited {r.returncode}: "
+                        f"{r.stderr.strip()[:160]}"))
+    if text is None:
+        print(f"refusing: {why}.\n  What waits in {args.pane}'s input box is "
+              f"unknown, and a prompt typed after text there\n  goes in as one "
+              f"line with it.", file=sys.stderr)
+        return 1
+    if text:
+        print(f"refusing: {args.pane}'s input box holds {text[:120]!r}, and a "
+              f"prompt typed now joins it as one line.\n  Send it with "
+              f"`herdr pane send-keys {args.pane} enter` -- a /compact then "
+              f"runs, so wait for it -- or clear it,\n  then retry.",
+              file=sys.stderr)
+        return 1
+    print(f"input box empty (herdr pane read {args.pane} --source detection)")
 
     hb = heartbeat_module()
     reading, where, why_unread = hb.read_transcript(row["sid"])

@@ -210,6 +210,12 @@ JSON
     exit 0 ;;
   "agent prompt")
     printf 'HERDR_ENV=%%s pane=%%s prompt=%%s\n' "${HERDR_ENV:-unset}" "$3" "$4" >> "$log"
+    # WHAT CLAUDE CODE WRITES when a prompt reaches a busy pane: the queue's
+    # `enqueue` record, in the session's transcript (probed 2026-09-13, 0.42 s
+    # after herdr returned). Only where a case names the transcript.
+    if [ -n "${SHIM_TRANSCRIPT:-}" ]; then
+      printf '{"type":"queue-operation","operation":"enqueue","timestamp":"2099-01-01T00:00:00.000Z","content":"%%s"}\n' "$4" >> "$SHIM_TRANSCRIPT"
+    fi
     exit %s ;;
 esac
 echo "herdr shim: refusing $*" >&2
@@ -247,6 +253,19 @@ def shims(d, gh=GH, herdr=None, prompt_exit=0):
         if found and not (b / tool).exists():
             (b / tool).symlink_to(found)
     return b
+
+
+def transcript(d, sid, records=()):
+    """A HOME holding session `sid`'s transcript -- one prompt, then
+    `records` -- and the env naming both, so `release` reads it and the herdr
+    shim appends to it. (env, path)."""
+    proj = Path(d) / "home" / ".claude" / "projects" / "-tmp"
+    proj.mkdir(parents=True, exist_ok=True)
+    path = proj / f"{sid}.jsonl"
+    lines = [{"type": "user", "timestamp": "2026-09-13T10:00:00.000Z",
+              "message": {"content": "Work sub-issue o/r#4 now"}}, *records]
+    path.write_text("".join(json.dumps(r) + "\n" for r in lines))
+    return {"HOME": str(Path(d) / "home"), "SHIM_TRANSCRIPT": str(path)}, path
 
 
 def claim(args, path_dir, extra_env=None):
@@ -2026,8 +2045,9 @@ exit 1
                       agent("S2", "absent-worker-2", d, pane="w1:p2"))
 
         ok = shims(Path(d) / "ok", gh=rel_gh, herdr=two)
+        env, _ = transcript(Path(d) / "ok", "S2")
         r = claim(["release", "9999", "4"], ok,
-                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+                  {"CLAUDE_CODE_SESSION_ID": "S2", **env})
         out = r.stdout + r.stderr
         sent = prompts(ok)
         check("release deletes the ref and then compacts its own pane",
@@ -2088,8 +2108,9 @@ exit 1
         # reader is most likely to hit -- a pane that went away between the
         # listing and the send.
         broke = shims(Path(d) / "broke", gh=rel_gh, herdr=two, prompt_exit=3)
+        env, _ = transcript(Path(d) / "broke", "S2")
         r = claim(["release", "9999", "4"], broke,
-                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+                  {"CLAUDE_CODE_SESSION_ID": "S2", **env})
         out = r.stdout + r.stderr
         check("a prompt that exited non-zero is reported, and still releases",
               r.returncode == 0 and "deleted probe/4-done" in out
@@ -2120,8 +2141,9 @@ esac
 exit 1
 """
         noref = shims(Path(d) / "noref", gh=gone_gh, herdr=two)
+        env, _ = transcript(Path(d) / "noref", "S2")
         r = claim(["release", "9999", "4"], noref,
-                  {"CLAUDE_CODE_SESSION_ID": "S2"})
+                  {"CLAUDE_CODE_SESSION_ID": "S2", **env})
         out = r.stdout + r.stderr
         check("the no-ref-and-merged exit releases and compacts too",
               r.returncode == 0 and "no ref to delete" in out
@@ -2132,6 +2154,57 @@ exit 1
               repr(prompts(noref)))
         check("...and printing the release anchor, with the pane, there too",
               f"{m.RELEASED} probe/4-done in w1:p2" in out, out[:400])
+
+        check("...and says the /compact it sent is queued in the transcript",
+              "it runs when this turn ends (compaction pending: /compact at "
+              "2099-01-01" in out, out[:600])
+
+        # ONLY A WORKER'S PANE (rule-check#370 row 19). A planner releases
+        # after every merge, and each release compacted it.
+        three = listing(agent("S1", "probe-worker-1", d, pane="w1:p1"),
+                        agent("S2", "absent-worker-2", d, pane="w1:p2"),
+                        agent("S3", "probe-planner-3", d, pane="w1:p3"))
+        plan = shims(Path(d) / "plan", gh=rel_gh, herdr=three)
+        env, _ = transcript(Path(d) / "plan", "S3")
+        r = claim(["release", "9999", "4"], plan,
+                  {"CLAUDE_CODE_SESSION_ID": "S3", **env})
+        out = r.stdout + r.stderr
+        check("a planner's release releases and sends no /compact",
+              r.returncode == 0 and "deleted probe/4-done" in out
+              and prompts(plan) == [], f"exit {r.returncode}: {out[:400]}")
+        check("...saying whose name it read, and why that sends nothing",
+              "not compacting: session S3 is probe-planner-3, and only a "
+              "worker's release compacts its pane" in out, out[:400])
+        check("...and the anchor still names its pane",
+              f"{m.RELEASED} probe/4-done in w1:p3" in out, out[:400])
+
+        # NEVER A SECOND ONE: two releases in one command, the second reading
+        # the first's queued /compact through the transcript.
+        twice = shims(Path(d) / "twice", gh=rel_gh, herdr=two)
+        env, _ = transcript(Path(d) / "twice", "S2")
+        first = claim(["release", "9999", "4"], twice,
+                      {"CLAUDE_CODE_SESSION_ID": "S2", **env})
+        r = claim(["release", "9999", "4"], twice,
+                  {"CLAUDE_CODE_SESSION_ID": "S2", **env})
+        out = r.stdout + r.stderr
+        check("a second release in one turn sends no second /compact",
+              first.returncode == 0 and r.returncode == 0
+              and len(prompts(twice)) == 1, repr(prompts(twice)))
+        check("...saying the first is pending, and where it read that",
+              "not compacting again: compaction pending: /compact at "
+              "2099-01-01" in out and "S2.jsonl" in out, out[:400])
+
+        # NO TRANSCRIPT: whether one is pending is unknown, so none is sent.
+        # campaign-assign's `stale` is what then says so, loudly.
+        blank = shims(Path(d) / "blank", gh=rel_gh, herdr=two)
+        r = claim(["release", "9999", "4"], blank,
+                  {"CLAUDE_CODE_SESSION_ID": "S2",
+                   "HOME": str(Path(d) / "blank" / "nohome")})
+        out = r.stdout + r.stderr
+        check("a transcript that is not there sends nothing, saying so",
+              r.returncode == 0 and prompts(blank) == []
+              and "so whether a /compact is already pending is unknown" in out,
+              f"exit {r.returncode}: {out[:400]}")
 
         # HERDR ABSENT: `release` refuses long before this on the occupancy
         # sweep, so the compaction is not what is being read here -- and that
@@ -2144,11 +2217,59 @@ exit 1
               r.returncode == 1 and prompts(none_at_all) == [],
               f"exit {r.returncode}")
 
+def compact_watch_cases(m):
+    """`compact_own_pane`'s branches no shim reaches: a role it could not
+    read, and a sent /compact the transcript never shows. In process, with the
+    guard's `role_of`, the heartbeat and `run` stubbed and restored."""
+    rows = {"S2": {"name": "absent-worker-2", "status": "working",
+                   "cwd": "/tmp", "pane": "w1:p2"}}
+    sent, naps = [], []
+
+    class Heartbeat:
+        pending = None
+
+        @staticmethod
+        def read_transcript(sid):
+            return {"sid": sid}, "/t/S2.jsonl", None
+
+        @classmethod
+        def compaction_pending(cls, reading):
+            return cls.pending
+
+    real = (m.GUARD.role_of, m._heartbeat_module, m.run)
+    try:
+        m._heartbeat_module = lambda: Heartbeat
+        m.run = lambda *a, **kw: sent.append(a) or subprocess.CompletedProcess(
+            a, 0, "", "")
+        m.GUARD.role_of = lambda sid: (None, None, "herdr could not run (X)")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            got = m.compact_own_pane(rows, "S2", sleep=naps.append)
+        check("a role it could not read sends nothing, and says what it read",
+              got == "w1:p2" and sent == [] and "not compacting: herdr could "
+              "not run (X), and only a worker's release" in out.getvalue(),
+              out.getvalue())
+        m.GUARD.role_of = lambda sid: ("absent", "worker", "session S2 is absent-worker-2")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            got = m.compact_own_pane(rows, "S2", sleep=naps.append)
+        polls = int(m.QUEUED_WAIT / m.QUEUED_EVERY)
+        check("a /compact the transcript never shows queued is said, after "
+              "the whole wait",
+              got == "w1:p2" and len(sent) == 1
+              and f"shows no queued /compact after {m.QUEUED_WAIT:g}s "
+              f"({polls + 1} reads)" in out.getvalue(), out.getvalue())
+        check("...having slept between reads and not after the last",
+              naps == [m.QUEUED_EVERY] * polls, repr(naps))
+    finally:
+        m.GUARD.role_of, m._heartbeat_module, m.run = real
+
+
 def main():
     m = harness.load(CLAIM, "campaign_claim")
 
     for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
-               compact_cases,
+               compact_cases, compact_watch_cases,
                local_sweep_cases, scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,
                root_cases, repos_cases):

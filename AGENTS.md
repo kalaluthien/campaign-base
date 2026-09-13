@@ -66,7 +66,11 @@ and whether it survives the machine. Identify the plane before any git command.
 | --- | --- | --- |
 | **base** | `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.claude/`, `spec/`, `scripts/`, `.github/`, `docs/` | this repository |
 | **member repository** | the code and its history | each repository's own remote |
-| **campaign** | which repositories, what for, how far along | GitHub issues |
+| **campaign** | which repositories, what for, how far along, and each claim ref | GitHub issues; a claim ref in the remote of the repository the sub-issue lands in |
+
+The spec's two planes are this table folded: its code plane is the first two
+rows, and its campaign plane the third with the campaign directory's derived
+files. `spec/` keeps its own words.
 
 `spec/` is normative and is Alloy whose comments are the spec. Each entity
 is `system.als`, the model, and `checks.als`, every command over it, plus any
@@ -519,6 +523,9 @@ and everything that reads it.
   sub-issue gets dropped. Both readings are needed, or a sub-issue dropped on purpose
   never reads settled and its campaign can never close. **Nothing on a terminal
   screen is evidence.** `campaign-tracker settlement <N>` is the one reader.
+  A sub-issue settles at its merge; the install catching up is the campaign's
+  gate, `reach` by whoever merged and `installed` at the close
+  (`reachDiscipline`, § Installed repositories).
 - **Liveness and attribution are different readings, and a gate needs both.**
   `herdr agent list` gives liveness for every session here; the remote's
   `<slug>/` refs give every claim; and where each is checked out gives

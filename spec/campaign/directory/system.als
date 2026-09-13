@@ -129,7 +129,9 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    assumed it as a fact could not exhibit its
    absence. Scoped to `machinesHolding` because that is where the check runs --
    the bound machine's disk -- and a machine that installed the repository but
-   never held the campaign is one no session of it can read.
+   never held the campaign is one no session of it can read. It gates the
+   campaign issue alone, on purpose: a sub-issue settles at its merge, and the
+   install catching up is the campaign's to wait for.
 
    ITS ESCAPE, shown rather than closed here (S16e): a machine deletes its
    directory and the close then reads no machine at all. The script is not

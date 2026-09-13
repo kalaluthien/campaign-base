@@ -121,11 +121,12 @@ ROLES = _roles_module().ROLE_WORDS
 #     segment and one herdr name without quoting or escaping anywhere;
 #   * at most SLUG_CEILING characters, so a person picks one campaign out of
 #     `ls` at the base root and out of `herdr agent list` at a glance. The
-#     owner set 10 on 2026-09-10 and raised it to 15 on 2026-09-13, after
-#     `html-document` had to be minted `html-doc`. It is the binding bound:
-#     herdr's 32-character limit on a session name is the other one, and the
-#     longest name this file EXPECTS, `<slug>-worker-99`, is now 25 and clears
-#     it by seven -- expects and not admits, because NAME bounds no digit run.
+#     owner set 10 on 2026-09-10 and raised it to 15 on 2026-09-13
+#     (rule-check#285), after `html-document` had to be minted `html-doc`. It
+#     is the binding bound: herdr's 32-character limit on a session name is
+#     the other one, and the longest name this file EXPECTS,
+#     `<slug>-planner-99`, is now 26 and clears it by six -- expects and not
+#     admits, because NAME bounds no digit run.
 #     A slug already spent is not re-checked, `html-doc` included;
 #   * no segment in RESERVED, for three reasons in one list. `planner` and
 #     `worker` are barred so that `<slug>-<role>-<n>` has exactly one reading:

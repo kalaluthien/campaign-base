@@ -33,12 +33,14 @@ EOF
 log() { printf 'acquire-repo: %s\n' "$*" >&2; }
 die() { printf 'acquire-repo: %s\n' "$*" >&2; exit 1; }
 
-# LINE 2 OF EVERY PRE-COMMIT HOOK THIS SCRIPT WRITES, and the one thing that
-# says the slot is this script's rather than somebody's. Two writers of one hook
+# LINE 2 OF EVERY HOOK THIS SCRIPT WRITES, pre-commit and post-commit, and the
+# one thing that says the slot is this script's rather than somebody's; the
+# post-commit is read by that line alone. Two writers of one hook
 # slot, the second refusing the first's output, is what left every delegate clone
 # with no hook at all (#178), so scripts/install-hooks.sh adopts a slot holding
-# this line -- `is_guard_shim` there is that reader, it holds the only other
-# copy of this text, and changing the text here means changing it there. The
+# this line -- `is_guard_shim` and `is_push_shim` there read it, its
+# `shim_marker` holds the only other copy of this text, and changing the text
+# here means changing it there. The
 # reader below, in this file, uses this variable instead of a copy.
 SHIM_MARKER='# Written by acquire-repo.sh. Re-run it after changing this file.'
 
@@ -268,7 +270,7 @@ install_principles() {
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
-	local hooks hook dest_abs installer rc base gate
+	local hooks hook post push dest_abs installer rc base gate
 
 	# THE BASE IS RESOLVED FROM THIS FILE, never from $dest. A member clone is
 	# not under the base and holds no copy of check-commit-claim.py, so a walk
@@ -354,6 +356,8 @@ install_commit_guard() {
 
 	mkdir -p "$hooks"
 	hook="$hooks/pre-commit"
+	post="$hooks/post-commit"
+	push="$base/scripts/push-campaign-branch.sh"
 
 	# The remediation is to re-run this script, not a printf to paste: since #190
 	# the hook carries two absolute paths over several lines, and a hand-typed
@@ -368,6 +372,13 @@ install_commit_guard() {
 		log "  \"$gate\" --staged"
 		log "  mv '$hook' '$hook.bak' && <re-run acquire-repo.sh>"
 		die "refusing to overwrite an existing pre-commit hook"
+	fi
+	# Checked before either hook is written, so a refusal leaves neither.
+	if [ -e "$post" ] && [ "$(sed -n 2p "$post")" != "$SHIM_MARKER" ]; then
+		log "$post exists and is not one this script wrote. Read it, then either"
+		log "chain \"$push\" from it by hand, or move it aside and re-run this script:"
+		log "  mv '$post' '$post.bak' && <re-run acquire-repo.sh>"
+		die "refusing to overwrite an existing post-commit hook"
 	fi
 
 	# BOTH halves, and the claim gate by ABSOLUTE PATH: a member clone has no
@@ -398,6 +409,24 @@ install_commit_guard() {
 		"exec \"$gate\" --staged" > "$hook"
 	chmod +x "$hook"
 	log "installed the no-main-commits guard and the claim gate at $gate"
+
+	# THE PUSH HALF, which this repository's own install-hooks.sh writes as its
+	# post-commit and which a member clone, shipping no installer, got from
+	# nowhere: a commit there stayed local until pushed by hand (rule-check#370,
+	# issuecomment-5653129069). By absolute path, as the gate is. The commit has
+	# already landed when this runs, so a missing script is said, not refused.
+	printf '%s\n' \
+		'#!/usr/bin/env sh' \
+		"$SHIM_MARKER" \
+		"if [ ! -x \"$push\" ]; then" \
+		"	echo \"post-commit: $push is missing or not executable.\" >&2" \
+		'	echo "  This commit was NOT pushed. Push it yourself, or re-run" >&2' \
+		'	echo "  acquire-repo.sh from a base checkout that has the script." >&2' \
+		'	exit 0' \
+		'fi' \
+		"exec \"$push\"" > "$post"
+	chmod +x "$post"
+	log "installed the post-commit push at $push"
 }
 
 # ------------------------------------------------------------------- acquire

@@ -1471,7 +1471,7 @@ MUTATIONS = [
      "refuse campaign: an open file under the directory"),
     ("lsof missing", "if r.returncode == 127:", "if False:",
      "refuse campaign: lsof that did not run"),
-    ("campaign dir shape", '(path / ".campaign").is_file() and (path / "runtime").is_dir()):',
+    ("campaign dir shape", 'GUARD.is_campaign_dir(path) and (path / "runtime").is_dir()):',
      "True):", "refuse campaign: a directory with no marker is not deleted"),
     ("clone origin", "if where is None or REPOS.key(where) != REPOS.key(repo):",
      "if False:", "refuse repo: the folder is not a clone of it"),

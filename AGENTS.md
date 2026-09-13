@@ -418,8 +418,8 @@ docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
 and reads none of this one's settings. **A member repository ships no installer,
-so its clone gets the commit gate from `acquire-repo.sh`** instead, by absolute
-path into this base; before that it got the no-main-commits guard alone and
+so its clone gets the commit gate and the post-commit push from
+`acquire-repo.sh`** instead, by absolute path into this base; before that it got the no-main-commits guard alone and
 every shell write there landed unjudged.
 
 ## Execution mode

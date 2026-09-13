@@ -166,12 +166,12 @@ BASE_MARKER = Path("scripts") / "campaign-claim.py"
 # hour, which reads to every reader here as "no campaign directory on this
 # machine". What identifies the directory has to outlive its scratch.
 #
-# THIS FILE OWNS THE READING, as it owns `classify` and `claim_on`:
-# check-commit-claim.py already imports all three from here, and
-# campaign-claim.py's `is_campaign_dir` imports this one rather than restating
-# it. It sits here and not there because this is the PreToolUse hook, which
-# reads it on every tool call and cannot afford to exec that file's `gh`
-# plumbing to ask.
+# THIS FILE OWNS THE READING, as it owns `classify`, `claim_on`, `checkout_of`
+# and `base_root`: campaign-claim.py, campaign-close.py and guard-precision.py
+# call `is_campaign_dir` below rather than restating it (rule-check#370 row 2).
+# It sits here and not there because this is the PreToolUse hook, which reads
+# it on every tool call and cannot afford to exec that file's `gh` plumbing to
+# ask.
 CAMPAIGN_MARKER = Path(".campaign")
 # The claim's shape. Only the campaign TOKEN is read from it, and it is compared
 # against a session name's token by string equality. One form since #237: the
@@ -693,6 +693,32 @@ def is_campaign_dir(path: Path):
         return (path / CAMPAIGN_MARKER).is_file()
     except OSError:
         return False
+
+
+def base_root(start: Path):
+    """(base root, note) for a script at `start`: the base checkout whose
+    campaign directories it reads. (None, note) when git cannot say.
+
+    ONE HOME (rule-check#370 row 2): campaign-claim.py, campaign-local-work.py
+    and campaign-token-tally.py ask this rather than resolve their own, and
+    `campaign-claim.py`'s `base_root` is what the rest ask through.
+
+    TWO RULES, and the first exists because the base is a member of its own
+    campaigns. `<campaign>/repos/campaign-base/` is a second checkout of this
+    very repository, script and all, so git read from THAT copy answers with
+    the clone -- a base root holding no campaign directory, which sweeps clean
+    and lets `release` delete a ref somebody is standing in. So a campaign
+    directory among `start`'s ancestors decides first, and the base root is its
+    parent. Only when there is none does `checkout_of` answer, AGENTS.md's one
+    form, which returns the main checkout from a linked worktree too.
+
+    Not `base_above` nor `base_roots_for`: those ask which bases hold a TARGET;
+    this asks where a SCRIPT's own campaign readings start."""
+    for parent in start.parents:
+        if is_campaign_dir(parent):
+            return parent.parent, None
+    main, _top, note = checkout_of(start)
+    return main, note
 
 
 _KNOWN_SLUGS = {}

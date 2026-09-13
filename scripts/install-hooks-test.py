@@ -385,6 +385,37 @@ def main():
                   and "adopting" not in out.stderr,
                   f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
 
+    # ...AND THE SAME FOR THE POST-COMMIT acquire-repo writes: one near miss
+    # per conjunct of `is_push_shim`, each a hook somebody else decided.
+    PUSH_CALL = 'exec "/x/scripts/push-campaign-branch.sh"\n'
+    for name, body in (
+            ("but not calling the push script",
+             "#!/usr/bin/env sh\n" + MARKER + "exec /usr/bin/true\n"),
+            ("but not opening with the shebang",
+             "#!/bin/sh\n" + MARKER + PUSH_CALL),
+            ("replaced by somebody else's comment",
+             "#!/usr/bin/env sh\n# our team's post-commit\n" + PUSH_CALL)):
+        with tempfile.TemporaryDirectory() as d:
+            r = Repo(d)
+            r.hook("post-commit").write_text(body)
+            r.hook("post-commit").chmod(0o755)
+            out = installer(r.root)
+            check(f"a post-commit carrying the marker {name} is refused, not adopted",
+                  out.returncode != 0 and "refusing" in out.stderr
+                  and "adopting" not in out.stderr,
+                  f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+    # ...and only in the post-commit slot: in the pre-commit one it runs no
+    # guard and no gate, so replacing it would be adopting somebody's decision.
+    with tempfile.TemporaryDirectory() as d:
+        r = Repo(d)
+        r.hook("pre-commit").write_text("#!/usr/bin/env sh\n" + MARKER + PUSH_CALL)
+        r.hook("pre-commit").chmod(0o755)
+        out = installer(r.root)
+        check("the push shim in the pre-commit slot is refused, not adopted",
+              out.returncode != 0 and "refusing" in out.stderr
+              and "adopting" not in out.stderr,
+              f"exit {out.returncode}; {(out.stdout + out.stderr)[:200]}")
+
     # 5c. --git-only. The harness half is machine-wide and points at one
     # checkout; a clone running it would repoint every session's guard.
     with tempfile.TemporaryDirectory() as d:
@@ -544,17 +575,19 @@ def main():
         pre = dest / ".git" / "hooks" / "pre-commit"
         gate = SCRIPTS / "check-commit-claim.py"
         body = pre.read_text() if pre.exists() else ""
-        check("a repository with no installer gets the shim, and no post-commit",
-              out.returncode == 0 and str(guard) in body
-              and not (dest / ".git" / "hooks" / "post-commit").exists(),
+        post = dest / ".git" / "hooks" / "post-commit"
+        push = SCRIPTS / "push-campaign-branch.sh"
+        check("a repository with no installer gets the shim, and a post-commit "
+              "calling the push script by its absolute path in the base",
+              out.returncode == 0 and str(guard) in body and post.exists()
+              and f'exec "{push}"' in post.read_text(),
               f"exit {out.returncode}; {(out.stdout + out.stderr)[:240]}")
         check("...carrying the claim gate by its absolute path in the base",
               f'"{gate}" --staged' in body, repr(body[-160:]))
         # "Only the shim" used to be pinned by comparing the whole text, which
         # went with #190. This is what that comparison was actually for: acquire
         # must not install THIS repository's hook into a member clone, whose
-        # `# runs:` guards it does not have and whose post-commit would push its
-        # branches.
+        # `# runs:` guards it does not have.
         check("...and not this repository's own hook, which the clone could not "
               "run",
               "# runs:" not in body, repr(body[:160]))
@@ -574,6 +607,10 @@ def main():
               "# runs:" in pre.read_text()
               and "check-commit-claim.py" in pre.read_text(),
               repr(pre.read_text()[:160]))
+        check("...and adopts the post-commit beside it, replaced by its own push",
+              "is the post-commit acquire-repo.sh wrote" in out.stderr
+              and "# runs: push-campaign-branch.sh" in post.read_text(),
+              f"{out.stderr[-240:]}; {post.read_text()[:160]!r}")
 
     # 6. post-commit, on the real thing.
     with tempfile.TemporaryDirectory() as d:

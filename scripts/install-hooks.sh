@@ -21,8 +21,11 @@
 # commands to the snapshot and refuses one in a system.als, and
 # check-commit-claim, the commit half of the claim gate, whose pre-tool-use
 # half is the harness hook below.
-# post-commit pushes a campaign-*/ branch as soon as it has a commit, so a
-# worker never sits on a finished commit unpushed; it touches no other branch.
+# post-commit pushes a claim branch as soon as it has a commit, so a worker
+# never sits on a finished commit unpushed; it touches no other branch, and
+# push-campaign-branch.sh asks check-commit-claim.py which branch is a claim.
+# A member clone gets the same push from acquire-repo.sh, which ships no
+# installer into it.
 #
 # Refuses rather than overwrites: an existing hook not written by this script, a
 # symlinked hook slot (writing through it would edit a file outside this
@@ -30,7 +33,8 @@
 # gets written to .git/hooks/). One exception, adopted and announced: a
 # pre-commit acquire-repo.sh wrote, because the hook written here runs the same
 # guard and the same claim gate, so nothing `is_guard_shim` reads out of the
-# slot is lost. That is weaker than a strict superset, which this header claimed
+# slot is lost -- and the post-commit it writes beside it, whose push script
+# the post-commit here runs too (`is_push_shim`). That is weaker than a strict superset, which this header claimed
 # for one revision while the block above `is_guard_shim` retracted it -- the
 # same file asserting and withdrawing one sentence. What is and is not
 # established is stated there, once. Two writers of one slot, the second
@@ -141,7 +145,8 @@ fi
 # repository that ships it, while shims live in member clones, which ship none.
 #
 # The marker text lives in acquire-repo.sh's SHIM_MARKER, with a comment
-# pointing back here.
+# pointing back here; its opening sentence is the one copy on this side.
+shim_marker='# Written by acquire-repo.sh.'
 is_guard_shim() {
 	if [ "$(wc -l <"$1" | tr -d ' ')" = 2 ]; then
 		[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
@@ -149,8 +154,18 @@ is_guard_shim() {
 		return
 	fi
 	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
-		sed -n 2p "$1" | grep -qF '# Written by acquire-repo.sh.' &&
+		sed -n 2p "$1" | grep -qF "$shim_marker" &&
 		grep -qE '^"[^"]*/\.claude/git-hooks/no-main-commits" "\$@" \|\| exit 1$' "$1"
+}
+
+# The post-commit acquire-repo.sh writes beside that shim, read by the same
+# three things: the shebang, the marker on line 2, and the push CALL as a whole
+# line. The post-commit written here runs the same push script, so replacing it
+# loses nothing read out of it.
+is_push_shim() {
+	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&
+		sed -n 2p "$1" | grep -qF "$shim_marker" &&
+		grep -qE '^exec "[^"]*/push-campaign-branch[.]sh"$' "$1"
 }
 
 # Each hook gets the same two refusals, so a second hook cannot arrive with
@@ -172,6 +187,12 @@ check_slot() {
 		echo "opening with the marker and calling the no-main-commits guard. The" >&2
 		echo "hook written here runs that guard and this repository's own, so" >&2
 		echo "nothing read here is lost; replacing it." >&2
+		return 0
+	fi
+	if [ "$slot" = "$postcommit" ] && [ -e "$slot" ] && is_push_shim "$slot"; then
+		echo "adopting: $slot is the post-commit acquire-repo.sh wrote, calling" >&2
+		echo "push-campaign-branch.sh. The hook written here runs that script," >&2
+		echo "so nothing read here is lost; replacing it." >&2
 		return 0
 	fi
 	if [ -e "$slot" ] && ! grep -qF "$marker_match" "$slot"; then

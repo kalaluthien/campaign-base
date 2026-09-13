@@ -92,8 +92,9 @@ fun campaignDirsOf[c: Campaign]: set CampaignDir             { campaign.c }
    answers with the clone -- a base whose set of campaign directories is empty,
    which reads as a clean sweep of nothing rather than as a failure. NOT
    MODELLED, and it cannot be here: no atom carries a path, so this is prose
-   with a reader in `scripts/campaign-claim.py`'s `base_root`, which walks its
-   own ancestors for a campaign directory before it asks git. */
+   with a reader in `scripts/check-campaign-claim.py`'s `base_root`, which
+   walks the calling script's ancestors for a campaign directory before it
+   asks git. */
 fun campaignDirAt[c: Campaign, m: Machine]: lone CampaignDir { campaign.c & machine.m }
 fun machinesHolding[c: Campaign]: set Machine           { (OnDisk & campaign.c).machine }
 

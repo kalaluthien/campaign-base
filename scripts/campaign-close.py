@@ -279,9 +279,11 @@ def load(path, name):
 # sub-issue's landing repository and the tracker's name are campaign-claim's,
 # and the `## Repos` list is campaign-repos' through it; which campaign a
 # session name is of is campaign-name-session's; the retire verdict and its
-# action are the heartbeat's.
+# action are the heartbeat's; which directory is a campaign's is the claim
+# guard's, through campaign-claim, which loads it.
 CLAIM = load(CLAIM_SCRIPT, "campaign_claim")
 REPOS = CLAIM.REPOS
+GUARD = CLAIM.GUARD
 NAMES = load(SKILL_SCRIPTS / "campaign-name-session.py", "cns")
 HEARTBEAT = load(HEARTBEAT_SCRIPT, "campaign_heartbeat")
 RETIRE = "retire"
@@ -918,7 +920,7 @@ def step_close_campaign(n, author):
 def campaign_dir_shape(path):
     root = base_root("delete")
     if path.parent != root or not (
-            (path / ".campaign").is_file() and (path / "runtime").is_dir()):
+            GUARD.is_campaign_dir(path) and (path / "runtime").is_dir()):
         raise Refused("delete", f"{path} is not a campaign directory directly "
                                 f"under the base root {root}")
     return path
@@ -1282,12 +1284,11 @@ def campaign_named(slug, whose):
 def own_campaign():
     """(N, where it was read): the campaign directory this runs in, by its
     marker, else the campaign this session's herdr name names."""
-    guard = load(HERE / "check-campaign-claim.py", "guard")
-    here_dir = guard.campaign_dir_of(Path.cwd().resolve(),
+    here_dir = GUARD.campaign_dir_of(Path.cwd().resolve(),
                                      base_root("target").resolve())
-    fields = guard.marker_fields(here_dir) if here_dir else None
+    fields = GUARD.marker_fields(here_dir) if here_dir else None
     if fields:
-        return fields[0], f"the marker {here_dir / '.campaign'}"
+        return fields[0], f"the marker {here_dir / GUARD.CAMPAIGN_MARKER}"
     sid = os.environ.get(CLAIM.SESSION_ID_VAR)
     sessions, why = CLAIM.herdr_sessions() if sid else (None, "no session id")
     name = ((sessions or {}).get(sid) or {}).get("name")

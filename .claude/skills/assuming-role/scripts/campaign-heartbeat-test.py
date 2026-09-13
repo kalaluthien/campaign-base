@@ -405,7 +405,7 @@ def _(m):
 
 @case("the own pane is compacted while it works, its banner unread")
 def _(m):
-    v = m.verdict("planner", True, BUSY, None, big(250_000), gone(3))
+    v = m.verdict("planner", True, BUSY, None, big(m.COMPACT_AT), gone(3))
     return v[0] == "compact", v
 
 
@@ -666,12 +666,12 @@ def row(sid, name, pane, status="idle"):
 
 
 FLEET = [  # (sid, name, pane, status, records, screen)
-    ("S1", "tk-planner-1", "w1:p1", "working", [usage(1, 250_000)], None),
+    ("S1", "tk-planner-1", "w1:p1", "working", [usage(1, 900_000)], None),
     # Assigned #9, worked, then idle; tk/9-x went at 10:03 and a compaction
     # came after it: done.
     ("S2", "tk-worker-2", "w1:p2", "idle",
      [prompt(1, work(9)), call(2), prompt(4, "/compact"), boundary(5)], ""),
-    ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 260_000)], ""),
+    ("S3", "tk-worker-3", "w1:p3", "idle", [usage(1, 900_000)], ""),
     ("S4", "tk-worker-4", "w1:p4", "idle", [usage(1, 10)], banner(2)),
     ("S5", "tk-worker-5", "w1:p5", "idle", [usage(1, 10)], banner(2)),
     ("S6", "tk-worker-6", "w1:p6", "working", [usage(1, 900_000)], ""),
@@ -990,7 +990,7 @@ def _(m):
     with tempfile.TemporaryDirectory() as d:
         d = quiet_fleet(d)
         (d / "home" / ".claude" / "projects" / "-tmp" / "S1.jsonl").write_text(
-            "\n".join(lines(usage(1, 250_000), enqueued(2))) + "\n")
+            "\n".join(lines(usage(1, m.COMPACT_AT), enqueued(2))) + "\n")
         code, out, sent = heartbeat(m, d, "7", "--apply")
     return (code == 0 and sent == [] and QUIET_LINE in out
             and "keep w1:p1 tk-planner-1: compaction pending" in out), (sent, out)
@@ -1288,7 +1288,7 @@ def _(m):
                 "tk-planner-1", "tk-worker-2", "tk-worker-3", "tk-worker-4",
                 "tk-worker-5", "tk-worker-6", "tk-planner-9", "tk-worker-11",
                 "tk-worker-12", "tk-worker-13", "tk-worker-14", "tk-worker-10"}
-            and ss["tk-worker-3"]["context"] == 260_000
+            and ss["tk-worker-3"]["context"] == 900_000
             and ss["tk-worker-6"]["context"] is None
             and ss["tk-worker-4"]["banner"].startswith("session")
             and ss["tk-planner-1"]["banner"] is None), got

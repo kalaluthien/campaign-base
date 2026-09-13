@@ -12,6 +12,7 @@
 !/spec/
 !/scripts/
 !/.github/
+!/docs/
 
 # Machine-local state never enters git. The allowlist above re-admits the whole
 # of .claude/, and the harness cuts agent worktrees inside it, so without this

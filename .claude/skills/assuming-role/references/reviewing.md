@@ -38,36 +38,24 @@ under a narrowed round.** The guard refuses the `Skill` call that does
 otherwise, and its `FANS_OUT` comment keeps the two probes showing that a slash
 command in an `Agent` prompt is plain text and runs no skill.
 `/code-review` above `low` inside a reviewer subagent fans out into an
-orchestrator, finders and their verifiers, each its own further subagent --
-metered at the launching call's own turns alone until
-`campaign-token-tally.py reviews` rolls a fan-out's nested transcripts into the
-round that spawned it (`nested` counts how many). PR #255's five fanned rounds
-cost 79,667 to 2,112,272 input_new each, ~5.0M combined, against 57,374-134,222
-for one narrowed round below. **The rolled-up figures are #273's**, re-derived
-over the same window at PR #276's merge sha (`97c6797`) and posted as a NOTE on
-kalaluthien/campaign-base#272: 47 rounds, 98 nested transcripts folded in,
-13,402,567 input_new in total. **PR #264 fanned out too**, 9-19 nested
-transcripts per round at 656,852-1,566,076 input_new each, so #255 is not the
-only one; the NOTE lists 15, 16, 254, 261, 263, 265 and 269 as nested-0 at the
-time it was written (`campaign-token-tally.py reviews --campaign 244 --since 2026-09-08T07:00:00Z`).
-Write the brief as `"review PR <N> at <level>"`, level right after `at`,
-naming what to check after a blank line, and reserve `/code-review` above
-`low` for a reviewer once a fanned round prices under that figure.
+orchestrator, finders and their verifiers, each its own further subagent,
+which `campaign-token-tally.py reviews` rolls into the round that spawned it
+(`nested` counts how many);
+`.claude/skills/assuming-role/references/reviewing.md` § The shape of a round
+prices both. Write the brief as `"review PR <N> at <level>"`, level right
+after `at`, naming what to check after a blank line.
 
 **The brief says what a reviewer may do**: it reads, runs checks, and edits,
 kills or launches nothing. That is one sentence of the brief and not a
 mechanism -- no reviewer agent definition, and no branch in the guard reading
-what kind of agent is being launched (owner's DECISION on #278, 2026-09-10).
+what kind of agent is being launched (owner's DECISION, rule-check#278).
 
-**`low` is under the bar and outside it.** #282 ran both rows on one diff with
-one model (2026-09-10): `/code-review low` cost 60,774 input_new, 101,697 with
-the subagent that launched it, against 127,442 for the narrowed plain brief on
-the same diff -- inside the 57,374-134,222 band below. It cannot fan out, which
-is why the guard's `CHEAP_LEVEL` passes it. **What `low` does not do is satisfy
-merge condition 1**: it skips test hunks and reads no full files, and on that
-diff it returned 2 findings against the plain brief's 5, missing two of the
-three behavioural ones. It is a cheap first pass, and the review a merge waits
-on is still the plain brief.
+**`low` is under the bar and outside it.** It costs about what a narrowed plain
+brief does and cannot fan out, which is why the guard's `CHEAP_LEVEL` passes
+it. **What `low` does not do is satisfy merge condition 1**: it skips test
+hunks and reads no full files, and on the diff rule-check#282 measured it
+missed two of the three behavioural findings the plain brief returned. It is a
+cheap first pass, and the review a merge waits on is still the plain brief.
 
 ## The two knobs
 
@@ -104,8 +92,8 @@ Split the brief.**
 
 **A brief over a guard reads the ALLOWS before the refusals.** A refusal branch
 is easy to read and easy to agree with; what it catches by mistake is neither,
-and five of #184's fix rounds stayed green while each opened a new false
-positive. So the brief names the ordinary shapes the branch could catch, and the
+and a fix round can stay green while it opens a new false positive. So the
+brief names the ordinary shapes the branch could catch, and the
 review checks those first. The measured version of the same rule is
 `scripts/guard-precision.py`, which reads the guard's verdict log, and the
 replayed version is `scripts/fixtures/guard-allow-corpus.jsonl`, the calls this
@@ -154,27 +142,19 @@ resolution earns a full one, and its brief says it reads the combination:
 **containment buys attention from nobody**, and the resolution is where the two
 branches actually met.
 
-**What a round costs, so that "one more round" is a priced decision.** Measured
-over 2026-09-04T00:45Z–2026-09-05T01:00Z (#200, `campaign-token-tally.py reviews`,
-method on #195): one round runs **57,374 to 134,222 input tokens** at `medium` or
-`high` on Opus. **This range predates #273's rollup**, which edited `reviews`
-itself: it was read before the rollup existed, so it undercounts any round in
-that window that fanned out the way #273's own NOTE describes. It remains the
-working threshold wherever it is cited until a rollup-aware re-derivation over
-the same window replaces it — a follow-up, not done here. The shape this
-replaces is what the range hides —
-PR #184 ran seven rounds at 800,567 input tokens, 38% of #177's *new input*,
-because each round re-read the entire pull request to check a handful of
-fixes.
+**What a round costs, so that "one more round" is a priced decision**:
+one narrowed round runs **57,374 to 134,222 input tokens** at `medium` or
+`high` on Opus (kalaluthien/campaign-base#200, `campaign-token-tally.py
+reviews`), read before `reviews` rolled up nested transcripts, so it
+undercounts a round that fanned out; a fanned round has run up to 2,112,272
+(pr#255, rolled up in baseline#273's NOTE). Re-reading the whole pull request
+each round is what multiplies it.
 
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect
 in shipped code and no test that passes with its branch deleted -- apply them in
 one commit, review that diff narrowed, and merge, rather than commissioning
-another round. A number a check enforces is not prose. Measured on PR #238: six
-fix rounds followed the full review and every one of them fixed a real defect or
-a test that passed with its branch deleted; only the review after the sixth
-returned refinement alone.
+another round. A number a check enforces is not prose.
 
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel

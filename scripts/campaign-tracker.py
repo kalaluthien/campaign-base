@@ -227,12 +227,13 @@ WORK_KINDS = ("research", "development", "maintenance")
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.
-# `closing-campaign` step 1 reads it and refuses the close naming it; the
-# survey prints it beside the row, so a campaign that will not close says so
-# before anybody spends a step trying. ON A SUB-ISSUE the same hold keeps it
-# open with no claim between tidies, and the heartbeat reads one wearing it as
-# neither `drift unclaimed` nor a reason the campaign is not quiet
-# (rule-check#369); the kind says what the work is, this says who holds it open.
+# `campaign-close.py`'s `standing` gate reads it and refuses the close naming
+# it; the survey prints it beside the row, so a campaign that will not close
+# says so before anybody spends a step trying. ON A SUB-ISSUE the same hold
+# keeps it open with no claim between tidies, and the heartbeat reads one
+# wearing it as neither `drift unclaimed` nor a reason the campaign is not
+# quiet (rule-check#369); the kind says what the work is, this says who holds
+# it open.
 STANDING_LABEL = "standing"
 
 NOT_EMPTY = "An index that did not read is not an empty campaign."

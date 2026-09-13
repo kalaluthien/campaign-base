@@ -76,7 +76,7 @@ THE THREE VERDICTS, AND WHY THE THIRD EXISTS
   undecided   the guard has no rule for this token, or could
               not open the file it would have to read.         -> exit 3
 
-The third is the whole point. `closing-campaign/references/rationale.md` once
+The third is the whole point. The retired close skill's rationale once
 cited `§ Compare then write the campaign issue body`, which named BOLD INLINE
 PROSE in AGENTS.md rather than a heading. A guard that scans `^#` lines, fails
 to find it, and calls it dangling has folded together two different facts --
@@ -110,9 +110,9 @@ implied:
   unshaped  every other path-like run. This is the scope boundary, and
             `scripts/<name>` is deliberately on the far side of it: a survey
             found eleven mentions that all resolve, but a twelfth --
-            `scripts/repos-helper.sh` in closing-campaign's rationale -- names a
-            hypothetical file under a *campaign* directory to explain what a
-            `*/runtime*` prune pattern would hide. It is backticked exactly like
+            `scripts/repos-helper.sh` in the retired close skill's rationale --
+            names a hypothetical file under a *campaign* directory to explain
+            what a `*/runtime*` prune pattern would hide. It is backticked exactly like
             the other eleven, so no lexical rule separates them, and an
             existence check over this shape reports a false dangling. Renaming a
             base script is also self-correcting in a way these four shapes

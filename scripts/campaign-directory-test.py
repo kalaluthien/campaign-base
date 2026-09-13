@@ -76,7 +76,7 @@ def main() -> int:
               rc == 0 and word == str(f.base / "campaign-demo-260910"),
               f"exit {rc}: {word} / {r.stderr[:200]}")
         # THE NAMED FAILING CASE, and it RUNS the retired resolution rather
-        # than asserting a property of the fixture: the line closing-campaign
+        # than asserting a property of the fixture: the line the close skill
         # carried until #181 round 2 was `CAMPAIGN_DIR=$(cd "$BASE/$SLUG" &&
         # pwd -P)`, so the two are put side by side over one directory. Nothing
         # in this tree executes a skill's shell, so this is the nearest a case

@@ -81,9 +81,9 @@ checkout and `apply` would run in the wrong directory.
 
 WHO RUNS WHAT. Whoever merges runs `reach` for the repository the merge landed
 in and puts its line in the REPORT (AGENTS.md § Installed repositories);
-`closing-campaign` step 2 runs `check` over the README and refuses on NOT
-clear. Both read this machine, which is the bound machine by the one-campaign-
-one-machine rule, and neither concludes anything about another.
+`campaign-close.py`'s `installed` gate runs `check` over the README and refuses
+on NOT clear. Both read this machine, which is the bound machine by the
+one-campaign-one-machine rule, and neither concludes anything about another.
 
 The default branch is what `origin/HEAD` names, `main` when the checkout never
 recorded one. Git's own words are quoted on every failure, whitespace folded.

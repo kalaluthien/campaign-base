@@ -88,8 +88,8 @@ a file was the only copy of dies with the directory. What may stay there is what
 no issue can hold — a pid, a log, a lock — and what is DERIVED from an issue and
 re-derivable at any time: `runtime/repos` and
 `runtime/campaign-issue-body-derived.md`. `opening-campaign` writes both and
-reads the first back; `closing-campaign` and `campaign-claim` read the second,
-and `closing-campaign`'s sync rewrites it.
+reads the first back; `campaign-close.py` and `campaign-claim` read the second,
+and `campaign-close.py`'s sync rewrites it.
 
 **Resolve the base root one way, everywhere:**
 
@@ -118,8 +118,8 @@ shows it**. The base is one row of that rule, not a case beside it.
 The marker is `scripts/campaign-repos.py`'s to read, and the base's row is a
 constant in `scripts/campaign-installed.py`, since `## Repos` refuses the base.
 **Whoever merges runs `reach` for the repository the merge landed in, and the
-`REPORT` quotes its line**, which names the install's sha; `closing-campaign`
-step 2 runs `check` and refuses while an install is behind. The model is
+`REPORT` quotes its line**, which names the install's sha; `campaign-close.py`'s
+`installed` gate runs `check` and refuses while an install is behind. The model is
 `Machine.installed` and `reachDiscipline` in `spec/campaign/directory/system.als`.
 Two hazards stay with the clone: **behind is a merged pull request the
 checkout has not caught up to**, so the clone must not be behind at launch and
@@ -302,10 +302,10 @@ pattern encodes it — in every language the tree is written in.
 # Campaign work
 
 **Open** — load `opening-campaign` when the request opens a campaign, or joins one
-this machine has no directory for. **Close** — load `closing-campaign`; only a
-person decides a close, and a `standing` label on the campaign issue is that
-decision already made the other way: `closing-campaign` step 1 refuses while it
-is on and only a person takes it off.
+this machine has no directory for. **Close** — `/close` (§ Routing an arriving
+request); only a person decides a close, and a `standing` label on the campaign
+issue is that decision already made the other way: `campaign-close.py`'s
+`standing` gate refuses while it is on and only a person takes it off.
 
 ## Sub-issues
 
@@ -491,7 +491,8 @@ and **when a request reads both ways**, ask with `AskUserQuestion` first. Adding
 repository **is** a scope change, so it syncs when it happens; held back until the
 close it is invisible to every other session.
 
-`closing-campaign` step 4 is the only sanctioned write, at either moment: it
+`campaign-close.py`'s `sync` step is the only sanctioned write, at either
+moment: it
 compares the body against the copy the campaign `README.md` was derived from and
 refuses when it has moved, so one write cannot silently discard another.
 

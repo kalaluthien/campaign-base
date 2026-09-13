@@ -4,10 +4,10 @@
 The close deletes a campaign directory, and nothing recovers what was only in
 it. This is the one reader of that question -- "what would the delete destroy,
 and what on this campaign's own branches has never left this machine?" -- so
-closing-campaign step 2 is one call to this script rather than nine git
-commands in prose. A second reader written by hand somewhere else is what
-drifts, which is the same reason spec/campaign/github/system.als's settlement has exactly
-one implementation, `campaign-tracker settlement`.
+campaign-close.py's `local-work` gate is one call to this script rather than
+nine git commands in prose. A second reader written by hand somewhere else is
+what drifts, which is the same reason spec/campaign/github/system.als's
+settlement has exactly one implementation, `campaign-tracker settlement`.
 
 It reads two places, and the second only when it is handed one:
 
@@ -27,8 +27,7 @@ every check that found it. `<kind>` is one of: uncommitted, ignored, unpushed
 commit, stash, worktree, unmerged branch.
 
 Three readings this script exists to get right, each a failure that raises no
-error (all probed; the evidence is in
-.claude/skills/closing-campaign/references/gotchas.md):
+error (all probed; each states its evidence below):
 
   repos/ absent is not repos/ unreadable. A campaign with no member repository
   legitimately has no repos/ at all; a repos/ that exists and cannot be read is

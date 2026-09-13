@@ -260,7 +260,7 @@ Then finish it:
   `>|`, not `>`.
 - **Keep `runtime/campaign-issue-body-derived.md`**, refreshed after every re-derivation
   and every sync — the only thing that can later answer "has the body moved?",
-  and `closing-campaign` step 4 refuses without it.
+  and `campaign-close.py`'s `sync` step refuses without it.
 
 ### 5. Acquire the member repositories
 
@@ -323,7 +323,7 @@ git -C "$CAMPAIGN/repos/<name>" fetch origin "$B" &&
 
 **A repository the campaign issue's `## Repos` list does not name** is a scope change, so
 it syncs at that moment rather than at the close: edit the campaign `README.md`,
-re-run the reader over it as step 4 does, sync with `closing-campaign` step 4's
+re-run the reader over it as step 4 does, sync with `campaign-close.py`'s `sync`
 compare-then-write in full, then acquire it as in step 5. The first repository
 **replaces** `- none`, and `campaign-repos` refuses a list mixing the two.
 

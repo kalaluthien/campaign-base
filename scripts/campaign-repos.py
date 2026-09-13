@@ -81,7 +81,8 @@ The contract callers hold it to:
 
 opening-campaign step 4 runs it and writes `runtime/repos`; step 5 reads that
 file. Its passage on adding a repository runs it again before the sync, and
-closing-campaign step 4 runs it over the README and over the body GitHub stored.
+campaign-close.py's `sync` runs it over the README and over the body GitHub
+stored.
 """
 import re
 import sys

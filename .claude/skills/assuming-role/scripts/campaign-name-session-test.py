@@ -418,6 +418,27 @@ def main():
               == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
+    # THE ROLE WORD AND THE LISTING, read here for the guard, the brief hook
+    # and campaign-claim.py alike (rule-check#370 row 3).
+    m = harness.load(SCRIPT, "cns")
+    got = [m.role_word(n) for n in ("rule-check-planner-10", "rule-check-worker-31",
+                                    "campaign-1-worker-10", "some-session", None)]
+    check("role_word reads the role off a campaign name, and None off any other",
+          got == ["planner", "worker", None, None, None], repr(got))
+    def row(**kw):
+        return json.dumps({"result": {"agents": [dict(
+            {"agent_session": {"value": "s1"}, "name": "demo-worker-1"}, **kw)]}})
+    got = m.parse_agents(row(agent_session="not-an-object"))
+    check("a row whose agent_session is not an object is a why",
+          got[0] is None and "agent_session was not an object" in got[1], repr(got))
+    got = m.parse_agents(row(name=7))
+    check("...and so is a row whose name is not a string",
+          got[0] is None and "name was not a string" in got[1], repr(got))
+    got = m.parse_agents(row(pane_id="w1:p1", agent_status="idle", cwd="/x"))
+    check("a well-formed row is keyed by its session id",
+          got == ({"s1": {"name": "demo-worker-1", "status": "idle",
+                          "cwd": "/x", "pane": "w1:p1"}}, None), repr(got))
+
     return harness.report()
 
 

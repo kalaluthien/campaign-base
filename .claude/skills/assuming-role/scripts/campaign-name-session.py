@@ -15,6 +15,12 @@ half-applied, because a rule nothing must consume is a rule that drifts.
 and scripts/check-campaign-claim.py load this file by path and read them there,
 so neither restates the shape.
 
+IT ALSO READS WHO IS NAMED WHAT: `herdr_sessions` is the one reader of
+`herdr agent list`, and `role_word` the one reading of the role off a name
+(rule-check#370 row 3). The guard, the brief hook and campaign-claim.py each
+parsed the listing, and the two hooks each read the role as `-planner-` in the
+name; every one of them loads this file already.
+
 THE SLUG RULE LIVES IN THIS LEAF and not in campaign-tracker.py, which owns the
 `campaign:<slug>` label the slug is stored on. check-campaign-claim.py is a
 PreToolUse hook that reads the name on every tool call and reaches the rule by
@@ -173,7 +179,7 @@ SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 # `campaign_of`'s question, because the slug's three conditions are not all
 # regular and a regex spelling them would be the copy that drifts from
 # `slug_ok`. Every reader calls `campaign_of`; NAME alone admits more.
-NAME = re.compile(r"^(.+)-(?:" + "|".join(ROLES) + r")-[0-9]+$")   # group 1: the campaign token
+NAME = re.compile(r"^(.+)-(" + "|".join(ROLES) + r")-[0-9]+$")   # groups: the campaign token, the role
 
 
 def slug_ok(text):
@@ -196,6 +202,75 @@ def campaign_of(name):
         return None
     token = m.group(1)
     return token if slug_ok(token) else None
+
+
+def role_word(name):
+    """The role word a session name carries, or None when `campaign_of` reads
+    the name as no campaign's. One word: `RESERVED` bars both role words from
+    the slug, so a name that passes holds exactly one."""
+    m = NAME.match(name or "")
+    return m.group(2) if m and campaign_of(name) is not None else None
+
+
+# ----------------------------------------------- who is named what, by herdr
+
+# A hook reads the listing on every call, and a herdr that hangs hangs every
+# tool call with it; a timeout is a reading not made, like any other.
+HERDR_TIMEOUT = 10
+
+
+def parse_agents(text):
+    """(sessions, None) -- `herdr agent list`'s JSON as {session id: {name,
+    status, cwd, pane}} -- or (None, why). Pure, so a recorded listing is a
+    case.
+
+    EVERY SHAPE HERE IS SOMEBODY ELSE'S OUTPUT, and a malformed one is a why,
+    never a traceback: the guard is a PreToolUse hook, and one that raises
+    exits 1, which the harness reads as the hook's own error and lets the call
+    PROCEED."""
+    try:
+        agents = json.loads(text)["result"]["agents"]
+    except (ValueError, KeyError, TypeError) as e:
+        return None, f"could not parse herdr's output ({e.__class__.__name__})"
+    if not isinstance(agents, list):
+        return None, "herdr's `agents` was not a list"
+    out = {}
+    for a in agents:
+        if not isinstance(a, dict):
+            return None, f"a herdr row was {type(a).__name__}, not an object"
+        sess, name = a.get("agent_session"), a.get("name")
+        if sess is not None and not isinstance(sess, dict):
+            return None, "a herdr row's agent_session was not an object"
+        if name is not None and not isinstance(name, str):
+            return None, "a herdr row's name was not a string"
+        sid = (sess or {}).get("value")
+        if sid is None:
+            # A row herdr lists but cannot identify. Counted, never dropped:
+            # silently skipping it would shrink "sessions on this machine",
+            # which is the number a close gate reads.
+            sid = f"<unidentified:{a.get('pane_id', '?')}>"
+        out[sid] = {
+            "name": name or "<unnamed>",
+            "status": a.get("agent_status", "?"),
+            "cwd": a.get("cwd", "?"),
+            "pane": a.get("pane_id", "?"),
+        }
+    return out, None
+
+
+def herdr_sessions():
+    """Every session on this machine, as `parse_agents` reads them. Listing
+    needs no HERDR_ENV guard: that guard is against acting on somebody else's
+    session, never against reading."""
+    try:
+        r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
+                           text=True, timeout=HERDR_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"herdr agent list could not run ({e.__class__.__name__})"
+    if r.returncode != 0:
+        return None, (f"herdr agent list exited {r.returncode}: "
+                      f"{r.stderr.strip()[:120]}")
+    return parse_agents(r.stdout)
 
 
 def refuse(why):
@@ -332,13 +407,12 @@ def rename_echoed(pane, name, before):
 def pane_status(pane):
     """(agent_status, None) from `herdr agent list`, or (None, why) when the
     list could not be read or does not hold the pane."""
-    res, err = herdr("agent", "list")
-    if err:
-        return None, f"herdr agent list failed: {err}"
-    agents = ((res or {}).get("result") or {}).get("agents") or []
-    for agent in agents:
-        if agent.get("pane_id") == pane:
-            return agent.get("agent_status") or "unknown", None
+    sessions, why = herdr_sessions()
+    if sessions is None:
+        return None, f"herdr agent list failed: {why}"
+    for row in sessions.values():
+        if row["pane"] == pane:
+            return row["status"], None
     return None, f"{pane} is not in herdr agent list"
 
 

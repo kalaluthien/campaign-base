@@ -1020,46 +1020,10 @@ def cmd_take(args):
 # --------------------------------------------- the herdr half of the reading
 
 
-def parse_agents(text):
-    """The herdr reading, with no process in it, so it can be tested against a
-    recorded listing instead of against whatever happens to be running."""
-    try:
-        agents = json.loads(text)["result"]["agents"]
-    except (ValueError, KeyError, TypeError) as e:
-        return None, f"could not parse herdr's output ({e.__class__.__name__})"
-    # `agents: null` and a row that is not an object both used to raise here
-    # instead of returning the `why` this promises, which turned "I could not
-    # read it" into a traceback -- the one shape a caller cannot act on.
-    if not isinstance(agents, list):
-        return None, "herdr's `agents` was not a list"
-    out = {}
-    for a in agents:
-        if not isinstance(a, dict):
-            return None, f"a herdr row was {type(a).__name__}, not an object"
-        sid = (a.get("agent_session") or {}).get("value")
-        if sid is None:
-            # A row herdr lists but cannot identify. Counted, never dropped:
-            # silently skipping it would shrink "sessions on this machine",
-            # which is the number a close gate reads.
-            sid = f"<unidentified:{a.get('pane_id', '?')}>"
-        out[sid] = {
-            "name": a.get("name") or "<unnamed>",
-            "status": a.get("agent_status", "?"),
-            "cwd": a.get("cwd", "?"),
-            "pane": a.get("pane_id", "?"),
-        }
-    return out, None
-
-
-def herdr_sessions():
-    """Every session on this machine. Listing needs no HERDR_ENV guard: that
-    guard is against acting on somebody else's session, never against reading,
-    and `agent list` answers the same from outside a pane as from inside."""
-    r = run("herdr", "agent", "list")
-    if r.returncode != 0:
-        return None, (f"herdr agent list exited {r.returncode}: "
-                      f"{r.stderr.strip()[:120]}")
-    return parse_agents(r.stdout)
+# THE LISTING IS campaign-name-session.py's TO READ (rule-check#370 row 3),
+# bound here under the names every caller of this file already uses.
+parse_agents = NAMES.parse_agents
+herdr_sessions = NAMES.herdr_sessions
 
 
 COMPACT = "/compact"

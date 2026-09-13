@@ -588,46 +588,21 @@ def role_of(session_id):
         return None, None, ("could not read the role table from "
                             "campaign-roles.py "
                             f"({e.__class__.__name__})")
-    try:
-        r = subprocess.run(["herdr", "agent", "list"], capture_output=True,
-                           text=True)
-    except OSError as e:
-        return None, None, f"herdr could not run ({e.__class__.__name__})"
-    if r.returncode != 0:
-        return None, None, (f"herdr agent list exited {r.returncode}: "
-                            f"{r.stderr.strip()[:100]}")
-    try:
-        rows = json.loads(r.stdout)["result"]["agents"]
-    except (ValueError, KeyError, TypeError) as e:
-        return None, None, ("could not parse herdr output "
-                            f"({e.__class__.__name__})")
-    if not isinstance(rows, list):
-        return None, None, "herdr agents was not a list"
-    for a in rows:
-        # EVERY SHAPE HERE IS SOMEBODY ELSE'S OUTPUT. A row that is not an
-        # object, an `agent_session` that is not one, a `name` that is not a
-        # string: each used to reach an attribute that does not exist, and the
-        # traceback exited 1 -- which a PreToolUse hook treats as its own error
-        # and the call then PROCEEDS. Unreadable is a reading, and it belongs
-        # on the could-not-look path with the rest.
-        if not isinstance(a, dict):
-            return None, None, "a herdr row was not an object"
-        sess = a.get("agent_session")
-        if sess is not None and not isinstance(sess, dict):
-            return None, None, "a herdr row's agent_session was not an object"
-        if (sess or {}).get("value") != session_id:
-            continue
-        name = a.get("name") or ""
-        if not isinstance(name, str):
-            return None, None, "a herdr row's name was not a string"
-        campaign = rule.campaign_of(name)
-        if campaign is None:
-            return None, no_role, (f"session {session_id} is named "
-                                   f"{name or 'nothing'}, which the campaign "
-                                   f"name pattern does not admit")
-        role = "planner" if "-planner-" in name else "worker"
-        return campaign, role, f"session {session_id} is {name}"
-    return None, None, (f"no herdr row names session {session_id}, has no role here")
+    # The listing and the role word are campaign-name-session.py's
+    # (rule-check#370 row 3); a malformed listing comes back a why, never a
+    # traceback, which a PreToolUse hook would exit 1 on and the call PROCEED.
+    sessions, why = rule.herdr_sessions()
+    if sessions is None:
+        return None, None, why
+    row = sessions.get(session_id)
+    if row is None:
+        return None, None, f"no herdr row names session {session_id}, has no role here"
+    name = row["name"]
+    campaign = rule.campaign_of(name)
+    if campaign is None:
+        return None, no_role, (f"session {session_id} is named {name}, which "
+                               f"the campaign name pattern does not admit")
+    return campaign, rule.role_word(name), f"session {session_id} is {name}"
 
 
 def git(args, cwd):

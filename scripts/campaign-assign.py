@@ -102,10 +102,12 @@ def load(path, alias):
 
 
 def claim_module():
-    """campaign-claim.py, imported for its reader of herdr's listing.
+    """campaign-claim.py, imported for its reader of herdr's listing and of a
+    sub-issue's campaign.
 
-    `parse_agents` is that script's, and a second copy here would drift from
-    it -- AGENTS.md, "Do not write a second reader of a rule a script owns".
+    `herdr_sessions` is campaign-name-session.py's, bound there, and a second
+    copy here would drift from it -- AGENTS.md, "Do not write a second reader
+    of a rule a script owns".
     The listing's shape is one such rule: which key holds the session id, and
     that a row herdr cannot identify is counted rather than dropped."""
     return load(os.path.join(os.path.dirname(os.path.abspath(__file__)),

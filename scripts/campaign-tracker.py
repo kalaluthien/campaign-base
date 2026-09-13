@@ -736,23 +736,21 @@ def cmd_bind(args):
         return 0
     # `--force` because the label existing is the ordinary case, and its
     # non-zero exit would otherwise read as a failure to create one.
-    c = subprocess.run(["gh", "label", "create", want, "-R", args.repo,
-                        "--force", "--color", "0E8A16", "--description",
-                        "the machine this campaign is bound to"],
-                       capture_output=True, text=True)
-    if c.returncode != 0:
+    _, why = gh_read(["gh", "label", "create", want, "-R", args.repo,
+                      "--force", "--color", "0E8A16", "--description",
+                      "the machine this campaign is bound to"])
+    if why:
         print(f"campaign-tracker bind: could not ensure the label {want} "
-              f"exists: {c.stderr.strip() or 'no message'}", file=sys.stderr)
+              f"exists: {why}", file=sys.stderr)
         return 1
     cmd = ["gh", "issue", "edit", str(args.campaign_issue), "-R", args.repo]
     if not already:
         cmd += ["--add-label", want]
     for n in drop:
         cmd += ["--remove-label", n]
-    e = subprocess.run(cmd, capture_output=True, text=True)
-    if e.returncode != 0:
-        print(f"campaign-tracker bind: the edit failed: "
-              f"{e.stderr.strip() or 'no message'}", file=sys.stderr)
+    _, why = gh_read(cmd)
+    if why:
+        print(f"campaign-tracker bind: the edit failed: {why}", file=sys.stderr)
         return 1
     print(f"{'kept' if already else 'added'} {want}")
     for n in drop:

@@ -194,23 +194,29 @@ def _(m):
     return r["context"] == 50_000, r
 
 
-@case("a prompt is a user record carrying text")
+@case("a prompt of another shape is a user record carrying text, quoted")
 def _(m):
-    r = reading(m, prompt(4))
-    return r["prompted"] == ts(4), r
+    r = reading(m, prompt(4, "wait,\n launch nothing"))
+    return (r["other_at"], r["other"]) == (ts(4), "wait, launch nothing"), r
+
+
+@case("the other prompt is the last by time, and an assignment is not one")
+def _(m):
+    r = reading(m, prompt(4, "wait"), prompt(2, "older"), prompt(5, work(9)))
+    return (r["other_at"], r["other"], r["assigned"]) == (ts(4), "wait", 9), r
 
 
 @case("the compaction's own echoes are not a prompt")
 def _(m):
     r = reading(m, prompt(1, "<command-name>/compact</command-name>\n"),
                 prompt(2, "<local-command-stdout>Compacted</local-command-stdout>"))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 @case("the bare /compact that release queues is not a prompt")
 def _(m):
     r = reading(m, prompt(2, "/compact"), boundary(3))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 @case("a synthetic record, a limit banner, does not zero the context")
@@ -223,33 +229,33 @@ def _(m):
     return r["context"] == 351_805, r
 
 
-@case("a prompt typed into a busy pane after the ref went keeps the worker")
+@case("an assignment typed into a busy pane after the ref went keeps the worker")
 def _(m):
-    r = reading(m, prompt(1, work(9)), queued(4, "one more thing",
+    r = reading(m, prompt(1, work(9)), queued(4, work(9),
                                               origin={"kind": "human"}))
     v = m.verdict("worker", False, (True, None), "no limit", r, gone(3))
-    return r["prompted"] == ts(4) and v[0] == "keep", (r, v)
+    return r["assigned_at"] == ts(4) and v[0] == "keep", (r, v)
 
 
 @case("a peer's message queued into the pane is not a prompt")
 def _(m):
     r = reading(m, queued(2, "<cross-session-message from=x>", isMeta=True,
                           origin={"kind": "peer"}))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 @case("a queued command in any mode but prompt is not a prompt")
 def _(m):
     r = reading(m, queued(2, "Work sub-issue kalaluthien/campaign-base#9 now",
                           mode="task-notification"))
-    return r["prompted"] is None, r
+    return r["other_at"] is None and r["assigned"] is None, r
 
 
 @case("a task notification reaching an idle pane is not a prompt")
 def _(m):
     r = reading(m, boundary(2),
                 prompt(3, "<task-notification>\n<task-id>b1</task-id>"))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 @case("a compaction whose boundary carries no size leaves no context, not the stale one")
@@ -261,13 +267,13 @@ def _(m):
 @case("the release's /compact, queued while busy, is not a prompt")
 def _(m):
     r = reading(m, queued(2, "/compact"), boundary(3))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 @case("a person's `/compact <focus>` is a prompt")
 def _(m):
     r = reading(m, prompt(4, "/compact keep the review findings"))
-    return r["prompted"] == ts(4), r
+    return r["other_at"] == ts(4), r
 
 
 @case("an assistant turn with text and no tool call is not acting")
@@ -297,7 +303,7 @@ def _(m):
 def _(m):
     r = reading(m, prompt(1, "Stop hook feedback: x", isMeta=True),
                 prompt(2, "This session is being continued", isCompactSummary=True))
-    return r["prompted"] is None, r
+    return r["other_at"] is None, r
 
 
 # verdict
@@ -306,8 +312,10 @@ IDLE = (True, None)
 BUSY = (False, "status is working, not idle")
 NONE = "no limit (herdr lists w1:p2 idle)"
 # Assigned #9 at minute 1, worked until minute 2, its ref gone at minute 3.
+# A prompt of another shape and a tool call before the delete, read past
+# by nobody.
 DONE = {"assigned": 9, "assigned_at": ts(1), "compacted": None,
-        "prompted": ts(1), "acted": ts(2), "context": 9000,
+        "other": "hello", "other_at": ts(2), "acted": ts(2), "context": 9000,
         "context_at": ts(2), "records": 3}
 
 
@@ -355,7 +363,8 @@ def _(m):
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, DONE, gone(3))
     return (v[0] == "retire" and "assigned #9" in v[1]
-            and "tk/9-* on o/r" in v[1] and gh_ts(3) in v[1]), v
+            and "tk/9-* on o/r" in v[1] and gh_ts(3) in v[1]
+            and "no assignment prompt since, nothing else since" in v[1]), v
 
 
 @case("a ref still standing is not retired")
@@ -366,27 +375,47 @@ def _(m):
 
 @case("no assignment prompt is not retired")
 def _(m):
+    # `ref_went` first: past its guard a `went` with no assignment is a
+    # reading `verdict` is never handed.
+    went = m.ref_went(big(9000), gone(3))
+    if went[0] is not None:
+        return False, went
     v = m.verdict("worker", False, IDLE, NONE, big(9000), gone(3))
     return v[0] == "keep" and "no assignment prompt" in v[1], v
 
 
-@case("a prompt after the ref went is not retired")
+@case("a prompt of another shape after the ref went is retired, and the why names it")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, prompted=ts(4)), gone(3))
-    return v[0] == "keep" and f"a prompt at {ts(4)}" in v[1], v
+    v = m.verdict("worker", False, IDLE, NONE, dict(
+        DONE, other_at=ts(4), other="wait, launch nothing"), gone(3))
+    return (v[0] == "retire" and f"read past a prompt at {ts(4)} "
+            f"('wait, launch nothing')" in v[1]), v
 
 
-@case("a tool call after the ref went is not retired, though in the same second")
+@case("a tool call after the ref went is retired, and the why names it")
 def _(m):
     same = "2026-09-10T10:03:00.500Z"   # half a second after the delete
     v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=same), gone(3))
-    return v[0] == "keep" and "a tool call at" in v[1], v
+    return v[0] == "retire" and f"read past a tool call at {same}" in v[1], v
 
 
-@case("a tool call at the very instant the ref went is not retired")
+@case("an assignment prompt after the ref went is not retired")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, acted=ts(3)), gone(3))
-    return v[0] == "keep" and "a tool call at" in v[1], v
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, assigned_at=ts(4)), gone(3))
+    return v[0] == "keep" and f"an assignment prompt at {ts(4)} after" in v[1], v
+
+
+@case("an assignment prompt in the same second after the ref went is not retired")
+def _(m):
+    same = "2026-09-10T10:03:00.500Z"   # half a second after the delete
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, assigned_at=same), gone(3))
+    return v[0] == "keep" and "an assignment prompt at" in v[1], v
+
+
+@case("an assignment prompt at the very instant the ref went is not retired")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, assigned_at=ts(3)), gone(3))
+    return v[0] == "keep" and "an assignment prompt at" in v[1], v
 
 
 @case("no deletion read, or the refs unread, is not retired")
@@ -1371,22 +1400,31 @@ MUTATIONS = [
      'if reading["context"] > COMPACT_AT:', "compact: idle at the threshold"),
     ("the own pane skips the idle reading", "is_own = pane == own",
      "is_own = False", "the run gives one verdict per session of the campaign, and no other"),
-    ("retire", "if went and not since:", "if False:",
+    ("retire", "if went and not again:", "if False:",
      "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
     ("retire only a worker", 'if role == "worker" and not own:', "if not own:",
      "a planner is never retired, nor asked about its refs"),
     ("never retire the own pane", 'if role == "worker" and not own:', 'if role == "worker":',
      "the own pane is never retired"),
-    ("no prompt after the ref went", '("prompt", reading["prompted"])', '("prompt", None)',
-     "a prompt after the ref went is not retired"),
-    ("no tool call after the ref went", '("tool call", reading["acted"])', '("tool call", None)',
-     "a tool call after the ref went is not retired, though in the same second"),
-    ("only what came after the ref went", "if went and ts and when(ts) >= when(went)]",
-     "if went and ts]", "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
-    ("times, not strings", "if went and ts and when(ts) >= when(went)]",
-     "if went and ts and ts >= went]", "a tool call after the ref went is not retired, though in the same second"),
-    ("a tie is after the delete", "if went and ts and when(ts) >= when(went)]",
-     "if went and ts and when(ts) > when(went)]", "a tool call at the very instant the ref went is not retired"),
+    ("an assignment after the ref went keeps",
+     'again = went and when(reading["assigned_at"]) >= when(went)', "again = False",
+     "an assignment prompt after the ref went is not retired"),
+    ("times, not strings", 'when(reading["assigned_at"]) >= when(went)',
+     'reading["assigned_at"] >= went',
+     "an assignment prompt in the same second after the ref went is not retired"),
+    ("a tie is after the delete", 'when(reading["assigned_at"]) >= when(went)',
+     'when(reading["assigned_at"]) > when(went)',
+     "an assignment prompt at the very instant the ref went is not retired"),
+    ("the prompt read past is named", '("prompt", reading["other_at"])', '("prompt", None)',
+     "a prompt of another shape after the ref went is retired, and the why names it"),
+    ("the prompt read past is quoted", "past[0] += f\" ({reading['other']!r})\"", "pass",
+     "a prompt of another shape after the ref went is retired, and the why names it"),
+    ("the tool call read past is named", '("tool call", reading["acted"])', '("tool call", None)',
+     "a tool call after the ref went is retired, and the why names it"),
+    ("only what came after the ref went is read past", "if ts and when(ts) >= when(went)]",
+     "if ts]", "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
+    ("the other prompt by time", 'if out["other_at"] is None or ts > out["other_at"]:',
+     "if True:", "the other prompt is the last by time, and an assignment is not one"),
     ("no assignment, no retire", '    if n is None:\n        return None, (f"no assignment prompt',
      '    if False:\n        return None, (f"no assignment prompt', "no assignment prompt is not retired"),
     ("a ref standing, no retire", "    if standing:\n        return None, f\"assigned #{n}; {', '.join(standing)}",
@@ -1399,9 +1437,9 @@ MUTATIONS = [
      "compacted after the ref went is compacted, before it stale, and no time unknown"),
     ("the assignment by its sentence", 'hit = ASSIGNMENT.search("".join(texts(content)))',
      "hit = None", "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
-    ("a queued assignment", 'said(ts, a.get("prompt"))', 'later("prompted", ts)',
+    ("a queued assignment", 'said(ts, a.get("prompt"))', 'pass',
      "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
-    ("the last assignment by time", 'or ts > out["assigned_at"]):', "or True):",
+    ("the last assignment by time", 'or ts > out["assigned_at"]:', "or True:",
      "every last is by time, not by position in the file"),
     ("no assignment in a note or a summary", 'if r.get("isMeta") or r.get("isCompactSummary"):',
      "if False:", "an assignment in a summary, a harness note or a tool result is none"),
@@ -1461,9 +1499,9 @@ MUTATIONS = [
      "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
     ("a prompt is text", "if is_prompt(content):\n                said(ts, content)",
      "if False:\n                said(ts, content)",
-     "a prompt is a user record carrying text"),
+     "a prompt of another shape is a user record carrying text, quoted"),
     ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
-     "a prompt typed into a busy pane after the ref went keeps the worker"),
+     "an assignment typed into a busy pane after the ref went keeps the worker"),
     ("a queued peer message", 'and not a.get("isMeta") and is_prompt', "and is_prompt",
      "a peer's message queued into the pane is not a prompt"),
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",

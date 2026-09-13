@@ -692,8 +692,10 @@ pred agentRelease {
    itself left every base worker unretirable.
    `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads the
    first as GitHub has it -- the sub-issue its last assignment prompt names
-   has no ref standing, and the events feed says when the last went -- and
-   stands in for the second with no prompt and no tool call since then. No
+   has no ref standing, and the pull request timeline, or the events feed
+   where there is no pull request, says when the last went -- and stands in
+   for the second with no assignment prompt since then: a prompt of another
+   shape, or a tool call, is not work (the owner, rule-check#349). No
    compaction is asked: `/exit` ends the context whatever its size. */
 pred exitSession[s: Session] {
   Now.event = SessionExit and Who.session = s

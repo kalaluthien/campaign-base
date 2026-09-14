@@ -14,7 +14,8 @@ launched by whoever wants the merge, the author included, because merge
 condition 2 is on who *writes* it; `review` in
 `spec/campaign/orchestration/system.als` is why it has no guard on who
 commissions it. **It checks that the implementation is correct** -- the
-brief's rows, behaviour kept, fail-first, the suites; a decision, or a doubt
+brief's rows, behaviour kept, fail-first, and the suites as CI ran them
+(the shape of a round, below); a decision, or a doubt
 about one, goes to the planner as a `BLOCKED` and is never the reviewer's
 (owner, rule-check#272).
 
@@ -45,10 +46,11 @@ which `campaign-token-tally.py reviews` rolls into the round that spawned it
 prices both. Write the brief as `"review PR <N> at <level>"`, level right
 after `at`, naming what to check after a blank line.
 
-**The brief says what a reviewer may do**: it reads, runs checks, and edits,
-kills or launches nothing. That is one sentence of the brief and not a
-mechanism -- no reviewer agent definition, and no branch in the guard reading
-what kind of agent is being launched (owner's DECISION, rule-check#278).
+**The brief says what a reviewer may do**: it reads, reads CI's verdicts
+rather than re-running the suites, runs what CI cannot -- a mutant, a probe --
+and edits, kills or launches nothing. That is one sentence of the brief and
+not a mechanism -- no reviewer agent definition, and no branch in the guard
+reading what kind of agent is being launched (owner's DECISION, rule-check#278).
 
 **`low` is under the bar and outside it.** It costs about what a narrowed plain
 brief does and cannot fan out, which is why the guard's `CHEAP_LEVEL` passes
@@ -67,10 +69,19 @@ to the change rather than to the review. A change whose correctness is not local
 takes the heavier model, because a weaker reader returns "looks fine" on exactly
 the reasoning that needed a reader. Broad and shallow takes a lighter one. Judge
 the change; the launcher's own model is not the input, and a session running
-light does not license a lighter reviewer. **The one exception is the closing
-review** (owner, pr#367): once a round returns refinement only, the one
-narrowed review of that last commit may run on Sonnet, and it is the last
-round -- a wording note it returns is accepted in the REPORT, not fixed.
+light does not license a lighter reviewer. **Two rounds are the exception and
+run on Sonnet at `low`** (owner, pr#367 and rule-check#441), each a plain brief
+and not `/code-review low`:
+
+- **the closing review**: once a round returns refinement only, the one
+  narrowed review of the commit that applies it;
+- **a clean merge of `main`**, reviewed on the merge commit's diff alone.
+
+Either is the last round before the merge, and a wording note it returns is
+accepted in the REPORT, not fixed. A fix round after a defect verdict is not
+one of them: it stays narrowed on Opus at `low`. Measured over two weeks
+(rule-check#441), rounds past the first refinement-only verdict found 3
+defect verdicts in 28 rounds, while taking 5.3% of all review tokens.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline; a sweep goes
@@ -126,6 +137,26 @@ does not re-run a measurement the full review already made and reported, **unles
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.
 
+**The suites are CI's, and the reviewer reads them rather than running
+them.** `.github/workflows/check.yml` runs every guard and every `*-test.*`
+suite in its `plan` job, and `alloy-check` on every module in its `solve`
+jobs, on each push to the pull request. So the reviewer reads those jobs'
+conclusions for the sha under review --
+`gh run list --commit <sha> --workflow check`, then
+`gh run view <id> --json jobs` -- waits with `gh run watch <id>` while one
+is pending, and reports a red job as a finding. The `check` job itself is not
+that reading: it stays red until a REVIEW names the head. The reviewer still
+runs what CI cannot: a mutant for fail-first, a probe of one claim. Measured
+over two weeks (rule-check#441), tool calls of 30 seconds or more took 34% of
+review wall time: `alloy-check` 10%, the suites 6.5%.
+
+**A stopped round is resumed, not relaunched.** A review cut off by the
+session limit, or stopped by its launcher, is continued by `SendMessage` to
+its agent id. The agent picks up from its transcript, keeping everything it
+has already read. A narrower brief travels as that message too. A fresh
+launch at the same sha reads it all again: the same two weeks held 22 re-runs
+on an unchanged head, 6.3% of review tokens.
+
 **A fix round is: findings on the pull request, one worker, one `REPORT`.** The
 worker verifies each finding at the site it names before touching anything.
 Follow-ups fold into the same round, whose boundary is the `REPORT` and never a
@@ -136,11 +167,11 @@ round claiming "all fixed" without re-running its sweep is what keeps happening.
 **A reconciliation with `main` decides the breadth of the review it needs**, and
 a full re-review is due at one moment only, a reconciliation that needed a hand
 resolution. It is a push, so condition 1
-wants a review at the combined sha either way. A clean auto-merge earns a
-narrowed one, on the merge commit's diff alone. A merge that needed a hand
-resolution earns a full one, and its brief says it reads the combination:
-**containment buys attention from nobody**, and the resolution is where the two
-branches actually met.
+wants a review at the combined sha either way. A clean auto-merge earns the
+Sonnet `low` round the model knob names, on the merge commit's diff alone. A
+merge that needed a hand resolution earns a full one, and its brief says it
+reads the combination: **containment buys attention from nobody**, and the
+resolution is where the two branches actually met.
 
 **What a round costs, so that "one more round" is a priced decision**:
 one round runs **57,374 to 134,222 input tokens** at `medium` or `high` on
@@ -153,8 +184,9 @@ what multiplies it.
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect
 in shipped code and no test that passes with its branch deleted -- apply them in
-one commit, review that diff narrowed, and merge, rather than commissioning
-another round. A number a check enforces is not prose.
+one commit, review that diff narrowed on Sonnet at `low` (the model knob,
+above), and merge, rather than commissioning another round. A number a check enforces
+is not prose.
 
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel

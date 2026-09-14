@@ -209,9 +209,10 @@ def reading(head, repo, number, kinds, reviews=False, keep=lambda c: True):
 
 
 def issue_number(text):
-    """The number in `N`, `#N` or `<slug>#N`, or None."""
-    m = re.fullmatch(r"(?:[\w-]*#)?(\d+)", text)
-    return int(m.group(1)) if m else None
+    """The number in `N`, `#N` or `<slug>#N`, or None -- `pr#N` included,
+    since it names a pull request and not a sub-issue."""
+    m = re.fullmatch(r"(?:([\w-]*)#)?(\d+)", text)
+    return int(m.group(2)) if m and m.group(1) != PR else None
 
 
 def pr_repo(body, tracker):

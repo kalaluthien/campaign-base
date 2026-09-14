@@ -202,10 +202,10 @@ def cases():
     check("the issue argument may be <slug>#N",
           r.returncode == 0 and "issuecomment-101" in section(r.stdout, 1),
           f"rc {r.returncode}: {r.stderr[-300:]}")
-    check("the issue argument's number is whole in every form",
-          [m.issue_number(a) for a in ("416", "#416", "rule-check#416", "x#y")]
-          == [416, 416, 416, None],
-          [m.issue_number(a) for a in ("416", "#416", "rule-check#416", "x#y")])
+    forms = ("416", "#416", "rule-check#416", "x#y", "pr#420")
+    check("the issue argument's number is whole in every form, and pr#N is "
+          "refused", [m.issue_number(a) for a in forms]
+          == [416, 416, 416, None, None], [m.issue_number(a) for a in forms])
     r, _ = run(world(), "rc#x", R)
     check("an issue argument that names no number is refused, not a traceback",
           r.returncode == 2 and "Traceback" not in r.stderr, r.stderr[-300:])

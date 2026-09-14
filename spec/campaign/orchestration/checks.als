@@ -413,7 +413,12 @@ fun waitingOnPlanner: set Agent { { a: Waiting & Live | some livePlannersOn[a.ta
 /* planner.md step 7: in the turn a BLOCKED reaches the planner, its first act
    is the DECISION -- its own, or the owner's answer to AskUserQuestion -- and
    nothing else runs first. "Reaches" covers a planner starting with one
-   already standing, so it is read off the state and not off `Blocked`. */
+   already standing, so it is read off the state and not off `Blocked`.
+   WHAT IT COSTS: it holds back every event while a worker waits, not the
+   planner's alone, so a death or a limit stop during the wait is excluded
+   rather than examined. So is the one trace the review found where the
+   planner cannot answer: a `RemoveMember` unlinking the sub-issue while its
+   worker waits, which leaves `decide` with no taker. */
 pred answerInTurn {
   always (some waitingOnPlanner implies (Now.event = Decide and Target.agent in waitingOnPlanner))
 }
@@ -457,11 +462,12 @@ pred ReportIsNotEvidence {
     and not complete[a.task] and after always not complete[a.task])
 }
 
-/* Held with no planner running, the one-worker shape: nothing takes `decide`
-   then. With one running, `answerInTurn` rules it out
+/* A worker with no planner running, the one-worker shape: nothing takes
+   `decide` then. With one running, `answerInTurn` rules it out
    (WaitingWorkerIsAnswered). */
 pred BlockedAgentDoesNotProceed {
-  some a: Agent | eventually (a in Waiting and always (a in Waiting and Now.event != Work))
+  some a: Agent | a.role = Worker
+    and eventually (a in Waiting and always (a in Waiting and Now.event != Work))
 }
 
 /* THE FAILURE RULE 3 FORBIDS: under wait-for-the-answer there is no such

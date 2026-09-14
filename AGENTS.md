@@ -624,7 +624,9 @@ was written by **an agent that did not write the commits**, and (3) the branch
 **contains the current `main`** when it merges. Whoever satisfies all three may
 merge, the author included; a session that cannot satisfy one may not.
 **Which session merges is the claim's question, not a condition's**: the
-planner of the head's campaign, or the worker holding its claim.
+planner of the head's campaign, or a worker of it standing in or holding a
+checkout on its claim -- a workspace, not a session, as § Completion,
+liveness, and local-only work says.
 `check-campaign-claim.py` reads it off the branch the merge names, so a merge
 names its pull request by that branch, never by its number; the model is
 `mergedByPlannerOrHolder` in `spec/campaign/orchestration/checks.als`.

@@ -94,7 +94,8 @@ sig Agent {
    plane would make a planner unable to land a reviewed pull request and putting
    it on the campaign plane would let one land any. Which session may land
    one is `mergedByPlannerOrHolder` in checks.als: the planner of the head's
-   campaign, or the worker holding its claim. `Review`, `Launch`, the four
+   campaign, or a worker of it where a checkout is on its claim. `Review`,
+   `Launch`, the four
    messages, `Retire` and the survey events are on neither because they are not
    writes to either half. */
 abstract sig Plane {}

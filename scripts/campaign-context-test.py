@@ -63,7 +63,8 @@ def reviews_call(n, repo=R):
 
 VIEW = "issue view 7 -R o/base --json body,url,parent"
 BODY = ("## Intent\n\n- see rc#3 and pr#5; the bare #9 and o/other#6 name "
-        "no campaign, and rc#2 and rc#7 are the parent and the issue itself\n\n"
+        "no campaign, and rc#2 and rc#7 are the parent and the issue itself; "
+        "other#3 is rc#3 again\n\n"
         "## Lands in\n\n- none\n")
 LONG = "x" * 5000
 
@@ -95,7 +96,12 @@ def world():
                     "NOTE rc-worker-9: a note on a PR, not followed",
                     thread="pull/5"),
         ],
-        reviews_call(5): [],
+        # A review body has `submitted_at` and no `created_at`.
+        reviews_call(5): [{"id": 551, "submitted_at": "2026-08-07T00:00:00Z",
+                           "body": "REVIEW rc-worker-8: from gh pr review",
+                           "user": {"login": "someone"},
+                           "html_url": f"https://github.com/{R}/pull/5"
+                                       "#pullrequestreview-551"}],
         comments_call(2): [
             comment(201, "2026-09-04T00:00:00Z",
                     "NOTE rc-planner-1: one carried item for rc#7",
@@ -157,6 +163,11 @@ def cases():
 
     check("a cited pr#N's REVIEW is a row", "issuecomment-501" in two, two)
     check("a cited pr#N's NOTE is not", "issuecomment-502" not in two, two)
+    check("a review body is a row, dated by submitted_at",
+          "REVIEW rc-worker-8 2026-08-07 pullrequestreview-551" in two, two)
+    check("one number cited under two slugs is read and printed once",
+          sum(c == comments_call(3) for c in calls) == 1
+          and two.count("issuecomment-301") == 1, calls)
     check("a cited slug#N's DECISION is a row, its REPORT is not",
           "issuecomment-301" in two and "issuecomment-302" not in two, two)
     check("a slug#N cited by an own comment is followed, and empty prints empty",
@@ -167,8 +178,9 @@ def cases():
           sum(c == comments_call(2) for c in calls) == 1
           and sum(c == comments_call(7) for c in calls) == 1, calls)
 
-    check("the campaign issue's NOTE naming this issue is a row",
-          "issuecomment-201" in three, three)
+    check("the campaign issue's NOTE naming this issue is a row, the heading "
+          "naming the issue in full", "issuecomment-201" in three
+          and f"citing {R}#7" in three, three)
     check("the campaign issue's comments naming another issue are not",
           "issuecomment-202" not in three and "issuecomment-203" not in three,
           three)
@@ -201,25 +213,32 @@ def cases():
                                     for n in (1, 2, 3)),
           f"rc {r.returncode}: {r.stdout}")
 
-    # More rows than the ceiling: the cut is counted and the thread named.
+    # A cited thread over the ceiling: the hop yields to own and campaign
+    # rows, keeps its newest, and names its thread.
     ceiling = m.ROW_CEILING
     t = world()
-    t[comments_call(2)] = [
-        comment(900 + i, f"2026-09-05T00:{i:02d}:00Z",
-                f"NOTE rc-planner-1: item {i} for rc#7", thread="issues/2")
+    t[comments_call(3)] = [
+        comment(900 + i, f"2026-08-01T00:{i:02d}:00Z",
+                f"DECISION owner: item {i}", thread="issues/3")
         for i in range(ceiling)]
     r, _ = run(t)
     rows = [ln for ln in r.stdout.splitlines() if ln.startswith("- ")]
-    check("rows past the ceiling are cut, counted, and the thread named",
-          len(rows) == ceiling and "cut by the ceiling of" in r.stdout
-          and f"https://github.com/{R}/issues/2" in section(r.stdout, 3),
-          f"{len(rows)} rows: {r.stdout[-500:]}")
+    two = section(r.stdout, 2)
+    check("rows past the ceiling are cut from the hop, newest kept, thread named",
+          len(rows) == ceiling and "cut by the ceiling of" in two
+          and f"https://github.com/{R}/issues/3" in two
+          and f"issuecomment-{900 + ceiling - 1}" in two
+          and "issuecomment-900:" not in two, f"{len(rows)} rows: {two[-500:]}")
+    check("own and campaign rows survive a hop over the ceiling",
+          "issuecomment-101" in section(r.stdout, 1)
+          and "issuecomment-201" in section(r.stdout, 3), r.stdout[-500:])
 
     # The assignment sentence tells the session to run this first.
     a = harness.load(ASSIGN, "campaign_assign")
     sentence = a.prompt_for(R, "42")
-    check("campaign-assign's prompt runs campaign-context.py first, in one "
-          "sentence", "scripts/campaign-context.py 42" in sentence
+    check("campaign-assign's prompt runs campaign-context.py by its absolute "
+          "path first, in one sentence",
+          f"{CONTEXT} 42" in sentence
           and sentence.count(". ") == 0, sentence)
 
 

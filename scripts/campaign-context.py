@@ -15,7 +15,8 @@ if the planner points at them (rule-check#416). This gathers them, through
      five, oldest first;
   2. one hop: the DECISION and NOTE comments of each `<slug>#N`, and the
      REVIEW comments and review bodies of each `pr#N`, that the body or those
-     own comments cite. The issue itself and its parent are not followed --
+     own comments cite, one read per number whatever slug it wears. The
+     issue itself and its parent are not followed --
      section 3 reads the parent -- and a bare `#N` names no campaign
      (AGENTS.md § Sub-issues), so it is never followed. A pull request is read
      on the repository the body's `## Lands in` names;
@@ -24,9 +25,11 @@ if the planner points at them (rule-check#416). This gathers them, through
 
 A ROW is the kind, the author the first line names, the date, the comment id,
 the rest of the first line, then the body under COMMENT_CAP characters. The
-whole print holds at most ROW_CEILING rows; a section losing rows to it says
-how many and where its full thread is. Both numbers are printed beside what
-they measured.
+whole print holds at most ROW_CEILING rows, shared out own rows first, then the
+campaign issue's, then the hop's -- the first two are about this issue, the
+hop only near it -- and a thread over its share keeps its newest rows and says
+how many it cut and where its full thread is. Both numbers are printed beside
+what they measured.
 
 WHAT IT OWNS AND WHAT IT BORROWS. The kind-line grammar is
 check-campaign-claim.py's `comment_first_line`, the slug is
@@ -125,57 +128,75 @@ def kind_line(body):
 
 
 def citations(text):
-    """Every `(slug, number)` cited in `text`, first appearance first."""
-    seen = []
+    """Every cited `(slug, number)` in `text`, first appearance first, one per
+    number: every slug but `pr` names the same tracker, so `a#5` and `b#5` are
+    one issue and are read once, under the slug seen first."""
+    seen, out = set(), []
     for m in CITATION.finditer(text or ""):
-        ref = (m.group(1), int(m.group(2)))
-        if ref not in seen:
-            seen.append(ref)
-    return seen
+        slug, n = m.group(1), int(m.group(2))
+        if (slug == PR, n) not in seen:
+            seen.add((slug == PR, n))
+            out.append((slug, n))
+    return out
 
 
-class Printer:
-    """Rows under the one ceiling, and the counts the last line prints."""
+class Block:
+    """One thread's reading: its heading, and its rows or why it did not read."""
 
-    def __init__(self):
-        self.printed = self.cut = self.bodies_cut = 0
-        self.unread = 0
+    def __init__(self, head, items=None, kinds=(), keep=lambda c: True, why=None):
+        self.head, self.why, self.items = head, why, items or []
+        self.rows = sorted(
+            ((c.get("created_at") or c.get("submitted_at") or "", c, parsed)
+             for c in self.items
+             if (parsed := kind_line(c.get("body"))) and parsed[0] in kinds
+             and keep(c)),
+            key=lambda r: r[0])
+        self.allowed = len(self.rows)
 
-    def rows(self, items, kinds, keep=lambda c: True):
-        """Print the items opening with one of `kinds`, oldest first."""
-        kept = []
-        for c in items:
-            parsed = kind_line(c.get("body"))
-            if parsed and parsed[0] in kinds and keep(c):
-                kept.append((c.get("created_at") or c.get("submitted_at") or "",
-                             c, parsed))
-        kept.sort(key=lambda k: k[0])
-        print(f"  {len(items)} comment(s) read, {len(kept)} kept")
-        if not kept:
-            print("  (empty)")
-        for n, (when, c, (kind, author, line)) in enumerate(kept):
-            if self.printed >= ROW_CEILING:
-                left = len(kept) - n
-                self.cut += left
-                print(f"  {left} row(s) cut by the ceiling of {ROW_CEILING}; "
-                      f"full thread: {c['html_url'].split('#')[0]}")
-                return
-            self.printed += 1
-            cid = c.get("html_url", "").rpartition("#")[2] or str(c.get("id"))
-            print(f"- {kind} {author} {when[:10]} {cid}: {line}")
-            body = "\n".join(c["body"].strip().splitlines()[1:]).strip()
-            if len(body) > COMMENT_CAP:
-                self.bodies_cut += 1
-                note = f"... body {len(body)} chars, cut at {COMMENT_CAP}"
-                body = body[:COMMENT_CAP]
-            else:
-                note = ""
-            for ln in (body.splitlines() + ([note] if note else [])):
-                print(f"    {ln}")
 
-    def unreadable(self, why):
-        self.unread += 1
-        print(f"  unread: {why}")
+def allot(blocks):
+    """Share ROW_CEILING out: own rows first, then the campaign issue's, then
+    the hop's in print order, since the first two are about this issue and the
+    hop only near it. A block over its share keeps its newest rows, which
+    supersede the older ones. Returns the rows cut."""
+    left, cut = ROW_CEILING, 0
+    for b in blocks:
+        b.allowed = min(len(b.rows), left)
+        left -= b.allowed
+        cut += len(b.rows) - b.allowed
+    return cut
+
+
+def show(b, counts):
+    """Print one block; `counts` gathers the unread and cut bodies."""
+    print(b.head)
+    if b.why:
+        counts["unread"] += 1
+        print(f"  unread: {b.why}")
+        return
+    print(f"  {len(b.items)} comment(s) read, {len(b.rows)} kept")
+    if not b.rows:
+        print("  (empty)")
+    dropped = len(b.rows) - b.allowed
+    if dropped:
+        print(f"  {dropped} oldest row(s) cut by the ceiling of {ROW_CEILING}; "
+              f"full thread: {b.rows[0][1]['html_url'].split('#')[0]}")
+    for when, c, (kind, author, line) in b.rows[dropped:]:
+        cid = (c.get("html_url") or "").rpartition("#")[2] or str(c.get("id"))
+        print(f"- {kind} {author} {when[:10]} {cid}: {line}")
+        body = "\n".join(c["body"].strip().splitlines()[1:]).strip()
+        note = ""
+        if len(body) > COMMENT_CAP:
+            counts["bodies"] += 1
+            note = f"... body {len(body)} chars, cut at {COMMENT_CAP}"
+            body = body[:COMMENT_CAP]
+        for ln in body.splitlines() + ([note] if note else []):
+            print(f"    {ln}")
+
+
+def reading(head, repo, number, kinds, reviews=False, keep=lambda c: True):
+    items, read, why = comments(repo, number, reviews)
+    return Block(f"{head}\n  read gh api {read}", items, kinds, keep, why)
 
 
 def pr_repo(body, tracker):
@@ -201,7 +222,6 @@ def main():
         print(f"could not look: {GUARD.FIRST_LINE_UNREADABLE}", file=sys.stderr)
         return 1
 
-    p = Printer()
     print(f"campaign-context: {repo}#{issue}, read through gh; at most "
           f"{ROW_CEILING} rows, each body at most {COMMENT_CAP} chars")
     view, why = gh("issue", "view", str(issue), "-R", repo,
@@ -212,56 +232,50 @@ def main():
     body = view.get("body") or ""
     parent = (view.get("parent") or {}).get("number")
 
-    print(f"\n== 1. {repo}#{issue}'s own comments, kinds {', '.join(OWN_KINDS)}")
-    own, read, why = comments(repo, issue)
-    print(f"  read gh api {read}")
-    own_kept = []
-    if why:
-        p.unreadable(why)
-    else:
-        own_kept = [c for c in own if kind_line(c.get("body"))]
-        p.rows(own, OWN_KINDS)
+    own = reading(f"\n== 1. {repo}#{issue}'s own comments, kinds "
+                  f"{', '.join(OWN_KINDS)}", repo, issue, OWN_KINDS)
 
-    print("\n== 2. one hop: what the body and those comments cite")
-    cited = citations("\n".join([body] + [c["body"] for c in own_kept]))
-    follow = [r for r in cited
-              if not (r[0] != PR and r[1] in (issue, parent))]
+    cited = citations("\n".join([body] + [c["body"] for _, c, _ in own.rows]))
+    follow = [r for r in cited if not (r[0] != PR and r[1] in (issue, parent))]
     prs_on, said = pr_repo(body, repo)
-    if not follow:
-        print("  (empty: the body and those comments cite nothing to follow)")
-    for slug, n in [r for r in follow if r[0] != PR] + \
-                   [r for r in follow if r[0] == PR]:
+    hop = []
+    for slug, n in ([r for r in follow if r[0] != PR]
+                    + [r for r in follow if r[0] == PR]):
         if slug == PR:
-            print(f"-- pr#{n} on {prs_on} ({said}), kinds {', '.join(PR_KINDS)}")
-            items, read, why = comments(prs_on, n, reviews=True)
-            kinds = PR_KINDS
+            hop.append(reading(f"-- pr#{n} on {prs_on} ({said}), kinds "
+                               f"{', '.join(PR_KINDS)}", prs_on, n, PR_KINDS,
+                               reviews=True))
         else:
-            print(f"-- {slug}#{n}, kinds {', '.join(ISSUE_KINDS)}")
-            items, read, why = comments(repo, n)
-            kinds = ISSUE_KINDS
-        print(f"  read gh api {read}")
-        if why:
-            p.unreadable(why)
-        else:
-            p.rows(items, kinds)
+            hop.append(reading(f"-- {slug}#{n}, kinds {', '.join(ISSUE_KINDS)}",
+                               repo, n, ISSUE_KINDS))
 
-    print(f"\n== 3. the campaign issue's {', '.join(ISSUE_KINDS)} citing "
-          f"#{issue}")
-    if parent is None:
-        print(f"  (empty: {repo}#{issue} has no parent)")
+    head3 = (f"\n== 3. the campaign issue's {', '.join(ISSUE_KINDS)} citing "
+             f"{repo}#{issue}")
+    camp = None
+    if parent is not None:
+        camp = reading(f"{head3}\n  {repo}#{parent}", repo, parent, ISSUE_KINDS,
+                       keep=lambda c: any(s != PR and n == issue
+                                          for s, n in citations(c["body"])))
+
+    cut = allot([own] + ([camp] if camp else []) + hop)
+    counts = {"unread": 0, "bodies": 0}
+    show(own, counts)
+    print("\n== 2. one hop: what the body and those comments cite")
+    if not hop:
+        print("  (empty: the body and those comments cite nothing to follow)")
+    for b in hop:
+        show(b, counts)
+    if camp:
+        show(camp, counts)
     else:
-        items, read, why = comments(repo, parent)
-        print(f"  {repo}#{parent}; read gh api {read}")
-        if why:
-            p.unreadable(why)
-        else:
-            p.rows(items, ISSUE_KINDS, keep=lambda c: any(
-                s != PR and n == issue for s, n in citations(c["body"])))
+        print(f"{head3}\n  (empty: {repo}#{issue} has no parent)")
 
-    print(f"\nrows: {p.printed} printed, {p.cut} cut by the ceiling of "
-          f"{ROW_CEILING}; {p.bodies_cut} body(ies) cut at {COMMENT_CAP} chars"
-          + (f"; {p.unread} section(s) unread" if p.unread else ""))
-    return 1 if p.unread else 0
+    printed = sum(b.allowed for b in [own] + hop + ([camp] if camp else []))
+    print(f"\nrows: {printed} printed, {cut} cut by the ceiling of "
+          f"{ROW_CEILING}; {counts['bodies']} body(ies) cut at {COMMENT_CAP} "
+          f"chars" + (f"; {counts['unread']} section(s) unread"
+                      if counts["unread"] else ""))
+    return 1 if counts["unread"] else 0
 
 
 if __name__ == "__main__":

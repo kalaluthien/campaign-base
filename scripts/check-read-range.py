@@ -8,14 +8,18 @@ spec/campaign/session/system.als; the numbers below are this script's alone.
 
 THE RULE, STATED HERE ONCE
 
-  A Read naming `offset`, `limit` or `pages` is ranged and passes.
-  A path ending in one of DIFF_SUFFIXES passes: a review reads its diff whole,
-  and every line of it is the point.
-  A file of more than LONG_LINES lines, read with no range, is denied, and the
-  reason tells the session to find its lines with `grep -n` and read that part.
-  Anything else passes: a short file, a file that is not text (a NUL byte in
-  it: an image, a PDF), a path that is no readable file -- the Read reports
-  that itself.
+  A Read naming `limit` or `pages` is ranged and passes. One naming `offset`
+  alone returns the file from that line on, so those lines are what is judged.
+  A diff passes, read whole: a path ending in one of DIFF_SUFFIXES, or text
+  holding a line that opens `diff --git` -- a diff the harness saved from a
+  command's output, whatever its name. A review reads its diff whole, and
+  every line of it is the point.
+  A notebook (NOTEBOOK_SUFFIX) passes: Read shows it whole whatever the range,
+  so a range is no way forward.
+  Beyond those, more than LONG_LINES lines is denied, and the reason tells the
+  session to find its lines with `grep -n` and read that part. Anything else
+  passes: a short read, a file that is not text (a NUL byte in it: an image,
+  a PDF), a path that is no readable file -- the Read reports that itself.
 
 WHY THESE NUMBERS (rule-check#412 and #443)
 
@@ -31,17 +35,23 @@ WHAT IT SAYS
   on stdout when it passes, which the harness does not put in the model's
   context, and on stderr with exit 2 when it denies, which it does. A failure
   of this script is a pass that says so -- a refusal here would turn a bug
-  into a wall in front of every Read on the machine.
+  into a wall in front of every Read on the machine. The one failure that does
+  not pass is this file gone: install-hooks.sh registers `python3 "<path>"`,
+  and python3 exits 2 on a missing file, so a moved checkout denies every Read,
+  as it refuses the guard's tools. install-hooks.sh refuses to register a
+  script that is not there.
 
 Usage: a PreToolUse hook; the payload arrives on stdin.
 """
 import json
 import os
+import re
 import sys
 
 LONG_LINES = 350
 DIFF_SUFFIXES = (".diff", ".patch")
-RANGE_KEYS = ("offset", "limit", "pages")
+DIFF_LINE = re.compile(rb"^diff --git ", re.M)
+NOTEBOOK_SUFFIX = ".ipynb"
 
 
 def decide(payload):
@@ -50,10 +60,12 @@ def decide(payload):
     path = os.path.join(payload.get("cwd") or "", os.path.expanduser(str(inp.get("file_path") or "")))
     if payload.get("tool_name") != "Read":
         return 0, f"check-read-range: passed, {payload.get('tool_name')!r} is not a Read"
-    if any(inp.get(k) is not None for k in RANGE_KEYS):
+    if inp.get("limit") is not None or inp.get("pages") is not None:
         return 0, f"check-read-range: passed {path}: ranged"
     if path.endswith(DIFF_SUFFIXES):
         return 0, f"check-read-range: passed {path}: a diff, read whole"
+    if path.endswith(NOTEBOOK_SUFFIX):
+        return 0, f"check-read-range: passed {path}: a notebook, which Read shows whole"
     try:
         with open(path, "rb") as handle:
             data = handle.read()
@@ -61,12 +73,17 @@ def decide(payload):
         return 0, f"check-read-range: passed {path}: could not read it ({e.__class__.__name__})"
     if b"\0" in data:
         return 0, f"check-read-range: passed {path}: not text"
+    if DIFF_LINE.search(data):
+        return 0, f"check-read-range: passed {path}: holds a diff, read whole"
     count = data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
-    if count <= LONG_LINES:
-        return 0, f"check-read-range: passed {path}: {count} lines, at most {LONG_LINES}"
+    start = max(int(inp.get("offset") or 1), 1)
+    returned = max(count - start + 1, 0)
+    if returned <= LONG_LINES:
+        return 0, (f"check-read-range: passed {path}: {returned} of {count} lines "
+                   f"from line {start}, at most {LONG_LINES}")
     return 2, (
-        f"check-read-range: STEERED. {path}: {count} lines, over {LONG_LINES}, "
-        f"read with no offset or limit.\n"
+        f"check-read-range: STEERED. {path}: {returned} of {count} lines from line "
+        f"{start}, over {LONG_LINES}, with no limit.\n"
         f"  Find the lines you need first: grep -n '<pattern>' {path}\n"
         f"  then Read that part with offset and limit, or sed -n <a>,<b>p.")
 

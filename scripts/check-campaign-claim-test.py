@@ -2837,7 +2837,7 @@ def main():
 
     # THE AGENT LAUNCH (kalaluthien/campaign-base#278). One rule of
     # AGENTS.md § Review that the guard could not see at all until `Agent`
-    # joined install-hooks.sh's `MATCHER`: a tool absent from that string
+    # joined the guard's matcher on install-hooks.sh's `# installs:` line: a tool absent from it
     # reaches this file never. § Review's other rule on the call, the fan-out,
     # is the `Skill` group below -- it was written here first, against a
     # prompt's opening word, and #282's two live probes showed that channel
@@ -3037,12 +3037,13 @@ def main():
               and "in no campaign" in out(r), out(r)[:400])
 
     # THE MATCHER IS THE OTHER HALF OF THIS RULE. The branches above cannot
-    # fire for a tool the harness never routes here, and nothing else in this
-    # tree reads that string, so it is asserted where it is written.
+    # fire for a tool the harness never routes here, so the declaration is
+    # asserted here; install-hooks-test reads the slot it produces.
     matcher = (HERE / "install-hooks.sh").read_text()
     check("install-hooks.sh registers the guard on Agent and Skill",
-          '"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent|Skill"' in matcher,
-          "MATCHER no longer lists both; the rules on the call would be "
+          "scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill "
+          in matcher,
+          "the guard's `# installs:` matcher no longer lists both; the rules on the call would be "
           "unreachable however this file is written")
 
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape

@@ -132,9 +132,10 @@ fact StampedByTheHook {
 /* A READ OF A LONG FILE IS STEERED TO A GREP AND A RANGE. `scripts/check-read-range.py`,
    a PreToolUse hook on `Read`, denies a read that names no range of a Long
    file that is not a Diff, and its reason points the session at `grep -n`
-   and a bounded read. What makes a file Long -- its line threshold -- and
-   which paths are a Diff are that script's constants and are not restated:
-   here a file only is one or is not.
+   and a bounded read. What makes a read Long -- the lines it would return
+   against a threshold -- and what is a Diff -- every file the script passes
+   whole on purpose, a notebook included -- are that script's and are not
+   restated: here a read only is one or is not.
 
    Any session and any subagent: the hook fires for both, and no field of its
    payload says what a subagent is for, so the exemption is the path's and not

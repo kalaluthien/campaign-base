@@ -228,8 +228,10 @@ pred R4_RepolessCampaign {
 /* R5. A MODEL SWITCH IS NO HANDOFF (system.als's `modelSwitch`): nobody is
    taken over, nobody exits, every claim, campaign and name stays where it
    was, and the address is one role. Dropping `sessionFrame` from the event,
-   or letting it name a predecessor, reddens this; `Cov_ModelSwitch` is its
-   witness, fired while a claim is held. */
+   or only its `claimedIssues` clause, reddens this. A predecessor on the
+   event does not: `PredecessorOnlyOnHandoff` already forbids one, so that
+   mutation leaves `Cov_ModelSwitch`, its witness fired while a claim is
+   held, with no instance instead. */
 assert ModelSwitchKeepsEverySession {
   always (Now.event = ModelSwitch implies
     (no Who.predecessor and Exited' = Exited and claimedIssues' = claimedIssues

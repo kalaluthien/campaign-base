@@ -17,21 +17,26 @@ a context too large to compact; that path stays.
 
 THE ADDRESS is every row `herdr agent list` shows whose name carries the role
 word (`campaign-name-session.py`'s `role_word`), of any campaign, narrowed by
-`--from` to those whose transcript's last assistant `model` contains that
-word. It skips, and names why:
+`--from` to those whose transcript's latest assistant model contains that
+word (`campaign-heartbeat.py`'s `transcript_reading`, the one transcript
+reader). It skips, and names why:
 
   another role     the name carries another role word, or none
   own pane         this session's own pane: a prompt there queues behind the
                    turn running this script; switch it with `/model` yourself
   model            `--from` was given and the model is not it, or no
                    transcript was read, so the model is unknown
+  gone             no longer listed when its turn came
   not idle         mid-turn, where two prompts queue and merge into one line
                    (`campaign-assign.py`'s `idle_verdict`, imported)
   input box        text sits in the pane's input box, which a prompt would
                    join (`campaign-assign.py`'s `input_line`, imported)
 
-A skipped pane is left as it was; run this again once it is idle, and a pane
-already on the model takes `/model` again as a no-op.
+The last three are read AGAIN just before each pane is prompted, from a
+fresh listing, since a pane can start a turn while the ones before it switch.
+A target skipped for one of them is left as it was and fails the run; run
+this again once it is idle -- a pane already on the model takes `/model`
+again as a no-op.
 
 THE SWITCH, per pane, each step read before the next -- probed on
 rule-check#431, and `.claude/skills/herdr/references/facts.md` holds the facts:
@@ -40,27 +45,32 @@ rule-check#431, and `.claude/skills/herdr/references/facts.md` holds the facts:
   2. A session with history answers with a `Switch model?` dialog, `Yes`
      selected; a pane read showing it is answered with one Enter. A fresh
      session gets no dialog.
-  3. Done when the transcript holds one more `/model` command record than it
-     did before step 1 -- counted against that reading, since the transcript
-     keeps every earlier switch. The screen is read only for the dialog.
-  4. `/effort <level>`, confirmed the same way. Sent only after step 3,
-     because a prompt sent while the dialog is up answers it and is lost.
+  3. Done when the transcript holds one more `/model` run than it did before
+     step 1 AND that run printed `Set model to`. A run that printed anything
+     else fails with what it printed. The screen is read only for the dialog.
+  4. `/effort <level>`, confirmed the same way by `Set effort level to`.
+     Sent only after step 3, because a prompt sent while the dialog is up
+     answers it and is lost.
+
+A pane not confirmed in time says whether the dialog is still up, and the
+run warns that its `/model` may still land after the default is put back.
 
 THE USER'S DEFAULT IS PUT BACK. Each `/model` and `/effort` also rewrites
 `model` and `effortLevel` in ~/.claude/settings.json, which every session later
 started without `--model` would take -- a bare `claude --resume`. The owner's
 DECISION (rule-check#431 issuecomment-5659640299): read both before the first
 prompt, write both back after the last pane, print the values before and
-after, and report a write-back that fails. Only those two keys are written,
-into the file as it stands then, so a key another session changed meanwhile
-survives; a key that was absent is removed again. The file is read back after
-the write, and a mismatch is a failure. A settings file that cannot be read
-refuses the run before any prompt, since nothing could be put back. This
-script runs no git at all, so it never commits ~/.claude.
+after, and report a write-back that fails. A key is put back only when it
+still holds exactly what this run sent (`--to`, `--effort`); one holding
+anything else was changed by somebody else meanwhile, and is left as it is,
+named, and fails the run. A key that was absent is removed again, every other
+key is left alone, and the file is read back after the write. A settings file
+that cannot be read refuses the run before any prompt, since nothing could be
+put back. This script runs no git at all, so it never commits ~/.claude.
 
 Exit 0 when every addressed pane was switched and the default is as it was (or
-on --dry-run), 1 when the listing or the settings could not be read, any
-addressed pane was not confirmed, or the default was not put back.
+on --dry-run); 1 when the listing or the settings could not be read, a target
+was skipped or not confirmed, or the default was not put back.
 """
 import argparse
 import importlib.machinery
@@ -79,12 +89,11 @@ BASE = HERE.parents[3]
 # A model or effort word goes into a pane as one prompt, so a space would make
 # it two words of one command, and a newline two prompts.
 TOKEN = re.compile(r"^[\w.\[\]-]+$")
-MODEL_CMD = "<command-name>/model</command-name>"
-EFFORT_CMD = "<command-name>/effort</command-name>"
+# What each command prints when it took, as probed on rule-check#431.
+CONFIRM = {"model": "Set model to", "effort": "Set effort level to"}
 DIALOG = "Switch model?"
 POLLS, POLL_SLEEP = 20, 0.5
 SETTINGS = Path.home() / ".claude" / "settings.json"
-DEFAULT_KEYS = ("model", "effortLevel")
 ABSENT = "<absent>"
 
 
@@ -114,47 +123,21 @@ def run(*args):
 sleep = time.sleep
 
 
-def transcript_facts(lines):
-    """What one transcript says about the model. Pure, over its lines:
-    `model`, the last assistant record's (by timestamp; a `<synthetic>` one is
-    the harness's and a sidechain is a subagent's), and how many `/model` and
-    `/effort` command records it holds."""
-    out = {"model": None, "at": None, "model_cmds": 0, "effort_cmds": 0}
-    for line in lines:
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(r, dict) or r.get("isSidechain"):
-            continue
-        msg = r.get("message") or {}
-        if r.get("type") == "assistant":
-            model, ts = msg.get("model"), r.get("timestamp")
-            if model and model != "<synthetic>" and isinstance(ts, str) \
-                    and (out["at"] is None or ts > out["at"]):
-                out["model"], out["at"] = model, ts
-        elif r.get("type") == "user" and isinstance(msg.get("content"), str):
-            out["model_cmds"] += MODEL_CMD in msg["content"]
-            out["effort_cmds"] += EFFORT_CMD in msg["content"]
-    return out
-
-
 def read_facts(sid):
-    """(facts, None), or (None, why) when no transcript was read."""
-    path, why = heartbeat.transcript_path(sid)
-    if path is None:
-        return None, why
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return transcript_facts(fh), None
-    except OSError as e:
-        return None, f"{path}: {e}"
+    """(reading, None) -- `transcript_reading`'s dict -- or (None, why)."""
+    reading, _where, why = heartbeat.read_transcript(sid)
+    return reading, why
+
+
+def runs(reading, name):
+    """What each run of the slash command `name` printed, None while unprinted."""
+    return [said for cmd, said in reading["commands"] if cmd == name]
 
 
 def address(sessions, role, own_pane, facts, frm):
     """[(sid, row, why)], `why` None for a pane to switch. Pure: `facts` is
-    {sid: (facts, why)} as `read_facts` returned them. Idleness and the input
-    box are read later, pane by pane, since they move while this runs."""
+    {sid: (reading, why)} as `read_facts` returned them. Idleness and the
+    input box are read later, pane by pane, since they move while this runs."""
     out = []
     for sid, row in sorted(sessions.items(), key=lambda kv: kv[1]["pane"]):
         word = names.role_word(row["name"])
@@ -173,22 +156,30 @@ def address(sessions, role, own_pane, facts, frm):
     return out
 
 
-def ready(row):
-    """None when the pane can take a prompt now, else why not."""
+def ready(sid):
+    """(row, None) when the pane can take a prompt now, read from a fresh
+    listing, else (row or None, why not)."""
+    sessions, why = names.herdr_sessions()
+    if sessions is None:
+        return None, f"listing unread: {why}"
+    row = sessions.get(sid)
+    if row is None:
+        return None, "gone: no longer listed"
     if not assign.idle_verdict(row)[0]:
-        return f"not idle: status {row['status']}"
+        return row, f"not idle: status {row['status']}"
     r = run("herdr", "pane", "read", row["pane"], "--source", "detection")
     if r.returncode != 0:
-        return f"input box unread: herdr pane read exited {r.returncode}"
+        return row, f"input box unread: herdr pane read exited {r.returncode}"
     text, why = assign.input_line(r.stdout)
     if text is None:
-        return f"input box: {why}"
-    return f"input box holds {text[:60]!r}" if text else None
+        return row, f"input box: {why}"
+    return row, (f"input box holds {text[:60]!r}" if text else None)
 
 
-def send(pane, sid, command, counter, before):
-    """Prompt `command`, answer the model dialog if it shows, and wait for the
-    transcript's `counter` to pass `before`. (ok, what happened)."""
+def send(pane, sid, name, value, before):
+    """Prompt `/<name> <value>`, answer the model dialog if it shows, and wait
+    for run number `before` + 1 of it to print. (ok, what happened)."""
+    command = f"/{name} {value}"
     r = run("herdr", "agent", "prompt", pane, command)
     if r.returncode != 0:
         return False, (f"`herdr agent prompt` exited {r.returncode}: "
@@ -196,59 +187,21 @@ def send(pane, sid, command, counter, before):
     answered = False
     for _ in range(POLLS):
         f, _why = read_facts(sid)
-        if f is not None and f[counter] > before:
-            return True, f"{command} recorded" + (", dialog answered" if answered else "")
+        new = runs(f, name)[before:] if f is not None else []
+        if new and new[0] is not None:
+            if new[0].startswith(CONFIRM[name]):
+                return True, f"{command}: {new[0][:60]}" + (" (dialog answered)" if answered else "")
+            return False, f"{command} printed {new[0][:120]!r}"
         if not answered:
             screen = run("herdr", "pane", "read", pane, "--source", "visible")
             if DIALOG in screen.stdout:
                 run("herdr", "pane", "send-keys", pane, "enter")
                 answered = True
         sleep(POLL_SLEEP)
-    return False, (f"no {command.split()[0]} record in the transcript after "
-                   f"{POLLS * POLL_SLEEP:g}s" + (" (dialog answered)" if answered else ""))
-
-
-def read_default(path):
-    """({key: value, or ABSENT}, None) for the two keys, or (None, why)."""
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        return None, f"{path}: {e.__class__.__name__}: {e}"
-    if not isinstance(data, dict):
-        return None, f"{path}: not a JSON object"
-    return {k: data.get(k, ABSENT) for k in DEFAULT_KEYS}, None
-
-
-def shown(default):
-    return " ".join(f"{k}={v!r}" for k, v in default.items()) if default else "unread"
-
-
-def restore_default(path, saved):
-    """(ok, what happened): the two keys back to `saved` in the file as it
-    stands now, every other key left alone, then read back. The file is
-    rewritten in the 2-space layout the harness writes, replaced whole so a
-    reader never sees half of it."""
-    path = Path(path).resolve()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        now = {k: data.get(k, ABSENT) for k in DEFAULT_KEYS}
-        if now == saved:
-            return True, f"unchanged: {shown(saved)}"
-        for k, v in saved.items():
-            if v == ABSENT:
-                data.pop(k, None)
-            else:
-                data[k] = v
-        tmp = path.with_name(path.name + ".campaign-model.tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-                       encoding="utf-8")
-        os.replace(tmp, path)
-    except (OSError, ValueError, AttributeError) as e:
-        return False, f"{path}: {e.__class__.__name__}: {e}"
-    back, why = read_default(path)
-    if back != saved:
-        return False, f"read back {shown(back)}, not {shown(saved)}" + (f" ({why})" if why else "")
-    return True, f"{shown(now)} -> {shown(saved)}"
+    screen = run("herdr", "pane", "read", pane, "--source", "visible")
+    up = "; the dialog is still up" if DIALOG in screen.stdout else ""
+    return False, (f"no {CONFIRM[name]!r} for {command} after "
+                   f"{POLLS * POLL_SLEEP:g}s{up}; it may still land")
 
 
 def switch(row, sid, to, effort):
@@ -256,11 +209,61 @@ def switch(row, sid, to, effort):
     f, why = read_facts(sid)
     if f is None:
         return False, f"transcript unread, so nothing could confirm a switch: {why}"
-    ok, said = send(row["pane"], sid, f"/model {to}", "model_cmds", f["model_cmds"])
+    ok, said = send(row["pane"], sid, "model", to, len(runs(f, "model")))
     if not ok or not effort:
         return ok, said
-    ok, said2 = send(row["pane"], sid, f"/effort {effort}", "effort_cmds", f["effort_cmds"])
+    ok, said2 = send(row["pane"], sid, "effort", effort, len(runs(f, "effort")))
     return ok, f"{said}; {said2}"
+
+
+def read_default(path, keys):
+    """({key: value, or ABSENT}, None), or (None, why)."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"{path}: {e.__class__.__name__}: {e}"
+    if not isinstance(data, dict):
+        return None, f"{path}: not a JSON object"
+    return {k: data.get(k, ABSENT) for k in keys}, None
+
+
+def shown(default):
+    return " ".join(f"{k}={v!r}" for k, v in default.items()) if default else "unread"
+
+
+def restore_default(path, saved, sent):
+    """(ok, what happened). Each key in `sent` -- the value this run wrote
+    there -- goes back to `saved` when it holds exactly that value; one holding
+    anything else is somebody else's and is left, and fails. Written into the
+    file as it stands now, every other key left alone, in the 2-space layout
+    the harness writes, replaced whole, then read back."""
+    path = Path(path).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        now = {k: data.get(k, ABSENT) for k in sent}
+        back = {k: saved[k] for k in sent if now[k] == sent[k]}
+        left = {k: now[k] for k in sent if now[k] not in (saved[k], sent[k])}
+        for k, v in back.items():
+            if v == ABSENT:
+                data.pop(k, None)
+            else:
+                data[k] = v
+        if back:
+            tmp = path.with_name(path.name + ".campaign-model.tmp")
+            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                           encoding="utf-8")
+            os.replace(tmp, path)
+    except (OSError, ValueError, AttributeError) as e:
+        return False, f"{path}: {e.__class__.__name__}: {e}"
+    reread, why = read_default(path, list(sent))
+    want = {k: (saved[k] if k in back else now[k]) for k in sent}
+    if reread != want:
+        return False, f"read back {shown(reread)}, not {shown(want)}" + (f" ({why})" if why else "")
+    said = f"{shown(now)} -> {shown(reread)}"
+    if left:
+        return False, (f"{said}; left {shown(left)}, which this run did not "
+                       f"write -- changed by somebody else meanwhile?")
+    return True, said
 
 
 def main(argv=None):
@@ -269,7 +272,7 @@ def main(argv=None):
     ap.add_argument("--to", required=True, help="the model word /model takes")
     ap.add_argument("--effort", help="the level /effort takes, sent after /model")
     ap.add_argument("--from", dest="frm",
-                    help="only sessions whose last assistant model contains this")
+                    help="only sessions whose latest assistant model contains this")
     ap.add_argument("--dry-run", action="store_true",
                     help="list whom it would address, and prompt nothing")
     args = ap.parse_args(argv)
@@ -295,7 +298,9 @@ def main(argv=None):
     for sid, row, why in rows:
         if why is not None:
             print(f"  skip     {row['pane']:9} {row['name']}: {why}")
-    saved, why = read_default(SETTINGS)
+
+    sent = {"model": args.to, **({"effortLevel": args.effort} if args.effort else {})}
+    saved, why = read_default(SETTINGS, list(sent))
     if saved is None:
         print(f"refusing: the default could not be read, so it could not be put "
               f"back: {why}", file=sys.stderr)
@@ -304,29 +309,39 @@ def main(argv=None):
           + (f" and /effort {args.effort}" if args.effort else "")
           + f"; default before: {shown(saved)}, put back after the last pane")
 
-    switched = failed = 0
+    switched, failed, skipped, unsettled = 0, 0, 0, []
     try:
         for sid, row in todo:
             f = facts[sid][0]
             tag = f"{row['pane']:9} {row['name']} ({f['model'] if f else 'model unknown'})"
-            not_ready = ready(row)
+            fresh, not_ready = ready(sid)
             if not_ready:
+                skipped += 1
                 print(f"  skip     {tag}: {not_ready}")
                 continue
             if args.dry_run:
                 print(f"  address  {tag}")
                 continue
-            ok, said = switch(row, sid, args.to, args.effort)
+            ok, said = switch(fresh, sid, args.to, args.effort)
             switched, failed = switched + ok, failed + (not ok)
+            if not ok and "may still land" in said:
+                unsettled.append(row["pane"])
             print(f"  {'switched' if ok else 'FAILED  '} {tag}: {said}")
     finally:
         restored = True
         if not args.dry_run:
-            restored, said = restore_default(SETTINGS, saved)
+            restored, said = restore_default(SETTINGS, saved, sent)
             print(f"{'default' if restored else 'FAILED to put back the default'}: {said}")
-    done = "dry run: nothing sent" if args.dry_run else f"{switched} switched, {failed} failed"
+            if unsettled:
+                print(f"warning: a switch not confirmed in {', '.join(unsettled)} may "
+                      f"still land and rewrite the default after this; read "
+                      f"{SETTINGS} once those panes settle")
+    done = ("dry run: nothing sent" if args.dry_run
+            else f"{switched} switched, {failed} failed, {skipped} skipped")
     print(f"{done}; {len(todo)} of {len(rows)} listed matched the address")
-    return 1 if failed or not restored else 0
+    if args.dry_run:
+        return 0
+    return 1 if failed or skipped or not restored else 0
 
 
 if __name__ == "__main__":

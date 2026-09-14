@@ -376,6 +376,37 @@ pred mergedOnCurrentReview {
              and (all a: agentsOf[Now.issue] | a in Confirmed)))
 }
 
+/* WHO MERGES: the planner of the campaign whose claim the pull request's
+   head is, or a worker of that campaign on a machine where a checkout is on
+   that claim (rule-check#442). The
+   three merge conditions still name no role; this is the other question,
+   WHICH session, and scripts/check-campaign-claim.py reads it off the branch
+   a `gh pr merge` names. `Now.issue in Claimed` is the head being a claim at
+   all, so a head that is no claim is no session's to merge -- the owner's own
+   pull request included, which the owner merges. The planner half is keyed
+   on the campaign and not on who cut the claim, because a planner merges the
+   pull request of a claim a worker took itself, and it is membership and not
+   `campaignOf[Now.issue] = Who.session.worksOn`, which holds when both sides
+   are empty: a planner of no campaign (M7). Before it, the guard took
+   any claim it found as the licence: 29 of 56 planner merges in the guard
+   logs were licensed by a claim that was not the pull request's own.
+
+   THE WORKER HALF READS THE CHECKOUT, NOT `claimedIssues`, because that is
+   what the guard can read: no fact on this machine ties a session to a branch
+   (AGENTS.md § Completion, liveness, and local-only work), so `holder` names
+   a workspace, and any worker of the campaign on that machine stands on it.
+   That is clause 2's width, named
+   rather than narrowed; M5c is the witness. `claimedIssues` would state a tie
+   the guard cannot check, and refused a delegate's merge on the claim its
+   planner cut. */
+pred mergedByPlannerOrHolder {
+  always (Now.event = MergePullRequest implies
+            (Now.issue in Claimed
+             and ((Who.session.role = Planner and Now.issue in Who.session.worksOn.memberIssues)
+                  or (Who.session.role = Worker and Now.issue in Who.session.worksOn.memberIssues
+                      and (some a: holder[Now.issue] | a.host = Who.session.machine)))))
+}
+
 /* ---------------- discipline: an escalation answered in its turn ---------------- */
 
 /* Live agents waiting on a BLOCKED whose sub-issue has a planner running. */
@@ -1504,6 +1535,137 @@ pred A5_ReviewRuleBlocksTheCollision {
   mergedOnCurrentReview and A4_AgentMergesItsOwnPullRequest
 }
 
+/* M3. The planner lands a pull request of its own campaign's claim, one it
+   did not cut: the landing planner.md step 9 describes. Dropping the Planner
+   disjunct turns it UNSAT. */
+pred M3_PlannerLandsItsCampaignsClaim {
+  mergedByPlannerOrHolder
+  some c: Campaign, s: Session, i: Issue {
+    s.role = Planner and always s.worksOn = c
+    always i not in s.claimedIssues
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and i in c.memberIssues)
+  }
+}
+
+/* M3b. The worker holding the claim lands it: worker.md step 8's shape
+   where no planner runs. Dropping the Worker disjunct turns it UNSAT. */
+pred M3b_WorkerLandsItsOwnClaim {
+  mergedByPlannerOrHolder
+  some s: Session | s.role = Worker
+    and eventually (Now.event = MergePullRequest and Who.session = s)
+}
+
+/* M4. A planner of ANOTHER campaign merges: the false allow of 2026-09-14,
+   where any claim on the machine carried the merge. SAT without the rule.
+   Membership is read AT the merge, since `memberIssues` moves: read at the
+   first state, an issue moved into the planner's campaign satisfied it. */
+pred M4_PlannerOfAnotherCampaignMerges {
+  some disj c1, c2: Campaign, s: Session, i: Issue {
+    s.role = Planner and always s.worksOn = c2
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and i in c1.memberIssues)
+  }
+}
+
+/* M4b. The rule refuses it. Dropping `campaignOf[Now.issue] = Who.session.worksOn`
+   turns it SAT. */
+pred M4b_TheRuleRefusesAnotherCampaignsPlanner {
+  mergedByPlannerOrHolder and M4_PlannerOfAnotherCampaignMerges
+}
+
+/* M5. A worker merges a head no checkout on its machine is on, while one is
+   on ANOTHER claim: the unrelated claim the guard used to take as the
+   licence. SAT without the rule. */
+pred M5_WorkerMergesByAnotherClaim {
+  some s: Session, disj i, j: Issue {
+    s.role = Worker
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and (no a: holder[i] | a.host = s.machine)
+                and (some a: holder[j] | a.host = s.machine))
+  }
+}
+
+/* M5b. The rule refuses it. Dropping the `holder` conjunct turns it SAT. */
+pred M5b_TheRuleRefusesAnotherClaim {
+  mergedByPlannerOrHolder and M5_WorkerMergesByAnotherClaim
+}
+
+/* M7. A planner of NO campaign merges a claim. SAT without the rule. */
+pred M7_PlannerOfNoCampaignMerges {
+  some s: Session {
+    s.role = Planner and always no s.worksOn
+    eventually (Now.event = MergePullRequest and Who.session = s
+                and Now.issue in Claimed)
+  }
+}
+
+/* M7b. The rule refuses it. Writing the planner half as
+   `campaignOf[Now.issue] = Who.session.worksOn` turns it SAT: both sides are
+   empty for an issue of no campaign and a planner of none. */
+pred M7b_TheRuleRefusesAPlannerOfNoCampaign {
+  mergedByPlannerOrHolder and M7_PlannerOfNoCampaignMerges
+}
+
+/* M5c. THE WIDTH, stated: a worker lands a claim it did not cut, because a
+   checkout on its machine is on it -- a delegate on the claim its planner
+   cut, or a second worker standing in the first one's worktree. SAT under the
+   rule; `claimedIssues` in the worker half turns it UNSAT. */
+pred M5c_WorkerLandsAClaimItDidNotCut {
+  mergedByPlannerOrHolder
+  some s: Session | s.role = Worker
+    and eventually (Now.event = MergePullRequest and Who.session = s
+                    and Now.issue not in s.claimedIssues)
+}
+
+/* M5d. THE HOST, pinned (pr#446's second REVIEW, finding 5): a worker of the
+   head's campaign merges a claim whose only checkouts are on another machine.
+   SAT without the rule. Two machines: at one, every checkout is on the
+   merger's, and `some holder[Now.issue]` passed every command. */
+pred M5d_WorkerMergesAClaimCheckedOutElsewhere {
+  some s: Session, i: Issue {
+    s.role = Worker
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and i in s.worksOn.memberIssues and some holder[i]
+                and (all a: holder[i] | a.host != s.machine))
+  }
+}
+
+/* M5e. The rule refuses it. `some holder[Now.issue]` in place of the host
+   equality turns it SAT. */
+pred M5e_TheRuleRefusesACheckoutElsewhere {
+  mergedByPlannerOrHolder and M5d_WorkerMergesAClaimCheckedOutElsewhere
+}
+
+/* M8. A worker of ANOTHER campaign merges a claim a checkout on its machine
+   is on. SAT without the rule. */
+pred M8_WorkerOfAnotherCampaignMerges {
+  some disj c1, c2: Campaign, s: Session, i: Issue {
+    s.role = Worker and always s.worksOn = c2
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and i in c1.memberIssues
+                and (some a: holder[i] | a.host = s.machine))
+  }
+}
+
+/* M8b. The rule refuses it. Dropping the worker half's membership turns it
+   SAT. */
+pred M8b_TheRuleRefusesAnotherCampaignsWorker {
+  mergedByPlannerOrHolder and M8_WorkerOfAnotherCampaignMerges
+}
+
+/* M6. A pull request whose head is no claim is merged. SAT without the rule. */
+pred M6_MergeOfAHeadThatIsNoClaim {
+  some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i
+                              and i not in Claimed)
+}
+
+/* M6b. The rule refuses it, to the planner of the campaign too. Dropping
+   `Now.issue in Claimed` turns it SAT. */
+pred M6b_TheRuleRefusesAHeadThatIsNoClaim {
+  mergedByPlannerOrHolder and M6_MergeOfAHeadThatIsNoClaim
+}
+
 /* =================== deleting a tree under an agent =================== */
 
 /* A10. session/checks.als's R3 reached from here: a directory is deleted
@@ -1847,6 +2009,21 @@ run A18b_AgentLessUnreviewedMergeIsBlocked   for 3 Issue, 1 PullRequest, 1 Campa
 run M2_MergeInTheStateAfterAPush              for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run M2b_TheRuleExcludesTheStalePush           for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run M3_PlannerLandsItsCampaignsClaim              for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M3b_WorkerLandsItsOwnClaim                    for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M4_PlannerOfAnotherCampaignMerges             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M4b_TheRuleRefusesAnotherCampaignsPlanner     for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M5_WorkerMergesByAnotherClaim                 for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M5b_TheRuleRefusesAnotherClaim                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M7_PlannerOfNoCampaignMerges                 for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M7b_TheRuleRefusesAPlannerOfNoCampaign      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M5c_WorkerLandsAClaimItDidNotCut             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M5d_WorkerMergesAClaimCheckedOutElsewhere    for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run M5e_TheRuleRefusesACheckoutElsewhere         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run M8_WorkerOfAnotherCampaignMerges             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run M8b_TheRuleRefusesAnotherCampaignsWorker     for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
+run M6_MergeOfAHeadThatIsNoClaim                  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M6b_TheRuleRefusesAHeadThatIsNoClaim          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
 /* ---------------- properties ---------------- */
 
@@ -1994,8 +2171,9 @@ assert SuccessorNamedForAnotherRefused {
 }
 
 /* ---------------- reachability floor ----------------
-   Each is the witness of an event a check above names, except Cov_Acquire,
-   which shows its event fires at all. */
+   Each is the witness of an event a check above names. Cov_Acquire witnesses
+   an event only `run`s name (R4c, R12d, R12f) and no `assert` does, so
+   alloy-check does not require it; it shows the event fires at all. */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
 pred Cov_Work             { eventually Now.event = Work }

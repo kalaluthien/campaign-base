@@ -87,7 +87,9 @@ EXPLICIT and the mistake is LOUD.
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload
 cwd's common dir, or the base above a cwd inside a campaign directory) has a
-worktree on one. Clause 2 is the WEAKER gate -- every session at one root
+worktree on one, or the checkout the session stands in is on one of its
+campaign -- a delegate's member clone, which is no worktree of the base
+(rule-check#442). Clause 2 is the WEAKER gate -- every session at one root
 reads as holding every claim under it, design B's named cost -- and for a
 FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
@@ -96,6 +98,21 @@ write naming a MEMBER repository needs a claim checked out in a checkout of
 that repository, never the base's (#389). `gh issue create` is exempt, the
 number being minted there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
+
+WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
+head branch, and the claim is read off that name: a planner merges any claim
+of its own campaign, a worker only the one a checkout it stands in or holds is
+on -- `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als. A
+number, a URL, no argument, a merge through `gh api` (the REST endpoint, a
+query string on it, a GraphQL merge mutation, or a GraphQL query this cannot
+read) and a merge spelled where the command word is not `gh` (`xargs`, a
+variable) name no claim this can read without the network, and are refused
+saying how to write it; a head that is no claim, and a merge beside another gh
+write, are refused too. THE PLANNER HALF READS THE NAME AND NOT THE REF: a
+claim-shaped branch of a campaign this machine holds stands in for the
+model's `Now.issue in Claimed`, so `demo/5-q` with no ref anywhere is admitted
+and `gh` itself then finds no pull request to merge. Reading the ref would
+need the network for a member repository the planner has no checkout of.
 
 WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
 one campaign write whose CONTENT this can read, so it is read: the first line
@@ -140,6 +157,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # What makes a directory this repository's root: the script that cuts a claim.
 HERE = Path(__file__).resolve().parent
@@ -413,6 +431,24 @@ def split_punct(token):
     return out
 HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
+# A `$` or backtick the shell leaves as it is -- inside single quotes, or
+# escaped -- is masked by `openers` before shlex strips the quotes, and put
+# back once each token has recorded whether it still holds one the shell
+# expands (pr#446's fourth DECISION, row 1). Two private-use characters,
+# which no command here spells.
+MASK = {"$": "\ue000", "`": "\ue001"}
+UNMASK = str.maketrans({v: k for k, v in MASK.items()})
+# The operators whose next word is a file the shell writes, not an argument.
+WRITES_TO = {">", ">>", ">|", "&>", "&>>", ">&"}
+
+
+class Shell(NamedTuple):
+    """What the shell does to a segment beyond its words, for the GraphQL
+    reading: whether a pipe feeds it, whether it expands something in each
+    token, and whether a heredoc on it has an unquoted delimiter."""
+    piped: bool
+    expands: tuple
+    open_heredoc: bool
 
 
 def load(src, alias):
@@ -1179,7 +1215,9 @@ def held(repo_root, issue=None, repo=None):
 
 
 def openers(line, quote):
-    """([(delimiter, is `<<-`)], the quote state at the end of the line).
+    """([(delimiter, is `<<-`, is quoted)], the quote state at the end of the
+    line, the line with every `$` and backtick the shell leaves as it is
+    masked by MASK).
 
     A `<<` IS ONLY A HEREDOC WHERE IT IS SYNTAX. Searching the raw line for one
     read `git commit -m 'about the <<EOF form'` as opening a heredoc, deleted
@@ -1243,14 +1281,17 @@ def openers(line, quote):
     <<EOF ...` from allowed into refused. Missing a comment that opens straight
     after `(` costs nothing this reads, since a comment there needs no `<<`
     after it on the same line to be a comment."""
-    found, i, n, stack = [], 0, len(line), []
+    found, i, n, stack, chars = [], 0, len(line), [], list(line)
     while i < n:
         c = line[i]
         if quote == "'":
             quote = None if c == "'" else quote
+            chars[i] = MASK.get(c, c)
             i += 1
             continue
         if c == "\\":
+            if i + 1 < n:
+                chars[i + 1] = MASK.get(line[i + 1], line[i + 1])
             i += 2
             continue
         if line.startswith("$(", i):
@@ -1272,20 +1313,28 @@ def openers(line, quote):
             quote = c
             i += 1
             continue
+        # A HERE-STRING IS NOT AN OPENER (pr#446's third REPORT, row 3): read
+        # as one, `<<<x` took its word for a delimiter and every later line
+        # for a body, so `grep a <<< b` hid the `gh` write on the next line.
+        if line.startswith("<<<", i):
+            i += 3
+            continue
         if line.startswith("<<", i):
             m = HEREDOC_OPEN.match(line, i)
             if m:
                 found.append((m.group(2) or m.group(3),
-                              m.group(0).startswith("<<-")))
+                              m.group(0).startswith("<<-"),
+                              m.group(1) is not None))
                 i = m.end()
                 continue
         i += 1
-    return found, quote
+    return found, quote, "".join(chars)
 
 
 def strip_heredocs(command):
-    """(the command with every heredoc BODY removed, the bodies in the order
-    their openers appear).
+    """(the command with every heredoc BODY removed and `openers`' MASK
+    applied, the bodies in the order their openers appear, the indices of the
+    bodies whose delimiter is unquoted).
 
     A HEREDOC BODY IS DATA, NOT A COMMAND (kalaluthien/campaign-base#193). It
     was part of the string handed to shlex, so an ordinary commit message with
@@ -1299,14 +1348,15 @@ def strip_heredocs(command):
     for `<<-`. An unterminated body runs to the end, which is what a shell
     would fail on and what this must not traceback on."""
     lines = command.split("\n")
-    out, bodies, quote = [], [], None
+    out, bodies, quote, unquoted = [], [], None, set()
     i = 0
     while i < len(lines):
-        line = lines[i]
-        out.append(line)
-        opens, quote = openers(line, quote)
+        opens, quote, masked = openers(lines[i], quote)
+        out.append(masked)
         i += 1
-        for delim, dash in opens:
+        for delim, dash, quoted in opens:
+            if not quoted:
+                unquoted.add(len(bodies))
             body = []
             while i < len(lines):
                 cur = lines[i]
@@ -1315,7 +1365,7 @@ def strip_heredocs(command):
                     break
                 body.append(cur)
             bodies.append("\n".join(body))
-    return "\n".join(out), bodies
+    return "\n".join(out), bodies, unquoted
 
 
 def segments(command):
@@ -1326,12 +1376,12 @@ def segments(command):
     but the comment check wants, and it is a projection of that one rather than
     a second walk."""
     pairs, why = paired_segments(command)
-    return (None if pairs is None else [t for t, _, _ in pairs]), why
+    return (None if pairs is None else [t for t, *_ in pairs]), why
 
 
 def paired_segments(command):
-    """[(tokens, the heredoc bodies it opened, whether it is outer)], or
-    (None, why).
+    """[(tokens, the heredoc bodies it opened, whether it is outer, its
+    Shell)], or (None, why).
 
     `punctuation_chars` makes `;`, `|`, `&` their own tokens.
 
@@ -1344,7 +1394,7 @@ def paired_segments(command):
     heredoc comment silently while refusing the `-b` spelling of the same
     thing. Pairing on the LINE instead would read the commit message in
     `bash x.sh && git commit -F - <<M` as a comment body."""
-    command, heredocs = strip_heredocs(command)
+    command, heredocs, unquoted = strip_heredocs(command)
     # A LINE CONTINUATION IS NOT A SEPARATOR, and it has to go first: with the
     # newline made a token below, `git commit \\<newline> -m x` would split
     # into two segments and the flags would leave with the second.
@@ -1411,16 +1461,33 @@ def paired_segments(command):
     # the separator before as well gave those two spellings OPPOSITE verdicts,
     # since `{` is a separator and reset it, and the suite pinned both answers
     # at once.
-    out, cur, depth = [], [], 0
+    #
+    # WHETHER A PIPE FEEDS THE SEGMENT is the separator BEFORE it, kept for
+    # the GraphQL reading alone (pr#446's third DECISION): zsh concatenates a
+    # pipe into the command it feeds with that command's own heredoc --
+    # `echo PIPE | cat <<Q` prints both, probed, where bash prints the heredoc
+    # alone -- and a group or a nested shell fed by the pipe does not. A pipe
+    # outlives the separators after it with nothing between, so `a |<newline>
+    # b` is piped, and `a | { b; }` is read as piped too, the safe side.
+    out, cur, depth, before = [], [], 0, None
     braces, closed = [], None
     for t in flat + [";"]:
         if t not in SEPARATORS:
             cur.append(t)
             continue
         if cur:
-            out.append([cur, depth == 0 and t not in PIPES
-                        and t != BACKGROUND])
+            # A `$` or backtick left after MASK is one the shell expands, and
+            # an unquoted backtick closing the segment substitutes into its
+            # last word.
+            expands = [("$" in x or "`" in x) for x in cur]
+            expands[-1] = expands[-1] or t == "`"
+            out.append([[x.translate(UNMASK) for x in cur], depth == 0
+                        and t not in PIPES and t != BACKGROUND,
+                        before in PIPES, tuple(expands)])
             cur = []
+            before = t
+        elif before not in PIPES:
+            before = t
         if closed is not None:
             if t in PIPES or t == BACKGROUND:
                 for row in out[closed:]:
@@ -1449,10 +1516,15 @@ def paired_segments(command):
     # one.
     taken = 0
     paired = []
-    for seg, outer in list(out):
-        mine = heredocs[taken:taken + seg.count("<<")]
-        taken += seg.count("<<")
-        paired.append((seg, mine, outer))
+    for seg, outer, piped, expands in list(out):
+        # A here-string is `<<` then `<` to shlex and opens no body.
+        opens = sum(t == "<<" and seg[j + 1:j + 2] != ["<"]
+                    for j, t in enumerate(seg))
+        mine = heredocs[taken:taken + opens]
+        shell = Shell(piped, expands,
+                      any(k in unquoted for k in range(taken, taken + opens)))
+        taken += opens
+        paired.append((seg, mine, outer, shell))
         word, rest = head(seg)
         if word is None:
             continue
@@ -1485,7 +1557,7 @@ def paired_segments(command):
             # Read the other way, `eval 'cd /tmp'; git commit --no-verify` was
             # refused over a directory holding no hook, and the reverse
             # spelling allowed a bypass over the one that does.
-            paired += [(t, h, in_this_shell and o) for t, h, o in more]
+            paired += [(t, h, in_this_shell and o, p) for t, h, o, p in more]
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.
@@ -1774,7 +1846,7 @@ def shell_findings(pairs, cwd=None):
     the call in a repository that has none, and unreadable is an allow.
     """
     out, notes, where = [], [], cwd
-    for seg, _heredocs, outer in pairs:
+    for seg, _heredocs, outer, _shell in pairs:
         word, rest = head(seg)
         # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
         # subshell, a pipeline stage, a `bash -c` string or a heredoc script
@@ -2052,6 +2124,177 @@ def member_pr(tokens):
         NOTES.append(f"`gh pr` on {named} read as a member repository's: "
                      f"campaign-repos.py would not load ({REPOS_UNREADABLE})")
     return named
+
+
+# THE MERGE NAMES ITS BRANCH (rule-check#442). `gh pr merge` takes a number,
+# a URL or a head branch, and only the branch is a claim this can read without
+# the network; its valued flags are its own, `-m` among its switches, so
+# `VALUED` would swallow the branch after a `-m`.
+MERGE_VALUED = {"-R", "--repo", "--match-head-commit", "-A", "--author-email",
+                "-b", "--body", "-F", "--body-file", "-t", "--subject"}
+MERGE_FORM = "gh pr merge <slug>/<issue>-<topic> -R <owner/repo>"
+# THE OTHER ROUTES TO THE SAME MERGE, each naming a number and no branch:
+# the REST endpoint, a query string on it included, and the three GraphQL
+# mutations that merge, arm a merge or queue one (pr#446's REVIEWs, finding 1
+# of each).
+API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?(?:[?#].*)?$")
+GRAPHQL_MERGE = re.compile(
+    r"\b(?:mergePullRequest|enablePullRequestAutoMerge|enqueuePullRequest)\b")
+# The GraphQL endpoint by its last path segment, so `graphql`, `/graphql` and
+# `https://api.github.com/graphql` are one endpoint (pr#446's fourth DECISION,
+# row 2), with API_MERGE's optional query string.
+GRAPHQL_ENDPOINT = re.compile(r"(?:^|/)graphql/?(?:[?#].*)?$")
+
+
+def merge_target(tokens):
+    """The pull request a `gh pr merge` segment names -- its one positional,
+    a valued flag's value skipped -- or None when it names none."""
+    words, i = [], 1
+    while i < len(tokens):
+        t = tokens[i]
+        i += 2 if t in MERGE_VALUED else 1
+        if not t.startswith("-"):
+            words.append(t)
+    return words[2] if len(words) > 2 else None
+
+
+def graphql_text(tokens, heredocs, shell):
+    """The text a `gh api graphql` segment sends, or None where this does not
+    read it.
+
+    AN ALLOW-LIST OF LITERAL TEXT (pr#446's third and fourth DECISIONs),
+    after three rounds of a deny-list each closed the spellings raised and
+    found more. The text is read from two places only: the segment's own
+    words, when no value names a file; and those words plus the ONE heredoc or
+    here-string on the segment, when `@-` or `--input -` reads stdin, no other
+    `<` redirects it, no pipe feeds it and the heredoc's delimiter is quoted.
+    Either way the shell may expand nothing in a word gh receives -- no `$`
+    or backtick outside single quotes; a redirect's target is not such a
+    word. Everything else is None, so a spelling nobody listed is refused by
+    construction: `@path`, `/dev/stdin`, `/dev/fd/0`, a FIFO, `<(...)`,
+    `< file` beside a heredoc, a pipe, two heredocs, `"$(cat f)"`, `$Q`."""
+    tail = shell.expands[len(shell.expands) - len(tokens):]
+    if any(e and not (j and tokens[j - 1] in WRITES_TO)
+           for j, e in enumerate(tail)):
+        return None
+    named = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
+    named += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
+    named += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
+    if not named:
+        return "\n".join(tokens)
+    # A here-string is `<<` then `<` to shlex; that `<` is the only one allowed.
+    after = {j + 1 for j, t in enumerate(tokens) if t == "<<"}
+    strings = sum(tokens[j:j + 1] == ["<"] for j in after)
+    if (any(n != "-" for n in named) or shell.piped or shell.open_heredoc
+            or len(heredocs) + strings != 1):
+        return None
+    if any(t in ("<", "<&") and j not in after for j, t in enumerate(tokens)):
+        return None
+    return "\n".join([*tokens, *heredocs])
+
+
+def merge_kind(tokens, heredocs, shell):
+    """How a `gh` segment merges a pull request, or None: `cli` for `gh pr
+    merge`, `api` for the REST endpoint or a GraphQL merge mutation, and
+    `unread` for a GraphQL write whose query this could not read."""
+    words = gh_words(tokens)
+    if words[:2] == ["pr", "merge"]:
+        return "cli"
+    if words[:1] != ["api"] or not gh_write(tokens)[0]:
+        return None
+    if any(API_MERGE.search(t) for t in tokens[1:]):
+        return "api"
+    if any(GRAPHQL_ENDPOINT.search(w) for w in words[1:]):
+        text = graphql_text(tokens, list(heredocs), shell)
+        if text is None:
+            return "unread"
+        if GRAPHQL_MERGE.search(text):
+            return "api"
+    return None
+
+
+def hides_merge(tokens):
+    """Whether a segment whose command word is not `gh` still spells a merge
+    -- `xargs gh pr merge`, `$G pr merge 7`, a merge path or mutation passed
+    through -- which this cannot read for its branch."""
+    return (any(a == "pr" and b == "merge" for a, b in zip(tokens, tokens[1:]))
+            or any(API_MERGE.search(t) or GRAPHQL_MERGE.search(t)
+                   for t in tokens))
+
+
+def merge_call(merges, hidden, rest, what, how, how_role, fell_back, campaign,
+               row, cwd, root):
+    """The verdict on a command holding a merge: the planner of the head's
+    campaign, or a session with a checkout on the head's claim -- the worker
+    holding it, and the claim reading when the role could not be read.
+    `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als."""
+    say = [how, *fell_back]
+    if hidden:
+        return refuse([f"{what}: a merge this cannot read for its branch, in "
+                       f"`{hidden[0]}`.", f"Merge with `{MERGE_FORM}`, as a "
+                       f"`gh` call of its own (rule-check#442).", *say])
+    if rest:
+        return refuse([f"{what}: a merge shares its command with another gh "
+                       f"write.", "A merge is licensed by the branch it names "
+                       "and by nothing else in the command, so it goes in a "
+                       "command of its own (rule-check#442).", *say])
+    ok = []
+    for x, kind in merges:
+        if kind == "unread":
+            return refuse([f"{what}: a GraphQL write whose query could not be "
+                           f"read, so whether it merges could not be either.",
+                           f"Pass the query inline or in one heredoc, or "
+                           f"merge with `{MERGE_FORM}` (rule-check#442).",
+                           *say])
+        if kind == "api":
+            return refuse([f"{what}: a merge through `gh api` names a number "
+                           f"and no branch, so no claim can be read off it.",
+                           f"Merge with `{MERGE_FORM}` (rule-check#442).", *say])
+        branch = merge_target(x)
+        m = claim_match(branch, root) if branch else None
+        if m is None:
+            return refuse([f"{what}: the merge names "
+                           + (f"`{branch}`, which is not a claim branch of a "
+                              f"campaign on this machine" if branch
+                              else "no pull request, so the current branch's")
+                           + ".",
+                           f"A merge names the pull request by its head: "
+                           f"`{MERGE_FORM}`. A number or a URL names no claim "
+                           f"this can read without the network, and a head "
+                           f"that is no claim is no session's to merge -- the "
+                           f"owner merges their own (rule-check#442).", *say])
+        token, repo = m[0], member_pr(x)
+        # THE NAME, NOT THE REF, for a planner: see the docstring's WHO MERGES.
+        if row.get("merge") == "campaign":
+            if token != campaign:
+                return refuse([f"{what}: `{branch}` is a claim of campaign "
+                               f"`{token}`, and a planner merges only its own "
+                               f"campaign's claims: this session is of "
+                               f"`{campaign}`.", how_role, how])
+            ok.append(f"`{branch}` is a claim of campaign `{token}`, and "
+                      f"{how_role}: a planner merges its own campaign's claims")
+            continue
+        if row.get("campaign_plane") == "own" and token != campaign:
+            return refuse([f"{what}: `{branch}` is a claim of campaign "
+                           f"`{token}`, and this session is of campaign "
+                           f"`{campaign}`.", how_role, how])
+        own = own_claim(cwd)
+        if own is not None and own[1] == branch and (
+                repo is None or same_repo(own[0], repo)):
+            holders, d = [own], []
+        else:
+            found, d = held(root, repo=repo) if repo else held(root)
+            holders = [h for h in found if h[1] == branch]
+        if not holders:
+            return refuse([f"{what}: no checkout this session stands in or "
+                           f"holds is on `{branch}`"
+                           + (f" in a checkout of {repo}" if repo else "")
+                           + ", so it does not hold the claim it merges.",
+                           *say, *d, TAKE])
+        p, b, s = holders[0]
+        ok.append(f"{p} is on {b}, a claim ({s})"
+                  + (f", in a checkout of {repo}" if repo else ""))
+    return allow([f"{what}: {how}; " + "; ".join(ok) + ".", *fell_back])
 
 
 def same_repo(top, repo):
@@ -2546,6 +2789,25 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
                 f"session is of campaign `{campaign}`.",
                 *[f"{h[0]} is on {h[1]}" for h in holders], TAKE])
         holders = kept
+    # THE CHECKOUT THE SESSION STANDS IN, which `held` never sweeps when it is
+    # a member clone -- a different repository from the base (rule-check#442
+    # item 3, html-doc#381 issuecomment-5660681276). The gh half has read it
+    # since `own_claim` was written; without it here a delegate on its claim
+    # was refused a note in its own campaign directory, which AGENTS.md
+    # § Execution mode says any mode may write.
+    #
+    # THAT DIRECTORY AND NOTHING ELSE (pr#446's REVIEW, finding 2): a target
+    # that is scratch -- in no checkout -- inside the campaign directory
+    # holding the clone. Unbounded, the clone's claim licensed the base's own
+    # files and another campaign's directory, which clause 2 over the base's
+    # worktrees had refused.
+    own = own_claim(cwd)
+    camp = campaign_dir_of(Path(target).resolve(), root.resolve())
+    if (not holders and own is not None and scratch and camp is not None
+            and camp == campaign_dir_of(Path(own[0]).resolve(), root.resolve())
+            and (not own_only or campaign is None
+                 or claim_token(own[1]) == campaign)):
+        holders = [own]
     if holders:
         path, branch, source = holders[0]
         return allow(read + [f"Clause 2 (the weaker gate; the commit gate is "
@@ -2561,7 +2823,7 @@ CARVED = "its own campaign"
 
 def bash_call(command, cwd: Path, session_id=""):
     pairs, why = paired_segments(command)
-    segs = None if pairs is None else [t for t, _, _ in pairs]
+    segs = None if pairs is None else [t for t, *_ in pairs]
     if segs is None:
         # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
         # call this cannot split is not read as harmless" for a command with no
@@ -2643,7 +2905,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
     shape, unread, unjudged, warnings, stale, pins = [], [], [], [], [], []
-    for tokens, heredocs, _outer in pairs:
+    for tokens, heredocs, _outer, _shell in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue
@@ -2720,6 +2982,24 @@ def bash_call(command, cwd: Path, session_id=""):
     if role is not None and role == roles().NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
     row = row_of(role)
+    # A MERGE IS ITS OWN QUESTION (rule-check#442), asked before the plane
+    # licence and the claim reading, which both used to answer it: the
+    # planner's licence refused it as off the campaign plane and then the
+    # claim reading let any claim under the root carry it.
+    merges, hidden = [], []
+    for tokens, heredocs, _outer, shell in pairs:
+        word, rest = head(tokens)
+        if word == "gh":
+            kind = merge_kind(rest, heredocs, shell)
+            if kind:
+                merges.append((rest, kind))
+        elif hides_merge(tokens):
+            hidden.append(" ".join(tokens)[:60])
+    if merges or hidden:
+        merged = [x for x, _ in merges]
+        return merge_call(merges, hidden, [x for x in writes if x not in merged]
+                          + stray, what, how, how_role, fell_back, campaign,
+                          row, cwd, root)
     own_only = row.get("campaign_plane") == "own"
     if row.get("campaign_plane") == "any":
         # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
@@ -2730,8 +3010,8 @@ def bash_call(command, cwd: Path, session_id=""):
         #
         # THE CAMPAIGN PLANE ONLY. Every write in this command must be one, or
         # the licence does not apply and the claim reading decides as it would
-        # for anyone: a `gh pr merge` is not a planner's by role, whatever its
-        # name says.
+        # for anyone. A `gh pr merge` never reaches this: it is asked above,
+        # by the branch it names (rule-check#442).
         # READ AS A PAIR, and reduced to the subcommand only where the plane
         # is what is being asked. The table's `gh` is keyed on the subcommand
         # because the plane is a property of it; its `gh_except` is keyed on
@@ -2761,14 +3041,14 @@ def bash_call(command, cwd: Path, session_id=""):
         # removal.
         #
         # IT CARRIES `how` AND `read_on` OUT WITH IT, which the first cut of
-        # the return dropped: a refusal on `gh pr merge 5 && gh issue develop 9`
-        # named the develop and went silent about the merge and about how the
+        # the return dropped: a refusal on `gh pr edit 5 && gh issue develop 9`
+        # named the develop and went silent about the edit and about how the
         # root was resolved. #191 item 1 is the rule -- every exit says what it
         # read -- and an early return is exactly where it gets broken.
         if excepted:
             # `how_role` IS NOT REPEATED HERE. Every entry of `read_on` already
             # opens with it, and this header printed it a second time on a
-            # mixed write -- `gh pr merge 5 && gh issue develop 9` -- where
+            # mixed write -- `gh pr edit 5 && gh issue develop 9` -- where
             # both the header and the licence line fired
             # (kalaluthien/campaign-base#213's review). `read_on or [how_role]`
             # and not `read_on` alone: a bare `gh issue develop 9` leaves
@@ -2866,9 +3146,9 @@ def bash_call(command, cwd: Path, session_id=""):
         (covering if holders else uncovered).append((i, holders))
     # THE NARROWEST REFUSAL WINS, and that is a rule now rather than the order
     # these branches happen to be written in (kalaluthien/campaign-base#191
-    # item 1). A mixed command -- `gh issue close 9 && gh pr merge 5`, where
+    # item 1). A mixed command -- `gh issue close 9 && gh pr edit 5`, where
     # the first names an issue and the second names a pull request -- reaches
-    # both this branch, on #9, and the `unreadable` fallback, on the merge.
+    # both this branch, on #9, and the `unreadable` fallback, on the edit.
     # The one that names a NUMBER is the better diagnosis: it tells the reader
     # which claim to take, where the fallback can only say "some claim". So an
     # uncovered named issue is reported first, and the fallback decides only
@@ -2881,8 +3161,8 @@ def bash_call(command, cwd: Path, session_id=""):
                        *fell_back, *detail, TAKE])
     if unreadable and carved:
         # THE CARVE-OUT COVERS ITS OWN WRITE AND NOTHING BESIDE IT. Without
-        # this, `gh issue comment 1 && gh pr merge 12` was admitted: the
-        # comment satisfied the campaign issue, the merge fell to the
+        # this, `gh issue comment 1 && gh pr edit 12` was admitted: the
+        # comment satisfied the campaign issue, the edit fell to the
         # unnarrowed fallback, and any claim under the root carried it out.
         return refuse([f"{what}: an issue of this session's own campaign is "
                        f"covered by its name, and that covers no other write "

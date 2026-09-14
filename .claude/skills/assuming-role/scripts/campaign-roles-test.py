@@ -79,6 +79,17 @@ def main():
     check("an exception names a subcommand its row holds, or it excepts nothing",
           not any(dead.values()), dead)
 
+    # THE MERGE LICENCE (rule-check#442). The guard asks `row.get("merge")`
+    # for the one value that stands on the campaign and reads anything else
+    # as the held claim, so a misspelt `campaign` would silently narrow a
+    # planner to the claims it has checked out, which is none.
+    check("merge is one of MERGE_LICENCES in every row",
+          all(r.get("merge") in m.MERGE_LICENCES for r in m.ROLES.values()),
+          {role: r.get("merge") for role, r in m.ROLES.items()})
+    check("the guard asks for the `campaign` merge licence by that spelling",
+          'row.get("merge") == "campaign"' in guard
+          and "campaign" in m.MERGE_LICENCES)
+
     out = io.StringIO()
     try:
         with contextlib.redirect_stdout(out):

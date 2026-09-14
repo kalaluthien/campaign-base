@@ -57,7 +57,8 @@ and, on a claim, the code the sub-issue names.
 8. **The merge is the planner's** ([planner](planner.md) step 9): it merges
    on the three conditions of `AGENTS.md` § Merge conditions and reaches the
    install. A worker that merges where no planner runs holds the same three
-   conditions, then runs
+   conditions, names the branch of the claim it holds as that step spells the
+   merge, then runs
    `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>` and
    quotes the line it prints, which names the install's sha, in its `REPORT`.
 9. **At settlement, post a last `REPORT`, then release the claim, in one

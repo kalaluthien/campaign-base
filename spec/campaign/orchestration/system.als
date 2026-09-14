@@ -126,8 +126,9 @@ fun planeOf[e: Event]: lone Plane {
    that set once; the dotted `a.role` form is unambiguous and is left alone. */
 fun plannerAgents: set Agent { (Agent <: role).Planner }
 
-/* The planner of a sub-issue, while it runs: a delegate's launch and a
-   `decide` both need one, and this is the one statement of which. */
+/* The planner of a sub-issue, while it runs: a delegate's launch, a
+   `blocked` and a `decide` all need one, and this is the one statement of
+   which. */
 fun livePlannersOn[i: Issue]: set Agent { plannerAgents & Live & task.i }
 
 var sig Launched in Agent {}
@@ -489,7 +490,8 @@ pred report[a: Agent] {
    `.claude/skills/assuming-role/references/worker.md` step 4 sorts them.
    Only to a planner running on the sub-issue: with none, the one-worker
    shape, the worker asks the owner in its own turn and sends no BLOCKED, so
-   no agent waits with nobody who could `decide`. */
+   no agent comes to wait with nobody who could `decide`. A planner that dies
+   after leaves the BLOCKED standing until one runs. */
 pred blocked[a: Agent] {
   a in Live and a not in Waiting and a not in Stopped
   some livePlannersOn[a.task]

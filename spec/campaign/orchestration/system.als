@@ -711,11 +711,12 @@ pred agentRelease {
    session ends -- this retire, a handover's (`handoff` above), and a session
    leaving by itself, which runs it detached so it outlives its own pane:
    `/exit`, the wait until herdr no longer lists the agent, then the tab it
-   sat in closed, refused when another pane shares it. The wait answers the
-   harness's background-work dialog, where `/exit` stops while the session
-   runs a background task, with `Exit and stop tasks`: the leaving session's
-   tasks are its own, and moving them to the background was measured to keep
-   the session alive where herdr no longer lists it (rule-check#400). The tab
+   sat in closed, refused when another pane shares it. On every path, this
+   retire included, the wait answers the harness's background-work dialog,
+   where `/exit` stops while the session runs a background task, with `Exit
+   and stop tasks`: the leaving session's tasks are its own, and moving them
+   to the background was measured to keep the session alive where herdr no
+   longer lists it (rule-check#400). The tab
    and the dialog are harness facts this model does not hold, and so is the
    self-leave, which no event here stands for. */
 pred exitSession[s: Session] {

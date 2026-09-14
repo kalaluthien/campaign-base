@@ -253,8 +253,11 @@ def answer(w, a):
         return ok(json.dumps({"result": {"pane": {"pane_id": cur,
                                                   "tab_id": TAB}}}))
     if a[:3] == ["herdr", "pane", "read"]:
-        return ok(w.get("screen", ""))
+        return subprocess.CompletedProcess(a, w.get("screen_rc", 0),
+                                           w.get("screen", ""), "no socket")
     if a[:3] == ["herdr", "pane", "send-keys"]:
+        if w.get("keys_rc"):
+            return subprocess.CompletedProcess(a, w["keys_rc"], "", "no pane")
         w.setdefault("keys", []).append(a[3:])
         return ok("")
     if a[:3] == ["herdr", "tab", "close"]:
@@ -659,19 +662,52 @@ def case_leave_dialog(m):
 
 def case_leave_dialog_other_row(m):
     """Row 1 no longer the stop: nothing is sent, and the wait says why."""
-    w = blocked(screen=DIALOG_SCREEN.replace("1. Exit and stop tasks",
-                                             "1. Move to background and exit"))
+    w = blocked(screen=OTHER_ROW)
     ok, asked, out = refused(m, HANDOVER, w, "gone",
                              f"poll 36: {PANE} is still listed; its screen shows "
-                             "'Background work is running' with no row "
-                             "`1. Exit and stop tasks`, so nothing was sent")
+                             "'Background work is running' and not one menu "
+                             "opening `1. Exit and stop tasks`, so nothing was sent")
     return ok and not w.get("keys") and not tab_closes(asked), out
 
 
+def case_leave_dialog_unread(m):
+    """A screen that did not read is one more poll, said in the note."""
+    w = blocked(screen_rc=1)
+    ok, asked, out = refused(m, HANDOVER, w, "gone",
+                             f"poll 36: {PANE} is still listed; its screen did "
+                             "not read (herdr pane read exited 1: no socket)")
+    reads = [a for a in asked if a[:3] == ["herdr", "pane", "read"]]
+    return ok and not w.get("keys") and len(reads) == 36, out
+
+
+def case_leave_dialog_unsent(m):
+    """A key herdr did not send is tried again, and said in the note."""
+    w = blocked(keys_rc=1)
+    ok, asked, out = refused(m, HANDOVER, w, "gone",
+                             f"poll 36: {PANE} is still listed; 'Background work "
+                             "is running' is up and herdr pane send-keys exited "
+                             "1: no pane")
+    sends = [a for a in asked if a[:3] == ["herdr", "pane", "send-keys"]]
+    return ok and len(sends) == 36 and "dialog " not in out, out
+
+
+# The dialog's text above an idle input box: a transcript showing it, as the
+# pane read that measured it did.
+INPUT_BOX = f"{'─' * 20}\n❯\n{'─' * 20}\n  -- INSERT -- ⏵⏵ auto mode on · 1 shell\n"
+OTHER_ROW = DIALOG_SCREEN.replace("1. Exit and stop tasks",
+                                  "1. Move to background and exit")
+# A second menu under the dialog's text, and one under the words quoted.
+PERMISSION = ("   Do you want to proceed?\n   ❯ 1. Yes\n     2. No\n"
+              "   Enter to confirm · Esc to cancel\n")
+ABOVE_MENU = DIALOG_SCREEN.replace("   Enter to confirm · Esc to cancel\n", "") + PERMISSION
+
+
 def case_dialog_of(m):
-    got = [m.dialog_of(s) for s in (DIALOG_SCREEN, DIALOG_QUOTED, "",
-                                    DIALOG_SCREEN.split("   ❯")[0])]
-    return got == [True, None, None, False], got
+    got = [m.dialog_of(s) for s in (
+        DIALOG_SCREEN, DIALOG_SCREEN + "\n\n", DIALOG_QUOTED, "",
+        DIALOG_SCREEN + INPUT_BOX, OTHER_ROW, ABOVE_MENU,
+        DIALOG_QUOTED + "\n" + PERMISSION)]
+    return got == [True, True, None, None, None, False, False, None], got
 
 
 def leave_refusal(gate, *says, argv=SELF_LEAVE, **over):
@@ -1125,6 +1161,10 @@ CASES = {
         case_leave_dialog_other_row,
     "leave: the dialog is its header as a line, not the words quoted":
         case_dialog_of,
+    "leave: a screen that did not read is said in the gone note":
+        case_leave_dialog_unread,
+    "leave: a key herdr did not send is said in the gone note":
+        case_leave_dialog_unsent,
     "refuse leave: HERDR_ENV is not 1": leave_refusal("herdr", "not 1", env={}),
     "refuse leave: herdr pane current did not read": leave_refusal(
         "self", "herdr pane current exited 1: no socket", current=None),
@@ -1734,6 +1774,16 @@ MUTATIONS = [
      "leave: a pane held at the background-work dialog gets 1, then goes"),
     ("dialog: its header is a line", "if ln == DIALOG]", "if DIALOG in ln]",
      "leave: the dialog is its header as a line, not the words quoted"),
+    ("dialog: its footer is the last line", "if not heads or lines[-1] != DIALOG_FOOT:",
+     "if not heads:", "leave: the dialog is its header as a line, not the words quoted"),
+    ("dialog: one menu", "and len(set(numbers)) == len(numbers)", "",
+     "leave: the dialog is its header as a line, not the words quoted"),
+    ("dialog: an unread screen is said", 'return False, (f"its screen did not read',
+     'return False, None\n        return False, (f"its screen did not read',
+     "leave: a screen that did not read is said in the gone note"),
+    ("dialog: an unsent key is said", "return False, (f\"{DIALOG!r} is up and herdr",
+     "return False, None\n        return False, (f\"{DIALOG!r} is up and herdr",
+     "leave: a key herdr did not send is said in the gone note"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

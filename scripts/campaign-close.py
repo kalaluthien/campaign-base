@@ -112,11 +112,14 @@ SCOPE worker <N> <pane>
                   action text. Holds when: herdr exited 0.
   4. gone         `herdr agent list`, WAIT_POLLS polls WAIT_EVERY seconds
                   apart. Holds when: no row names <pane>. Still listed is
-                  reported with the time measured, and never killed. A poll
-                  that still lists <pane> reads its screen (`herdr pane
-                  read`), and the first to show the background-work dialog
-                  -- `/exit` from a session with a background task stops
-                  there -- sends DIALOG_KEY into it, on a `dialog` line.
+                  reported with the time measured, and never killed. Until
+                  a key is sent, a poll that still lists <pane> reads its
+                  screen (`herdr pane read`): the background-work dialog at
+                  its bottom -- `/exit` from a session with a background
+                  task stops there -- with row 1 reading DIALOG_ROW gets
+                  DIALOG_KEY, on a `dialog` line. A screen that did not
+                  read, a dialog with another row 1, or a key herdr did not
+                  send joins the still-listed note.
   5. tab          `herdr pane list`, the one listing that names a pane's tab:
                   an exited agent leaves its pane there. Refuses when another
                   pane sits in the tab, since `herdr tab close` closes every
@@ -303,14 +306,17 @@ WAIT_POLLS = 36
 # THE BACKGROUND-WORK DIALOG, measured on a throwaway tab with claude 2.1.270
 # (rule-check#400, 2026-09-14): `/exit` from a session running a background
 # task draws the header line, then `1. Exit and stop tasks`, `2. Move to
-# background and exit`, `3. Stay`; herdr reads the pane `blocked`, and a digit
-# key picks its row with no enter. 2 left the session alive as a background
-# session `claude agents` lists and herdr does not, so the leave sends 1 (the
-# planner's DECISION on rule-check#400), and only when row 1 still reads so.
+# background and exit`, `3. Stay`, and the footer as the screen's last line;
+# herdr reads the pane `blocked`, and a digit key picks its row with no
+# enter. 2 left the session alive as a background session `claude agents`
+# lists and herdr does not, so the leave sends 1 (the planner's DECISION on
+# rule-check#400), and only when row 1 still reads so.
 DIALOG = "Background work is running"
+DIALOG_FOOT = "Enter to confirm · Esc to cancel"
 DIALOG_KEY = "1"
 DIALOG_ROW = f"{DIALOG_KEY}. Exit and stop tasks"
 MENU_MARK = "❯"
+MENU_ROW = re.compile(r"\d+\. ")
 
 WHY = {
     "slug": "every claim branch and session name of the campaign is read "
@@ -1000,15 +1006,19 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
 
 
 def dialog_of(screen):
-    """None when <screen> shows no background-work dialog, else whether its
-    row DIALOG_KEY reads DIALOG_ROW. A dialog is its header as a line of its
-    own, so a transcript quoting the words inside a sentence is none. Pure."""
-    lines = [ln.strip() for ln in screen.splitlines()]
+    """None when <screen> shows no background-work dialog, else whether one
+    menu sits under its header and opens with DIALOG_ROW. A dialog is the
+    bottom of the screen -- its footer the last line, its header a line of
+    its own above it -- so the same text in a transcript, which an input box
+    follows, is none. Pure."""
+    lines = [ln.strip() for ln in screen.splitlines() if ln.strip()]
     heads = [i for i, ln in enumerate(lines) if ln == DIALOG]
-    if not heads:
+    if not heads or lines[-1] != DIALOG_FOOT:
         return None
-    return any(ln.lstrip(MENU_MARK).strip() == DIALOG_ROW
-               for ln in lines[heads[-1] + 1:])
+    rows = [r for r in (ln.lstrip(MENU_MARK).strip()
+                        for ln in lines[heads[-1] + 1:-1]) if MENU_ROW.match(r)]
+    numbers = [r.split(".")[0] for r in rows]
+    return rows[:1] == [DIALOG_ROW] and len(set(numbers)) == len(numbers)
 
 
 def answer_dialog(pane, say):
@@ -1023,8 +1033,8 @@ def answer_dialog(pane, say):
     if shown is None:
         return False, None
     if not shown:
-        return False, (f"its screen shows {DIALOG!r} with no row "
-                       f"`{DIALOG_ROW}`, so nothing was sent")
+        return False, (f"its screen shows {DIALOG!r} and not one menu "
+                       f"opening `{DIALOG_ROW}`, so nothing was sent")
     r = run("herdr", "pane", "send-keys", pane, DIALOG_KEY)
     if r.returncode != 0:
         return False, (f"{DIALOG!r} is up and herdr pane send-keys exited "

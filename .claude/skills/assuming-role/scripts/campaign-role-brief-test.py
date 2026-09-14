@@ -451,7 +451,7 @@ FENCE-MARK
 
     # ---- the kind of the sub-issue, delivered on the assignment prompt ----
     # Each case pins one branch of `deliver_kind`, and the absences are what
-    # they are for: a kind with no reference, a sub-issue with no kind, a
+    # they are for: a sub-issue with no kind, a
     # tracker that refused, a gh that would not answer, and a prompt that
     # assigns nothing -- which must ask the tracker NOTHING, asserted on the
     # call log rather than on the output.
@@ -481,12 +481,11 @@ FENCE-MARK
           repr(LAST["gh"]))
 
     r, _, _ = run(prompt, agents=NAMED, labels=["kind:development"])
-    check("a `kind:development` sub-issue has no reference on purpose: nothing "
-          "is emitted and the line names the file that is not there",
-          r.returncode == 0 and "# Kind of" not in r.stdout
-          and "kind: kalaluthien/campaign-base#314 is `development`" in r.stderr
-          and "has no reference at" in r.stderr and "kind-development.md"
-          in r.stderr and LAST["kind"] is None,
+    check("a `kind:development` sub-issue emits its own reference, the one "
+          "that states the profile a kind-less sub-issue takes",
+          r.returncode == 0 and "# Kind: development" in r.stdout
+          and f"# Kind of {REPO}#{ISSUE}: development" in r.stdout
+          and "`optional = skippable`" in r.stdout,
           f"out {r.stdout[-200:]!r} err {r.stderr!r}")
 
     r, _, _ = run(prompt, agents=NAMED, labels=["backlog"])

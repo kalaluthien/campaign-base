@@ -264,9 +264,8 @@ def kind_record_path(session_id):
 
 
 def kind_reference(word):
-    """(the reference's body or None, its path). `development` has no reference
-    on purpose, and a word naming no file is the same absence to a reader, so
-    both come back as the same no and the path is printed either way."""
+    """(the reference's body or None, its path). A word naming no file comes
+    back as None, and the path is printed either way."""
     p = SKILL / "references" / f"kind-{word}.md"
     return body(p), p
 

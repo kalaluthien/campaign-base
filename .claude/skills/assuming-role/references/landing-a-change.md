@@ -32,8 +32,7 @@ is only half of `maySkip`; the other half is the next section.
 `maySkip` is the kind's profile and the `criterion` together;
 neither alone licenses a skip. The kind is the sub-issue's `kind:<k>` label,
 and the profile is one line in that kind's reference beside this one,
-`kind-<k>.md`; a sub-issue with no label takes the line in the campaign's
-`AGENTS.md`, which is `development`'s. The profile says what the kind never
+`kind-<k>.md`; a sub-issue with no label takes `development`'s. The profile says what the kind never
 goes without; the criterion decides the rest, per change.
 
 The order reads `maySkip` for each absent stage when you write past it

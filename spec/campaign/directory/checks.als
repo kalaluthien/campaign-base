@@ -84,8 +84,8 @@ pred MergeReachesInstall_Bites {
 
 /* ---------------- reachability floor ----------------
  * Every own event, and every lower event a check here names, fires in some
- * trace. CreateDir, Acquire, CommitLocal and Launch fire in
- * orchestration/checks.als, whose composition holds this one.
+ * trace. PullClone fires in S17c above; CreateDir, Acquire, CommitLocal and
+ * Launch fire in orchestration/checks.als, whose composition holds this one.
  */
 pred Cov_DeleteDir     { eventually Now.event = DeleteDir }
 pred Cov_MergePullRequestInDirectory { eventually Now.event = MergePullRequest }

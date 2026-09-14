@@ -17,8 +17,11 @@ pred noWorkDestroyed {
 
 /* ---------------- disciplines: the shutdown ---------------- */
 
-/* Both conjuncts are load-bearing: the answer names work only the agent
-   can see, the confirmation is the session looking for itself. */
+/* The confirmation is the session looking for itself, and it is what keeps
+   the work: without it TwoStepShutdownSuffices has a counterexample. The
+   answer names work only the agent can see; `noWorkDestroyed` does not need
+   it, since `confirm` requires `a not in LocalOnly` and `work` clears
+   `Confirmed`. */
 pred twoStepShutdown {
   always (Now.event in StandDown + Retire implies
             (Target.agent in Answered and Target.agent in Confirmed))
@@ -56,9 +59,9 @@ pred resolveSilenceExternally {
    neither `agentDie` nor `retire` undoes it, so the dead delegate's clone still
    holds the branch and the occupant check refuses before the merge question is
    ever asked -- a refusal `--confirmed-absent` does not lift, since removing a
-   worktree is not something a person's word stands in for. So the model's
-   "ordinary release" is a worktree removal and then a release
-   that asks a person. What
+   worktree is not something a person's word stands in for. So the release
+   this disjunct admits is, on the machine, a worktree removal and then a
+   release that asks a person. What
    would close the gap is a durable fact saying a holder was launched at all. */
 pred releaseNeedsAWorker {
   always (Now.event = Release implies
@@ -249,8 +252,8 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    `mayAct` for a planner drops the `worksOn` conjunct, so this discipline
    permits a planner to claim for a delegate on any campaign. `sessionClaim` in
    session/system.als agrees. It splits by role
-   and bounds the planner's by the BINDING -- any campaign bound to the
-   session's own machine -- and Q10/Q10b/Q10c are the three that say which of
+   and bounds the planner's by the MACHINE -- any campaign whose directory is
+   on the session's own machine (`machinesHolding`) -- and Q10/Q10b/Q10c are the three that say which of
    the two rules refuses a worker the same claim. */
 /* WHAT THIS IS NOT. `s.role` is read from the session's own name, and a session
    can rename itself -- so this table bounds MISTAKES and not adversaries. It is
@@ -1800,8 +1803,8 @@ run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Camp
 
 /* The shutdown protocol keeps the work it is for. `Confirmed` cleared by any
    later `work` is what makes this green survive an agent that keeps working
-   after being confirmed; dropping either conjunct of `twoStepShutdown` finds
-   a counterexample. */
+   after being confirmed; dropping `Confirmed` from `twoStepShutdown` finds a
+   counterexample, and dropping `Answered` does not. */
 assert TwoStepShutdownSuffices { twoStepShutdown implies noWorkDestroyed }
 
 /* Dropping the ANSWER is safe as long as the confirmation is kept. */

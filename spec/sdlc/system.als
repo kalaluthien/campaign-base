@@ -11,8 +11,7 @@
  * which is the gap this entity fills, from beside it and not from inside it.
  *
  *   Stage       the five stages, and `feeds`, the order they owe each other in
- *   Change      one unit of work -- a sub-issue -- and the stages its
- *               sub-issue's kind lets it skip
+ *   Change      one unit of work -- a sub-issue
  *   Artifact    one text under one name: what a stage produced for a change,
  *               what it WITNESSES and what it DRIVES
  *   Html        a Spec artifact drawn for a reader, and the scenarios it

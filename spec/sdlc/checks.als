@@ -26,9 +26,9 @@ open sdlc/system
    BE SKIPPED, read against the change at the write. The procedure's own
    order, and `OrderedByFeeds_Bites` is what its absence admits. It reads the
    stage that feeds the one written and no further back, so it does not walk
-   the chain: while nothing below Plan exists every stage the kind lets a
-   change skip may be skipped, so its first artifact may be a test with no
-   plan written, and, where the kind lets it skip Test, a code path. Nothing
+   the chain: while nothing below Plan exists every skippable stage may be
+   skipped, so its first artifact may be a test with no plan written, and so
+   may a code path. Nothing
    refuses that order: the landing reads what the change holds when it lands,
    not the order it was written in, and refuses such a change only if Intent
    or Plan is still absent then, since neither is ever skippable. It bounds

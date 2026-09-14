@@ -2079,10 +2079,12 @@ MERGE_VALUED = {"-R", "--repo", "--match-head-commit", "-A", "--author-email",
                 "-b", "--body", "-F", "--body-file", "-t", "--subject"}
 MERGE_FORM = "gh pr merge <slug>/<issue>-<topic> -R <owner/repo>"
 # THE OTHER ROUTES TO THE SAME MERGE, each naming a number and no branch:
-# the REST endpoint, a query string on it included, and the two GraphQL
-# mutations that merge or arm a merge (pr#446's REVIEW, finding 1).
+# the REST endpoint, a query string on it included, and the three GraphQL
+# mutations that merge, arm a merge or queue one (pr#446's REVIEWs, finding 1
+# of each).
 API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?(?:[?#].*)?$")
-GRAPHQL_MERGE = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b")
+GRAPHQL_MERGE = re.compile(
+    r"\b(?:mergePullRequest|enablePullRequestAutoMerge|enqueuePullRequest)\b")
 
 
 def merge_target(tokens):
@@ -2100,13 +2102,17 @@ def merge_target(tokens):
 def graphql_text(tokens, heredocs, cwd):
     """The text a `gh api graphql` segment sends -- its words, a heredoc on
     `@-` or `--input -`, and a file named by `field=@path` or `--input path`
-    -- or None when a file it names cannot be read."""
+    -- or None when a file it names cannot be read, or when `-` names stdin
+    and no heredoc feeds it: a pipe or a `<` this cannot read (pr#446's
+    second REVIEW, finding 1)."""
     parts, here = list(tokens), Path(cwd) if cwd is not None else Path.cwd()
     paths = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
     paths += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
     paths += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
     for path in paths:
         if path == "-":
+            if not heredocs:
+                return None
             parts += heredocs
             continue
         resolved = Path(path) if Path(path).is_absolute() else here / path

@@ -3169,6 +3169,13 @@ def main():
              "through `gh api`"),
             (f"gh api graphql -F query=@{gql}", "through `gh api`"),
             ("gh api graphql -F query=@no-such.graphql", "could not be read"),
+            ("gh api graphql -f query='mutation { enqueuePullRequest(input: "
+             "{pullRequestId: \"x\"}) { clientMutationId } }'", "through `gh api`"),
+            (f"cat {gql} | gh api graphql -F query=@-", "could not be read"),
+            (f"gh api graphql -F query=@- < {gql}", "could not be read"),
+            ("gh api graphql --input - <<'Q'\n{\"query\": \"mutation { "
+             "mergePullRequest(input: {}) { clientMutationId } }\"}\nQ",
+             "through `gh api`"),
             ("echo 7 | xargs gh pr merge", "cannot read for its branch"),
             ("G=gh; $G pr merge 7 --merge", "cannot read for its branch"),
         ]:
@@ -3181,6 +3188,12 @@ def main():
                         "{issueId: \"a\", subIssueId: \"b\"}) { clientMutationId } }'")
         check("#442: CONTROL: a GraphQL write that merges nothing is not read "
               "as a merge", "merge" not in r.stderr.lower(), out(r)[:500])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh api graphql --input - <<'Q'\n{\"query\": \"mutation "
+                        "{ addSubIssue(input: {}) { clientMutationId } }\"}\nQ")
+        check("#442: CONTROL: ...nor one fed by a heredoc on stdin",
+              "merge" not in r.stderr.lower()
+              and "could not be read" not in r.stderr, out(r)[:500])
         r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
                 env=no_herdr(d))
         check("#442: with the role unread, the claim reading still ties the "
@@ -3723,7 +3736,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 528
+    EXPECTED = 537
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

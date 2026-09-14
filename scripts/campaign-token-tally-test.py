@@ -789,7 +789,7 @@ def main():
 
         def machine(command, *extra):
             return subprocess.run([sys.executable, str(SCRIPT), command,
-                                   "--root", d, "--base", d, *extra],
+                                   "--root", d, *extra],
                                   capture_output=True, text=True)
 
         r = machine("denials")
@@ -820,9 +820,48 @@ def main():
               "and not one whose Write did not",
               "4 REVIEW post(s)" in r.stdout
               and "| True | w-1: | ok" in r.stdout, r.stdout + r.stderr)
+
+        # EVERY SPELLING OF THE PATH, read by the guard's grammar (pr#444 F1-F3):
+        # counted, one row each...
+        def wrote(wid, path, text="REVIEW w-2: ok"):
+            return {"type": "tool_use", "id": wid, "name": "Write",
+                    "input": {"file_path": path, "content": text}}
+        counted = [
+            ("p1", "gh pr comment 9 --body-file=/s/r1.md"),
+            ("p2", "gh pr comment 9 -F '/s/r 2.md'"),
+            ("p3", "gh pr comment 9 --body-file /s/r3.md; echo done"),
+            ("p4", "S=/s; gh pr comment 9 --body-file $S/r4.md"),
+            ("p5", "gh pr comment 9 --body-file r5.md"),
+        ]
+        # ...and not: another command's -F, and a file written after the post.
+        missed = [
+            ("q1", "gh pr comment 9 -b hi && git commit -F /s/r1.md"),
+            ("q2", "gh pr comment 9 --body-file /s/r6.md"),
+        ]
+        blocks = [wrote("v1", "/s/r1.md"), wrote("v2", "/s/r 2.md"),
+                  wrote("v3", "/s/r3.md"), wrote("v4", "/s/r4.md"),
+                  wrote("v5", f"{d}/r5.md")]
+        blocks += [call(i, c) for i, c in counted + missed]
+        blocks.append(wrote("v6", "/s/r6.md"))
+        write(root / "-proj-c" / "s3.jsonl", [
+            assistant("m6", "2026-01-02T03:00:00Z", d, blocks=blocks),
+            user("2026-01-02T03:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result(i, "posted") for i, _ in counted + missed]}},
+        ])
+        r = machine("review-posts")
+        check("review-posts reads --body-file=, -F, a quoted path, a trailing ;, "
+              "a $VAR set in the command and a relative path; not git's -F nor "
+              "a file written after the post",
+              "9 REVIEW post(s)" in r.stdout
+              and r.stdout.count("| w-2: | ok") == 5, r.stdout + r.stderr)
+
         r = machine("denials", "--since", "2026-01-02T00:00:00Z")
-        check("a machine command refuses a window rather than ignoring it",
-              r.returncode == 2 and "takes no window" in r.stderr, r.stderr)
+        check("a machine command refuses a corpus flag rather than ignoring it",
+              r.returncode == 2 and "takes no --since" in r.stderr, r.stderr)
+        r = machine("denials", "--base", d)
+        check("...--base included, so it resolves no base root",
+              r.returncode == 2 and "takes no --base" in r.stderr, r.stderr)
 
     return harness.report()
 

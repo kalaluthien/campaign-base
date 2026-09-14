@@ -47,7 +47,8 @@ and, on a claim, the code the sub-issue names.
    implementation is correct; a decision, or a doubt about one, goes to the
    planner as a `BLOCKED` (step 4), never to the reviewer.
    The reviewer posts its own `REVIEW` on the pull request, pinning the
-   sha; refused, you file a `BLOCKED`, never a retry from your own pane.
+   sha; refused by the classifier, you file a `BLOCKED`, never a retry from
+   your own pane.
 7. **Then post a `REPORT` asking for the merge**, once per round, on the pull
    request, pinning the sha, and send it to the planner. A verdict or a fix
    report that does not pin its sha is unactionable. After it the next move is

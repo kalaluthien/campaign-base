@@ -1184,18 +1184,44 @@ def scan_reads(corpus):
 DENY = re.compile(r"Permission for this action was denied by the Claude Code "
                   r"auto mode classifier\. Reason: \[([^\]]+)\]")
 REVIEW_POST = re.compile(r"gh pr (comment|review)\b.*\bREVIEW ", re.S)
-BODY_FILE = re.compile(r"gh pr (?:comment|review)\b.*?(?:--body-file|-F)[ =]"
-                       r"(?:'([^']*)'|\"([^\"]*)\"|(\S+))", re.S)
+PR_POSTS = {("pr", "comment"), ("pr", "review")}
+ASSIGN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.S)
+VAR = re.compile(r"\$\{(\w+)\}|\$(\w+)")
 
 
-def posted_review(command, written):
-    """The REVIEW text a call posts: the command itself, or the file its
-    `--body-file` names when the last Write to that path opened `REVIEW `."""
+def posted_review(command, written, cwd):
+    """The REVIEW text a call posts: the command itself, or the file a
+    `gh pr comment|review` segment's `--body-file` names when the last Write
+    to that path opened `REVIEW `.
+
+    The segments and the flag are read by the guard's own `segments`,
+    `gh_words` and `flag_value`, the one reading of that grammar here. A `$VAR`
+    in the path is expanded only from a `VAR=value` word earlier in the same
+    command, and a relative path against the record's cwd, as the guard does."""
     if REVIEW_POST.search(command):
         return command
-    m = BODY_FILE.search(command)
-    body = written.get(next(g for g in m.groups() if g is not None), "") if m else ""
-    return body if body.startswith("REVIEW ") else None
+    if "gh" not in command:
+        return None
+    grammar = guard_module()
+    segs, _why = grammar.segments(command)
+    env = {}
+    for seg in segs or ():
+        for t in seg:
+            m = ASSIGN.match(t)
+            if m:
+                env[m.group(1)] = m.group(2)
+        if tuple(grammar.gh_words(seg)[:2]) not in PR_POSTS:
+            continue
+        path = grammar.flag_value(seg, grammar.BODY_FILE_VALUED)
+        if not isinstance(path, str) or path == "-":
+            continue
+        path = VAR.sub(lambda v: env.get(v.group(1) or v.group(2), v.group(0)), path)
+        if cwd and not os.path.isabs(path):
+            path = os.path.join(cwd, path)
+        body = written.get(os.path.normpath(path), "")
+        if body.startswith("REVIEW "):
+            return body
+    return None
 
 
 def denial(txt):
@@ -1269,9 +1295,11 @@ def cmd_review_posts(roots):
         for d, c in transcript_blocks(f):
             if c.get("type") == "tool_use" and c.get("name") == "Write":
                 inp = c.get("input") or {}
-                written[inp.get("file_path")] = inp.get("content") or ""
+                if inp.get("file_path"):
+                    written[os.path.normpath(inp["file_path"])] = inp.get("content") or ""
             if c.get("type") == "tool_use" and c.get("name") == "Bash":
-                cmd = posted_review((c.get("input") or {}).get("command", ""), written)
+                cmd = posted_review((c.get("input") or {}).get("command", ""),
+                                    written, d.get("cwd"))
                 if cmd:
                     calls[c["id"]] = (d.get("timestamp", "?")[:19],
                                       d.get("sessionId", "?")[:8], cmd)
@@ -1335,6 +1363,17 @@ def parse_args(argv):
     p.add_argument("--threshold", type=int, default=350,
                    help="reads: a file over this many lines is over the threshold")
     args = p.parse_args(argv)
+    if args.command in MACHINE_COMMANDS:
+        # They read --root alone, so a corpus flag given to one is refused
+        # rather than ignored, and no base or tracker default is resolved.
+        given = [f"--{a.dest.replace('_', '-')}" for a in p._actions
+                 if a.dest not in ("help", "command", "root")
+                 and getattr(args, a.dest) != a.default]
+        if given:
+            die(f"{args.command} reads every transcript under --root and takes "
+                f"no {', '.join(given)}")
+        args.root = args.root or ["~/.claude/projects"]
+        return args
     # The base's name is campaign-repos.py's (rule-check#370 row 5).
     if args.repo is None:
         try:
@@ -1376,9 +1415,6 @@ def checked_bound(value, name):
 def main(argv):
     args = parse_args(argv)
     if args.command in MACHINE_COMMANDS:
-        if args.since or args.until:
-            die(f"{args.command} reads every transcript and takes no window; "
-                f"drop --since and --until")
         MACHINE_COMMANDS[args.command]([os.path.expanduser(r) for r in args.root])
         return 0
     corpus = Corpus(args).read()

@@ -52,13 +52,17 @@ in the guard reading what kind of agent is being launched (owner's DECISION,
 rule-check#278).
 
 **The reviewer posts its own `REVIEW`** (sdlc-alloy#427): the brief tells it
-to write the comment to a file and post it with
-`gh pr comment <N> --body-file <path>`, never `gh pr review --approve`. The
-auto-mode classifier refuses an author's session posting a review of its own
+to write the comment with the Write tool and post it in a separate Bash call
+with `gh pr comment <N> --body-file <path>`, never `gh pr review --approve`.
+The guard reads that file before the command runs and holds it to the comment
+ceiling, so a body the same call writes is refused unread. The auto-mode
+classifier can refuse an author's session posting a review of its own
 commits, while the subagent wrote none, so the poster is the writer merge
-condition 2 names. Refused, the reviewer stops and returns the refusal
-verbatim, and the launcher files a `BLOCKED` rather than posting it from its
-own pane.
+condition 2 names. Refused by the classifier, the reviewer stops and returns
+the refusal verbatim, and the launcher files a `BLOCKED` rather than posting
+it from its own pane; refused by the guard on shape, it fixes the shape and
+posts again. `campaign-token-tally.py review-posts` counts how those posts
+ended.
 
 **`low` is under the bar and outside it.** It costs about what a narrowed plain
 brief does and cannot fan out, which is why the guard's `CHEAP_LEVEL` passes

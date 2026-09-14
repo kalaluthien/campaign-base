@@ -147,6 +147,19 @@ def _(m):
     return r["compacted"] is None, r
 
 
+@case("the model is the latest assistant's, and each slash command carries what it printed")
+def _(m):
+    def said(minute, model):
+        return {"type": "assistant", "timestamp": ts(minute), "message": {"model": model}}
+    r = reading(m, said(3, "claude-opus-5"), said(1, "claude-fable-5-1"),
+                said(4, "<synthetic>"),
+                prompt(2, "<command-name>/model</command-name> <command-args>opus</command-args>"),
+                prompt(2, "<local-command-stdout>Set model to `Opus 5`</local-command-stdout>"),
+                prompt(5, "<command-name>/effort</command-name>"))
+    return ((r["model"], r["commands"]) == ("claude-opus-5", [
+        ["model", "Set model to `Opus 5`"], ["effort", None]])), r
+
+
 @case("every last is by time, not by position in the file")
 def _(m):
     r = reading(m, prompt(5, work(5)), prompt(1, work(1)), boundary(3),
@@ -1512,6 +1525,11 @@ def _(m):
 
 # (the branch broken, old text, new text, the case that must go red)
 MUTATIONS = [
+    ("a slash command's output dropped", "out[\"commands\"][-1][1] = content", "_ = content",
+     "the model is the latest assistant's, and each slash command carries what it printed"),
+    ("the model read by position", "if msg.get(\"model\") and (out[\"model_at\"] is None or ts > out[\"model_at\"]):",
+     "if msg.get(\"model\"):",
+     "the model is the latest assistant's, and each slash command carries what it printed"),
     ("fire on a banner", 'if word == "limit":', 'if False:',
      "fire: a banner on another pane"),
     ("passed is not a fire", 'if line.startswith("passed "):\n        return "passed"',

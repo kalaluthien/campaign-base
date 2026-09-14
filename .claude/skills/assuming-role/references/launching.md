@@ -53,7 +53,7 @@ strong spends it on turns that carry out a plan already clear.
 
 | work | who runs it |
 | --- | --- |
-| coordinating a campaign and deciding | Fable planner |
+| coordinating a campaign and deciding | Opus planner |
 | defining a problem | Fable worker |
 | completing an issue body | Fable or Opus worker |
 | complex execution | Opus worker |
@@ -62,7 +62,8 @@ strong spends it on turns that carry out a plan already clear.
 
 Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`
 (`.claude/skills/herdr/references/facts.md`); the level is never a sentence in
-the prompt.
+the prompt. A session already running is moved with
+`.claude/skills/assuming-role/scripts/campaign-model.py`, not relaunched.
 
 ## Delivering the prompt
 

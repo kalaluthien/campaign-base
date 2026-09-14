@@ -57,7 +57,7 @@ strong spends it on turns that carry out a plan already clear.
 | defining a problem | Fable worker |
 | completing an issue body | Fable or Opus worker |
 | complex execution | Opus worker |
-| review and verification | Fable or Opus reviewer, which of the two by the depth of the change (`references/reviewing.md`) |
+| review and verification | the reviewer the model knob of `references/reviewing.md` names: Fable or Opus by the depth of the change, Sonnet for its two `low` rounds |
 | fixes and investigation | Sonnet worker |
 
 Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`

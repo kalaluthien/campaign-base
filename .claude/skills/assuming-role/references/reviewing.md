@@ -46,15 +46,16 @@ which `campaign-token-tally.py reviews` rolls into the round that spawned it
 prices both. Write the brief as `"review PR <N> at <level>"`, level right
 after `at`, naming what to check after a blank line.
 
-**The brief says what a reviewer may do**: it reads, reads CI's verdicts
-rather than re-running the suites, runs what CI cannot -- a mutant, a probe --
-and edits, kills or launches nothing. That is one sentence of the brief and
-not a mechanism -- no reviewer agent definition, and no branch in the guard
-reading what kind of agent is being launched (owner's DECISION, rule-check#278).
+**The brief says what a reviewer may do**: it reads, checks as the shape of a
+round below says, and edits, kills or launches nothing. That is one sentence of
+the brief and not a mechanism -- no reviewer agent definition, and no branch in
+the guard reading what kind of agent is being launched (owner's DECISION,
+rule-check#278).
 
-**`low` is under the bar and outside it.** It costs about what a narrowed plain
-brief does and cannot fan out, which is why the guard's `CHEAP_LEVEL` passes
-it. **What `low` does not do is satisfy merge condition 1**: it skips test
+**`/code-review low` is under the bar and outside it.** It costs about what a
+narrowed plain brief does and cannot fan out, which is why the guard's
+`CHEAP_LEVEL` passes it. **What `/code-review low` does not do is satisfy
+merge condition 1**: it skips test
 hunks and reads no full files, and on the diff rule-check#282 measured it
 missed two of the three behavioural findings the plain brief returned. It is a
 cheap first pass, and the review a merge waits on is still the plain brief.
@@ -76,26 +77,30 @@ has returned a defect verdict**:
 
 - **the closing review**: once a round returns refinement only, the one
   narrowed review of the commit that applies it;
-- **a clean merge of `main`**, reviewed on the merge commit's diff alone.
+- **a clean merge of `main`** onto a sha a review has already read, reviewed on
+  the merge commit's diff alone.
 
-Either is the last round before the merge, and a wording note it returns is
-accepted in the REPORT, not fixed. **Once any round has returned a defect,
-every later narrowed review stays on Opus at `low` to the end**, the closing
-one and a clean merge's included (owner, pr#409 and pr#420, kept by
-rule-check#441). Measured over two weeks
-(rule-check#441), rounds past the first refinement-only verdict found 3
-defect verdicts in 28 rounds, while taking 5.3% of all review tokens.
+Either is meant as the last round before the merge, and a wording note it
+returns is accepted in the REPORT, not fixed. **Once any round has returned a
+defect, every later narrowed review stays on Opus at `low` to the end**, the
+closing one and a clean merge's included (owner, pr#409 and pr#420, kept by
+rule-check#441). Measured over two weeks (rule-check#441), the rounds past the
+one closing review allowed found 3 defect verdicts in 28 and took 5.3% of all
+review tokens; the closing reviews themselves, the rounds this moves to Sonnet,
+found 4 in 45.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
-to check everywhere it is stated. `medium` is the working baseline; a sweep goes
-above it. **`/code-review`'s level is the first token after the command and
-nowhere else**: asking for it in the brief sets nothing, and the guard refuses
-a `/code-review` call naming none. **A plain brief sets no level mechanically
-at all** -- there is no harness position that reads one, only the reviewer's
-own judgment of what you wrote and, separately, `campaign-token-tally.py`'s own reading of the token
-right after `at` for its own accounting. Put the level there anyway, since
-that is the one place a launcher and the tally agree to look, but say what you
-mean in the rest of the brief too.
+to check everywhere it is stated. `medium` is the working baseline of a full
+review, and a sweep goes above it; a narrowed round takes `low`, on the model
+the model knob names. **`/code-review`'s level is the first token after the
+command and nowhere else**: asking for it in the brief sets nothing, and the
+guard refuses a `/code-review` call naming none. **A plain brief sets no level
+mechanically at all** -- there is no harness position that reads one, only the
+reviewer's own judgment of what you wrote and, separately,
+`campaign-token-tally.py`'s own reading of the token right after `at` for its
+own accounting. Put the level there anyway, since that is the one place a
+launcher and the tally agree to look, but say what you mean in the rest of the
+brief too.
 
 So a broad mechanical sweep is a lighter model at a higher level, and a subtle
 local change is a heavier model at a lower one. The knobs are independent, and a
@@ -140,25 +145,28 @@ does not re-run a measurement the full review already made and reported, **unles
 touched what was measured**: a round that edits the script a number came from
 retires that number, and the brief says to re-derive it.
 
-**The suites are CI's, and the reviewer reads them rather than running
-them.** `.github/workflows/check.yml` runs every guard and every `*-test.*`
-suite in its `plan` job, and `alloy-check` on every module in its `solve`
-jobs, on each push to the pull request. So the reviewer reads those jobs'
-conclusions for the sha under review --
-`gh run list --commit <sha> --workflow check`, then
-`gh run view <id> --json jobs` -- waits with `gh run watch <id>` while one
-is pending, and reports a red job as a finding. The `check` job itself is not
-that reading: it stays red until a REVIEW names the head. The reviewer still
-runs what CI cannot: a mutant for fail-first, a probe of one claim. Measured
+**Where CI runs the suites, the reviewer reads them rather than running
+them.** In the base, `.github/workflows/check.yml` runs every guard and every
+`*-test.*` suite in its `plan` job, and `alloy-check` on every module in its
+`solve` jobs, on each push to the pull request. So the reviewer reads those
+jobs' conclusions for the sha under review --
+`gh run list --commit <full sha> --workflow check` (a short sha lists nothing,
+and exits 0), then `gh run view <id> --json jobs` -- waits with
+`gh run watch <id>` while one is pending, and reports a red job as a finding.
+The `check` job itself is not that reading: it stays red until a REVIEW names
+the head. A repository whose CI runs no suites -- a member repository with no
+`.github/` -- has them run by the reviewer. Either way the reviewer still runs
+what CI cannot: a mutant for fail-first, a probe of one claim. Measured
 over two weeks (rule-check#441), tool calls of 30 seconds or more took 34% of
 review wall time: `alloy-check` 10%, the suites 6.5%.
 
 **A stopped round is resumed, not relaunched.** A review cut off by the
 session limit, or stopped by its launcher, is continued by `SendMessage` to
 its agent id. The agent picks up from its transcript, keeping everything it
-has already read. A narrower brief travels as that message too. A fresh
-launch at the same sha reads it all again: the same two weeks held 22 re-runs
-on an unchanged head, 6.3% of review tokens.
+has already read. A narrower brief travels as that message too, and so does
+a push: the message names the new head and the range to add. A fresh launch
+reads it all again: the same two weeks held 14 re-runs after a cut-off round,
+4.8% of review tokens.
 
 **A fix round is: findings on the pull request, one worker, one `REPORT`.** The
 worker verifies each finding at the site it names before touching anything.
@@ -167,12 +175,12 @@ push, and which ends in one `REPORT` carrying the sha and a per-finding
 disposition. **Check that disposition against the findings list mechanically**: a
 round claiming "all fixed" without re-running its sweep is what keeps happening.
 
-**A reconciliation with `main` decides the breadth of the review it needs**, and
-a full re-review is due at one moment only, a reconciliation that needed a hand
-resolution. It is a push, so condition 1
-wants a review at the combined sha either way. A clean auto-merge earns a
-`low` round on the merge commit's diff alone, on the model the model knob
-names: Sonnet, or Opus once any round has returned a defect. A
+**A reconciliation with `main` decides the breadth of the review it needs**,
+and a full re-review is due at one moment only, a reconciliation that needed a
+hand resolution. It is a push, so condition 1 wants a review at the combined
+sha either way. A clean auto-merge onto a reviewed sha earns a `low` round on
+the merge commit's diff alone, on the model the model knob names; a commit
+under it that no review has read is reviewed with it, as the fix round it is. A
 merge that needed a hand resolution earns a full one, and its brief says it
 reads the combination: **containment buys attention from nobody**, and the
 resolution is where the two branches actually met.

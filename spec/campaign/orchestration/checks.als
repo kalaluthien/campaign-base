@@ -774,16 +774,15 @@ pred R11_HolderThroughAnotherCampaignsDir {
 
 /* WORK HAPPENS IN A CLONE `acquire-repo.sh` SET UP.
    Two readings of one set, `acquired` in directory/system.als. A delegate is
-   launched into such a clone, because it reads no ancestor instruction file
-   and the `CLAUDE.local.md` in its cwd is its whole channel to the campaign's
-   principles; and a commit on campaign work is made in one, because that is
+   launched into such a clone, because the clone it starts in is where it
+   commits; and a commit on campaign work is made in one, because that is
    where the claim gate runs -- a member repository ships no installer.
-   Neither failure is observable:
-   a delegate that received nothing looks like one that ignored everything,
-   and an ungated commit looks like a gated one that passed.
+   Neither failure is observable: an ungated commit looks like a gated one
+   that passed.
 
    Delegates only for the launch: a session launching an in-process subagent,
-   or working by its own hands, already has the campaign's instructions loaded.
+   or working by its own hands, starts no process in a clone, and its commits
+   are the commit half's.
 
    THE COMMIT HALF IS NARROWED TO A TASK THAT HAS A CAMPAIGN. Without it the
    rule forbids a commit whose task belongs to no campaign -- `campaignOf` is

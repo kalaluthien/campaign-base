@@ -23,7 +23,6 @@ campaign-base/
                                  is the accepted older form; neither NAME is read
     .campaign                    the campaign issue number and the slug; what
                                  makes this directory a campaign's
-    AGENTS.md CLAUDE.md          engineering principles for this campaign
     README.md                    the campaign issue body, section for section
     runtime/                     data, state and artifacts of this campaign
     scripts/                     scripts built for this campaign; scratch,

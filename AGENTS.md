@@ -506,8 +506,7 @@ the prompt is delivered by **`herdr agent prompt`** and never on the launch
 line, an instance of § The four messages' criterion rather than a second rule;
 and **read the pane once after every launch**, because the dialogs that halt a
 fresh delegate do not all report `blocked`. The full procedure — the launch
-line and its flags, the campaign's principles in the clone's `CLAUDE.local.md`,
-the outcome names, and the three dialogs — is
+line and its flags, the outcome names, and the three dialogs — is
 `.claude/skills/assuming-role/references/launching.md`.
 
 # The running agent

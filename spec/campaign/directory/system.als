@@ -67,17 +67,12 @@ sig CampaignDir {
   machine:         one Machine,
   var checkedOut: Repo -> Branch,
   /* THE CLONES HERE THAT `acquire-repo.sh` SET UP, and what that buys: each
-     carries the campaign's principles, a `CLAUDE.local.md` in the delegate's
-     own clone -- a file on disk in its cwd, so there is nothing to prove
-     arrived -- and a pre-commit that runs the claim
-     gate, reached through the BASE because a member clone holds no copy of
-     `check-commit-claim.py`. One set and not two: one step writes both
-     and one step removes both, so a delegate's launch and its commits are
-     judged against the same clones. Modelled as repositories rather than
-     files, because what a launch or a commit needs is that its clone is one
-     of these; WHICH bytes is the script's. The principles
-     are the campaign's own additions only; a sub-issue's kind travels on the
-     assignment prompt, per sub-issue, and is no fact about a clone. */
+     carries a pre-commit that runs the claim gate, reached through the BASE
+     because a member clone holds no copy of `check-commit-claim.py`. One set,
+     so a delegate's launch and its commits are judged against the same
+     clones. Modelled as repositories rather than files, because what a
+     launch or a commit needs is that its clone is one of these; WHICH bytes
+     is the script's. */
   var acquired:    set Repo
 }
 var sig OnDisk in CampaignDir {}
@@ -189,9 +184,8 @@ pred acquire[t: CampaignDir, r: Repo, b: Branch] {
   t.checkedOut[r] != b
   checkedOut' = checkedOut - t->r->Branch + t->r->b
   /* ACQUIRE IS WHAT SETS A CLONE UP, and saying so is the whole of the
-     mechanism: `acquire-repo.sh` writes the campaign's `AGENTS.md` into the
-     checkout as `CLAUDE.local.md` and installs the claim gate, on every
-     checkout it leaves. Written into the event because there is no other
+     mechanism: `acquire-repo.sh` installs the claim gate, on every checkout
+     it leaves. Written into the event because there is no other
      moment -- the clone comes into existence here. */
   acquired' = acquired + t->r
   OnDisk' = OnDisk

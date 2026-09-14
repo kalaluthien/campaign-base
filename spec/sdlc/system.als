@@ -37,8 +37,9 @@
  *   scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc
  *   scripts/alloy-check.py --commands spec        -- and --write to update
  *
- * THE FOUR MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
- * `tieDiscipline`, `mergeDiscipline` and `keepDiscipline` in checks.als are
+ * THE FIVE MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
+ * `tieDiscipline`, `mergeDiscipline`, `keepDiscipline` and
+ * `removeDiscipline` in checks.als are
  * each assumed by a check and dropped by its `_Bites`, the shape
  * github/system.als's `closeDiscipline` takes, because a rule written into
  * an event is true in every world the model admits and no command can exhibit
@@ -310,7 +311,8 @@ pred mergeChange[c: Change] {
    removed path is a count in the tie guard's reading, not a refusal (T5) --
    and any change may commit it, since a later commit may remove what a
    landed change wrote. `S9_DeadElimination` is a scenario nothing witnesses
-   leaving on its own. */
+   leaving on its own, `S9a_ChainRemovedInOneCommit` a script leaving with
+   its suite and the scenario it witnessed. */
 pred removeArtifact[a: Artifact] {
   a in Written and a not in Written' and Written' in Written
   Merged' = Merged and Licensed' = Licensed

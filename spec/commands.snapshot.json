@@ -218,7 +218,7 @@
     ["sdlc/checks.als", "run", "S6a_DevelopmentTestWaiver"],
     ["sdlc/checks.als", "run", "S8_FeaturelessChange"],
     ["sdlc/checks.als", "run", "S9_DeadElimination"],
-    ["sdlc/checks.als", "run", "S9a_ScenarioRemovedWithItsSuites"],
+    ["sdlc/checks.als", "run", "S9a_ChainRemovedInOneCommit"],
     ["sdlc/checks.als", "run", "TreeStaysTied_Bites"],
     ["sdlc/checks.als", "run", "WitnessesResolve_Bites"]
   ]

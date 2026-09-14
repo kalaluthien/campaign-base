@@ -255,20 +255,23 @@ pred S8_FeaturelessChange {
    scenario dead is judged outside the model; this says only how it leaves. */
 pred S9_DeadElimination {
   allDisciplines
-  eventually (Step.event = RemoveArtifact and Step.artifact.stage = Spec
+  eventually (Step.event = RemoveArtifact and Step.artifact.stage = Spec and Step.artifact not in Html
               and Step.artifact not in witnessed and Written' = Written - Step.artifact
-              and some Written & stage.Code and everyCodeHasScenario and after everyCodeHasScenario)
+              and (some k: Written & stage.Code | tied[k] and after tied[k])
+              and everyCodeHasScenario and after everyCodeHasScenario)
 }
 
-/* A WITNESSED SCENARIO LEAVES WITH THE SUITES DECLARING IT, in one commit:
-   the removal the tie guard admits, and the one a step taking one artifact
-   at a time could not make -- the suite left behind would declare a dead
-   name, and a suite taken first would untie its code path. */
-pred S9a_ScenarioRemovedWithItsSuites {
+/* A SCRIPT DELETED WITH ITS SUITE AND THE SCENARIO IT WITNESSED, in one
+   commit: the scenario leaves with the suite declaring it and the code path
+   tied through them. The removal the tie guard admits, and one a step
+   taking one artifact at a time could not make: the suite left behind would
+   declare a dead name. */
+pred S9a_ChainRemovedInOneCommit {
   allDisciplines
   eventually (Step.event = RemoveArtifact and Step.artifact.stage = Spec
-              and Step.artifact in witnessed and Step.artifact not in Written'
-              and some witnesses.(Step.artifact) & (Written - Written'))
+              and Step.artifact not in Written'
+              and some k: (Written - Written') & stage.Code |
+                    some Step.artifact.(tie.k) & (Written - Written'))
 }
 
 /* ---------------- the order ---------------- */
@@ -287,14 +290,16 @@ assert OrderedByFeeds {
     all c: Change, s: writtenStages[c], p: feeds.s |
       p in writtenStages[c]
       or once (Step.event = WriteArtifact and Step.artifact in change.c & stage.s and maySkip[c, p])
-      or once (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p)
+      or once (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p
+               and once (Step.event = WriteArtifact and Step.artifact in change.c & stage.s))
 }
 pred OrderedByFeeds_Bites {
   not orderDiscipline
   eventually some c: Change, s: writtenStages[c], p: feeds.s |
     p not in writtenStages[c]
     and historically not (Step.event = WriteArtifact and Step.artifact in change.c & stage.s and maySkip[c, p])
-    and historically not (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p)
+    and historically not (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p
+                          and once (Step.event = WriteArtifact and Step.artifact in change.c & stage.s))
 }
 
 /* ---------------- the tie ---------------- */
@@ -375,12 +380,14 @@ pred AbsenceLicensed_Bites {
 
 /* ---------------- the keep rule ---------------- */
 
-/* Under `keepDiscipline`, no commit of a change that adds no feature
-   shrinks the witnessed set either, though the discipline names only the
+/* Under `keepDiscipline`, no write or rename by a change that adds no
+   feature shrinks the witnessed set either, though the discipline names only the
    scenarios: a test leaves the tree only beside the scenario it witnesses,
    renamed in the same commit, and a renamed test keeps its declaration.
    Without it: such a change renames a scenario with the texts witnessing it,
-   and the scenario they witnessed is gone. */
+   and the scenario they witnessed is gone. A removal is outside it: one by
+   such a change can take a suite and shrink the set, which T8 reads by
+   names and `keepDiscipline` does not. */
 assert FeaturelessKeeps {
   keepDiscipline implies always
     ((Step.event in WriteArtifact + RenameArtifact and featureless[Step.subject]) implies witnessed in witnessed')
@@ -433,7 +440,7 @@ run S5a_WithoutTheCommitCheck  for 2 Change, 6 Artifact, 10 steps expect 0
 run S5b_WithoutTheLandingCheck for 2 Change, 6 Artifact, 10 steps expect 1
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
 run S9_DeadElimination        for exactly 1 Change, exactly 6 Artifact, 10 steps expect 1
-run S9a_ScenarioRemovedWithItsSuites for exactly 1 Change, exactly 5 Artifact, 10 steps expect 1
+run S9a_ChainRemovedInOneCommit for exactly 1 Change, exactly 5 Artifact, 10 steps expect 1
 -- S8 needs eight commits, so no trace shorter than nine states holds it; the
 -- floor spares the solver refuting each shorter length, past ten minutes without it
 run S8_FeaturelessChange       for 2 Change, 7 Artifact, 9..10 steps expect 1

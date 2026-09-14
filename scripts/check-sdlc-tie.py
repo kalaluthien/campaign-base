@@ -82,8 +82,9 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       `S4a_TiedCodeRename`, whose suite moves in the same commit. The
       deletion is `removeArtifact` taking the suite and leaving its code
       path, which `commitCheck` refuses; the removal that passes takes the
-      code path with its suite, or leaves every code path tied, as
-      `S9_DeadElimination` does.
+      code path with its suite and any scenario that suite alone witnessed
+      (`S9a_ChainRemovedInOneCommit`, and T8 below), or leaves every code
+      path tied, as `S9_DeadElimination` does.
   T3  a code path that was tied still has its suite, and the suite declares no
       scenario any more: the scenario was renamed or deleted, or the
       `# witnesses:` line was dropped. The same rename read at the scenario's
@@ -139,11 +140,12 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       proves it from `keepDiscipline` and `renameArtifact`, and this reads it
       over two edits that discipline does not read: a declaration rewritten
       in place, which the model has no step for, and a suite deleted in
-      place, `removeArtifact`, which it leaves out of scope. A commit that changes the command list is a feature
-      change and is not read here, where the model reads a rename by a change
+      place, `removeArtifact`, which it leaves out of scope. A commit that
+      changes the command list is a feature change and is not read here, where the model reads a rename by a change
       with no scenario of its own as that change's; deleting a script with its
       suite retires its scenario in the same commit, a feature change by name
-      (`S9_DeadElimination`, `S9a_ScenarioRemovedWithItsSuites`).
+      (`S9a_ChainRemovedInOneCommit`); keeping the scenario it alone
+      witnessed is this code.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 

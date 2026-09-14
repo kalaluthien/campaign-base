@@ -753,6 +753,140 @@ def main():
               r.returncode == 2 and "--repo has no default" in r.stderr
               and "Traceback" not in r.stderr, r.stderr[-300:])
 
+    # THE CLASSIFIER COUNTERS read every transcript under --root, and a
+    # denial is one only where it OPENS the result.
+    deny = ("Permission for this action was denied by the Claude Code auto "
+            "mode classifier. Reason: [Self-Approval] ...")
+
+    def call(cid, command):
+        return {"type": "tool_use", "id": cid, "name": "Bash",
+                "input": {"command": command}}
+
+    def result(cid, text, error=False):
+        return {"type": "tool_result", "tool_use_id": cid, "content": text,
+                "is_error": error}
+
+    with _tf.TemporaryDirectory() as d:
+        root = Path(d)
+        write(root / "-proj-a" / "s1.jsonl", [
+            assistant("m1", "2026-01-02T01:00:00Z", d, blocks=[
+                call("t1", "gh pr review 9 --approve -b 'REVIEW w-1: approve'")]),
+            user("2026-01-02T01:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t1", deny, True)]}},
+            assistant("m2", "2026-01-02T01:01:00Z", d, blocks=[
+                call("t2", "gh pr comment 9 -b 'REVIEW w-1: approve at abc1234'")]),
+            user("2026-01-02T01:01:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t2", "posted")]}},
+            assistant("m3", "2026-01-02T01:02:00Z", d, blocks=[
+                call("t3", "gh pr comment 9 -b 'REVIEW w-1: again'")]),
+            user("2026-01-02T01:02:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t3", "HTTP 500", True)]}},
+            assistant("m4", "2026-01-02T01:03:00Z", d, blocks=[call("t4", "grep x")]),
+            user("2026-01-02T01:03:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t4", "x" * 80 + " quoting: " + deny)]}},
+        ])
+
+        def machine(command, *extra):
+            return subprocess.run([sys.executable, str(SCRIPT), command,
+                                   "--root", d, *extra],
+                                  capture_output=True, text=True)
+
+        r = machine("denials")
+        check("denials counts a denial that opens its result, not one quoted "
+              "deeper in", "1 classifier denial(s)" in r.stdout
+              and "Self-Approval | -proj-a" in r.stdout, r.stdout + r.stderr)
+        r = machine("review-posts")
+        check("review-posts pairs each REVIEW post with how it ended",
+              "3 REVIEW post(s)" in r.stdout
+              and "{'REFUSED Self-Approval': 1, 'ok': 1, 'error': 1}" in r.stdout,
+              r.stdout + r.stderr)
+        # A --body-file post is a REVIEW post when its file was written as one.
+        write(root / "-proj-b" / "agent-x.jsonl", [
+            assistant("m5", "2026-01-02T02:00:00Z", d, blocks=[
+                {"type": "tool_use", "id": "w1", "name": "Write",
+                 "input": {"file_path": "/s/review.md",
+                           "content": "REVIEW w-1: approve at abc1234"}},
+                {"type": "tool_use", "id": "w2", "name": "Write",
+                 "input": {"file_path": "/s/report.md", "content": "REPORT w-1: x"}},
+                call("t5", "gh pr comment 9 --body-file /s/review.md"),
+                call("t6", "gh pr comment 9 --body-file /s/report.md")]),
+            user("2026-01-02T02:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t5", "posted"), result("t6", "posted")]}},
+        ])
+        r = machine("review-posts")
+        check("review-posts counts a --body-file post whose Write opened REVIEW, "
+              "and not one whose Write did not",
+              "4 REVIEW post(s)" in r.stdout
+              and "| True | w-1: | ok" in r.stdout, r.stdout + r.stderr)
+
+        # EVERY SPELLING OF THE PATH, read by the guard's grammar (pr#444 F1-F3):
+        # counted, one row each...
+        def wrote(wid, path, text="REVIEW w-2: ok"):
+            return {"type": "tool_use", "id": wid, "name": "Write",
+                    "input": {"file_path": path, "content": text}}
+        counted = [
+            ("p1", "gh pr comment 9 --body-file=/s/r1.md"),
+            ("p2", "gh pr comment 9 -F '/s/r 2.md'"),
+            ("p3", "gh pr comment 9 --body-file /s/r3.md; echo done"),
+            ("p4", "S=/s; gh pr comment 9 --body-file $S/r4.md"),
+            ("p5", "gh pr comment 9 --body-file r5.md"),
+        ]
+        # ...and not: another command's -F, and a file written after the post.
+        missed = [
+            ("q1", "gh pr comment 9 -b hi && git commit -F /s/r1.md"),
+            ("q2", "gh pr comment 9 --body-file /s/r6.md"),
+        ]
+        blocks = [wrote("v1", "/s/r1.md"), wrote("v2", "/s/r 2.md"),
+                  wrote("v3", "/s/r3.md"), wrote("v4", "/s/r4.md"),
+                  wrote("v5", f"{d}/r5.md")]
+        blocks += [call(i, c) for i, c in counted + missed]
+        blocks.append(wrote("v6", "/s/r6.md"))
+        write(root / "-proj-c" / "s3.jsonl", [
+            assistant("m6", "2026-01-02T03:00:00Z", d, blocks=blocks),
+            user("2026-01-02T03:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result(i, "posted") for i, _ in counted + missed]}},
+        ])
+        r = machine("review-posts")
+        check("review-posts reads --body-file=, -F, a quoted path, a trailing ;, "
+              "a $VAR set in the command and a relative path; not git's -F nor "
+              "a file written after the post",
+              "9 REVIEW post(s)" in r.stdout
+              and r.stdout.count("| w-2: | ok") == 5, r.stdout + r.stderr)
+
+        # THE SENTENCE-FORM REASON, and a prefixed `gh` (pr#444 round 2, N1
+        # and N3).
+        sentence = ("Permission for this action was denied by the Claude Code "
+                    "auto mode classifier. Reason: Blocked by classifier. If ...")
+        write(root / "-proj-d" / "s4.jsonl", [
+            assistant("m7", "2026-01-02T04:00:00Z", d, blocks=[
+                wrote("v8", "/s/r8.md"), wrote("v9", "/s/r9.md"),
+                call("t8", "gh pr comment 9 -b 'REVIEW w-3: approve'"),
+                call("t9", "time gh pr comment 9 -F /s/r8.md"),
+                call("t10", "GH_PAGER= gh pr comment 9 --body-file /s/r9.md")]),
+            user("2026-01-02T04:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t8", sentence, True), result("t9", "posted"),
+                result("t10", "posted")]}},
+        ])
+        r = machine("denials")
+        check("denials reads a reason written as a sentence, not only in brackets",
+              "2 classifier denial(s)" in r.stdout
+              and "Blocked by classifier | -proj-d" in r.stdout, r.stdout + r.stderr)
+        r = machine("review-posts")
+        check("review-posts reads that refusal, and a `gh` behind `time` or `VAR=`",
+              "12 REVIEW post(s)" in r.stdout
+              and "REFUSED Blocked by classifier" in r.stdout, r.stdout + r.stderr)
+
+        r = machine("denials", "--since", "2026-01-02T00:00:00Z")
+        check("a machine command refuses a corpus flag rather than ignoring it",
+              r.returncode == 2 and "takes no --since" in r.stderr, r.stderr)
+        r = machine("denials", "--base", d)
+        check("...--base included, so it resolves no base root",
+              r.returncode == 2 and "takes no --base" in r.stderr, r.stderr)
+
     return harness.report()
 
 

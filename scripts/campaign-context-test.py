@@ -62,8 +62,10 @@ def reviews_call(n, repo=R):
 
 
 VIEW = "issue view 7 -R o/base --json body,url,parent"
-BODY = ("## Intent\n\n- see rc#3 and pr#5; the bare #9 and o/other#6 name "
-        "no campaign, and rc#2 and rc#7 are the parent and the issue itself; "
+LABELS = "label list -R o/base --limit 200 --json name"
+BODY = ("## Intent\n\n- see rc#3 and pr#5; the bare #9, o/other#6 and "
+        "o/x.rc#6 name no campaign, nor does dotclaude#8, a word no label "
+        "spent; rc#2 and rc#7 are the parent and the issue itself; "
         "other#3 is rc#3 again\n\n"
         "## Lands in\n\n- none\n")
 LONG = "x" * 5000
@@ -73,6 +75,8 @@ def world():
     """The fixture every case starts from; a case edits its own copy."""
     return {
         VIEW: view(BODY),
+        LABELS: [{"name": "campaign:rc"}, {"name": "campaign:other"},
+                 {"name": "kind:research"}],
         comments_call(7): [
             comment(103, "2026-09-03T00:00:00Z",
                     "NOTE rc-worker-1: see rc#4 as well\n\n" + LONG),
@@ -110,6 +114,9 @@ def world():
                     "NOTE rc-planner-1: about rc#8 only", thread="issues/2"),
             comment(203, "2026-09-04T02:00:00Z",
                     "DECISION owner: rc#70 is another issue",
+                    thread="issues/2"),
+            comment(204, "2026-09-04T03:00:00Z",
+                    "NOTE rc-planner-1: pr#7 is a pull request, not the issue",
                     thread="issues/2"),
         ],
     }
@@ -172,8 +179,11 @@ def cases():
           "issuecomment-301" in two and "issuecomment-302" not in two, two)
     check("a slug#N cited by an own comment is followed, and empty prints empty",
           "rc#4" in two and "(empty)" in two.split("rc#4", 1)[-1], two)
-    check("a bare #N and an owner/repo#N are never read",
+    check("a bare #N, an owner/repo#N and an owner/repo.slug#N are never read",
           not any("/issues/9/" in c or "/issues/6/" in c for c in calls), calls)
+    check("a slug-shaped word no campaign: label spent is not followed",
+          not any("/issues/8/" in c for c in calls)
+          and "2 spent" in two, calls)
     check("the parent and the issue itself are not followed as citations",
           sum(c == comments_call(2) for c in calls) == 1
           and sum(c == comments_call(7) for c in calls) == 1, calls)
@@ -184,6 +194,33 @@ def cases():
     check("the campaign issue's comments naming another issue are not",
           "issuecomment-202" not in three and "issuecomment-203" not in three,
           three)
+    check("the campaign issue's comment citing pr#N of the same number is not",
+          "issuecomment-204" not in three, three)
+
+    # The issue is given in any form a person writes it.
+    r, _ = run(world(), "rc#7", R)
+    check("the issue argument may be <slug>#N",
+          r.returncode == 0 and "issuecomment-101" in section(r.stdout, 1),
+          f"rc {r.returncode}: {r.stderr[-300:]}")
+    check("the issue argument's number is whole in every form",
+          [m.issue_number(a) for a in ("416", "#416", "rule-check#416", "x#y")]
+          == [416, 416, 416, None],
+          [m.issue_number(a) for a in ("416", "#416", "rule-check#416", "x#y")])
+    r, _ = run(world(), "rc#x", R)
+    check("an issue argument that names no number is refused, not a traceback",
+          r.returncode == 2 and "Traceback" not in r.stderr, r.stderr[-300:])
+
+    # The label list did not read: say so, follow every slug-shaped word.
+    t = world()
+    del t[LABELS]
+    t[comments_call(8)] = []
+    r, calls = run(t)
+    two = section(r.stdout, 2)
+    check("an unread label list is said and exits non-zero, citations still "
+          "followed", r.returncode != 0 and "slugs:" in two and "unread" in two
+          and "issuecomment-301" in two and "dotclaude#8" in two
+          and "; 1 section(s) unread" in r.stdout,
+          f"rc {r.returncode}: {two[:400]}")
 
     # A pull request is read on the repository the sub-issue lands in.
     t = world()
@@ -206,7 +243,8 @@ def cases():
           f"rc {r.returncode}: {r.stdout[-600:]}")
 
     # No comments, no citations, no parent: three empty sections, exit 0.
-    t = {VIEW: view("## Lands in\n\n- none\n", parent=None), comments_call(7): []}
+    t = {VIEW: view("## Lands in\n\n- none\n", parent=None), comments_call(7): [],
+         LABELS: []}
     r, _ = run(t)
     check("an empty section prints as empty",
           r.returncode == 0 and all("(empty" in section(r.stdout, n)
@@ -232,6 +270,17 @@ def cases():
     check("own and campaign rows survive a hop over the ceiling",
           "issuecomment-101" in section(r.stdout, 1)
           and "issuecomment-201" in section(r.stdout, 3), r.stdout[-500:])
+
+    # Own rows fill the ceiling: the campaign's one row is cut whole.
+    t = world()
+    t[comments_call(7)] = [
+        comment(700 + i, f"2026-09-01T00:{i:02d}:00Z", f"NOTE owner: own {i}")
+        for i in range(ceiling)]
+    r, _ = run(t)
+    three = section(r.stdout, 3)
+    check("a block cut whole says all its rows were cut",
+          "all 1 row(s) cut" in three and "issuecomment-201" not in three,
+          three[-400:])
 
     # The assignment sentence tells the session to run this first.
     a = harness.load(ASSIGN, "campaign_assign")

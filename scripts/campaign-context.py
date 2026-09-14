@@ -15,7 +15,9 @@ if the planner points at them (rule-check#416). This gathers them, through
      five, oldest first;
   2. one hop: the DECISION and NOTE comments of each `<slug>#N`, and the
      REVIEW comments and review bodies of each `pr#N`, that the body or those
-     own comments cite, one read per number whatever slug it wears. The
+     own comments cite, one read per number whatever slug it wears. A slug
+     is a word the tracker's `campaign:` labels have spent, so `dotclaude#1`,
+     another repository's own issue, is not one. The
      issue itself and its parent are not followed --
      section 3 reads the parent -- and a bare `#N` names no campaign
      (AGENTS.md § Sub-issues), so it is never followed. A pull request is read
@@ -33,9 +35,10 @@ what they measured.
 
 WHAT IT OWNS AND WHAT IT BORROWS. The kind-line grammar is
 check-campaign-claim.py's `comment_first_line`, the slug is
-campaign-name-session.py's `SLUG`, the `gh` call shape campaign-tracker.py's
-`gh_read`, and `## Lands in` campaign-repos.py's `lands_in`: each is imported,
-none restated.
+campaign-name-session.py's `SLUG`, the spent slugs, the `gh` call shape and the
+label limit campaign-tracker.py's `spent_slugs`, `gh_read` and `LABEL_LIMIT`,
+and `## Lands in` campaign-repos.py's `lands_in`: each is imported, none
+restated.
 
 EXIT. 0 when every reading was made. 1 when any was not: that section prints
 `unread` and what `gh` said, and every other section still prints, since a
@@ -73,11 +76,12 @@ REPOS = TRACKER.REPOS
 COMMENT_CAP = 1000
 ROW_CEILING = 30
 
-# `<slug>#N` and `pr#N`, the forms AGENTS.md § Sub-issues spells. The slug is
-# NAMES.SLUG's body; a preceding `/` keeps `owner/repo#N` out, which names an
-# issue on another tracker.
-CITATION = re.compile(r"(?<![\w/-])(" + NAMES.SLUG.pattern.strip("^$")
-                      + r")#(\d+)(?!\d)")
+# `<slug>#N` and `pr#N`, the forms AGENTS.md § Sub-issues spells. The word is
+# NAMES.SLUG's body, and `citations` keeps it only when it is a spent slug; a
+# preceding `/` or `.` keeps `owner/repo#N` and `owner/repo.js#N` out, which
+# name an issue on another tracker.
+CITATION = re.compile(r"(?<![\w/.-])(" + NAMES.SLUG.pattern.strip("^$")
+                      + r")#(\d+)")
 PR = "pr"
 
 OWN_KINDS = GUARD.COMMENT_KINDS
@@ -127,13 +131,17 @@ def kind_line(body):
     return kind, author, line.strip()
 
 
-def citations(text):
-    """Every cited `(slug, number)` in `text`, first appearance first, one per
-    number: every slug but `pr` names the same tracker, so `a#5` and `b#5` are
-    one issue and are read once, under the slug seen first."""
+def citations(text, slugs):
+    """Every cited `(slug, number)` in `text` whose slug is `pr` or one of
+    `slugs` -- any slug-shaped word when `slugs` is None, the labels having
+    not read -- first appearance first, one per number: every slug but `pr` names
+    the same tracker, so `a#5` and `b#5` are one issue and are read once, under
+    the slug seen first."""
     seen, out = set(), []
     for m in CITATION.finditer(text or ""):
         slug, n = m.group(1), int(m.group(2))
+        if slug != PR and slugs is not None and slug not in slugs:
+            continue
         if (slug == PR, n) not in seen:
             seen.add((slug == PR, n))
             out.append((slug, n))
@@ -179,7 +187,8 @@ def show(b, counts):
         print("  (empty)")
     dropped = len(b.rows) - b.allowed
     if dropped:
-        print(f"  {dropped} oldest row(s) cut by the ceiling of {ROW_CEILING}; "
+        which = "all" if dropped == len(b.rows) else "oldest"
+        print(f"  {which} {dropped} row(s) cut by the ceiling of {ROW_CEILING}; "
               f"full thread: {b.rows[0][1]['html_url'].split('#')[0]}")
     for when, c, (kind, author, line) in b.rows[dropped:]:
         cid = (c.get("html_url") or "").rpartition("#")[2] or str(c.get("id"))
@@ -199,6 +208,12 @@ def reading(head, repo, number, kinds, reviews=False, keep=lambda c: True):
     return Block(f"{head}\n  read gh api {read}", items, kinds, keep, why)
 
 
+def issue_number(text):
+    """The number in `N`, `#N` or `<slug>#N`, or None."""
+    m = re.fullmatch(r"(?:[\w-]*#)?(\d+)", text)
+    return int(m.group(1)) if m else None
+
+
 def pr_repo(body, tracker):
     """(repository pull requests are read on, what said so)."""
     raw, why = REPOS.lands_in(body or "")
@@ -211,10 +226,12 @@ def pr_repo(body, tracker):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("issue")
+    ap.add_argument("issue", help="N, #N or <slug>#N")
     ap.add_argument("repo", nargs="?", default=TRACKER.DEFAULT_REPO)
     args = ap.parse_args()
-    issue, repo = int(args.issue.lstrip("#")), args.repo
+    issue, repo = issue_number(args.issue), args.repo
+    if issue is None:
+        ap.error(f"issue: {args.issue!r} is not N, #N or <slug>#N")
 
     global FIRST_LINE
     FIRST_LINE = GUARD.comment_first_line()
@@ -235,7 +252,10 @@ def main():
     own = reading(f"\n== 1. {repo}#{issue}'s own comments, kinds "
                   f"{', '.join(OWN_KINDS)}", repo, issue, OWN_KINDS)
 
-    cited = citations("\n".join([body] + [c["body"] for _, c, _ in own.rows]))
+    slugs, _, slugs_why = TRACKER.spent_slugs(repo, TRACKER.LABEL_LIMIT)
+    slugs = None if slugs_why else set(slugs)
+    cited = citations("\n".join([body] + [c["body"] for _, c, _ in own.rows]),
+                      slugs)
     follow = [r for r in cited if not (r[0] != PR and r[1] in (issue, parent))]
     prs_on, said = pr_repo(body, repo)
     hop = []
@@ -255,12 +275,19 @@ def main():
     if parent is not None:
         camp = reading(f"{head3}\n  {repo}#{parent}", repo, parent, ISSUE_KINDS,
                        keep=lambda c: any(s != PR and n == issue
-                                          for s, n in citations(c["body"])))
+                                          for s, n in citations(c["body"],
+                                                                slugs)))
 
     cut = allot([own] + ([camp] if camp else []) + hop)
     counts = {"unread": 0, "bodies": 0}
     show(own, counts)
     print("\n== 2. one hop: what the body and those comments cite")
+    print(f"  slugs: read gh label list -R {repo}, "
+          + (f"{len(slugs)} spent" if slugs_why is None
+             else f"unread: {slugs_why.splitlines()[0]}; every slug-shaped "
+                  f"word is followed"))
+    if slugs_why:
+        counts["unread"] += 1
     if not hop:
         print("  (empty: the body and those comments cite nothing to follow)")
     for b in hop:

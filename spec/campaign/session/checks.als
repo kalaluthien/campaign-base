@@ -1,8 +1,8 @@
 /*
  * The disciplines a campaign session might follow, the witnesses that measure
- * each, the property the adopted one holds, and the reachability floor for
- * session/system: its own events, and every refinement it adds to a lower
- * entity's event. github/system.als is spec/'s entry point.
+ * each, the property the adopted one holds, and the floor that says the
+ * events its checks name are reachable at all. github/system.als is spec/'s
+ * entry point.
  */
 module session/checks
 
@@ -170,10 +170,14 @@ run R4_RepolessCampaign          for 2 Issue, 1 PullRequest, 1 Campaign, 1 Sessi
 -- a model switch moves nothing a handoff moves
 check ModelSwitchKeepsEverySession for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 0
 
+/* ---------------- reachability floor ----------------
+   Every event the checks above name fires in some trace, so none holds by
+   vacuity; alloy-check.py reads these as the witnesses. ReadBody, EditReadme
+   and Stamp are named by no check here and fire for their own sake. */
 pred Cov_WriteBodyBySession              { eventually (Now.event = WriteBody and some Who.session) }
 pred Cov_ReadBody          { eventually Now.event = ReadBody }
 pred Cov_EditReadme        { eventually Now.event = EditReadme }
-/* Both pinned on the post-state, so each fails when its update is dropped. */
+/* Pinned on the post-state, so it fails when its update is dropped. */
 pred Cov_Stamp             { eventually (Now.event = Stamp and Who.session not in Stamped and Who.session in Stamped') }
 pred Cov_ModelSwitch       { eventually (Now.event = ModelSwitch and some Who.addressed and some Session.claimedIssues) }
 

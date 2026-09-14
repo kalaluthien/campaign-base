@@ -941,7 +941,8 @@ pred Q11_WorkerWritesItsOwnCampaignIssue {
 }
 
 /* Q10. A planner cuts a claim for a delegate on a sub-issue of ANOTHER campaign
-   bound to the same machine. SAT: the relaxation in `sessionClaim`.
+   held on the same machine (`machinesHolding`). SAT: the relaxation in
+   `sessionClaim`.
 
    `c != s.worksOn` sits INSIDE the `eventually` in all three: `worksOn` is var,
    so a session that differs from `c` at time zero can adopt `c` before it

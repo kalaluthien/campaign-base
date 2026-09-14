@@ -1,8 +1,37 @@
 <title>The three planes</title>
 <!-- A `narrative`, from show-me's assets/narrative.html at dotclaude 9c84679;
-     ~/.claude/shared/doctype.md gives the parts, § Page and § Figures the rules.
+     ~/.claude/shared/doctype.md gives the parts, and
+     ~/.claude/shared/doctype-page.md and doctype-figures.md the rules.
      Evidence links pin the base at the sha in the footer. -->
 <style>
+  /* skin: ~/.claude/shared/doctype-skin.css, carried verbatim by every page template down to "skin end"; the probe compares */
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf7; --fg: #1d1d1f; --muted: #5b5f66; --line: #cfccc4;
+    --box: #ffffff; --accent: #2458c6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+      --box: #222427; --accent: #8fb4ff;
+    }
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #17181a; --fg: #ececec; --muted: #a3a7ae; --line: #45484d;
+    --box: #222427; --accent: #8fb4ff;
+  }
+  body { background: var(--bg); color: var(--fg); margin: 0;
+         font: 16px/1.5 system-ui, sans-serif; padding-block: 24px; padding-inline: 16px; }
+  main { max-width: 48rem; margin: 0 auto; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.15rem; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg text { fill: var(--fg); font: 14px system-ui, sans-serif; }
+  svg .label { fill: var(--muted); font-size: 12px; }
+  /* skin end */
   :root {
     color-scheme: light dark;
     --bg: #fbfaf7; --fg: #1d1d1f; --muted: #5b5f66; --line: #cfccc4;

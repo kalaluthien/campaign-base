@@ -211,6 +211,9 @@ COMPACT_REFUSALS = ("<local-command-stdout>Not enough messages to compact",
 # isMeta, its text opening with this tag (820 on this machine, 2026-09-11).
 # Busy, the same notice is a queued_command of another mode.
 TASK_NOTICE = "<task-notification>"
+# A slash command the session ran, and what it printed: two user records in
+# that order, sharing one timestamp (probed on rule-check#431).
+COMMAND_OPEN, STDOUT_OPEN = "<command-name>/", "<local-command-stdout>"
 # How much of the last prompt of another shape a `retire` line quotes: enough
 # to tell "wait, launch nothing" from work handed over in words.
 OTHER_CHARS = 80
@@ -286,7 +289,7 @@ def assignment(content):
 
 def transcript_reading(lines):
     """What one session's transcript says. Pure, over its lines. Returns a
-    dict of timestamps and the context size:
+    dict of timestamps, the context size, the model and the commands run:
 
       assigned   the sub-issue the last prompt carrying an assignment
                  sentence names, at `assigned_at`: `campaign-assign.py`'s
@@ -311,6 +314,10 @@ def transcript_reading(lines):
                  names it.
       acted      the last assistant record calling a tool, which `retire`
                  reads past and names as well.
+      model      the model of the latest assistant record, at `model_at`.
+      commands   every slash command the session ran, IN FILE ORDER, as
+                 [name, what it printed or None]: `campaign-model.py` reads
+                 its `/model` and `/effort` confirmations here.
       context    input plus cache tokens of the latest usage record, or the
                  boundary's `postTokens` when a compaction came after it --
                  none when the boundary carries none, since the usage before
@@ -324,7 +331,8 @@ def transcript_reading(lines):
     own context, not this session's."""
     out = {"assigned": None, "assigned_at": None, "compacted": None,
            "compact_asked": None, "compact_refused": None, "other": None, "other_at": None, "acted": None, "context": None,
-           "context_at": None, "records": 0}
+           "context_at": None, "records": 0, "model": None, "model_at": None,
+           "commands": []}
 
     def later(key, ts):
         if out[key] is None or ts > out[key]:
@@ -363,6 +371,8 @@ def transcript_reading(lines):
               and str(r.get("content")).startswith(COMPACT_REFUSALS)):
             later("compact_refused", ts)
         elif kind == "assistant" and msg.get("model") != "<synthetic>":
+            if msg.get("model") and (out["model_at"] is None or ts > out["model_at"]):
+                out["model"], out["model_at"] = msg["model"], ts
             calls = msg.get("content")
             if isinstance(calls, list) and any(
                     isinstance(b, dict) and b.get("type") == "tool_use"
@@ -378,6 +388,11 @@ def transcript_reading(lines):
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
             content = msg.get("content")
+            if isinstance(content, str) and content.startswith(COMMAND_OPEN):
+                out["commands"].append([content[len(COMMAND_OPEN):].split("<")[0], None])
+            elif (isinstance(content, str) and content.startswith(STDOUT_OPEN)
+                  and out["commands"] and out["commands"][-1][1] is None):
+                out["commands"][-1][1] = content[len(STDOUT_OPEN):].split("</local-command-stdout>")[0]
             if is_compact(content):
                 later("compact_asked", ts)
             if is_prompt(content):

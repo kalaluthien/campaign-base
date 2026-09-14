@@ -145,7 +145,19 @@ assert ModelSwitchKeepsEverySession {
      and lone Who.addressed.role))
 }
 
+/* SR1. A WHOLE READ OF A LONG FILE IS STEERED (system.als's `steered`), and
+   only that read: SR1b is UNSAT because a range, a diff and a short file each
+   pass, and dropping any one of `steered`'s three conditions makes it SAT. */
+pred SR1_WholeReadOfALongFileIsSteered { some r: FileRead | steered[r] }
+pred SR1b_ARangeADiffOrAShortFilePasses {
+  some r: FileRead | steered[r] and (r in Ranged or r in Diff or r not in Long)
+}
+
 /* ---------------- commands ---------------- */
+
+-- a whole read of a long file is steered, and nothing else is
+run SR1_WholeReadOfALongFileIsSteered  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 1
+run SR1b_ARangeADiffOrAShortFilePasses for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 0
 
 -- the loss
 run R1_LostBodyUpdate            for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1

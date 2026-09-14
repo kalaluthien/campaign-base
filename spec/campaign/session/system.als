@@ -129,6 +129,29 @@ fact StampedByTheHook {
                              - (Now.event = Unstamp implies Who.session else none))
 }
 
+/* A READ OF A LONG FILE IS STEERED TO A GREP AND A RANGE. `scripts/check-read-range.py`,
+   a PreToolUse hook on `Read`, denies a read that names no range of a Long
+   file that is not a Diff, and its reason points the session at `grep -n`
+   and a bounded read. What makes a read Long -- the lines it would return
+   against a threshold -- and what is a Diff -- every file the script passes
+   whole on purpose, a notebook included -- are that script's and are not
+   restated: here a read only is one or is not.
+
+   Any session and any subagent: the hook fires for both, and no field of its
+   payload says what a subagent is for, so the exemption is the path's and not
+   the reader's. No role, no campaign, and no event: the hook holds nothing
+   between calls, and a denied read issued again with a range is a new read.
+
+   ONE READ, THREE BITS: the rule judges one call alone, so one atom with its
+   bits left free is every case -- the solver tries each combination -- and a
+   `one sig` needs no scope, where a new top-level sig would owe one in every
+   command that opens this module. `Long` is said of the lines the read would
+   return, and `Diff` of the file it names. */
+one sig FileRead {}
+sig Ranged, Long, Diff in FileRead {}
+
+pred steered[r: FileRead] { r not in Ranged and r in Long - Diff }
+
 sig Session {
   machine:          one Machine,
   role:             lone Role,

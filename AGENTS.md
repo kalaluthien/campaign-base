@@ -451,8 +451,9 @@ Then, within what the repository allows, choose by cost:
 - **a herdr delegate in a clone** when the work needs the repository's own
   toolchain, will take many turns, or two repositories must move together.
 
-**Read only the part of a file you need** — the Read tool, or a bounded
-`sed -n a,bp`.
+**A whole Read of a long file is refused** by `scripts/check-read-range.py`,
+whose docstring says what is long and what is exempt: find the lines with
+`grep -n`, then read that part.
 
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
 for the base it is the mode of last resort. All modes share the mechanics —
@@ -744,8 +745,9 @@ follows is this repository's own.
 **`campaign-primitives.py`'s listing groups scripts by who calls them** and
 prints the line under each shebang, so a hand-kept inventory is never written.
 
-**`check-campaign-claim.py` is the only harness hook here that refuses**; the
-others announce. A `pre-commit` guard numbers its own findings and says which
+**Two harness hooks here refuse**, `check-campaign-claim.py` and
+`check-read-range.py`, each on its own matcher so a fault in one never reaches
+the other's calls; the others announce. A `pre-commit` guard numbers its own findings and says which
 codes it uses in its docstring; take them from there. Four of these guards
 return 1 for a finding, which is also what an unhandled exception exits, so a
 guard whose caller must tell the two apart says so and handles its own errors.

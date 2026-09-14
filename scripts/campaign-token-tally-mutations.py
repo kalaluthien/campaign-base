@@ -128,6 +128,21 @@ MUT = [
     ("a path the shell would expand is taken as a file",
      '    return "read", (None if path and set(path) & set("$`*?[") else path)',
      '    return "read", path'),
+    ("a glob is taken as a file",
+     'set(path) & set("$`*?[")',
+     'set(path) & set("$`")'),
+    ("sed -I edits in place, yet is a read",
+     'set(t) & set("iI")',
+     'set(t) & set("i")'),
+    ("sed --in-place=<suffix> edits in place, yet is a read",
+     't.startswith("--in-place")',
+     't == "--in-place"'),
+    ("`>|` is not a redirection",
+     'set(t) <= set("<>&|")',
+     'set(t) <= set("<>&")'),
+    ("`>|` is a redirection, yet not one sending stdout to a file",
+     'args[cut] in (">", ">>", ">|", "&>", "&>>")',
+     'args[cut] in (">", ">>", "&>", "&>>")'),
 ]
 
 fails = 0

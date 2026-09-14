@@ -379,13 +379,18 @@ def build(tmp):
                            "input": {"file_path": str(rd / "long.py"),
                                      "offset": 100, "limit": 20}}]),
         result("r3", day + "04:02:01Z", 1000),
-        # Four shapes that are no read by the rule, 100 bytes each: sed without
-        # -n, stdout sent to a file, a read after the first segment (a floor),
-        # and a path the shell would expand (no path, a floor).
+        # Eight shapes that are no read by the rule, 100 bytes each: sed without
+        # -n, stdout sent to a file (`>` and `>|`), a read after the first
+        # segment (a floor), a path the shell would expand (`$P/f` and a glob,
+        # no path, floors), and sed editing in place (BSD `-I`, `--in-place=`).
         *[x for n, command in enumerate(("sed 's/y/z/' short.py",
                                          "cat short.py > out.txt",
                                          "cd /tmp && sed -n 1,5p short.py",
-                                         "P=/x; cat $P/long.py"))
+                                         "P=/x; cat $P/long.py",
+                                         "cat short.py >| out.txt",
+                                         "cat *.py",
+                                         "sed -I.bak -n 1p short.py",
+                                         "sed --in-place=.bak -n 1p short.py"))
           for x in (assistant(f"m-not{n}", day + f"04:1{n}:00Z", str(rd),
                               session="s2", out=5,
                               blocks=[{"type": "tool_use", "name": "Bash",
@@ -622,11 +627,20 @@ def main():
               str(row(reads, "machinery-worker-9")))
         check("reads' share is of every tool result's bytes, sed without -n "
               "and stdout sent to a file no reads",
-              "read bytes 13,700 of 30,600" in reads and "(44.8%)" in reads,
+              "read bytes 13,700 of 31,000" in reads and "(44.2%)" in reads,
               reads[-900:])
-        check("a path the shell would expand is a no-path floor, not a file",
-              "1 reads naming no file (unsplittable), carrying 100 bytes" in reads
-              and row(reads, "$P/long.py") is None, reads[-900:])
+        check("`>|` sends stdout to a file like `>`, so is no read of either file",
+              row(reads, "camp-260101/worktrees/315/out.txt") is None
+              and short and short["reads"] == "2", str(short) + reads[-900:])
+        check("sed editing in place by BSD `-I` or `--in-place=` is no read",
+              short and short["result_bytes"] == "700",
+              str(short))
+        check("a path the shell would expand, `$P/f` or a glob, is a no-path "
+              "floor, not a file",
+              "2 reads naming no file (unsplittable), carrying 200 bytes" in reads
+              and row(reads, "$P/long.py") is None
+              and row(reads, "camp-260101/worktrees/315/*.py") is None,
+              reads[-900:])
         check("only the first segment's read word counts; a later one is a floor",
               "1 commands reading a named file after their first segment, "
               "which the rule does not count, carrying 100 bytes" in reads,

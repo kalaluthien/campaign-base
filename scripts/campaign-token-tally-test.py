@@ -84,16 +84,18 @@ def row(text, first):
 
     By heading and not by index, so adding a column to a table does not fail
     every case that reads one -- the cases here are about what a number says,
-    and a column's position is not part of that.
+    and a column's position is not part of that. Every heading line re-heads,
+    because `reads` prints two tables.
     """
     head = None
     for line in text.splitlines():
         cells = line.split()
         if not cells:
             continue
+        if cells[0] in ("issue", "session", "pr", "script", "file"):
+            head = cells
+            continue
         if head is None:
-            if cells[0] in ("issue", "session", "pr", "script"):
-                head = cells
             continue
         if cells[0] == first:
             return dict(zip(head, cells))
@@ -347,6 +349,65 @@ def build(tmp):
     ])
     write_meta(root / "proj" / "s1" / "subagents" / "agent-a9.meta.json",
                {"parentAgentId": "a8", "spawnDepth": 2})
+    # FILE READS, in a session of their own: a Read of a 400-line file, a
+    # `sed -n` of a 10-line one, and a second Read of the first -- the re-read.
+    # Both files exist, so their lines come from disk; s1's `sed -n` of
+    # campaign-primitives.py above names a worktree that does not, so that
+    # file's lines come from its result.
+    rd = base / "camp-260101" / "worktrees" / "315"
+    rd.mkdir(parents=True)
+    (rd / "long.py").write_text("x\n" * 400)
+    (rd / "short.py").write_text("y\n" * 10)
+    def result(tid, ts, size):
+        return {"type": "user", "timestamp": ts, "cwd": str(rd),
+                "gitBranch": "main", "sessionId": "s2", "uuid": "r" + tid,
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": tid,
+                     "content": [{"type": "text", "text": "F" * size}]}]}}
+    write(root / "proj" / "s2.jsonl", [
+        {"type": "agent-name", "sessionId": "s2", "agentName": "machinery-worker-10"},
+        assistant("m-read1", day + "04:00:00Z", str(rd), session="s2", out=5,
+                  blocks=[{"type": "tool_use", "name": "Read", "id": "r1",
+                           "input": {"file_path": str(rd / "long.py")}}]),
+        result("r1", day + "04:00:01Z", 3000),
+        assistant("m-read2", day + "04:01:00Z", str(rd), session="s2", out=5,
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "r2",
+                           "input": {"command": "sed -n 1,10p short.py"}}]),
+        result("r2", day + "04:01:01Z", 500),
+        assistant("m-read3", day + "04:02:00Z", str(rd), session="s2", out=5,
+                  blocks=[{"type": "tool_use", "name": "Read", "id": "r3",
+                           "input": {"file_path": str(rd / "long.py"),
+                                     "offset": 100, "limit": 20}}]),
+        result("r3", day + "04:02:01Z", 1000),
+        # Eight shapes that are no read by the rule, 100 bytes each: sed without
+        # -n, stdout sent to a file (`>` and `>|`), a read after the first
+        # segment (a floor), a path the shell would expand (`$P/f` and a glob,
+        # no path, floors), and sed editing in place (BSD `-I`, `--in-place=`).
+        *[x for n, command in enumerate(("sed 's/y/z/' short.py",
+                                         "cat short.py > out.txt",
+                                         "cd /tmp && sed -n 1,5p short.py",
+                                         "P=/x; cat $P/long.py",
+                                         "cat short.py >| out.txt",
+                                         "cat *.py",
+                                         "sed -I.bak -n 1p short.py",
+                                         "sed --in-place=.bak -n 1p short.py"))
+          for x in (assistant(f"m-not{n}", day + f"04:1{n}:00Z", str(rd),
+                              session="s2", out=5,
+                              blocks=[{"type": "tool_use", "name": "Bash",
+                                       "id": f"n{n}",
+                                       "input": {"command": command}}]),
+                    result(f"n{n}", day + f"04:1{n}:01Z", 100))],
+    ])
+    # A subagent of s2 reading short.py again: its own context, so no re-read.
+    write(root / "proj" / "s2" / "subagents" / "agent-b1.jsonl", [
+        user(day + "04:03:00Z", str(rd), "summarise short.py", session="s2",
+             agent="b1"),
+        assistant("m-read4", day + "04:04:00Z", str(rd), session="s2", out=5,
+                  agent="b1",
+                  blocks=[{"type": "tool_use", "name": "Bash", "id": "r4",
+                           "input": {"command": "sed -n 1,10p short.py"}}]),
+        {**result("r4", day + "04:04:01Z", 200), "agentId": "b1"},
+    ])
     pr_map = tmp / "prs.json"
     pr_map.write_text(json.dumps([{"number": 400, "headRefName": "machinery/303-x"}]))
     return root, base, pr_map
@@ -361,6 +422,10 @@ def main():
         sessions = run(root, base, "sessions", pr_map)
         reviews = run(root, base, "reviews", pr_map)
         echo = run(root, base, "tool-echo", pr_map)
+        try:
+            reads = run(root, base, "reads", pr_map)
+        except SystemExit as e:
+            reads = str(e)
 
         # ONE MESSAGE IS ONE TURN. Three records, one turn, and the settled
         # record's output -- not the placeholder's 2, and not the sum of three
@@ -533,6 +598,68 @@ def main():
         check("a shell's -c string is read once, not once per reader",
               tracker and tracker["charged"] == "2" and tracker["also_run"] == "0",
               str(tracker))
+
+        # READS: A FILE ROW PER FILE, A RE-READ PER SESSION, ONE SHARE LINE.
+        # s2 Reads long.py (400 lines), `sed -n`s short.py by a relative path,
+        # and Reads long.py again; s1 `sed -n`s a file whose worktree is gone.
+        long = row(reads, "camp-260101/worktrees/315/long.py")
+        check("a Read and a re-read of one file are one row, the second a re-read",
+              long and long["reads"] == "2" and long["rereads"] == "1"
+              and long["result_bytes"] == "4,000", str(long) + reads[-600:])
+        check("...over the threshold by the lines on disk, and saying so",
+              long and long["lines"] == "400" and long["from"] == "disk"
+              and long["over"] == "yes", str(long))
+        short = row(reads, "camp-260101/worktrees/315/short.py")
+        check("`sed -n` is a read of its last path argument, resolved from the cwd",
+              short and short["over"] == "no" and short["lines"] == "10", str(short))
+        check("...and a subagent reading it again is its own context, not a re-read",
+              short and short["reads"] == "2" and short["rereads"] == "0", str(short))
+        gone = row(reads, "camp-260101/worktrees/307/scripts/campaign-primitives.py")
+        check("a file no longer on disk takes its lines from the result",
+              gone and gone["from"] == "result" and gone["lines"] == "1", str(gone))
+        s2 = row(reads, "machinery-worker-10")
+        check("the per-session table counts a session's reads and re-reads",
+              s2 and s2["reads"] == "3" and s2["rereads"] == "1"
+              and s2["reread_bytes"] == "1,000", str(s2))
+        check("grep, a heredoc and a script run are not reads",
+              row(reads, "machinery-worker-9") and
+              row(reads, "machinery-worker-9")["reads"] == "1",
+              str(row(reads, "machinery-worker-9")))
+        check("reads' share is of every tool result's bytes, sed without -n "
+              "and stdout sent to a file no reads",
+              "read bytes 13,700 of 31,000" in reads and "(44.2%)" in reads,
+              reads[-900:])
+        check("`>|` sends stdout to a file like `>`, so is no read of either file",
+              row(reads, "camp-260101/worktrees/315/out.txt") is None
+              and short and short["reads"] == "2", str(short) + reads[-900:])
+        check("sed editing in place by BSD `-I` or `--in-place=` is no read",
+              short and short["result_bytes"] == "700",
+              str(short))
+        check("a path the shell would expand, `$P/f` or a glob, is a no-path "
+              "floor, not a file",
+              "2 reads naming no file (unsplittable), carrying 200 bytes" in reads
+              and row(reads, "$P/long.py") is None
+              and row(reads, "camp-260101/worktrees/315/*.py") is None,
+              reads[-900:])
+        check("only the first segment's read word counts; a later one is a floor",
+              "1 commands reading a named file after their first segment, "
+              "which the rule does not count, carrying 100 bytes" in reads,
+              reads[-900:])
+        at = row(run(root, base, "reads", pr_map, ("--threshold", "400")),
+                 "camp-260101/worktrees/315/long.py")
+        check("a file of exactly --threshold lines is not over it",
+              at and at["over"] == "no", str(at))
+        empty = run(root, base, "reads", pr_map,
+                    ("--since", "2025-01-01T00:00:00Z", "--until", "2025-01-02T00:00:00Z"))
+        check("an empty window says stop, not build",
+              "0 reads of 0 files" in empty and "verdict: stop" in empty,
+              empty[-600:])
+        # Over-threshold 4,000 and re-read 1,000 overlap on long.py: their
+        # union is 29.2% of read bytes and says stop, their sum 36.5% would
+        # say build -- and so would counting the subagent's read as a re-read.
+        check("the verdict reads the union of over-threshold and re-read bytes",
+              "either 4,000 (29.2%)" in reads and "verdict: stop" in reads,
+              reads[-600:])
 
         # A WINDOW BOUND THAT CANNOT BE COMPARED IS REFUSED, not quietly used.
         bad = subprocess.run(

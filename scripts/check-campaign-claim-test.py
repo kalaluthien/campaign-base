@@ -361,13 +361,16 @@ def row_merges_by_number(mod, row):
     if row["tool"] != "Bash":
         return False
     pairs, _why = mod.paired_segments(row["command"])
-    for tokens, _heredocs, _outer in pairs or []:
+    for tokens, heredocs, _outer in pairs or []:
         word, rest = mod.head(tokens)
-        if word != "gh" or not mod.gh_write(rest)[0]:
+        if word != "gh":
+            if mod.hides_merge(tokens):
+                return True
             continue
-        if mod.api_merge(rest):
+        kind = mod.merge_kind(rest, heredocs)
+        if kind in ("api", "unread"):
             return True
-        if mod.gh_words(rest)[:2] == ["pr", "merge"]:
+        if kind == "cli":
             t = mod.merge_target(rest)
             if not t or mod.claim_match(t) is None:
                 return True
@@ -3152,6 +3155,32 @@ def main():
                 command="gh api repos/o/r/pulls/7/merge")
         check("#442: CONTROL: a GET of the merge endpoint is a read",
               r.returncode == 0, out(r)[:500])
+        # THE OTHER ROUTES TO THE SAME MERGE (pr#446's REVIEW, finding 1): each
+        # was allowed by any claim at 8e41aa8.
+        gql = Path(d) / "merge.graphql"
+        gql.write_text("mutation { mergePullRequest(input: {pullRequestId: \"x\"}) "
+                       "{ clientMutationId } }\n")
+        for cmd, why in [
+            ("gh api -X PUT 'repos/o/r/pulls/7/merge?x=1'", "through `gh api`"),
+            ("gh api graphql -f query='mutation { mergePullRequest(input: "
+             "{pullRequestId: \"x\"}) { clientMutationId } }'", "through `gh api`"),
+            ("gh api graphql -f query='mutation { enablePullRequestAutoMerge("
+             "input: {pullRequestId: \"x\"}) { clientMutationId } }'",
+             "through `gh api`"),
+            (f"gh api graphql -F query=@{gql}", "through `gh api`"),
+            ("gh api graphql -F query=@no-such.graphql", "could not be read"),
+            ("echo 7 | xargs gh pr merge", "cannot read for its branch"),
+            ("G=gh; $G pr merge 7 --merge", "cannot read for its branch"),
+        ]:
+            for who, env in (("planner", planner), ("worker", worker)):
+                r = ask(f.base, tool="Bash", command=cmd, env=env)
+                check(f"#442: a {who}'s `{cmd[:44]}` is refused as a merge",
+                      r.returncode == 2 and why in r.stderr, out(r)[:500])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh api graphql -f query='mutation { addSubIssue(input: "
+                        "{issueId: \"a\", subIssueId: \"b\"}) { clientMutationId } }'")
+        check("#442: CONTROL: a GraphQL write that merges nothing is not read "
+              "as a merge", "merge" not in r.stderr.lower(), out(r)[:500])
         r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
                 env=no_herdr(d))
         check("#442: with the role unread, the claim reading still ties the "
@@ -3686,7 +3715,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 510
+    EXPECTED = 525
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

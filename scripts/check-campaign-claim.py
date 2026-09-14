@@ -103,9 +103,12 @@ WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
 head branch, and the claim is read off that name: a planner merges any claim
 of its own campaign, a worker only the one a checkout it stands in or holds is
 on -- `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als. A
-number, a URL, no argument and a merge through `gh api` name no claim this
-can read without the network, and are refused saying how to write it; a head
-that is no claim, and a merge beside another gh write, are refused too.
+number, a URL, no argument, a merge through `gh api` (the REST endpoint, a
+query string on it, a GraphQL merge mutation, or a GraphQL query this cannot
+read) and a merge spelled where the command word is not `gh` (`xargs`, a
+variable) name no claim this can read without the network, and are refused
+saying how to write it; a head that is no claim, and a merge beside another gh
+write, are refused too.
 
 WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
 one campaign write whose CONTENT this can read, so it is read: the first line
@@ -2071,8 +2074,11 @@ def member_pr(tokens):
 MERGE_VALUED = {"-R", "--repo", "--match-head-commit", "-A", "--author-email",
                 "-b", "--body", "-F", "--body-file", "-t", "--subject"}
 MERGE_FORM = "gh pr merge <slug>/<issue>-<topic> -R <owner/repo>"
-# The REST route to the same merge, which names a number and no branch.
-API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?$")
+# THE OTHER ROUTES TO THE SAME MERGE, each naming a number and no branch:
+# the REST endpoint, a query string on it included, and the two GraphQL
+# mutations that merge or arm a merge (pr#446's REVIEW, finding 1).
+API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?(?:[?#].*)?$")
+GRAPHQL_MERGE = re.compile(r"\b(?:mergePullRequest|enablePullRequestAutoMerge)\b")
 
 
 def merge_target(tokens):
@@ -2087,28 +2093,79 @@ def merge_target(tokens):
     return words[2] if len(words) > 2 else None
 
 
-def api_merge(tokens):
-    """Whether a `gh api` segment is a write to a pull request's merge
-    endpoint."""
-    return (gh_words(tokens)[:1] == ["api"] and gh_write(tokens)[0]
-            and any(API_MERGE.search(t) for t in tokens[1:]))
+def graphql_text(tokens, heredocs, cwd):
+    """The text a `gh api graphql` segment sends -- its words, a heredoc on
+    `@-` or `--input -`, and a file named by `field=@path` or `--input path`
+    -- or None when a file it names cannot be read."""
+    parts, here = list(tokens), Path(cwd) if cwd is not None else Path.cwd()
+    paths = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
+    paths += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
+    paths += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
+    for path in paths:
+        if path == "-":
+            parts += heredocs
+            continue
+        resolved = Path(path) if Path(path).is_absolute() else here / path
+        try:
+            parts.append(resolved.read_text(encoding="utf-8"))
+        except OSError:
+            return None
+    return "\n".join(parts)
 
 
-def merge_call(merges, rest, what, how, how_role, fell_back, campaign, row,
-               cwd, root):
+def merge_kind(tokens, heredocs=(), cwd=None):
+    """How a `gh` segment merges a pull request, or None: `cli` for `gh pr
+    merge`, `api` for the REST endpoint or a GraphQL merge mutation, and
+    `unread` for a GraphQL write whose query this could not read."""
+    words = gh_words(tokens)
+    if words[:2] == ["pr", "merge"]:
+        return "cli"
+    if words[:1] != ["api"] or not gh_write(tokens)[0]:
+        return None
+    if any(API_MERGE.search(t) for t in tokens[1:]):
+        return "api"
+    if "graphql" in words:
+        text = graphql_text(tokens, list(heredocs), cwd)
+        if text is None:
+            return "unread"
+        if GRAPHQL_MERGE.search(text):
+            return "api"
+    return None
+
+
+def hides_merge(tokens):
+    """Whether a segment whose command word is not `gh` still spells a merge
+    -- `xargs gh pr merge`, `$G pr merge 7`, a merge path or mutation passed
+    through -- which this cannot read for its branch."""
+    return (any(a == "pr" and b == "merge" for a, b in zip(tokens, tokens[1:]))
+            or any(API_MERGE.search(t) or GRAPHQL_MERGE.search(t)
+                   for t in tokens))
+
+
+def merge_call(merges, hidden, rest, what, how, how_role, fell_back, campaign,
+               row, cwd, root):
     """The verdict on a command holding a merge: the planner of the head's
     campaign, or a session with a checkout on the head's claim -- the worker
     holding it, and the claim reading when the role could not be read.
     `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als."""
     say = [how, *fell_back]
+    if hidden:
+        return refuse([f"{what}: a merge this cannot read for its branch, in "
+                       f"`{hidden[0]}`.", f"Merge with `{MERGE_FORM}`, as a "
+                       f"`gh` call of its own (rule-check#442).", *say])
     if rest:
         return refuse([f"{what}: a merge shares its command with another gh "
                        f"write.", "A merge is licensed by the branch it names "
                        "and by nothing else in the command, so it goes in a "
                        "command of its own (rule-check#442).", *say])
     ok = []
-    for x in merges:
-        if gh_words(x)[:1] == ["api"]:
+    for x, kind in merges:
+        if kind == "unread":
+            return refuse([f"{what}: a GraphQL write whose query could not be "
+                           f"read, so whether it merges could not be either.",
+                           f"Pass the query inline, or merge with "
+                           f"`{MERGE_FORM}` (rule-check#442).", *say])
+        if kind == "api":
             return refuse([f"{what}: a merge through `gh api` names a number "
                            f"and no branch, so no claim can be read off it.",
                            f"Merge with `{MERGE_FORM}` (rule-check#442).", *say])
@@ -2839,10 +2896,18 @@ def bash_call(command, cwd: Path, session_id=""):
     # licence and the claim reading, which both used to answer it: the
     # planner's licence refused it as off the campaign plane and then the
     # claim reading let any claim under the root carry it.
-    merges = [x for x in writes
-              if gh_words(x)[:2] == ["pr", "merge"] or api_merge(x)]
-    if merges:
-        return merge_call(merges, [x for x in writes if x not in merges]
+    merges, hidden = [], []
+    for tokens, heredocs, _outer in pairs:
+        word, rest = head(tokens)
+        if word == "gh":
+            kind = merge_kind(rest, heredocs, cwd)
+            if kind:
+                merges.append((rest, kind))
+        elif hides_merge(tokens):
+            hidden.append(" ".join(tokens)[:60])
+    if merges or hidden:
+        merged = [x for x, _ in merges]
+        return merge_call(merges, hidden, [x for x in writes if x not in merged]
                           + stray, what, how, how_role, fell_back, campaign,
                           row, cwd, root)
     own_only = row.get("campaign_plane") == "own"

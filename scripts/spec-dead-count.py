@@ -208,17 +208,19 @@ def main():
             row("undefined", f, p, "path token names no tracked file")
 
     if want("untied"):
-        held, why = tie.own_list(tree)   # the tree's own list, as the guard reads it
-        legacy = held or set()
+        # The tree's own list, and the running copy's where the tree holds no
+        # readable one -- the guard's fallback, said on stderr as it says it.
+        held, why = tie.own_list(tree)
+        legacy = set(tie.LEGACY) if held is None else held
         if held is None:
-            print(f"untied\t-\tLEGACY\tnot read: {why}", file=sys.stderr)
+            print(f"untied\t-\tLEGACY\tthe running copy's: {why}", file=sys.stderr)
         rows = []
         for k in sorted(tree.code):
-            suites = tree.suites_of(k)
-            if not suites:
+            own = tree.suites_of(k)
+            if not own:
                 rows.append((k, "no suite carries its stem"))
             elif not tree.tied(k):
-                rows.append((k, f"suite {','.join(suites)} declares no listed scenario"))
+                rows.append((k, f"suite {','.join(own)} declares no listed scenario"))
         head("untied", len(rows), f"{len(tree.code)} code paths, {len(tree.suites)} suites, LEGACY {len(legacy)}")
         for k, why in rows:
             row("untied", k, "-", why + ("; on LEGACY" if k in legacy else "; NOT on LEGACY"))

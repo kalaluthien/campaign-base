@@ -303,10 +303,23 @@ fi
 # same shape as the `# runs:` lines above and read the same two ways: by the
 # assignment under it, and by install-hooks-test, which builds its fixture from
 # it. Add a harness hook by adding it here.
-# Each entry is `<repo-relative path>:<Event>[,<Event>]`. The events are here
-# and not in the python below because this line is the one list, and a hook
-# whose event lived elsewhere would be registered on a slot nothing names.
-# installs: scripts/check-campaign-claim.py:PreToolUse .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
+# Each entry is `<repo-relative path>:<Event>[,<Event>][:<matcher>]`. The events
+# and the matcher are here and not in the python below because this line is the
+# one list, and a hook whose event or tools lived elsewhere would be registered
+# on a slot nothing names. A matcher is PreToolUse's alone; on SessionStart it
+# would silently match nothing.
+#
+# The claim guard's matcher is the tool list it has an opinion about. Bash is on
+# it because a changing shell command is most of what a worker does; the guard
+# itself decides which Bash calls count, so widening the matcher costs a process
+# and never a false refusal. Agent and Skill joined it with
+# kalaluthien/campaign-base#278: a launch is where a review's model is chosen
+# and a `Skill` call is where a review fans out, and a tool absent from the
+# matcher reaches the guard not at all -- which is why both rules on the call
+# were prose nothing could enforce however the guard was written.
+# check-read-range.py is its own entry on `Read` alone (rule-check#443): steering
+# a read is no claim question, and a fault in it must not touch the guard.
+# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this
@@ -355,30 +368,22 @@ import json, os, sys
 root, entries = sys.argv[1], sys.argv[2:]
 path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
-# The matcher is the tool list the CLAIM GUARD has an opinion about. Bash is on
-# it because a changing shell command is most of what a worker does; the guard
-# itself decides which Bash calls count, so widening the matcher costs a process
-# and never a false refusal. Agent and Skill joined it with
-# kalaluthien/campaign-base#278: a launch is where a review's model is chosen
-# and a `Skill` call is where a review fans out, and a tool absent from this
-# string reaches the guard not at all -- which is why both rules on the call
-# were prose nothing could enforce however the guard was written. It is keyed
-# on the event: PreToolUse is the only one that takes a matcher, and a matcher
-# on SessionStart would silently match nothing.
-MATCHER = {"PreToolUse": "Edit|Write|NotebookEdit|Bash|Agent|Skill"}
 # Through the interpreter, never as a bare path. A bare path that has gone
 # missing exits 127 from the shell, which the harness reads as a hook that did
 # not block -- so a moved checkout turns the guard into a silent pass. python3
 # on a missing file exits 2, the one code that refuses, so the same absence
 # refuses every guarded call and says which file it could not read.
+# WANT is event -> matcher -> commands: one slot per matcher, since a slot
+# carries one, and "" is a slot with none.
 WANT = {}
 NAMES = []
 for entry in entries:
-    rel, _, events = entry.partition(":")
+    rel, _, rest = entry.partition(":")
+    events, _, matcher = rest.partition(":")
     full = os.path.join(root, rel)
     NAMES.append(os.path.basename(rel))
     for event in events.split(","):
-        WANT.setdefault(event, []).append(f'python3 "{full}"')
+        WANT.setdefault(event, {}).setdefault(matcher, []).append(f'python3 "{full}"')
 # Every event an earlier install may have registered one of these on is swept,
 # so a retired half does not keep running from the slot it kept. PostToolUse
 # holds no hook now and stays on the list for exactly that reason.
@@ -398,7 +403,7 @@ except (OSError, ValueError) as e:
 
 hooks = settings.setdefault("hooks", {})
 for event in SWEEP:
-    commands = WANT.get(event, [])
+    slots = WANT.get(event, {})
     existing = hooks.setdefault(event, [])
     # Every command mentioning one of these scripts goes, whatever matcher or
     # flags it carried: an old registration left beside a new one runs the hook
@@ -417,15 +422,17 @@ for event in SWEEP:
             kept.append(e)
         elif len(mine) < len(hs):
             kept.append({**e, "hooks": [h for h in hs if h not in mine]})
-    if commands:
+    for matcher, commands in slots.items():
         slot = {"hooks": [{"type": "command", "command": c} for c in commands]}
-        if event in MATCHER:
-            slot["matcher"] = MATCHER[event]
+        if matcher:
+            slot["matcher"] = matcher
         kept.append(slot)
         shown = ", ".join(os.path.basename(c.rsplit('"', 2)[-2]) for c in commands)
-        print(f"installed: {path} {event} {MATCHER.get(event, '(no matcher)')} "
-              f"-> {shown}"
-              + (f" (replaced {dropped} earlier command(s))" if dropped else ""))
+        print(f"installed: {path} {event} {matcher or '(no matcher)'} "
+              f"-> {shown}")
+    if slots:
+        if dropped:
+            print(f"replaced: {path} {event} ({dropped} earlier command(s))")
     elif dropped:
         print(f"removed: {path} {event} ({dropped} retired command(s))")
     elif not existing:

@@ -289,8 +289,7 @@ pred fileCampaignIssue[c: Campaign] {
    gate against a member that returns to Open. Deliberately no session, machine
    or binding precondition: filing a sub-issue is a record, not a claim, so any
    session on any machine may do it (AGENTS.md § The binding). The binding
-   gates the claim, which lives in session/system.als and the claim script,
-   not here. */
+   gates the claim, which the claim script reads, not this model. */
 pred addMember[c: Campaign, i: Issue] {
   c in Filed
   i not in Campaign.memberIssues and i not in Campaign.campaignIssue

@@ -104,18 +104,15 @@ TREE = {"spec/commands.snapshot.json": '{"commands": [["spec/x/checks.als", "run
 SECTIONS = "## Intent\n- i\n## Plan\n- p\n"
 
 
-def sub_issue(*kinds, body=SECTIONS):
-    return {"title": "t", "body": body,
-            "labels": [{"name": f"kind:{k}"} for k in kinds or ("development",)],
-            "parent": {"number": 244}}
+def sub_issue(body=SECTIONS):
+    return {"title": "t", "body": body, "labels": [], "parent": {"number": 244}}
 
 
-def landing(d, name, change, base=None, disk=None):
-    """A repository whose `main` is TREE plus `base` and whose HEAD adds
-    `change` to it, with `disk` written over the checkout uncommitted."""
+def landing(d, name, change):
+    """A repository whose `main` is TREE and whose HEAD adds `change` to it."""
     root = Path(d) / name
     git = ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t"]
-    for files, ref in (({**TREE, **(base or {})}, "main"), (change, "work")):
+    for files, ref in ((TREE, "main"), (change, "work")):
         for rel, text in files.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_text(text)
@@ -125,8 +122,6 @@ def landing(d, name, change, base=None, disk=None):
             subprocess.run([*git, "checkout", "-q", "-b", ref], check=True)
         subprocess.run([*git, "add", "-A"], check=True)
         subprocess.run([*git, "commit", "-qm", ref, "--no-verify"], check=True)
-    for rel, text in (disk or {}).items():
-        (root / rel).write_text(text)
     return root
 
 
@@ -364,11 +359,10 @@ def main() -> int:
 
         # ---- the landing ---------------------------------------------------
 
-        def land(case, change, issue=None, branch="sdlc-alloy/363-x",
-                 before="main", base=None, disk=None):
+        def land(case, change, issue=None, branch="sdlc-alloy/363-x", before="main"):
             fake_gh(bindir, branch=branch, issue=issue or sub_issue())
             return call(bindir, "366", "--repo", "o/r", "--land", before,
-                        cwd=landing(d, case, change, base, disk))
+                        cwd=landing(d, case, change))
 
         # S5b_WithoutTheLandingCheck: a code path written with a suite that
         # witnesses nothing lands with no Spec, and only this reading refuses.
@@ -388,7 +382,7 @@ def main() -> int:
 
         # S2a_ProseOnlyChange: nothing runs, so the three skippable stages go.
         word, code, text = land("prose", {"README.md": "bye\n"})
-        check("a prose-only change lands licensed under development",
+        check("a prose-only change lands licensed",
               (word, code) == ("licensed", 0)
               and "criterion (nothing runs): holds" in text, f"{word} {code} {text}")
 
@@ -405,11 +399,10 @@ def main() -> int:
               and "stages held: Intent, Plan, Spec, Test, Code" in text,
               f"{word} {code} {text}")
 
-        for case, issue, base, says in (
-                ("noissue", "not json at all", None, "could not parse"),):
-            word, code, text = land(case, {"README.md": "bye\n"}, issue=issue, base=base)
-            check(f"--land answers unknown: {says}",
-                  (word, code) == ("unknown", 2) and says in text, f"{word} {code} {text}")
+        word, code, text = land("noissue", {"README.md": "bye\n"}, issue="not json at all")
+        check("--land answers unknown: could not parse",
+              (word, code) == ("unknown", 2) and "could not parse" in text,
+              f"{word} {code} {text}")
 
         word, code, text = land("noplan", {"README.md": "bye\n"},
                                 issue=sub_issue(body="## Intent\n- i\n"))

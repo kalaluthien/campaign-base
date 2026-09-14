@@ -34,8 +34,8 @@
  * ATTRIBUTION IS DERIVED, NOT STORED. `holder` reads which agent a sub-issue's
  * claim belongs to off ONE fact a later session can still see: the checkout in
  * its campaign directory is on the claim's branch. It says nothing about
- * liveness, deliberately -- every caller applies that itself, `AttributionIsSound`
- * by quantifying over `Live` and `noDeleteUnderLiveAgent` by guarding on it, so
+ * liveness, deliberately -- every caller applies that itself, as
+ * `AttributionIsSound` does by quantifying over `Live`, so
  * a holder that has died is still the holder of the workspace it left. Nothing
  * writes it and nothing can go stale against it.
  * `AttributionIsSound` is what that costs, and R4c is its counterexample.
@@ -132,7 +132,7 @@ var sig Live     in Agent {}
    branch no remote has. */
 var sig LocalOnly    in Agent {}
 /* Its branch is on the remote -- checkable from anywhere, and a different fact
-   from LocalOnly. The gap between the two is R5b. */
+   from LocalOnly: a pushed agent can still hold uncommitted work. */
 var sig PushedToRemote  in Agent {}
 var sig Reported in Agent {}
 var sig Asked    in Agent {}
@@ -286,8 +286,6 @@ pred liveUnderLocally[c: Campaign, m: Machine] {
     and (a.task in c.memberIssues
          or (m in machinesHolding[c] and namedForThis[a, c]))
 }
-
-pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.machine] }
 
 /* <slug>/<issue>-<topic>: two agents share a branch only when
    campaign, sub-issue and topic all match. That it separates two SUB-ISSUES is
@@ -644,8 +642,8 @@ pred handoff[p, t: Session] {
   no Target.agent
 }
 
-/* Both guards are what a session can actually read. Liveness elsewhere is
-   not, so R6 is the residue that leaves. */
+/* Both guards are what a session can actually read: pushed work on GitHub,
+   and liveness on its own machine. */
 pred agentRelease {
   Now.event = Release
   no a: Agent | a.task = Now.issue and a in PushedToRemote

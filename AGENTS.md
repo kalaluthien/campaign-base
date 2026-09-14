@@ -158,9 +158,9 @@ wrongly, and only `campaign-tracker bind <N>` repairs that.
 
 **The binding gates the claim**: `campaign-claim take` reads it before it
 cuts a ref and refuses on anything but `here`, and `campaign-close.py`'s
-`bound` gate reads it again at a close and a scope change. The model reads it
-at the claim alone (`sessionClaim`, `spec/campaign/session/system.als`); a
-launch sits on a claim, and the label is a person's word.
+`bound` gate reads it again at a close and a scope change. The model records
+the label (`Binding.bound`, `spec/campaign/session/system.als`) and no rule of
+it reads it; a launch sits on a claim, and the label is a person's word.
 **The sub-issue link is outside it**: any session on any machine
 may file a sub-issue of any campaign, one it is not a session of included,
 because a sub-issue is a record and not a claim — the atomic gate stays

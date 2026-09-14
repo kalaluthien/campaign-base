@@ -40,7 +40,7 @@ nothing on the machine or in CI refused it. This is that reader.
 
 The RULE it reads is `mergedOnCurrentReview` in
 spec/campaign/orchestration/checks.als, which the model already stated and
-A6, A7 and A16b witness; M2 there is the tightest case of its currency half. A
+A5, A8 and M2b witness; M2 there is the tightest case of its currency half. A
 reader is not a fact that vocabulary can hold -- nothing in it has a sha or a
 check run -- so the model states the rule and this states the reading.
 
@@ -384,7 +384,7 @@ def change_of(before):
     snapshot = tie.SNAPSHOT in touched
     held = ({"Spec"} if snapshot or any(tree.witnesses_a_scenario(s) for s in tests)
             else set()) | ({"Test"} if tests else set()) | ({"Code"} if codes else set())
-    return {"root": Path(tie.ROOT), "touched": len(touched),
+    return {"touched": len(touched),
             "code": wrote_code, "suites": wrote_suites,
             "snapshot": snapshot, "stages": held,
             "untied": [k for k in wrote_code if not tree.tied(k)]}, None
@@ -400,7 +400,7 @@ def land(repo, pr, base, guard, before):
     if not issue:
         return answer("unknown", f"the head branch `{branch}` of {repo}#{pr} is "
                                  f"no claim, so there is no sub-issue to read "
-                                 f"the Intent, Plan and kind of")
+                                 f"the Intent and Plan of")
     tracker, why = tracker_module()
     if why:
         return answer("unknown", f"could not import the sub-issue readers -- {why}")

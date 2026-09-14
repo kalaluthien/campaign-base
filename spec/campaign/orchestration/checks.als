@@ -36,11 +36,12 @@ pred resolveSilenceExternally {
    The discipline: release only what some agent has actually been launched on,
    or what is complete. NOT MODELLED is the escape the script keeps for the
    case a person has established the holder is gone (`--confirmed-absent`),
-   because no atom here carries a person's word; R7c is the ordinary release
-   that must stay reachable without it.
+   because no atom here carries a person's word. No command pins the
+   `Launched` disjunct: R7b is its expect-0 half, and R7d and R7e exclude
+   `Launched`.
 
-   R7c IS WIDER THAN THE SCRIPT. `Launched` is a fact
-   about an agent, and the script has no reader for it: on GitHub R7c's state
+   THE `Launched` DISJUNCT IS WIDER THAN THE SCRIPT. `Launched` is a fact
+   about an agent, and the script has no reader for it: on GitHub that state
    -- launched, dead, nothing pushed -- is a ref 0 ahead of the base whose
    branch was never a merged pull request's head, which is the one shape
    `cmd_release` refuses without `--confirmed-absent WHO`. And that is the SECOND
@@ -1476,7 +1477,7 @@ pred A12_LiveGateAdmitsTheDelete {
                                           and Where.machine = a.host))
 }
 
-/* A8. Control for A5 and A7: neither is green by forbidding merges. */
+/* A8. Control for A5: it is not green by forbidding merges. */
 pred A8_ReviewRuleAdmitsTheLanding {
   mergedOnCurrentReview
   some c: Campaign, disj s1, s2: Session, a: Agent {
@@ -1512,9 +1513,8 @@ pred A18b_AgentLessUnreviewedMergeIsBlocked {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i)
 }
 
-/* M2. THE TIGHTEST CASE OF THE CURRENCY HALF, which A13 and A16b between them
-   do not have: A13 stops at the bit being cleared, and A16b needs a whole
-   suffix with no `Review` in it. This is the single step -- a push, and a merge
+/* M2. THE TIGHTEST CASE OF THE CURRENCY HALF, which A13 does not have: A13
+   stops at the bit being cleared. This is the single step -- a push, and a merge
    in the very next state. It is the REPORT that pinned the pre-push sha, asking
    for a review at a revision nobody is going to merge, and it is what
    scripts/check-merge-review.py refuses on the machine, at the REPORT's post
@@ -1538,7 +1538,7 @@ pred M2b_TheRuleExcludesTheStalePush {
 
 /* M2c. ...and a review taken AFTER the push still lands, or M2b would be the
    rule that no pushed branch ever merges. Run at one Session, it is also the
-   author landing its own reviewed work, which A16b refuses once the review
+   author landing its own reviewed work, which M2b refuses once the review
    is stale. On GitHub the `Review` step is a
    comment, which fires no `check` run; scripts/rerun-check.py, run by
    .github/workflows/review-rerun.yml, re-runs the head's red one so the merge
@@ -1755,8 +1755,8 @@ run R5c_NonLauncherSameMachineIsFine for 3 Issue, 1 PullRequest, 1 Campaign, 2 S
 run R6b_ReclaimAfterDeath        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 14 steps expect 1
 
 /* A1 and A3 run at two Sessions, so the derived reading is choosing between
-   them. A10-A12 need a CampaignDir to delete mid-trace. A16b, A18 and A18b,
-   and M2c below, run at ONE Session, because the absence of a second merger is
+   them. A10-A12 need a CampaignDir to delete mid-trace. A18 and A18b, and M2c
+   below, run at ONE Session, because the absence of a second merger is
    their subject. */
 -- the holder read off the checkout, with no record anywhere
 run A1_HolderReadFromTheCheckout          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
@@ -1925,7 +1925,9 @@ assert SuccessorNamedForAnotherRefused {
   always (Now.event = Handoff implies Who.session.campaignNamed = Who.predecessor.worksOn)
 }
 
-/* ---------------- reachability floor ---------------- */
+/* ---------------- reachability floor ----------------
+   Each is the witness of an event a check above names, except Cov_Decide and
+   Cov_Acquire, which show their events fire at all. */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
 pred Cov_Work             { eventually Now.event = Work }
@@ -2016,7 +2018,7 @@ check DelegateLaunchedByPlanner       for 3 Issue, 1 PullRequest, 1 Campaign, 2 
 -- the derived attribution is NOT sound on its own: an acquire moves the checkout out from under a live agent
 check AttributionIsSound              for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 1
 
--- every event a check above names fires in some trace, so none holds by vacuity
+-- the floor: every event a check above names fires in some trace, so none holds by vacuity
 run Cov_LaunchAgent      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Work             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Push             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1

@@ -99,7 +99,7 @@ pred S1_FullChain {
    stage below Plan absent by the criterion -- the change wrote nothing that
    runs, so there is nothing to formalise and nothing to test. It lands, and
    the tree it leaves is tied vacuously: it wrote no code path for a scenario
-   to reach. `S5` is this absence once a code path exists. */
+   to reach. `S5a` is this absence once a code path exists. */
 pred S2a_ProseOnlyChange {
   allDisciplines
   one c: Change {

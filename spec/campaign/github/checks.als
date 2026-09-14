@@ -111,9 +111,9 @@ pred S18_PlainBaseIssue {
 
    EXPECT 0 WITH THE FACT. Dropping `always Base not in Campaign.reposInBody`
    from `WellFormed` makes it SAT, which is what tells the fact from a comment
-   about the fact. S20a beside it is the control: a NON-base repository in the
-   list is ordinary and must stay SAT, or the fact has emptied the relation
-   rather than bounded it -- which a single `expect 0` cannot tell apart.
+   about the fact. That the fact bounds the relation rather than empties it
+   is R14c_ScopeAdmitsTheListedMember's: a NON-base repository in the list
+   stays reachable there.
 
    Not R14d's job, and R14d cannot be given it: that command ASSUMES
    `Base not in c.reposInBody` inside its own witness, so it is satisfied by a
@@ -126,10 +126,9 @@ pred S20_TheBaseIsNeverListed { eventually Base in Campaign.reposInBody }
    `c not in Standing` leaves `closable`, which is what tells the conjunct from
    a comment about the conjunct.
 
-   S21a beside it is the control, and it is not optional: `expect 0` alone is
-   satisfied by a `closable` that admits nothing at all, so a second command
-   must show that the ORDINARY close -- the same event with the hold off -- is
-   still reachable. Same shape as S20/S20a. */
+   `expect 0` alone is satisfied by a `closable` that admits nothing at all;
+   the ORDINARY close with the hold off is S1_HappyPath's, under the same
+   `closeDiscipline`. */
 pred S21_StandingBlocksTheClose {
   one c: Campaign |
     closeDiscipline[c] and eventually (Now.event = CloseIssue
@@ -192,7 +191,8 @@ assert TerminationUnderSettlement {
 
 /* ---------------- reachability floor ----------------
    Every event the checks above name fires in some trace, so none holds by
-   vacuity; alloy-check.py reads these as the witnesses. */
+   vacuity; alloy-check.py reads these as the witnesses. RemoveMember is named
+   by no check here and fires for its own sake. */
 pred Cov_AddMember    { eventually Now.event = AddMember }
 pred Cov_OpenPullRequest       { eventually Now.event = OpenPullRequest }
 pred Cov_MergePullRequest      { eventually Now.event = MergePullRequest }

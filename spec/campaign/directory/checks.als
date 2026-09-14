@@ -39,17 +39,21 @@ pred S16_MergeReachesInstall {
   }
 }
 
-/* ---------------- commands ---------------- */
+/* The adopted rule: fetch and compare inside the clone, at launch. */
+pred pullCloneAtLaunch { always (Now.event = Launch implies Where.machine not in CloneBehind) }
 
-run S16_MergeReachesInstall     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-run S15_NoLocalDirectory        for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
-
-/* ---------------- reachability floor ----------------
- * The events the checks here name. CreateDir, Acquire, CommitLocal and
- * Launch fire in orchestration/checks.als, whose composition holds this one.
- */
-
-pred Cov_DeleteDir     { eventually Now.event = DeleteDir }
+/* Control: the adopted rule is not vacuous. A base pull request still
+   merges mid-flight and a delegate still launches, once the clone is pulled. */
+pred S17c_PullBeforeLaunchAdmitsLaunch {
+  pullCloneAtLaunch
+  one c: Campaign | some i: Issue, m: Machine {
+    i in c.memberIssues and i.repo = Base
+    eventually (Now.event = CreateDir and Where.machine = m
+      and after eventually (Now.event = MergePullRequest and Now.issue = i
+        and after eventually (Now.event = PullClone and Where.machine = m
+          and after eventually (Now.event = Launch and Where.machine = m))))
+  }
+}
 
 /* ---------------- the post-merge step ---------------- */
 
@@ -78,65 +82,32 @@ pred MergeReachesInstall_Bites {
   some c: Campaign | closeDiscipline[c] and not mergeThenReachBeforeClose[c]
 }
 
-/* ---------------- commands ---------------- */
-
--- DeleteDir, at the scope S15 below runs at
-run Cov_DeleteDir     for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 6 steps expect 1
-
--- the post-merge step: holds under the discipline, and has a counterexample without it
-check MergeReachesInstall      for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 0
-run MergeReachesInstall_Bites  for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
-
-/* ================ the two base checkouts ================ */
-
-/* ---------------- witnesses ---------------- */
-
-/* --- The base as a member of its own campaign --- */
-
-/* --- The clone that was current when cut and stale when launched --- */
-
-/* The adopted rule: fetch and compare inside the clone, at launch. */
-pred pullCloneAtLaunch { always (Now.event = Launch implies Where.machine not in CloneBehind) }
-
-/* Control: the adopted rule is not vacuous. A base pull request still
-   merges mid-flight and a delegate still launches, once the clone is pulled. */
-pred S17c_PullBeforeLaunchAdmitsLaunch {
-  pullCloneAtLaunch
-  one c: Campaign | some i: Issue, m: Machine {
-    i in c.memberIssues and i.repo = Base
-    eventually (Now.event = CreateDir and Where.machine = m
-      and after eventually (Now.event = MergePullRequest and Now.issue = i
-        and after eventually (Now.event = PullClone and Where.machine = m
-          and after eventually (Now.event = Launch and Where.machine = m))))
-  }
-}
-
-/* ---------------- commands ---------------- */
-
--- control: the adopted rule is not vacuous
-run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
-
-/* ---------------- properties ---------------- */
-
-/* Deleting a local directory changes no fact another machine reads. This is
-   what lets the directory be optional and lets two machines hold one campaign
-   under directory names differing only in date.
-
-   The `githubFrame` conjunct is inherited rather than proved here, and that
-   makes this check the test of the composition idiom itself: dropping the
-   fall-through branch of `githubStep` reddens it. */
-
-/* ---------------- reachability floor ---------------- */
-
-/* A push empties what a commit filled: BaseUnpushed can shrink. */
+/* ---------------- reachability floor ----------------
+ * Every own event, and every lower event a check here names, fires in some
+ * trace. CreateDir, Acquire, CommitLocal and Launch fire in
+ * orchestration/checks.als, whose composition holds this one.
+ */
+pred Cov_DeleteDir     { eventually Now.event = DeleteDir }
 pred Cov_MergePullRequestInDirectory { eventually Now.event = MergePullRequest }
 pred Cov_CloseIssueInDirectory       { eventually Now.event = CloseIssue }
 pred Cov_Reach         { eventually Now.event = Reach }
+/* A push empties what a commit filled: BaseUnpushed can shrink. */
 pred Cov_PushBase     { eventually (Now.event = PushBase and Where.machine in BaseUnpushed
                                     and after Where.machine not in BaseUnpushed) }
 
 /* ---------------- commands ---------------- */
 
+run S16_MergeReachesInstall     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run S15_NoLocalDirectory        for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, 1 Machine, exactly 3 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+-- control: the adopted clone rule is not vacuous
+run S17c_PullBeforeLaunchAdmitsLaunch for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Machine, exactly 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+
+-- the post-merge step: holds under the discipline, and has a counterexample without it
+check MergeReachesInstall      for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 0
+run MergeReachesInstall_Bites  for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
+
+-- the floor
+run Cov_DeleteDir     for 4 Issue, 3 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 6 steps expect 1
 run Cov_MergePullRequestInDirectory  for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
 run Cov_CloseIssueInDirectory        for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 10 steps expect 1
 run Cov_Reach         for 3 Issue, 2 PullRequest, 2 Campaign, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 8 steps expect 1

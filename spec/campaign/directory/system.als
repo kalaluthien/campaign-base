@@ -128,7 +128,7 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    campaign issue alone, on purpose: a sub-issue settles at its merge, and the
    install catching up is the campaign's to wait for.
 
-   ITS ESCAPE, shown rather than closed here (S16e): a machine deletes its
+   ITS ESCAPE, left open here: a machine deletes its
    directory and the close then reads no machine at all. The script is not
    escaped that way -- with no directory its installed step reads the campaign
    issue body, on the machine it runs on -- but which machine closes is a
@@ -257,9 +257,9 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * are cleared by different acts: a clone is cut fresh from origin/main, which
  * says nothing about the outer checkout it sits inside.
  *
- * This section declares no signature of its own. It adds three subsets of
- * Machine, five events, and the two facts that govern all three subsets end
- * to end.
+ * This section declares no signature of its own. It adds two subsets of
+ * Machine, four events, and the two facts that govern both subsets end to
+ * end.
  */
 
 /* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push

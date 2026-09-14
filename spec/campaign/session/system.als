@@ -329,7 +329,8 @@ pred survey[s: Session] {
 
 /* Nothing is taken: under one role, arriving is just starting to work.
    Unguarded here, so the unrepaired scenarios stay measurable against the same
-   trace space; the binding is read at the claim alone (`sessionClaim`). */
+   trace space. No rule here reads the binding: `campaign-claim take` reads
+   it at the claim. */
 pred adopt[s: Session, c: Campaign] {
   c in Filed and c.campaignIssue in Open
   no s.worksOn

@@ -46,13 +46,21 @@ rule-check#431, and `.claude/skills/herdr/references/facts.md` holds the facts:
   4. `/effort <level>`, confirmed the same way. Sent only after step 3,
      because a prompt sent while the dialog is up answers it and is lost.
 
-Each `/model` and `/effort` ALSO REWRITES THE USER'S DEFAULT (`model`,
-`effortLevel` in ~/.claude/settings.json), which reaches every session later
-started without `--model`, such as a bare `claude --resume`. Printed before any
-prompt is sent; `--dry-run` prints it too and sends nothing.
+THE USER'S DEFAULT IS PUT BACK. Each `/model` and `/effort` also rewrites
+`model` and `effortLevel` in ~/.claude/settings.json, which every session later
+started without `--model` would take -- a bare `claude --resume`. The owner's
+DECISION (rule-check#431 issuecomment-5659640299): read both before the first
+prompt, write both back after the last pane, print the values before and
+after, and report a write-back that fails. Only those two keys are written,
+into the file as it stands then, so a key another session changed meanwhile
+survives; a key that was absent is removed again. The file is read back after
+the write, and a mismatch is a failure. A settings file that cannot be read
+refuses the run before any prompt, since nothing could be put back. This
+script runs no git at all, so it never commits ~/.claude.
 
-Exit 0 when every addressed pane was switched (or on --dry-run), 1 when the
-listing could not be read or any addressed pane was not confirmed.
+Exit 0 when every addressed pane was switched and the default is as it was (or
+on --dry-run), 1 when the listing or the settings could not be read, any
+addressed pane was not confirmed, or the default was not put back.
 """
 import argparse
 import importlib.machinery
@@ -75,6 +83,9 @@ MODEL_CMD = "<command-name>/model</command-name>"
 EFFORT_CMD = "<command-name>/effort</command-name>"
 DIALOG = "Switch model?"
 POLLS, POLL_SLEEP = 20, 0.5
+SETTINGS = Path.home() / ".claude" / "settings.json"
+DEFAULT_KEYS = ("model", "effortLevel")
+ABSENT = "<absent>"
 
 
 def load(path, alias):
@@ -197,6 +208,49 @@ def send(pane, sid, command, counter, before):
                    f"{POLLS * POLL_SLEEP:g}s" + (" (dialog answered)" if answered else ""))
 
 
+def read_default(path):
+    """({key: value, or ABSENT}, None) for the two keys, or (None, why)."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"{path}: {e.__class__.__name__}: {e}"
+    if not isinstance(data, dict):
+        return None, f"{path}: not a JSON object"
+    return {k: data.get(k, ABSENT) for k in DEFAULT_KEYS}, None
+
+
+def shown(default):
+    return " ".join(f"{k}={v!r}" for k, v in default.items()) if default else "unread"
+
+
+def restore_default(path, saved):
+    """(ok, what happened): the two keys back to `saved` in the file as it
+    stands now, every other key left alone, then read back. The file is
+    rewritten in the 2-space layout the harness writes, replaced whole so a
+    reader never sees half of it."""
+    path = Path(path).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        now = {k: data.get(k, ABSENT) for k in DEFAULT_KEYS}
+        if now == saved:
+            return True, f"unchanged: {shown(saved)}"
+        for k, v in saved.items():
+            if v == ABSENT:
+                data.pop(k, None)
+            else:
+                data[k] = v
+        tmp = path.with_name(path.name + ".campaign-model.tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                       encoding="utf-8")
+        os.replace(tmp, path)
+    except (OSError, ValueError, AttributeError) as e:
+        return False, f"{path}: {e.__class__.__name__}: {e}"
+    back, why = read_default(path)
+    if back != saved:
+        return False, f"read back {shown(back)}, not {shown(saved)}" + (f" ({why})" if why else "")
+    return True, f"{shown(now)} -> {shown(saved)}"
+
+
 def switch(row, sid, to, effort):
     """(ok, what happened) for one pane: /model, then /effort."""
     f, why = read_facts(sid)
@@ -241,27 +295,38 @@ def main(argv=None):
     for sid, row, why in rows:
         if why is not None:
             print(f"  skip     {row['pane']:9} {row['name']}: {why}")
+    saved, why = read_default(SETTINGS)
+    if saved is None:
+        print(f"refusing: the default could not be read, so it could not be put "
+              f"back: {why}", file=sys.stderr)
+        return 1
     print(f"{'would send' if args.dry_run else 'sending'} /model {args.to}"
           + (f" and /effort {args.effort}" if args.effort else "")
-          + " -- each also rewrites the default in ~/.claude/settings.json")
+          + f"; default before: {shown(saved)}, put back after the last pane")
 
     switched = failed = 0
-    for sid, row in todo:
-        f = facts[sid][0]
-        tag = f"{row['pane']:9} {row['name']} ({f['model'] if f else 'model unknown'})"
-        not_ready = ready(row)
-        if not_ready:
-            print(f"  skip     {tag}: {not_ready}")
-            continue
-        if args.dry_run:
-            print(f"  address  {tag}")
-            continue
-        ok, said = switch(row, sid, args.to, args.effort)
-        switched, failed = switched + ok, failed + (not ok)
-        print(f"  {'switched' if ok else 'FAILED  '} {tag}: {said}")
+    try:
+        for sid, row in todo:
+            f = facts[sid][0]
+            tag = f"{row['pane']:9} {row['name']} ({f['model'] if f else 'model unknown'})"
+            not_ready = ready(row)
+            if not_ready:
+                print(f"  skip     {tag}: {not_ready}")
+                continue
+            if args.dry_run:
+                print(f"  address  {tag}")
+                continue
+            ok, said = switch(row, sid, args.to, args.effort)
+            switched, failed = switched + ok, failed + (not ok)
+            print(f"  {'switched' if ok else 'FAILED  '} {tag}: {said}")
+    finally:
+        restored = True
+        if not args.dry_run:
+            restored, said = restore_default(SETTINGS, saved)
+            print(f"{'default' if restored else 'FAILED to put back the default'}: {said}")
     done = "dry run: nothing sent" if args.dry_run else f"{switched} switched, {failed} failed"
     print(f"{done}; {len(todo)} of {len(rows)} listed matched the address")
-    return 1 if failed else 0
+    return 1 if failed or not restored else 0
 
 
 if __name__ == "__main__":

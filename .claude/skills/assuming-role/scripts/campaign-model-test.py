@@ -7,7 +7,9 @@ The pane side goes through a fake `run` that records every herdr call and
 plays a session: a fresh one records `/model` at once, one with history
 shows the `Switch model?` dialog until an Enter answers it -- the two shapes
 probed on rule-check#431. The transcript is a real file the fake appends to,
-so the script's own reader confirms the switch. What `ModelSwitchKeepsEverySession`
+so the script's own reader confirms the switch, and each switch that lands
+rewrites a settings file the way the harness does, which the script must put
+back (rule-check#431 DECISION 5659640299). What `ModelSwitchKeepsEverySession`
 says of the model is checked of the calls: nothing but `/model` and `/effort`
 is ever prompted, and no pane is started, exited or closed.
 
@@ -21,6 +23,7 @@ import contextlib
 import importlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -41,6 +44,7 @@ def load(source):
     m = types.ModuleType("cmodel")
     m.__file__ = str(SCRIPT)
     exec(compile(source, str(SCRIPT), "exec"), m.__dict__)
+    m.source_text = source
     return m
 
 
@@ -72,14 +76,23 @@ class Pane:
     """A fake `run` over one pane and one transcript file. `dialog` is a
     session with history; `records` False is one whose switch never lands."""
 
-    def __init__(self, path, dialog=False, records=True, prompt_rc=0, box=""):
-        self.path, self.dialog, self.records = path, dialog, records
+    def __init__(self, path, settings, dialog=False, records=True, prompt_rc=0, box=""):
+        self.path, self.settings, self.dialog, self.records = path, settings, dialog, records
         self.prompt_rc, self.box = prompt_rc, box
         self.calls, self.up = [], False
 
     def append(self, line):
         with open(self.path, "a") as fh:
             fh.write(line + "\n")
+
+    def landed(self, name, value):
+        """What the harness does when a switch lands: the transcript record,
+        the default rewritten, and a key some other session changed meanwhile."""
+        self.append(command(name, value))
+        data = json.loads(self.settings.read_text()) if self.settings.exists() else {}
+        data[{"model": "model", "effort": "effortLevel"}[name]] = value
+        data["other"] = "changed meanwhile"
+        self.settings.write_text(json.dumps(data, indent=2) + "\n")
 
     def __call__(self, *args):
         self.calls.append(args)
@@ -91,30 +104,61 @@ class Pane:
             if name == "model" and self.dialog:
                 self.up = True
             elif self.records:
-                self.append(command(name, value))
+                self.landed(name, value)
         elif args[1:3] == ("pane", "read"):
             out = BOX.format(self.box) if "detection" in args else (
                 "Switch model?\n 1. Yes" if self.up else "")
         elif args[1:3] == ("pane", "send-keys") and self.up:
             self.up = False
             if self.records:
-                self.append(command("model", "opus"))
+                self.landed("model", "opus")
         return subprocess.CompletedProcess(args, 0, out, "")
 
     def prompts(self):
         return [a[4] for a in self.calls if a[1:3] == ("agent", "prompt")]
 
 
+DEFAULT = {"model": "claude-fable-5-1[1m]", "effortLevel": "high", "other": "kept"}
+
+
 @contextlib.contextmanager
-def session(m, **kw):
-    """A transcript file the script's reader finds, and `m.run` playing its pane."""
+def session(m, default=DEFAULT, **kw):
+    """A transcript file the script's reader finds, a settings file holding
+    `default` (None: no file), and `m.run` playing its pane."""
     with tempfile.TemporaryDirectory() as d:
-        path = Path(d) / "s.jsonl"
+        path, settings = Path(d) / "s.jsonl", Path(d) / "conf" / "settings.json"
         path.write_text(assistant("2026-09-14T04:00:00Z", "claude-fable-5-1") + "\n")
-        pane = Pane(path, **kw)
-        m.run, m.sleep = pane, (lambda s: None)
+        settings.parent.mkdir()
+        if default is not None:
+            settings.write_text(json.dumps(default, indent=2) + "\n")
+        pane = Pane(path, settings, **kw)
+        m.run, m.sleep, m.SETTINGS = pane, (lambda s: None), settings
         m.heartbeat.transcript_path = lambda sid: (path, None)
-        yield pane
+        try:
+            yield pane
+        finally:
+            settings.parent.chmod(0o755)
+
+
+@contextlib.contextmanager
+def live(m):
+    """`main` run for real against one listed planner: HERDR_ENV set, this
+    session's own pane another one."""
+    saved = {k: os.environ.get(k) for k in ("HERDR_ENV", "HERDR_PANE_ID")}
+    os.environ.update(HERDR_ENV="1", HERDR_PANE_ID="p9")
+    m.names.herdr_sessions = lambda: ({"a": row("rc-planner-1", "p1")}, None)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
+def run_main(m, *argv):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = m.main(list(argv))
+    return rc, out.getvalue() + err.getvalue()
 
 
 def no_handoff(pane):
@@ -215,13 +259,61 @@ def case_main(m):
             rc = m.main(["--role", "planner", "--to", "opus", "--from", "fable", "--dry-run"])
         return (refused == 1 and rc == 0 and not pane.prompts()
                 and "address  p1" in out.getvalue()
-                and "settings.json" in out.getvalue()), (err.getvalue(), out.getvalue())
+                and "default before: model='claude-fable-5-1[1m]'" in out.getvalue()
+                and json.loads(pane.settings.read_text()) == DEFAULT), (err.getvalue(), out.getvalue())
+
+
+def case_restore(m):
+    """The default the switches rewrote is put back, a key changed meanwhile
+    survives, and the values before and after are printed."""
+    with session(m, dialog=True) as pane, live(m):
+        rc, out = run_main(m, "--role", "planner", "--to", "opus", "--effort", "max")
+        data = json.loads(pane.settings.read_text())
+        return (rc == 0 and pane.prompts() == ["/model opus", "/effort max"]
+                and data == dict(DEFAULT, other="changed meanwhile")
+                and "effortLevel='max' -> model='claude-fable-5-1[1m]' effortLevel='high'" in out
+                and not no_handoff(pane)), (rc, data, out)
+
+
+def case_restore_absent(m):
+    """A key the default did not hold is removed again, not left behind."""
+    with session(m, default={"model": "opus"}) as pane, live(m):
+        rc, out = run_main(m, "--role", "planner", "--to", "sonnet", "--effort", "low")
+        data = json.loads(pane.settings.read_text())
+        return rc == 0 and data == {"model": "opus", "other": "changed meanwhile"}, (rc, data, out)
+
+
+def case_restore_fails(m):
+    """A write-back that fails is reported and fails the run."""
+    with session(m) as pane, live(m):
+        real = pane.landed
+
+        def landed_then_lock(name, value):
+            real(name, value)
+            pane.settings.parent.chmod(0o555)
+        pane.landed = landed_then_lock
+        rc, out = run_main(m, "--role", "planner", "--to", "opus")
+        return rc == 1 and "FAILED to put back the default" in out, (rc, out)
+
+
+def case_unreadable(m):
+    """No settings to read: refused before any prompt, since nothing could be put back."""
+    with session(m, default=None) as pane, live(m):
+        rc, out = run_main(m, "--role", "planner", "--to", "opus")
+        return rc == 1 and not pane.prompts() and "could not be read" in out, (rc, out)
+
+
+def case_no_git(m):
+    """The DECISION's last line: the script runs no git, so it cannot commit ~/.claude."""
+    return '"git"' not in m.source_text and "'git'" not in m.source_text, "a git call in the source"
 
 
 CASES = {"facts": case_facts, "address": case_address, "fresh": case_fresh,
          "dialog": case_dialog, "no record": case_no_record,
          "already counted": case_already_counted, "blocked": case_blocked,
-         "ready": case_ready, "main": case_main}
+         "ready": case_ready, "main": case_main, "restore": case_restore,
+         "restore absent": case_restore_absent, "restore fails": case_restore_fails,
+         "unreadable": case_unreadable, "no git": case_no_git}
 
 MUTATIONS = [
     ("sidechain read as the session", 'or r.get("isSidechain")', "", "facts"),
@@ -234,7 +326,15 @@ MUTATIONS = [
     ("prompt failure ignored", "if r.returncode != 0:\n        return False, (f\"`herdr agent prompt`",
      "if False:\n        return False, (f\"`herdr agent prompt`", "blocked"),
     ("busy pane prompted", "if not assign.idle_verdict(row)[0]:", "if False:", "ready"),
-    ("dry run sends", "        if args.dry_run:\n            print(f\"  address", "        if False:\n            print(f\"  address", "main"),
+    ("dry run sends", "            if args.dry_run:\n                print(f\"  address",
+     "            if False:\n                print(f\"  address", "main"),
+    ("default never put back", "restored, said = restore_default(SETTINGS, saved)",
+     "restored, said = True, 'skipped'", "restore"),
+    ("an absent key left behind", "data.pop(k, None)", "None", "restore absent"),
+    ("a failed write-back swallowed", "return 1 if failed or not restored else 0",
+     "return 1 if failed else 0", "restore fails"),
+    ("unreadable settings not refused", "if saved is None:", "if False:", "unreadable"),
+    ("a git call added", "sleep = time.sleep\n", "sleep = time.sleep\nCOMMIT = (\"git\", \"commit\")\n", "no git"),
 ]
 
 

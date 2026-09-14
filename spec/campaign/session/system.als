@@ -330,9 +330,10 @@ pred sessionHandoff[t, p: Session] {
    session runs, which the script reads off its transcript to narrow the
    address (`--from`); the pane that cannot take a prompt -- mid-turn, at a
    dialog, at a limit banner -- which it skips and names rather than queueing
-   into; and the three prompts a switch is (`/model`, the `Switch model?`
+   into; the three prompts a switch is (`/model`, the `Switch model?`
    dialog a session with history answers, `/effort`), probed on
-   rule-check#431. */
+   rule-check#431; and the user's default model and effort, which each
+   switch rewrites and the script puts back (the owner's DECISION there). */
 pred modelSwitch[r: Role, m: Machine] {
   Now.event = ModelSwitch and no Now.issue and no Who.session
   Who.addressed = { s: Session - Exited | s.role = r and s.machine = m }

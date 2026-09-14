@@ -54,8 +54,7 @@ class Rep:
 
 def a_clone(root, *files):
     """A member checkout under `<campaign>/repos/`, with `files` written into it
-    and excluded in its own `.git/info/exclude` -- the shape a delegate launch
-    leaves behind."""
+    and excluded in its own `.git/info/exclude`."""
     clone = pathlib.Path(root) / "repos" / "acme"
     clone.mkdir(parents=True)
     def g(*a):

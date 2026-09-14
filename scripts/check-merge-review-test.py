@@ -96,14 +96,14 @@ def call(bindir, *args, stdin=None, cwd=None):
 
 
 # THE LANDING'S FIXTURE: a tree on `main` holding one tied code path, a.py, and
-# one untied, c.py, the default profile line, and a change committed on top of
+# one untied, c.py, `development`'s profile line, and a change committed on top of
 # it. The sub-issue carries both sections unless a case takes one away. No kind
 # on this tree narrows its profile, so a case that needs one writes its own
 # reference: the reader reads the profile from the tree it judges.
 TREE = {"spec/commands.snapshot.json": '{"commands": [["spec/x/checks.als", "run", "S1"]]}\n',
         "scripts/a.py": "x = 1\n", "scripts/a-test.py": "# witnesses: S1\n",
         "scripts/c.py": "x = 1\n", "README.md": "hi\n",
-        ".claude/skills/opening-campaign/assets/AGENTS.md": "`optional = skippable`\n"}
+        ".claude/skills/assuming-role/references/kind-development.md": "`optional = skippable`\n"}
 RESEARCH = ".claude/skills/assuming-role/references/kind-research.md"
 SECTIONS = "## Intent\n- i\n## Plan\n- p\n"
 
@@ -395,6 +395,21 @@ def main() -> int:
         check("a prose-only change lands licensed under development",
               (word, code) == ("licensed", 0)
               and "criterion (nothing runs): holds" in text, f"{word} {code} {text}")
+
+        # A sub-issue with no `kind:` label reads `development`'s reference:
+        # nothing else in the tree states a profile for it.
+        word, code, text = land("nokind", {"README.md": "bye\n"},
+                                issue={**sub_issue(), "labels": []})
+        check("a sub-issue with no kind reads development's profile",
+              (word, code) == ("licensed", 0)
+              and "kind-development.md" in text, f"{word} {code} {text}")
+
+        # A kind whose reference is absent from the tree takes `development`'s.
+        word, code, text = land("nofile", {"README.md": "bye\n"},
+                                issue=sub_issue("research"))
+        check("a kind with no reference file reads development's profile",
+              (word, code) == ("licensed", 0)
+              and "kind-development.md" in text, f"{word} {code} {text}")
 
         # S6_NarrowingTestWaiver: the profile, not the criterion, refuses.
         word, code, text = land("narrow", {"README.md": "bye\n"},

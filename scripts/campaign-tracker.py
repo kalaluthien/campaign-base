@@ -235,8 +235,7 @@ LABEL_LIMIT = 200
 # what an issue IS; this names what the work on it is.
 WORK_KIND_LABEL_PREFIX = "kind:"
 # THE WORDS, stated once, here. The sub-issue template offers them and the
-# `assuming-role` skill's `references/kind-<k>.md` are NAMED by them -- all but
-# `development`, which is the ordinary kind and has no reference -- so a
+# `assuming-role` skill's `references/kind-<k>.md` are NAMED by them, so a
 # word invented on a label resolves to no reference and no template row, and is
 # refused rather than returned.
 # rule-check#354 folded five into these: `analysis` into `research`,

@@ -223,50 +223,6 @@ is_guard_shim() {
 # since #178, which was true only of a clone that ships an installer, and the
 # only such repository is this base. The model gap is `acquiredCloneOnly` in
 # spec/campaign/orchestration/checks.als.
-# Leave the campaign's principles where a delegate in this clone will read
-# them: `CLAUDE.local.md` in its own cwd, excluded from the clone's index.
-# Since rule-check#314 that file is the campaign's own additions only -- a
-# default SDLC profile line and the three role sections; a sub-issue's kind
-# reference reaches the delegate through the brief hook on its assignment
-# prompt, not through this copy.
-#
-# #176 replaced `--append-system-prompt-file` with this file and wrote the
-# instruction as prose; #187 question 5 is that no command anywhere wrote one,
-# so a delegate launched by the documented procedure got no principles and
-# NOTHING RECORDED THAT -- the failure mode the flag was abandoned for, back in
-# a new shape. The prose is now here, where a caller cannot skip it.
-#
-# Excluded in `.git/info/exclude` and not `.gitignore`: the latter is tracked,
-# so excluding a per-launch file there is a commit on the member repository for
-# this campaign's convenience.
-#
-# A campaign with no `AGENTS.md` is a real answer and not a failure -- not every
-# campaign adds principles -- but it is SAID, because a silent skip here is
-# indistinguishable from the defect this closes.
-install_principles() {
-	local dest=$1
-	local campaign src exclude
-	campaign=$(cd "$dest/../.." 2>/dev/null && pwd -P) || {
-		log "no campaign directory above $dest, so no principles were written"
-		return 0
-	}
-	src="$campaign/AGENTS.md"
-	if [ ! -f "$src" ]; then
-		log "no $src, so this campaign adds no principles for $dest"
-		return 0
-	fi
-	cp "$src" "$dest/CLAUDE.local.md" ||
-		die "could not write $dest/CLAUDE.local.md from $src"
-	exclude=$(git -C "$dest" rev-parse --path-format=absolute --git-path info/exclude) ||
-		die "could not resolve $dest's info/exclude"
-	mkdir -p "$(dirname "$exclude")" || die "could not create $(dirname "$exclude")"
-	if ! grep -qxF "CLAUDE.local.md" "$exclude" 2>/dev/null; then
-		printf 'CLAUDE.local.md\n' >>"$exclude" ||
-			die "could not append to $exclude"
-	fi
-	log "principles: $src -> $dest/CLAUDE.local.md, excluded in $exclude"
-}
-
 install_commit_guard() {
 	local dest=$1
 	local guard="$HOME/.claude/git-hooks/no-main-commits"
@@ -274,9 +230,7 @@ install_commit_guard() {
 
 	# THE BASE IS RESOLVED FROM THIS FILE, never from $dest. A member clone is
 	# not under the base and holds no copy of check-commit-claim.py, so a walk
-	# up from the destination cannot find either -- install_principles's walk is
-	# the wrong precedent here for exactly that reason: it wants the CAMPAIGN
-	# directory, which is above $dest, where this wants the BASE, which is not.
+	# up from the destination cannot find either.
 	# This file sits at <base>/.claude/skills/opening-campaign/scripts/, so the
 	# base is four directories up. BASH_SOURCE, not $0: $0 is the interpreter
 	# when a caller sources or extracts a function from this file.
@@ -451,7 +405,6 @@ acquire() {
 	fi
 
 	install_commit_guard "$dest"
-	install_principles "$dest"
 	log "ready: $dest"
 }
 

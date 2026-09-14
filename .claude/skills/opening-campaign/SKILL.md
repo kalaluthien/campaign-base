@@ -15,8 +15,8 @@ Finished when all of these hold:
 - The campaign issue carries exactly one `bound:` label, and it names this machine.
 - The campaign issue carries exactly one `campaign:<slug>` label, and
   `scripts/campaign-tracker.py slug <N>` prints that slug.
-- `campaign-<slug>-<date>/` exists at the base root and holds `.campaign`, `AGENTS.md`,
-  `CLAUDE.md`, `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
+- `campaign-<slug>-<date>/` exists at the base root and holds `.campaign`,
+  `scripts/`, `runtime/repos`, and a `README.md` and `runtime/campaign-issue-body-derived.md` that
   each hold the campaign issue body as `gh issue view --json body` returns it --
   the read-back is the canonical form, because the round trip through `gh` is
   not byte-stable (a body sent with one trailing newline comes back with two).
@@ -233,9 +233,6 @@ campaign, or unreadable — stop and ask.
 
 Then finish it:
 
-- `AGENTS.md` is the campaign's own principles: a default SDLC profile line
-  and the three role sections `campaign-role-brief.py` reads, empty until the
-  campaign has something to add. A sub-issue's kind is not in it.
 - Delete `sub-issue.md`. It is filled once *per sub-issue* from the skill's own
   copy, so the top-level copy has no reader and a stale one could be filled long
   after.
@@ -331,12 +328,6 @@ then acquire it as in step 5. The first repository
 
 The probes and the failures behind these: `references/gotchas.md`.
 
-- A delegate does not pick up the campaign `AGENTS.md` from its parent
-  directories. It reaches one as `CLAUDE.local.md` written into its clone and
-  excluded in `.git/info/exclude` — a file in its own cwd, so nothing has to
-  prove it arrived. It sits beside the repository's own conventions: adding a
-  principle is free, contradicting one hands the delegate a conflict it
-  resolves without telling you.
 - `gh issue create` without `--parent` succeeds, returning a live issue in no
   campaign; only a later listing coming back short shows anything is wrong.
 - This machine's zsh sets `noclobber` and leaves `APPEND_CREATE` unset, so plain

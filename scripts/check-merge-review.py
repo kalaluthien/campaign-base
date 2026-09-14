@@ -69,16 +69,15 @@ WHAT THE LANDING READS
 The sub-issue is the one the head branch claims -- check-campaign-claim.py's
 `claim_issue` -- and from it `## Intent`, `## Plan` and the `kind:` label,
 through campaign-tracker.py's own readers. The kind's profile is the
-`optional = ...` line of its reference, kind-<k>.md in the tree judged; a
-kind with none, and a
-sub-issue with no label, take the line in opening-campaign's AGENTS.md
-template. The change is the paths `git diff BEFORE HEAD` touches, and the tree
-is HEAD's, both read by check-sdlc-tie.py's own functions. As the model says,
-an artifact the change REUSES is the change's: a code path it wrote holds Test
-through its suite and Spec through a scenario that suite witnesses, and a
-suite it wrote holds Code through the path it drives. Spec is also held by a
-rewritten spec/commands.snapshot.json -- a command added, renamed or removed.
-The criterion is that the change wrote no suite and no code path.
+`optional = ...` line of its reference, kind-<k>.md in the tree judged; a kind
+with none, and a sub-issue with no label, take `development`'s,
+kind-development.md. The change is the paths `git diff BEFORE HEAD` touches,
+and the tree is HEAD's, both read by check-sdlc-tie.py's own functions. As the
+model says, an artifact the change REUSES is the change's: a code path it wrote
+holds Test through its suite and Spec through a scenario that suite witnesses,
+and a suite it wrote holds Code through the path it drives. Spec is also held
+by a rewritten spec/commands.snapshot.json -- a command added, renamed or
+removed. The criterion is that the change wrote no suite and no code path.
 
 The model's stages are per change, not per path, so a change writing one tied
 and one untied code path holds all three: the untied ones are printed by name
@@ -117,7 +116,7 @@ SKIPPABLE = ("Spec", "Test", "Code")
 PROFILE = re.compile(r"^`optional = ([A-Za-z +]+)`", re.M)
 # Read from the tree being judged, so a change to a profile is judged by it.
 REFERENCES = Path(".claude/skills/assuming-role/references")
-DEFAULT_PROFILE = Path(".claude/skills/opening-campaign/assets/AGENTS.md")
+DEFAULT_PROFILE = REFERENCES / "kind-development.md"
 
 # SEVEN, which is git's own floor for an abbreviation and this tracker's habit.
 # Shorter is not a sha anybody writes, and matching it would let a four-digit
@@ -367,8 +366,8 @@ def report(repo, pr, body, pattern, want_head):
 
 
 def profile_of(kind, root):
-    """(optional stages, the file read, why). A kind with no reference --
-    `development` -- and a sub-issue with no label take the template's line."""
+    """(optional stages, the file read, why). A kind with no reference, and
+    a sub-issue with no label, take `development`'s."""
     where = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
     # HEAD's copy, not the disk's: the tree judged is HEAD's.
     if run("git", "-C", str(root), "cat-file", "-e", f"HEAD:{where}")[0] != 0:

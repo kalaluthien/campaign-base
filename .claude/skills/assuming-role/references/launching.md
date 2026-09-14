@@ -99,50 +99,6 @@ a startup timeout defaulting to 30000 ms (max 300000); an agent blocked during
 startup comes back as `agent_not_ready`. It requires an existing pane at an
 interactive shell prompt and creates no layout.
 
-## The campaign's principles
-
-**`acquire-repo.sh` writes them**, into `<campaign>/repos/<repo>/CLAUDE.local.md`
-and the clone's `.git/info/exclude`, on every checkout it leaves. A file on disk
-in the delegate's own cwd, loaded because it is there — so there is nothing to
-prove arrived, and no canary. Since rule-check#314 the file holds only what the
-campaign adds — a default SDLC profile line and the three role sections; a
-sub-issue's kind is its `kind:<k>` label, and `campaign-role-brief.py` emits
-that kind's reference on the prompt that assigns the sub-issue, to a delegate
-and a base worker alike.
-
-Written by the script and not by hand since #187: this section said "write them"
-and **no command anywhere did**, so a delegate launched by this procedure got no
-principles and nothing recorded that — the unobservability the flag below was
-abandoned for, back in a new shape. A campaign with no `AGENTS.md` of its own is
-a real answer and the script says so rather than skipping silently.
-
-This replaced `--append-system-prompt-file`, whose whole problem was
-unobservability: the flag is absent from `claude --help`, the appended text never
-reaches the transcript, and a delegate that received nothing looked exactly like
-one that received everything and ignored it. The old repair was a token appended
-to the injected file, the file deleted, and the delegate asked to recite it.
-
-Probed 2026-09-04 on this machine: a fresh `claude -p` in a temporary git
-repository holding a `CLAUDE.local.md` with a token in it answered with that
-token. `.gitignore` would not do for the second half: it is tracked, so
-excluding a per-launch file there is a commit on the member repository for the
-campaign's convenience.
-
-**The second half of that probe was wrong about its own mechanism**, and #187
-found it while writing the command. It read `git status --porcelain` as empty
-and concluded the `info/exclude` line was doing the work; this machine's global
-gitignore holds `*.local.md`, so the file was ignored either way and the probe
-could not have told the two apart. Re-measured with the global and system config
-emptied (`GIT_CONFIG_GLOBAL=/dev/null`), the exclude does do it — and
-`.claude/skills/opening-campaign/scripts/acquire-repo-test.py` is that
-measurement, run on every push: delete the exclude line and its named case
-reports `?? CLAUDE.local.md`.
-
-The old external-import dialog goes with the flag: `CLAUDE.local.md` in the cwd
-is not an ancestor import and raises no question. The row for it stays in the
-table below, because a campaign directory *above* a clone still has an
-`AGENTS.md` a session may be asked about.
-
 ## What silently stops a delegate before it starts
 
 Three things halt a fresh delegate, and from outside all three look exactly like
@@ -151,7 +107,7 @@ an agent thinking.
 | what | how it shows |
 | --- | --- |
 | the folder-trust question | the delegate sits on a dialog, having read nothing — and herdr reports it `idle` with `interactive_ready: true`, never `blocked` |
-| the external-import question for an ancestor `CLAUDE.md` | declining it silently drops the campaign's principles. **Whether herdr classifies this one as `blocked` at all is unmeasured** -- do not inherit the row above's reading | 
+| the external-import question for an ancestor `CLAUDE.md` | declining it silently drops the `AGENTS.md` that file imports. **Whether herdr classifies this one as `blocked` at all is unmeasured** -- do not inherit the row above's reading | 
 | the first shell-command permission prompt | `--permission-mode acceptEdits` covers edits but not shell, so it stalls on its first `ls`; it appears *after* the opening prompt is accepted, so `agent prompt` has nothing to refuse |
 
 **Read the pane once after every launch, and answer the first two rows

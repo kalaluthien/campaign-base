@@ -19,8 +19,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "campaign-local-work.py"
 
-# THIS MACHINE'S GLOBAL GITIGNORE HOLDS `*.local.md` (#187, 2026-09-05), so
-# `CLAUDE.local.md` is ignored here whether or not the fixture excludes it --
+# THIS MACHINE'S GLOBAL GITIGNORE HOLDS `*.local.md` (#187, 2026-09-05), so a
+# file matching it is ignored here whether or not the fixture excludes it --
 # and a case about what `.git/info/exclude` does could not tell the two apart.
 # Every git command below runs with the global and system config emptied, so
 # what is measured is the fixture and not the machine.
@@ -54,8 +54,7 @@ class Rep:
 
 def a_clone(root, *files):
     """A member checkout under `<campaign>/repos/`, with `files` written into it
-    and excluded in its own `.git/info/exclude` -- the shape a delegate launch
-    leaves behind."""
+    and excluded in its own `.git/info/exclude`."""
     clone = pathlib.Path(root) / "repos" / "acme"
     clone.mkdir(parents=True)
     def g(*a):
@@ -173,26 +172,20 @@ def main():
         check("a campaign directory with no runtime/ reports nothing",
               not rep.lines)
 
-    # THE DELEGATE'S PRINCIPLES ARE NOT LOCAL-ONLY WORK. `CLAUDE.local.md` is
-    # written into each clone and excluded in that clone's `.git/info/exclude`,
-    # and `git status --porcelain --ignored=matching` reports an info/exclude'd
-    # file exactly as it reports a build directory -- probed 2026-09-04, it
-    # comes back `!! CLAUDE.local.md`. Counting it made every campaign that ever
-    # launched a delegate read NOT clear for ever: a close gate that cannot pass.
+    # AN EXCLUDED FILE IN A CLONE IS LOCAL-ONLY WORK. `git status --porcelain
+    # --ignored=matching` reports an info/exclude'd file as `!!`, exactly as it
+    # reports a build directory. This case sees one name; an exemption added
+    # for any other would pass it.
     #
-    # `read_checkouts` and not the filter alone: the skip is a branch inside
+    # `read_checkouts` and not the filter alone: the reading is a branch inside
     # that loop, and a case that re-implemented the condition would pass with
     # the branch deleted.
     with tempfile.TemporaryDirectory() as d:
-        clone = a_clone(d, "CLAUDE.local.md", "build-output")
+        clone = a_clone(d, "build-output")
         rep = Rep()
         m.read_checkouts(d, rep)
         kinds = {(k, i) for _, k, i in rep.rows}
-        check("the campaign's principles in a clone are not counted as work",
-              ("ignored", "CLAUDE.local.md") not in kinds, str(kinds))
-        # ...and the exemption is by name: every OTHER ignored file still counts,
-        # or this would be a hole rather than a carve-out.
-        check("...while any other ignored file still counts",
+        check("an excluded file in a clone counts as ignored local work",
               ("ignored", "build-output") in kinds, str(kinds))
 
     return harness.report()

@@ -152,7 +152,7 @@
   <section aria-labelledby="directory">
     <h2 id="directory">What does the campaign directory hold, and why is nothing durable only there?</h2>
     <dl>
-      <dt>Holds</dt><dd><code>.campaign</code>, the marker naming the campaign; <code>AGENTS.md</code> and <code>CLAUDE.md</code>, the campaign's principles; <code>README.md</code>, derived from the campaign issue body; <code>runtime/</code>, derived state and process artifacts such as a pid, a log, a lock; <code>scripts/</code>, scratch; <code>repos/</code>, the member clones</dd>
+      <dt>Holds</dt><dd><code>.campaign</code>, the marker naming the campaign; <code>README.md</code>, derived from the campaign issue body; <code>runtime/</code>, derived state and process artifacts such as a pid, a log, a lock; <code>scripts/</code>, scratch; <code>repos/</code>, the member clones</dd>
       <dt>Stored in</dt><dd><code>campaign-&lt;slug&gt;-&lt;date&gt;/</code> at the base root, git-ignored, on one machine</dd>
       <dt>Survives the machine</dt><dd>no, and it need not: at the close <code>scripts/campaign-close.py</code> deletes it on the person's <code>--delete</code>, and nothing is lost</dd>
     </dl>

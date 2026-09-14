@@ -61,5 +61,5 @@ their one prose home.
 | the sub-issue exists to | label | reference |
 | --- | --- | --- |
 | answer an open question, or measure or audit something that already runs | `kind:research` | [research](references/kind-research.md) |
-| build something new under a specification, or find out whether an approach can work at all | `kind:development` | none: its rules are the base's own |
+| build something new under a specification, or find out whether an approach can work at all | `kind:development` | [development](references/kind-development.md) |
 | keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it | `kind:maintenance` | [maintenance](references/kind-maintenance.md) |

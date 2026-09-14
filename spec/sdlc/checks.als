@@ -35,10 +35,9 @@ open sdlc/system
    nor Code go, so no landing change under it skips its scenario by the
    profile (`S7_NarrowingSpecWaiver`, against `S7a_DevelopmentSpecWaiver` at
    the same scope); reusing one is not a skip the profile grants. Every
-   profile line is the procedure's to state, in this vocabulary:
-   `development`'s is the default in the campaign's AGENTS.md, from the
-   template .claude/skills/opening-campaign/assets/AGENTS.md, and the other
-   kinds' are one line each in their references, kind-<k>.md. */
+   profile line is the procedure's to state, in this vocabulary: one line
+   in each kind's reference, kind-<k>.md, `development`'s being the one a
+   sub-issue with no kind takes. */
 pred developmentProfile[c: Change] { c.optional = skippable }
 pred narrowingProfile[c: Change] { c.optional = Spec }
 

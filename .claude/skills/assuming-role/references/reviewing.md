@@ -45,10 +45,20 @@ which `campaign-token-tally.py reviews` rolls into the round that spawned it
 prices both. Write the brief as `"review PR <N> at <level>"`, level right
 after `at`, naming what to check after a blank line.
 
-**The brief says what a reviewer may do**: it reads, runs checks, and edits,
-kills or launches nothing. That is one sentence of the brief and not a
-mechanism -- no reviewer agent definition, and no branch in the guard reading
-what kind of agent is being launched (owner's DECISION, rule-check#278).
+**The brief says what a reviewer may do**: it reads, runs checks, posts its
+own `REVIEW`, and edits, kills or launches nothing. That is one sentence of
+the brief and not a mechanism -- no reviewer agent definition, and no branch
+in the guard reading what kind of agent is being launched (owner's DECISION,
+rule-check#278).
+
+**The reviewer posts its own `REVIEW`** (sdlc-alloy#427): the brief tells it
+to write the comment to a file and post it with
+`gh pr comment <N> --body-file <path>`, never `gh pr review --approve`. The
+auto-mode classifier refuses an author's session posting a review of its own
+commits, while the subagent wrote none, so the poster is the writer merge
+condition 2 names. Refused, the reviewer stops and returns the refusal
+verbatim, and the launcher files a `BLOCKED` rather than posting it from its
+own pane.
 
 **`low` is under the bar and outside it.** It costs about what a narrowed plain
 brief does and cannot fan out, which is why the guard's `CHEAP_LEVEL` passes
@@ -175,3 +185,10 @@ Two readers decide it, and a comment either fails costs a red required check
 rather than a wasted round: its first line is the `KIND` shape
 `scripts/check-campaign-claim.py` owns, and its body must name the pull
 request's head sha the way `scripts/check-merge-review.py` reads one.
+
+- The first line is `REVIEW <launcher's session name>: ...`, the model and
+  level after the colon; the guard resolves the name from the parent session,
+  which is the subagent's too.
+- The sha is the head's full 40 characters, copied from
+  `gh pr view <N> --json headRefOid`: a typed abbreviation that is not the
+  head's prefix pins nothing, as pr#428's `5c1d60f7` for `5c1d60ff` did not.

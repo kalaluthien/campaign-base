@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 # witnesses: Cov_Acquire
-"""Prove `acquire-repo.sh` leaves a clone with what a delegate needs: the principles, and a commit gate.
+"""Prove `acquire-repo.sh` leaves a clone with what a delegate needs: a commit gate.
 
-Two defects, one shape. #187 question 5: #176 wrote the principles channel down
-as prose and no command wrote the file, so a delegate launched by the documented
-procedure got nothing and nothing recorded it. #190: `install_commit_guard` ran
-a clone's own `scripts/install-hooks.sh` only when the clone shipped one, and a
-member repository ships none, so every member clone got the machine-wide
+#190: `install_commit_guard` ran a clone's own `scripts/install-hooks.sh` only
+when the clone shipped one, and a member repository ships none, so every member clone got the machine-wide
 no-main-commits guard and NO claim gate -- while check-campaign-claim.py went on
 calling that clone campaign work whose shell writes "land at the commit".
 #214: the two decisions about an existing pre-commit -- may this one be
@@ -15,13 +12,12 @@ guard -- were both `grep -q 'no-main-commits'` over the whole file, so a hook
 naming the guard in a COMMENT read as one calling it, and the first of those
 two decisions is the destructive one.
 
-A case made of strings would have caught neither, because both defects were the
+A case made of strings would not have caught #190, because the defect was the
 absence of a command. So every case here runs SHIPPED code against a real git
 checkout and reads the bytes back, and the gate cases go further and run a real
 `git commit` through the hook that was installed.
 
-No case reaches the network. The principles cases make their clone with `git
-init`; the gate cases clone from a LOCAL BARE REPOSITORY at
+No case reaches the network. The gate cases clone from a LOCAL BARE REPOSITORY at
 `<dir>/acme/widget.git`, which `remote_slug` reads as `acme/widget` because it
 takes the last two path segments and strips `.git` -- so a local bare repo is a
 member repository as far as `acquire` is concerned, and the whole entry point
@@ -37,12 +33,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-# THIS MACHINE'S GLOBAL GITIGNORE HOLDS `*.local.md`, so `CLAUDE.local.md` is
-# ignored here whether or not the script writes anything -- and the first shape
-# of this suite passed its "the clone stays clean" case on that ambient rule,
-# with the per-clone exclude deleted. Every git command below runs with the
-# global and system config emptied, so what is measured is the exclude the
-# script writes and nothing the machine happens to carry.
+# Every git command below runs with the global and system config emptied, so
+# what is measured is what the script writes and nothing the machine happens
+# to carry: this machine's global gitignore once let a case pass on an ambient
+# rule with the script's own write deleted.
 GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
 
@@ -66,43 +60,6 @@ harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
 
-def install_principles(dest):
-    """Run the shipped function, extracted from the shipped file.
-
-    Extracted rather than copied: a fixture holding its own copy would pass
-    while the real one was deleted, which is the exact defect this suite is
-    about. `acquire-repo.sh` runs `acquire` at import, so the function is
-    sliced out instead of the file being sourced."""
-    src = SCRIPT.read_text()
-    body = src[src.index("install_principles() {"):
-               src.index("install_commit_guard() {")]
-    shell = ('log() { printf "%s\\n" "$*"; }\n'
-               'die() { printf "die: %s\\n" "$*" >&2; exit 1; }\n'
-               + body + f'\ninstall_principles "{dest}"\n')
-    return subprocess.run(["bash", "-c", shell], capture_output=True,
-                          text=True, env=GIT_ENV)
-
-
-def a_campaign(d, principles=True):
-    """A campaign directory with a clone under `repos/`, the shape a launch
-    finds. Returns the clone."""
-    camp = Path(d) / "demo-260905"
-    clone = camp / "repos" / "acme"
-    clone.mkdir(parents=True)
-    if principles:
-        (camp / "AGENTS.md").write_text("# Campaign principles\nBe careful.\n")
-    def g(*a):
-        subprocess.run(["git", "-C", str(clone), *a], check=True,
-                       capture_output=True, env=GIT_ENV)
-    g("init", "-q", "-b", "main")
-    g("config", "user.email", "t@example.invalid")
-    g("config", "user.name", "t")
-    (clone / "tracked").write_text("x")
-    g("add", "tracked")
-    g("commit", "-qm", "c")
-    return clone
-
-
 def text_of(path):
     """The file's bytes, or None when it is not there.
 
@@ -114,13 +71,6 @@ def text_of(path):
         return path.read_text()
     except OSError:
         return None
-
-
-def status(clone, *flags):
-    r = subprocess.run(["git", "-C", str(clone), "status", "--porcelain",
-                        *flags], capture_output=True, text=True, env=GIT_ENV)
-    return r.stdout
-
 
 
 # ------------------------------------------------------------ the gate fixture
@@ -251,45 +201,6 @@ def on_branch(clone, branch, track=False):
 
 
 def main():
-    with tempfile.TemporaryDirectory() as d:
-        clone = a_campaign(d)
-        r = install_principles(clone)
-        out = r.stdout + r.stderr
-        check("the campaign's AGENTS.md lands as CLAUDE.local.md in the clone",
-              (clone / "CLAUDE.local.md").exists(), out[:200])
-        check("...with the campaign's own bytes, not a stand-in",
-              "Be careful." in (text_of(clone / "CLAUDE.local.md") or ""))
-        # THE HALF THAT KEEPS IT OUT OF THE MEMBER REPOSITORY'S HISTORY. Asserted
-        # on `git status` and not on the exclude file's text: a line in
-        # info/exclude that git does not honour reads identically.
-        check("...and the clone is clean, so it is not the delegate's to commit",
-              status(clone) == "", repr(status(clone)))
-        check("...while `--ignored=matching` still names it, which is what "
-              "campaign-local-work reads",
-              "CLAUDE.local.md" in status(clone, "--ignored=matching"),
-              repr(status(clone, "--ignored=matching")))
-        check("...and it says what it wrote and where",
-              "principles:" in out and "CLAUDE.local.md" in out, out[:200])
-
-        # Idempotent: a second acquire over the same clone converges, and does
-        # not stack a second exclude line.
-        install_principles(clone)
-        exclude = text_of(clone / ".git" / "info" / "exclude") or ""
-        check("a second run does not stack a second exclude line",
-              exclude.count("CLAUDE.local.md") == 1, repr(exclude[-80:]))
-
-    # A campaign that adds no principles is a real answer, and it is SAID: a
-    # silent skip here is indistinguishable from the defect this closes.
-    with tempfile.TemporaryDirectory() as d:
-        clone = a_campaign(d, principles=False)
-        r = install_principles(clone)
-        out = r.stdout + r.stderr
-        check("a campaign with no AGENTS.md is reported, not skipped silently",
-              "adds no principles" in out, out[:200])
-        check("...and nothing is written",
-              not (clone / "CLAUDE.local.md").exists())
-
-
     # ---- #190. A MEMBER CLONE GETS THE CLAIM GATE, and it is the gate that
     # runs. Every case here is on the deployed path: the shipped `acquire`, a
     # real clone, and a real `git commit` going through the hook it installed.
@@ -548,31 +459,6 @@ def main():
     # in scripts/install-hooks-test.py, beside the case for an installer that
     # omits the guard entirely and beside the allow control that runs the real
     # install-hooks.sh. One home per branch, and that one already had it.
-
-    # THE ORDER OF THE CALL, and this one is TEXTUAL rather than executed --
-    # said plainly because a reader is owed the difference. The cases above run
-    # `acquire` for real, so the CALL is covered now; what they cannot cover is
-    # the order, because they reach the already-present branch and `clone_into`
-    # never fires. Until #190 the whole call site was textual on the premise
-    # that `acquire` clones from GitHub and so cannot run offline; a local bare
-    # repository is a member repository as far as `remote_slug` is concerned,
-    # which is what retired that premise. Without the case below the function
-    # would be covered and its position not: deleting `install_principles
-    # "$dest"` from `acquire` left all eight cases green, which is the fifth
-    # time that shape has appeared in this repository.
-    body = SCRIPT.read_text()
-    acquire = body[body.index("acquire() {"):]
-    check("acquire calls install_principles on every checkout it leaves",
-          'install_principles "$dest"' in acquire,
-          "the function is covered above; nothing runs it")
-    # ...and it runs after the clone exists, or it would write into nothing.
-    # Guarded on the call being present at all: `.index` RAISES when the case
-    # above has already failed, and an exception aborts the suite instead of
-    # reporting -- the same way a bare `read_text()` on the missing file did.
-    check("...after the checkout is made, not before",
-          'install_principles "$dest"' in acquire
-          and acquire.index('install_principles "$dest"')
-              > acquire.index("clone_into"))
 
     return harness.report()
 

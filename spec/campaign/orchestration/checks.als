@@ -438,9 +438,11 @@ pred EscalationAnsweredInTurn {
               and some livePlannersOn[Target.agent.task] and after Now.event = Decide)
 }
 
-/* Restates `decide`'s planner guard, so deleting it is loud: without it a
-   worker's own session answers its own BLOCKED. */
-assert OnlyThePlannerDecides {
+/* Restates the planner guards on `blocked` and `decide`, so deleting either
+   is loud: without the first a worker waits with nobody who could answer,
+   without the second a worker's own session answers its own BLOCKED. */
+assert EscalationGoesThroughAPlanner {
+  always (Now.event = Blocked implies some livePlannersOn[Target.agent.task])
   always (Now.event = Decide implies Who.session in livePlannersOn[Target.agent.task].peer)
 }
 
@@ -462,9 +464,8 @@ pred ReportIsNotEvidence {
     and not complete[a.task] and after always not complete[a.task])
 }
 
-/* A worker with no planner running, the one-worker shape: nothing takes
-   `decide` then. With one running, `answerInTurn` rules it out
-   (WaitingWorkerIsAnswered). */
+/* A worker waits for as long as its planner does not answer; `answerInTurn`
+   rules that out (WaitingWorkerIsAnswered). */
 pred BlockedAgentDoesNotProceed {
   some a: Agent | a.role = Worker
     and eventually (a in Waiting and always (a in Waiting and Now.event != Work))
@@ -1822,11 +1823,11 @@ run Sanity                          for exactly 2 Issue, 1 PullRequest, exactly 
 -- a REPORT changes nothing durable
 run ReportIsNotEvidence             for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- BLOCKED stops the agent
-run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
+run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Session, exactly 2 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- a live planner answers every BLOCKED in its turn
 check WaitingWorkerIsAnswered       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 run EscalationAnsweredInTurn        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
-check OnlyThePlannerDecides         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+check EscalationGoesThroughAPlanner for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 -- wait-for-the-answer strands a pane
 run SilentAgentIsRetirableUnderWait for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- rule 3's repair still retires it

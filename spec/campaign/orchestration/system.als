@@ -486,9 +486,13 @@ pred report[a: Agent] {
 /* Silence is not this message: an agent that stops without sending it
    looks identical to one thinking. An agent sends it for a decision or a
    question about its brief, one event because both leave it Waiting;
-   `.claude/skills/assuming-role/references/worker.md` step 4 sorts them. */
+   `.claude/skills/assuming-role/references/worker.md` step 4 sorts them.
+   Only to a planner running on the sub-issue: with none, the one-worker
+   shape, the worker asks the owner in its own turn and sends no BLOCKED, so
+   no agent waits with nobody who could `decide`. */
 pred blocked[a: Agent] {
   a in Live and a not in Waiting and a not in Stopped
+  some livePlannersOn[a.task]
   Waiting' = Waiting + a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext
@@ -501,9 +505,7 @@ pred blocked[a: Agent] {
    asks the owner with AskUserQuestion and records what they say as this same
    DECISION, so the owner decides through the planner and has no event of
    their own. A planner's own BLOCKED is that case: its session is the one
-   that asks. With no planner running -- the one-worker shape -- nothing takes
-   this edge, and a BLOCKED stands until one runs (BlockedAgentDoesNotProceed).
-   When the planner answers is `answerInTurn`'s, in checks.als. */
+   that asks. When the planner answers is `answerInTurn`'s, in checks.als. */
 pred decide[a: Agent] {
   a in Live
   a in Waiting

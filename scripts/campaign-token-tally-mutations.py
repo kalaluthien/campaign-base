@@ -114,7 +114,7 @@ MUT = [
      '        if not quiet:\n            return "none", None',
      '        if False:\n            return "none", None'),
     ("stdout sent to a file is still a read",
-     '    if cut < len(args) and args[cut] in (">", ">>", "&>", "&>>") and fd in (None, "1"):\n        return "none", None',
+     '    if cut < len(args) and args[cut] in (">", ">>", ">|", "&>", "&>>") and fd in (None, "1"):\n        return "none", None',
      '    if False:\n        return "none", None'),
     ("a read word in a later segment is a read",
      '    if words and words[0][0] in SHELL_READS:\n        return read_operand(*words[0])',

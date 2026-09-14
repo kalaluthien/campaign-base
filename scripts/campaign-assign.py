@@ -213,9 +213,13 @@ ASSIGNMENT = re.compile(r"Work sub-issue (?P<repo>[\w.-]+/[\w.-]+)#(?P<issue>\d+
 def prompt_for(repo, issue):
     """The one sentence. THE BRIEF IS THE SUB-ISSUE (AGENTS.md § Delegate
     launch), so this names it and says nothing else: anything restated here is
-    a second copy of the body that goes stale the moment the body is edited."""
-    return (f"Work sub-issue {repo}#{issue} now: its body is the whole brief, "
-            f"including how to claim, land and report it.")
+    a second copy of the body that goes stale the moment the body is edited.
+    campaign-context.py is named because it reads what the body cannot hold,
+    the comments on it and on what it cites (rule-check#416)."""
+    return (f"Work sub-issue {repo}#{issue} now: run "
+            f"`scripts/campaign-context.py {issue} {repo}` first, then read its "
+            f"body, which is the whole brief, including how to claim, land and "
+            f"report it.")
 
 
 def main():

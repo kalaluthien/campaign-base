@@ -98,6 +98,8 @@
     ["campaign/orchestration/checks.als", "run", "M5b_TheRuleRefusesAnotherClaim"],
     ["campaign/orchestration/checks.als", "run", "M6_MergeOfAHeadThatIsNoClaim"],
     ["campaign/orchestration/checks.als", "run", "M6b_TheRuleRefusesAHeadThatIsNoClaim"],
+    ["campaign/orchestration/checks.als", "run", "M7_PlannerOfNoCampaignMerges"],
+    ["campaign/orchestration/checks.als", "run", "M7b_TheRuleRefusesAPlannerOfNoCampaign"],
     ["campaign/orchestration/checks.als", "run", "N1_ForeignNamedSessionDoesNotBlock"],
     ["campaign/orchestration/checks.als", "run", "N2_UnnamedSessionDoesNotBlock"],
     ["campaign/orchestration/checks.als", "run", "N3_ForeignNameDoesNotExemptOwnSubIssue"],

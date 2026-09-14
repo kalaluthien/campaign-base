@@ -384,13 +384,15 @@ pred mergedOnCurrentReview {
    all, so a head that is no claim is no session's to merge -- the owner's own
    pull request included, which the owner merges. The planner half is keyed
    on the campaign and not on who cut the claim, because a planner merges the
-   pull request of a claim a worker took itself. Before it, the guard took
+   pull request of a claim a worker took itself, and it is membership and not
+   `campaignOf[Now.issue] = Who.session.worksOn`, which holds when both sides
+   are empty: a planner of no campaign (M7). Before it, the guard took
    any claim it found as the licence: 29 of 56 planner merges in the guard
    logs were licensed by a claim that was not the pull request's own. */
 pred mergedByPlannerOrHolder {
   always (Now.event = MergePullRequest implies
             (Now.issue in Claimed
-             and ((Who.session.role = Planner and campaignOf[Now.issue] = Who.session.worksOn)
+             and ((Who.session.role = Planner and Now.issue in Who.session.worksOn.memberIssues)
                   or (Who.session.role = Worker and Now.issue in Who.session.claimedIssues))))
 }
 
@@ -1579,6 +1581,22 @@ pred M5b_TheRuleRefusesAnotherClaim {
   mergedByPlannerOrHolder and M5_WorkerMergesByAnotherClaim
 }
 
+/* M7. A planner of NO campaign merges a claim. SAT without the rule. */
+pred M7_PlannerOfNoCampaignMerges {
+  some s: Session {
+    s.role = Planner and always no s.worksOn
+    eventually (Now.event = MergePullRequest and Who.session = s
+                and Now.issue in Claimed)
+  }
+}
+
+/* M7b. The rule refuses it. Writing the planner half as
+   `campaignOf[Now.issue] = Who.session.worksOn` turns it SAT: both sides are
+   empty for an issue of no campaign and a planner of none. */
+pred M7b_TheRuleRefusesAPlannerOfNoCampaign {
+  mergedByPlannerOrHolder and M7_PlannerOfNoCampaignMerges
+}
+
 /* M6. A pull request whose head is no claim is merged. SAT without the rule. */
 pred M6_MergeOfAHeadThatIsNoClaim {
   some i: Issue | eventually (Now.event = MergePullRequest and Now.issue = i
@@ -1940,6 +1958,8 @@ run M4_PlannerOfAnotherCampaignMerges             for 3 Issue, 1 PullRequest, 2 
 run M4b_TheRuleRefusesAnotherCampaignsPlanner     for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run M5_WorkerMergesByAnotherClaim                 for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run M5b_TheRuleRefusesAnotherClaim                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
+run M7_PlannerOfNoCampaignMerges                 for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M7b_TheRuleRefusesAPlannerOfNoCampaign      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run M6_MergeOfAHeadThatIsNoClaim                  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run M6b_TheRuleRefusesAHeadThatIsNoClaim          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 

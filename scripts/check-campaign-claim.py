@@ -108,7 +108,11 @@ query string on it, a GraphQL merge mutation, or a GraphQL query this cannot
 read) and a merge spelled where the command word is not `gh` (`xargs`, a
 variable) name no claim this can read without the network, and are refused
 saying how to write it; a head that is no claim, and a merge beside another gh
-write, are refused too.
+write, are refused too. THE PLANNER HALF READS THE NAME AND NOT THE REF: a
+claim-shaped branch of a campaign this machine holds stands in for the
+model's `Now.issue in Claimed`, so `demo/5-q` with no ref anywhere is admitted
+and `gh` itself then finds no pull request to merge. Reading the ref would
+need the network for a member repository the planner has no checkout of.
 
 WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
 one campaign write whose CONTENT this can read, so it is read: the first line
@@ -2183,6 +2187,7 @@ def merge_call(merges, hidden, rest, what, how, how_role, fell_back, campaign,
                            f"that is no claim is no session's to merge -- the "
                            f"owner merges their own (rule-check#442).", *say])
         token, repo = m[0], member_pr(x)
+        # THE NAME, NOT THE REF, for a planner: see the docstring's WHO MERGES.
         if row.get("merge") == "campaign":
             if token != campaign:
                 return refuse([f"{what}: `{branch}` is a claim of campaign "

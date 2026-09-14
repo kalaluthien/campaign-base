@@ -376,6 +376,47 @@ pred mergedOnCurrentReview {
              and (all a: agentsOf[Now.issue] | a in Confirmed)))
 }
 
+/* ---------------- discipline: an escalation answered in its turn ---------------- */
+
+/* Live agents waiting on a BLOCKED whose sub-issue has a planner running. */
+fun waitingOnPlanner: set Agent { { a: Waiting & Live | some livePlannersOn[a.task] } }
+
+/* planner.md step 7: in the turn a BLOCKED reaches the planner, its first act
+   is the DECISION -- its own, or the owner's answer to AskUserQuestion -- and
+   nothing else runs first. "Reaches" covers a planner starting with one
+   already standing, so it is read off the state and not off `Blocked`.
+   WHAT IT COSTS: it holds back every event while a worker waits, not the
+   planner's alone, so a death or a limit stop during the wait is excluded
+   rather than examined. So is the one trace the review found where the
+   planner cannot answer: a `RemoveMember` unlinking the sub-issue while its
+   worker waits, which leaves `decide` with no taker. */
+pred answerInTurn {
+  always (some waitingOnPlanner implies (Now.event = Decide and Target.agent in waitingOnPlanner))
+}
+
+/* That the discipline is enough: no worker waits forever on a live planner. */
+assert WaitingWorkerIsAnswered {
+  answerInTurn implies
+    (all a: Agent | always (a in waitingOnPlanner implies eventually a not in Waiting))
+}
+
+/* The escalation round runs under the discipline: a worker's BLOCKED, then
+   the planner's DECISION. The owner's branch is this same trace, since their
+   answer is the planner's DECISION. */
+pred EscalationAnsweredInTurn {
+  answerInTurn
+  eventually (Now.event = Blocked and Target.agent.role = Worker
+              and some livePlannersOn[Target.agent.task] and after Now.event = Decide)
+}
+
+/* Restates the planner guards on `blocked` and `decide`, so deleting either
+   is loud: without the first a worker waits with nobody who could answer,
+   without the second a worker's own session answers its own BLOCKED. */
+assert EscalationGoesThroughAPlanner {
+  always (Now.event = Blocked implies some livePlannersOn[Target.agent.task])
+  always (Now.event = Decide implies Who.session in livePlannersOn[Target.agent.task].peer)
+}
+
 /* ---------------- witnesses ---------------- */
 
 /* SAT means the disciplines forbid a counterexample rather than the protocol. */
@@ -386,8 +427,11 @@ pred Sanity {
   and eventually Now.event = Push
 }
 
+/* A worker waits for as long as its planner does not answer; `answerInTurn`
+   rules that out (WaitingWorkerIsAnswered). */
 pred BlockedAgentDoesNotProceed {
-  some a: Agent | eventually (a in Waiting and always (a in Waiting and Now.event != Work))
+  some a: Agent | a.role = Worker
+    and eventually (a in Waiting and always (a in Waiting and Now.event != Work))
 }
 
 /* The repair is a repair and not a prohibition. */
@@ -1638,7 +1682,11 @@ run P3_LaunchUsesTheTasksOwnCampaign     for 8 Issue, 2 PullRequest, 3 Campaign,
 -- the whole retirement procedure runs
 run Sanity                          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- BLOCKED stops the agent
-run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
+run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Session, exactly 2 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
+-- a live planner answers every BLOCKED in its turn
+check WaitingWorkerIsAnswered       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+run EscalationAnsweredInTurn        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+check EscalationGoesThroughAPlanner for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 -- rule 3's repair still retires it
 run SilentAgentStillRetired         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 -- the poll into the banner gets no answer: `answer` guards on Stopped and only the reset clears it
@@ -1946,8 +1994,8 @@ assert SuccessorNamedForAnotherRefused {
 }
 
 /* ---------------- reachability floor ----------------
-   Each is the witness of an event a check above names, except Cov_Decide and
-   Cov_Acquire, which show their events fire at all. */
+   Each is the witness of an event a check above names, except Cov_Acquire,
+   which shows its event fires at all. */
 
 pred Cov_LaunchAgent      { eventually (Now.event = Launch and some Target.agent) }
 pred Cov_Work             { eventually Now.event = Work }
@@ -1963,6 +2011,7 @@ pred Cov_OpenPullRequestInOrchestration      { eventually Now.event = OpenPullRe
 pred Cov_CommitLocal          { eventually Now.event = CommitLocal }
 pred Cov_StandDown        { eventually Now.event = StandDown }
 pred Cov_Retire           { eventually Now.event = Retire }
+pred Cov_Blocked          { eventually Now.event = Blocked }
 pred Cov_Decide           { eventually Now.event = Decide }
 pred Cov_RemoveMemberInOrchestration     { eventually Now.event = RemoveMember }
 pred Cov_Acquire          { eventually Now.event = Acquire }
@@ -2058,6 +2107,7 @@ run Cov_OpenPullRequestInOrchestration      for 3 Issue, 1 PullRequest, 1 Campai
 run Cov_CommitLocal          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_Blocked          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Decide           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_RemoveMemberInOrchestration     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Acquire          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 1

@@ -90,7 +90,7 @@ word is `cat`, `head`, `tail`, or `sed` with `-n`; nothing else. A read word in
 a later segment -- `cd x && cat f`, `git log | head` -- is counted apart as a
 floor line, never as a read. Its file is the Read's `file_path`, or the
 segment's last path argument resolved against the record's cwd; a read naming
-none, or only a path the shell would expand (`$P/f`), is unsplittable and
+none, or only a path the shell would expand (`$P/f`, `*.py`), is unsplittable and
 counted apart. Its bytes are its result's, measured
 as `tool-echo` measures them, over the one walk both share.
 
@@ -272,16 +272,16 @@ def read_operand(word, tokens):
     Operands stop at the first redirection. Stdout sent to a file returns no
     content, so that segment is no read; `2>/dev/null` and `1>&2` still
     return it. `sed` reads only with `-n` (or `--quiet`, `--silent`) and never
-    with `-i`, and its first operand is the script unless `-e` or `-f` gave
+    with `-i` or `-I`, and its first operand is the script unless `-e` or `-f` gave
     one; `head` and `tail` take a value after a bare `-n` or `-c`. A path the
-    shell would expand -- `$P/f`, `$(ls)` -- names no file this can read, so
+    shell would expand -- `$P/f`, `$(ls)`, `*.py` -- names no file this can read, so
     it is no path.
     """
     args = tokens[1:]
-    cut = next((i for i, t in enumerate(args) if t and set(t) <= set("<>&")),
+    cut = next((i for i, t in enumerate(args) if t and set(t) <= set("<>&|")),
                len(args))
     fd = args[cut - 1] if 0 < cut < len(args) and args[cut - 1].isdigit() else None
-    if cut < len(args) and args[cut] in (">", ">>", "&>", "&>>") and fd in (None, "1"):
+    if cut < len(args) and args[cut] in (">", ">>", ">|", "&>", "&>>") and fd in (None, "1"):
         return "none", None
     args = args[:cut - 1] if fd else args[:cut]
     operands, quiet, script_given, i = [], False, False, 0
@@ -289,8 +289,8 @@ def read_operand(word, tokens):
         t = args[i]
         i += 1
         if t.startswith("-") and len(t) > 1:
-            if word == "sed" and (t in ("--in-place", "-i")
-                                  or (not t.startswith("--") and "i" in t)):
+            if word == "sed" and (t.startswith("--in-place")
+                                  or (not t.startswith("--") and set(t) & set("iI"))):
                 return "none", None
             if word == "sed" and (t in ("--quiet", "--silent")
                                   or (not t.startswith("--") and "n" in t)):
@@ -308,7 +308,7 @@ def read_operand(word, tokens):
         if not script_given:
             operands = operands[1:]
     path = operands[-1] if operands else None
-    return "read", (None if path and ("$" in path or "`" in path) else path)
+    return "read", (None if path and set(path) & set("$`*?[") else path)
 
 
 def die(why):

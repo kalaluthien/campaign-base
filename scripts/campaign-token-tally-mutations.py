@@ -126,7 +126,7 @@ MUT = [
      '    verdict = "build" if either >= BUILD_AT * read_bytes and read_bytes else "stop"',
      '    verdict = "build" if either >= BUILD_AT * read_bytes else "stop"'),
     ("a path the shell would expand is taken as a file",
-     '    return "read", (None if path and ("$" in path or "`" in path) else path)',
+     '    return "read", (None if path and set(path) & set("$`*?[") else path)',
      '    return "read", path'),
 ]
 

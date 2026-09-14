@@ -316,13 +316,13 @@ assert FormsTieNothing {
    the discipline: a change lands with an absence nothing licenses. */
 assert AbsenceLicensed {
   landDiscipline implies always all c: Landed, s: absentStages[c] |
-    criterion[c]
+    (s in skippable and criterion[c])
     or once (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 pred AbsenceLicensed_Bites {
   not landDiscipline
   eventually some c: Landed, s: absentStages[c] |
-    not criterion[c]
+    not (s in skippable and criterion[c])
     and historically not (Step.event = Land and Step.subject = c and s in reusedStages[c])
 }
 

@@ -90,7 +90,8 @@ ROLES = {
         # MergePullRequest, and `codePlaneEvents` in
         # spec/campaign/orchestration/system.als puts the first on the code
         # plane while the three merge conditions -- not a role -- hold the
-        # second. A planner allowed every write row could open and merge pull
+        # second, and `merge` below says which claim a merge stands on. A
+        # planner allowed every write row could open and merge pull
         # requests and delete another worker's claim ref through `gh api`,
         # which is the opposite of "a planner changes no code".
         #
@@ -122,6 +123,14 @@ ROLES = {
         # model rule has a reader at all.
         "gh_except": frozenset({("issue", "develop")}),
         "own_campaign_gh": {CAMPAIGN: frozenset(), SUB_ISSUE: frozenset()},
+        # WHICH CLAIM A `gh pr merge` STANDS ON (rule-check#442), the licence
+        # the head decides. "campaign": any claim of the planner's own
+        # campaign, checked out or not, because the planner lands what its
+        # workers reviewed (planner.md step 9) and holds no claim itself.
+        # "held": the claim a checkout this session stands in or holds is on.
+        # The guard reads the claim off the branch the merge names; that
+        # reading is its, not this table's.
+        "merge": "campaign",
     },
     "worker": {
         "campaign_plane": "own",
@@ -152,8 +161,12 @@ ROLES = {
             CAMPAIGN: frozenset({("issue", "comment")}),
             SUB_ISSUE: frozenset({("issue", "comment"), ("issue", "reopen")}),
         },
+        "merge": "held",
     },
 }
+
+# The values `merge` may take, for the suite that checks every row holds one.
+MERGE_LICENCES = ("campaign", "held")
 
 # The role words, in the order the table states them, for a reader building a
 # pattern or a listing. campaign-name-session.py's NAME alternation is built
@@ -185,6 +198,9 @@ def main():
             if pairs:
                 print(f"    own {target}: "
                       + ", ".join(sorted(f"{s} {v}" for s, v in pairs)))
+        print("    merges           "
+              + ("any claim of its own campaign" if r["merge"] == "campaign"
+                 else "the claim a checkout it holds is on"))
     print("\nWhat this file does not decide: the claim (per call, in "
           "check-campaign-claim.py), the name shape (campaign-name-session.py), "
           "and who holds a role (herdr, by session id).")

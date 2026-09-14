@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: R4i_GuardClosesOwnHandsGap, Q5_WorkerWorksClaimedCheckout, R15b_DurableExcludesIt, R15c_DurableStillAdmitsTheWork
+# witnesses: R4i_GuardClosesOwnHandsGap, Q5_WorkerWorksClaimedCheckout, R15b_DurableExcludesIt, R15c_DurableStillAdmitsTheWork, M3_PlannerLandsItsCampaignsClaim, M3b_WorkerLandsItsOwnClaim, M4b_TheRuleRefusesAnotherCampaignsPlanner, M5b_TheRuleRefusesAnotherClaim, M6b_TheRuleRefusesAHeadThatIsNoClaim
 """Prove the claim guard refuses for the reason it prints, and allows for one too.
 
 Every case runs the shipped script against a fixture built here -- never the
@@ -283,6 +283,9 @@ def ask(cwd, tool="Edit", command=None, path=None, event=None, stdin=None,
 UNREAD = "was not read for a target"
 GATE = "pre-commit claim gate"
 CORPUS = HERE / "fixtures" / "guard-allow-corpus.jsonl"
+# The corpus rows that merge a pull request by number, which rule-check#442
+# refuses; re-bless it with the 611 and the 97 when the corpus is rewritten.
+MERGES = 12
 
 
 def guard_module():
@@ -349,6 +352,26 @@ def row_breaks_a_shell_rule(mod, row, cwd):
     pairs, _why = mod.paired_segments(row["command"])
     found, _notes = mod.shell_findings(pairs or [], cwd)
     return bool(found)
+
+
+def row_merges_by_number(mod, row):
+    """Whether this corpus row merges a pull request it names by anything but
+    a claim branch -- a number, a URL, nothing, or `gh api` -- read by the
+    guard's own readers, for `row_posts_comment`'s reason (rule-check#442)."""
+    if row["tool"] != "Bash":
+        return False
+    pairs, _why = mod.paired_segments(row["command"])
+    for tokens, _heredocs, _outer in pairs or []:
+        word, rest = mod.head(tokens)
+        if word != "gh" or not mod.gh_write(rest)[0]:
+            continue
+        if mod.api_merge(rest):
+            return True
+        if mod.gh_words(rest)[:2] == ["pr", "merge"]:
+            t = mod.merge_target(rest)
+            if not t or mod.claim_match(t) is None:
+                return True
+    return False
 
 
 def corpus_issues(mod, rows):
@@ -1190,8 +1213,9 @@ def main():
         # plane and the three merge conditions respectively, neither a
         # planner's by role. Allowing every row of WRITES let a planner open
         # and merge pull requests and delete another worker's claim ref.
+        # `gh pr merge` left this list with rule-check#442: it is asked on
+        # its own, before the licence, and its cases are under #442 below.
         for cmd in ("gh pr create --title t --body b",
-                    "gh pr merge 9 --merge",
                     "gh pr edit 9 --title x",
                     "gh api -X DELETE repos/o/r/git/refs/heads/other/8-y"):
             r = ask(f.base, tool="Bash", command=cmd, env=planner)
@@ -1247,7 +1271,7 @@ def main():
         # and went silent about the other write in the same command and about
         # how the root was resolved.
         r = ask(f.base, tool="Bash",
-                command="gh pr merge 5 --merge && gh issue develop 9",
+                command="gh pr edit 5 --title x && gh issue develop 9",
                 env=planner)
         check("...and the develop refusal still names the other write beside it",
               r.returncode == 2
@@ -1521,7 +1545,7 @@ def main():
                   r.returncode == 2, out(r)[:400])
         # ...and it covers its own write and nothing standing beside it.
         r = ask(f.base, tool="Bash",
-                command="gh issue comment 1 --body 'NOTE demo-worker-1: x' && gh pr merge 12 --merge",
+                command="gh issue comment 1 --body 'NOTE demo-worker-1: x' && gh pr edit 12 --title x",
                 env=worker)
         check("the carve-out carries no other write in the same command",
               r.returncode == 2 and "covers no other write" in r.stderr,
@@ -1570,7 +1594,7 @@ def main():
               r.returncode == 2 and "no claim covering a write to #42"
               in r.stderr, out(r)[:400])
         r = ask(f.base, tool="Bash",
-                command="gh issue reopen 42 && gh pr merge 12 --merge",
+                command="gh issue reopen 42 && gh pr edit 12 --title x",
                 env=member)
         check("...and it carries no other write in the same command",
               r.returncode == 2 and "covers no other write" in r.stderr,
@@ -1616,14 +1640,14 @@ def main():
         r = ask(wt, path=str(wt / "a.md"), env=stranger)
         check("clause 1 does not admit a worker of another campaign",
               r.returncode == 2 and "another campaign" in r.stderr, out(r)[:400])
-        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=stranger)
+        r = ask(wt, tool="Bash", command="gh pr merge demo/7-x --merge", env=stranger)
         check("...nor does the session's own checkout, for the same session",
               r.returncode == 2, out(r)[:400])
         # ALLOW beside both: this campaign's own worker, same checkout.
         r = ask(wt, path=str(wt / "a.md"), env=worker)
         check("ALLOW beside it: clause 1 admits its own campaign's worker",
               r.returncode == 0 and "Clause 1" in r.stdout, out(r)[:400])
-        r = ask(wt, tool="Bash", command="gh pr merge 7 --merge", env=worker)
+        r = ask(wt, tool="Bash", command="gh pr merge demo/7-x --merge", env=worker)
         check("ALLOW beside it: and so does its own checkout",
               r.returncode == 0, out(r)[:400])
         # ALLOW beside the foreign-campaign refusal: this campaign's own
@@ -1949,7 +1973,7 @@ def main():
         # ITEM 1: a mixed command reaches two refusing branches, and the one
         # naming a NUMBER wins because it tells the reader which claim to take.
         no_claim = ask(f.base, tool="Bash",
-                       command="gh issue close 11 && gh pr merge 5")
+                       command="gh issue close 11 && gh pr edit 5 --title x")
         check("a mixed command is refused by the issue it names, not by the "
               "unnarrowed fallback",
               no_claim.returncode == 2
@@ -1957,10 +1981,10 @@ def main():
               out(no_claim)[:300])
         # ...and the fallback still decides once every named issue IS covered,
         # or the rule above would have swallowed it.
-        r = ask(f.base, tool="Bash", command="gh issue close 9 && gh pr merge 5")
+        r = ask(f.base, tool="Bash", command="gh issue close 9 && gh pr edit 5 --title x")
         check("...and the unnarrowed fallback decides when the named issue is "
               "covered",
-              r.returncode == 0 and "gh pr merge" in r.stdout
+              r.returncode == 0 and "gh pr edit" in r.stdout
               and "a claim (" in r.stdout, out(r)[:400])
 
         # ------------------------------------------------------------- #192
@@ -3045,6 +3069,151 @@ def main():
           "MATCHER no longer lists both; the rules on the call would be "
           "unreachable however this file is written")
 
+    # ------------------------------------------------------ rule-check#442
+    # WHO MERGES: the planner of the head's campaign, or the worker holding
+    # the head's claim, read off the BRANCH the merge names. Before it, a
+    # `gh pr merge <n>` fell to the claim reading, where any claim under the
+    # base root licensed it (29 of 56 planner merges in the guard logs) and a
+    # member repository's merge by a planner had no licence at all
+    # (runtime/guard.log 2026-09-14T07:34:03, html-doc-planner-10).
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x", "demo/8-y"))
+        (f.base / "other-dir").mkdir()
+        (f.base / "other-dir" / ".campaign").write_text("2 other\n")
+        git(f.base, "branch", "other/9-z")
+        git(f.base, "push", "-q", "origin", "other/9-z")
+        f.worktree("wt-o", "other/9-z")
+        planner = herdr_stub(d, {"sid-1": "demo-planner-3"})
+        worker = herdr_stub(d, {"sid-1": "demo-worker-4"})
+        foreign_planner = herdr_stub(d, {"sid-1": "other-planner-5"})
+        foreign_worker = herdr_stub(d, {"sid-1": "other-worker-6"})
+        for cmd in ("gh pr merge demo/7-x --merge",
+                    "gh pr merge demo/7-x -R o/r --merge --match-head-commit ab12"):
+            r = ask(f.base, tool="Bash", command=cmd, env=planner)
+            check(f"#442: a planner merges its own campaign's claim (`{cmd[12:40]}`)",
+                  r.returncode == 0
+                  and "a planner merges its own campaign's claims" in r.stdout,
+                  out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/5-q --merge",
+                env=planner)
+        check("#442: ...one nobody on this machine has checked out, too",
+              r.returncode == 0 and "demo/5-q" in r.stdout, out(r)[:500])
+        for cmd in ("gh pr merge 7 --merge",
+                    "gh pr merge https://github.com/o/r/pull/7 --merge",
+                    "gh pr merge --merge"):
+            for who, env in (("planner", planner), ("worker", worker)):
+                r = ask(f.base, tool="Bash", command=cmd, env=env)
+                check(f"#442: a {who}'s `{cmd[:40]}` names no branch and is "
+                      f"refused, saying how",
+                      r.returncode == 2
+                      and "gh pr merge <slug>/<issue>-<topic>" in r.stderr,
+                      out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
+                env=foreign_planner)
+        check("#442: a planner of another campaign is refused",
+              r.returncode == 2 and "a claim of campaign `demo`" in r.stderr
+              and "`other`" in r.stderr, out(r)[:500])
+        for head in ("feature-x", "zzz/7-x"):
+            r = ask(f.base, tool="Bash", command=f"gh pr merge {head} --merge",
+                    env=planner)
+            check(f"#442: a head that is no claim (`{head}`) is refused to the "
+                  f"planner", r.returncode == 2
+                  and "not a claim branch" in r.stderr, out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
+                env=worker)
+        check("#442: the worker holding the claim merges it",
+              r.returncode == 0 and "is on demo/7-x, a claim" in r.stdout,
+              out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/5-q --merge",
+                env=worker)
+        check("#442: a worker holding OTHER claims is refused the merge -- the "
+              "unrelated claim that used to license it",
+              r.returncode == 2 and "no checkout" in r.stderr
+              and "demo/5-q" in r.stderr, out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
+                env=foreign_worker)
+        check("#442: a worker of another campaign is refused its checkout's "
+              "claim", r.returncode == 2 and "a claim of campaign `demo`"
+              in r.stderr, out(r)[:500])
+        r = ask(f.base, tool="Bash", env=planner,
+                command="gh pr merge demo/7-x --merge && gh issue comment 7 "
+                        "--body 'NOTE demo-planner-3: x'")
+        check("#442: a merge beside another gh write is refused",
+              r.returncode == 2 and "a command of its own" in r.stderr,
+              out(r)[:500])
+        for env in (planner, worker):
+            r = ask(f.base, tool="Bash", env=env,
+                    command="gh api -X PUT repos/o/r/pulls/7/merge")
+            check("#442: a merge through `gh api` is refused, saying how",
+                  r.returncode == 2 and "through `gh api`" in r.stderr
+                  and "gh pr merge <slug>/<issue>-<topic>" in r.stderr,
+                  out(r)[:500])
+        r = ask(f.base, tool="Bash", env=planner,
+                command="gh api repos/o/r/pulls/7/merge")
+        check("#442: CONTROL: a GET of the merge endpoint is a read",
+              r.returncode == 0, out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
+                env=no_herdr(d))
+        check("#442: with the role unread, the claim reading still ties the "
+              "merge to its branch", r.returncode == 0
+              and "is on demo/7-x, a claim" in r.stdout, out(r)[:500])
+        r = ask(f.base, tool="Bash", command="gh pr merge demo/5-q --merge",
+                env=no_herdr(d))
+        check("#442: ...and refuses a branch no checkout is on",
+              r.returncode == 2 and "no checkout" in r.stderr, out(r)[:500])
+    # A MEMBER REPOSITORY: the planner needs no checkout, the worker needs one
+    # of that repository on the claim.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        inst, trees = f.install(claims=("demo/12-x",))
+        planner = herdr_stub(d, {"sid-1": "demo-planner-2"})
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
+        for repo in ("kalaluthien/homeops", "kalaluthien/dotclaude"):
+            r = ask(f.base, tool="Bash", env=planner,
+                    command=f"gh pr merge demo/12-x -R {repo} --merge")
+            check(f"#442: a planner merges its campaign's claim on {repo}, "
+                  f"which it has no checkout of", r.returncode == 0, out(r)[:500])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh pr merge demo/12-x -R kalaluthien/homeops --merge")
+        check("#442: a worker merges the claim an install's worktree holds",
+              r.returncode == 0 and str(trees["demo/12-x"]) in r.stdout,
+              out(r)[:500])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="gh pr merge demo/7-x -R kalaluthien/homeops --merge")
+        check("#442: ...and not by the base's worktree on the same branch name",
+              r.returncode == 2 and "no checkout" in r.stderr, out(r)[:500])
+        member = f.member(branch="demo/7-x")
+        r = ask(member, tool="Bash", env=worker,
+                command="gh pr merge demo/7-x --merge")
+        check("#442: a delegate merges from the clone standing on its claim",
+              r.returncode == 0 and str(member) in r.stdout, out(r)[:500])
+
+    # ------------------------------------------------- rule-check#442 item 3
+    # A CLONE'S OWN CLAIM COVERS A FILE WRITE UNDER ITS CAMPAIGN DIRECTORY
+    # (html-doc#381 issuecomment-5660681276): a worker in a member clone on its
+    # claim was refused a note in the campaign directory, because the file
+    # path read the base's worktrees and never the clone the session sits in.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=())
+        worker = herdr_stub(d, {"sid-1": "demo-worker-1"})
+        stranger = herdr_stub(d, {"sid-1": "other-worker-2"})
+        (f.base / "other-dir").mkdir()
+        (f.base / "other-dir" / ".campaign").write_text("2 other\n")
+        member = f.member(branch="demo/7-x")
+        note = f.camp / "survey" / "method.md"
+        r = ask(member, path=str(note), env=worker)
+        check("#442: a clone worker on its claim writes under its campaign "
+              "directory", r.returncode == 0 and "demo/7-x" in r.stdout
+              and str(member) in r.stdout, out(r)[:500])
+        r = ask(member, path=str(note), env=stranger)
+        check("#442: ...not a worker of another campaign in the same clone",
+              r.returncode == 2, out(r)[:500])
+        git(member, "switch", "-q", "main")
+        r = ask(member, path=str(note), env=worker)
+        check("#442: ...and not from the clone off its claim",
+              r.returncode == 2 and "Clause 2 does not hold" in r.stderr,
+              out(r)[:500])
+
     # THE ALLOW CORPUS (#196 step 4, #209 step 1). Every case above is a shape
     # somebody thought of; these are the shapes the campaign actually typed,
     # replayed against a fixture in which the session holds the claims it held
@@ -3168,10 +3337,21 @@ def main():
             check("the corpus's comment rows are the 97 last blessed",
                   len(rows) == 611 and len(posts) == 97,
                   f"{len(posts)} of {len(rows)}")
-            other = sorted(set(refused_at) - posts - breaks)
+            # THE THIRD DELIBERATE BREAK (rule-check#442). Every merge the
+            # corpus holds names its pull request by NUMBER, and a merge now
+            # names its branch, because a number names no claim this can read
+            # without the network. Frozen to a count for the reason the
+            # comment rows are: the set is computed by the readers under test.
+            merges = {i for i, row in enumerate(rows)
+                      if row_merges_by_number(mod, row)}
+            check("the corpus's merges by number are the MERGES last blessed",
+                  len(merges) == MERGES, f"{len(merges)} row(s): "
+                  + "; ".join(rows[i]["command"][:70] for i in sorted(merges)))
+            other = sorted(set(refused_at) - posts - breaks - merges)
             check(f"of the {replayed} recorded allows the guard refuses only "
-                  f"comment writes, whose shape #217 changed, and the one "
-                  f"recorded kill #278 refuses",
+                  f"comment writes, whose shape #217 changed, the one "
+                  f"recorded kill #278 refuses, and the merges by number "
+                  f"#442 refuses",
                   not other, "\n      ".join(refused[i] for i in other[:8]))
             check("...and it does refuse some of them, so the rule bites on "
                   "the record rather than passing it",
@@ -3506,7 +3686,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 481
+    EXPECTED = 510
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

@@ -87,7 +87,9 @@ EXPLICIT and the mistake is LOUD.
 WHO HOLDS A CLAIM. Derived, never stored. Clause 1: the target's own checkout
 is on a claimed branch. Clause 2: the session's repository root (the payload
 cwd's common dir, or the base above a cwd inside a campaign directory) has a
-worktree on one. Clause 2 is the WEAKER gate -- every session at one root
+worktree on one, or the checkout the session stands in is on one of its
+campaign -- a delegate's member clone, which is no worktree of the base
+(rule-check#442). Clause 2 is the WEAKER gate -- every session at one root
 reads as holding every claim under it, design B's named cost -- and for a
 FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
@@ -96,6 +98,14 @@ write naming a MEMBER repository needs a claim checked out in a checkout of
 that repository, never the base's (#389). `gh issue create` is exempt, the
 number being minted there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
+
+WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
+head branch, and the claim is read off that name: a planner merges any claim
+of its own campaign, a worker only the one a checkout it stands in or holds is
+on -- `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als. A
+number, a URL, no argument and a merge through `gh api` name no claim this
+can read without the network, and are refused saying how to write it; a head
+that is no claim, and a merge beside another gh write, are refused too.
 
 WHAT A COMMENT MUST LOOK LIKE (kalaluthien/campaign-base#217). A comment is the
 one campaign write whose CONTENT this can read, so it is read: the first line
@@ -2054,6 +2064,100 @@ def member_pr(tokens):
     return named
 
 
+# THE MERGE NAMES ITS BRANCH (rule-check#442). `gh pr merge` takes a number,
+# a URL or a head branch, and only the branch is a claim this can read without
+# the network; its valued flags are its own, `-m` among its switches, so
+# `VALUED` would swallow the branch after a `-m`.
+MERGE_VALUED = {"-R", "--repo", "--match-head-commit", "-A", "--author-email",
+                "-b", "--body", "-F", "--body-file", "-t", "--subject"}
+MERGE_FORM = "gh pr merge <slug>/<issue>-<topic> -R <owner/repo>"
+# The REST route to the same merge, which names a number and no branch.
+API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?$")
+
+
+def merge_target(tokens):
+    """The pull request a `gh pr merge` segment names -- its one positional,
+    a valued flag's value skipped -- or None when it names none."""
+    words, i = [], 1
+    while i < len(tokens):
+        t = tokens[i]
+        i += 2 if t in MERGE_VALUED else 1
+        if not t.startswith("-"):
+            words.append(t)
+    return words[2] if len(words) > 2 else None
+
+
+def api_merge(tokens):
+    """Whether a `gh api` segment is a write to a pull request's merge
+    endpoint."""
+    return (gh_words(tokens)[:1] == ["api"] and gh_write(tokens)[0]
+            and any(API_MERGE.search(t) for t in tokens[1:]))
+
+
+def merge_call(merges, rest, what, how, how_role, fell_back, campaign, row,
+               cwd, root):
+    """The verdict on a command holding a merge: the planner of the head's
+    campaign, or a session with a checkout on the head's claim -- the worker
+    holding it, and the claim reading when the role could not be read.
+    `mergedByPlannerOrHolder` in spec/campaign/orchestration/checks.als."""
+    say = [how, *fell_back]
+    if rest:
+        return refuse([f"{what}: a merge shares its command with another gh "
+                       f"write.", "A merge is licensed by the branch it names "
+                       "and by nothing else in the command, so it goes in a "
+                       "command of its own (rule-check#442).", *say])
+    ok = []
+    for x in merges:
+        if gh_words(x)[:1] == ["api"]:
+            return refuse([f"{what}: a merge through `gh api` names a number "
+                           f"and no branch, so no claim can be read off it.",
+                           f"Merge with `{MERGE_FORM}` (rule-check#442).", *say])
+        branch = merge_target(x)
+        m = claim_match(branch, root) if branch else None
+        if m is None:
+            return refuse([f"{what}: the merge names "
+                           + (f"`{branch}`, which is not a claim branch of a "
+                              f"campaign on this machine" if branch
+                              else "no pull request, so the current branch's")
+                           + ".",
+                           f"A merge names the pull request by its head: "
+                           f"`{MERGE_FORM}`. A number or a URL names no claim "
+                           f"this can read without the network, and a head "
+                           f"that is no claim is no session's to merge -- the "
+                           f"owner merges their own (rule-check#442).", *say])
+        token, repo = m[0], member_pr(x)
+        if row.get("merge") == "campaign":
+            if token != campaign:
+                return refuse([f"{what}: `{branch}` is a claim of campaign "
+                               f"`{token}`, and a planner merges only its own "
+                               f"campaign's claims: this session is of "
+                               f"`{campaign}`.", how_role, how])
+            ok.append(f"`{branch}` is a claim of campaign `{token}`, and "
+                      f"{how_role}: a planner merges its own campaign's claims")
+            continue
+        if row.get("campaign_plane") == "own" and token != campaign:
+            return refuse([f"{what}: `{branch}` is a claim of campaign "
+                           f"`{token}`, and this session is of campaign "
+                           f"`{campaign}`.", how_role, how])
+        own = own_claim(cwd)
+        if own is not None and own[1] == branch and (
+                repo is None or same_repo(own[0], repo)):
+            holders, d = [own], []
+        else:
+            found, d = held(root, repo=repo) if repo else held(root)
+            holders = [h for h in found if h[1] == branch]
+        if not holders:
+            return refuse([f"{what}: no checkout this session stands in or "
+                           f"holds is on `{branch}`"
+                           + (f" in a checkout of {repo}" if repo else "")
+                           + ", so it does not hold the claim it merges.",
+                           *say, *d, TAKE])
+        p, b, s = holders[0]
+        ok.append(f"{p} is on {b}, a claim ({s})"
+                  + (f", in a checkout of {repo}" if repo else ""))
+    return allow([f"{what}: {how}; " + "; ".join(ok) + ".", *fell_back])
+
+
 def same_repo(top, repo):
     """Whether the checkout at `top` is one of `repo`, by its origin."""
     m = repos_reader()
@@ -2546,6 +2650,17 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
                 f"session is of campaign `{campaign}`.",
                 *[f"{h[0]} is on {h[1]}" for h in holders], TAKE])
         holders = kept
+    # THE CHECKOUT THE SESSION STANDS IN, which `held` never sweeps when it is
+    # a member clone -- a different repository from the base (rule-check#442
+    # item 3, html-doc#381 issuecomment-5660681276). The gh half has read it
+    # since `own_claim` was written; without it here a delegate on its claim
+    # was refused a note in its own campaign directory, which AGENTS.md
+    # § Execution mode says any mode may write.
+    own = own_claim(cwd)
+    if (not holders and own is not None
+            and (not own_only or campaign is None
+                 or claim_token(own[1]) == campaign)):
+        holders = [own]
     if holders:
         path, branch, source = holders[0]
         return allow(read + [f"Clause 2 (the weaker gate; the commit gate is "
@@ -2720,6 +2835,16 @@ def bash_call(command, cwd: Path, session_id=""):
     if role is not None and role == roles().NO_ROLE:
         return refuse([f"{what}: a campaign-plane write.", how_role, NAMELESS])
     row = row_of(role)
+    # A MERGE IS ITS OWN QUESTION (rule-check#442), asked before the plane
+    # licence and the claim reading, which both used to answer it: the
+    # planner's licence refused it as off the campaign plane and then the
+    # claim reading let any claim under the root carry it.
+    merges = [x for x in writes
+              if gh_words(x)[:2] == ["pr", "merge"] or api_merge(x)]
+    if merges:
+        return merge_call(merges, [x for x in writes if x not in merges]
+                          + stray, what, how, how_role, fell_back, campaign,
+                          row, cwd, root)
     own_only = row.get("campaign_plane") == "own"
     if row.get("campaign_plane") == "any":
         # THE ROW THAT PROMPTED #185. A planner writes the campaign plane of
@@ -2730,8 +2855,8 @@ def bash_call(command, cwd: Path, session_id=""):
         #
         # THE CAMPAIGN PLANE ONLY. Every write in this command must be one, or
         # the licence does not apply and the claim reading decides as it would
-        # for anyone: a `gh pr merge` is not a planner's by role, whatever its
-        # name says.
+        # for anyone. A `gh pr merge` never reaches this: it is asked above,
+        # by the branch it names (rule-check#442).
         # READ AS A PAIR, and reduced to the subcommand only where the plane
         # is what is being asked. The table's `gh` is keyed on the subcommand
         # because the plane is a property of it; its `gh_except` is keyed on
@@ -2761,14 +2886,14 @@ def bash_call(command, cwd: Path, session_id=""):
         # removal.
         #
         # IT CARRIES `how` AND `read_on` OUT WITH IT, which the first cut of
-        # the return dropped: a refusal on `gh pr merge 5 && gh issue develop 9`
-        # named the develop and went silent about the merge and about how the
+        # the return dropped: a refusal on `gh pr edit 5 && gh issue develop 9`
+        # named the develop and went silent about the edit and about how the
         # root was resolved. #191 item 1 is the rule -- every exit says what it
         # read -- and an early return is exactly where it gets broken.
         if excepted:
             # `how_role` IS NOT REPEATED HERE. Every entry of `read_on` already
             # opens with it, and this header printed it a second time on a
-            # mixed write -- `gh pr merge 5 && gh issue develop 9` -- where
+            # mixed write -- `gh pr edit 5 && gh issue develop 9` -- where
             # both the header and the licence line fired
             # (kalaluthien/campaign-base#213's review). `read_on or [how_role]`
             # and not `read_on` alone: a bare `gh issue develop 9` leaves
@@ -2866,9 +2991,9 @@ def bash_call(command, cwd: Path, session_id=""):
         (covering if holders else uncovered).append((i, holders))
     # THE NARROWEST REFUSAL WINS, and that is a rule now rather than the order
     # these branches happen to be written in (kalaluthien/campaign-base#191
-    # item 1). A mixed command -- `gh issue close 9 && gh pr merge 5`, where
+    # item 1). A mixed command -- `gh issue close 9 && gh pr edit 5`, where
     # the first names an issue and the second names a pull request -- reaches
-    # both this branch, on #9, and the `unreadable` fallback, on the merge.
+    # both this branch, on #9, and the `unreadable` fallback, on the edit.
     # The one that names a NUMBER is the better diagnosis: it tells the reader
     # which claim to take, where the fallback can only say "some claim". So an
     # uncovered named issue is reported first, and the fallback decides only
@@ -2881,8 +3006,8 @@ def bash_call(command, cwd: Path, session_id=""):
                        *fell_back, *detail, TAKE])
     if unreadable and carved:
         # THE CARVE-OUT COVERS ITS OWN WRITE AND NOTHING BESIDE IT. Without
-        # this, `gh issue comment 1 && gh pr merge 12` was admitted: the
-        # comment satisfied the campaign issue, the merge fell to the
+        # this, `gh issue comment 1 && gh pr edit 12` was admitted: the
+        # comment satisfied the campaign issue, the edit fell to the
         # unnarrowed fallback, and any claim under the root carried it out.
         return refuse([f"{what}: an issue of this session's own campaign is "
                        f"covered by its name, and that covers no other write "

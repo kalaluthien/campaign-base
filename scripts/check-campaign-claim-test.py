@@ -285,7 +285,9 @@ GATE = "pre-commit claim gate"
 CORPUS = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 # The corpus rows that merge a pull request by number, which rule-check#442
 # refuses; re-bless it with the 611 and the 97 when the corpus is rewritten.
-MERGES = 12
+# 13 since pr#446's fourth DECISION: a read loop's `number:$n` is text the
+# shell expands, so its GraphQL query is unread -- a cost that DECISION took.
+MERGES = 13
 
 
 def guard_module():
@@ -329,7 +331,7 @@ def row_posts_comment(mod, row):
     disagree with the one under test on exactly the forms this file exists to
     measure."""
     pairs, _why = mod.paired_segments(row["command"])
-    for tokens, heredocs, _outer, _piped in pairs or []:
+    for tokens, heredocs, _outer, _shell in pairs or []:
         word, rest = mod.head(tokens)
         if word != "gh":
             continue
@@ -361,13 +363,13 @@ def row_merges_by_number(mod, row):
     if row["tool"] != "Bash":
         return False
     pairs, _why = mod.paired_segments(row["command"])
-    for tokens, heredocs, _outer, piped in pairs or []:
+    for tokens, heredocs, _outer, shell in pairs or []:
         word, rest = mod.head(tokens)
         if word != "gh":
             if mod.hides_merge(tokens):
                 return True
             continue
-        kind = mod.merge_kind(rest, heredocs, piped)
+        kind = mod.merge_kind(rest, heredocs, shell)
         if kind in ("api", "unread"):
             return True
         if kind == "cli":
@@ -3212,6 +3214,18 @@ def main():
              "could not be read"),
             ("gh api graphql -F query=@- <<< 'mutation { mergePullRequest("
              "input: {}) { clientMutationId } }'", "through `gh api`"),
+            # LITERAL TEXT ONLY (pr#446's fourth DECISION, row 1): whatever the
+            # shell expands is unread, and so is an unquoted heredoc.
+            ('gh api graphql -f query="$(cat merge.graphql)"',
+             "could not be read"),
+            ("gh api graphql -F query=@- <<Q\n$(cat merge.graphql)\nQ",
+             "could not be read"),
+            ('gh api graphql -F query=@- <<<"$(<merge.graphql)"',
+             "could not be read"),
+            ("gh api graphql -f query=`cat merge.graphql`", "could not be read"),
+            ('Q=$(cat merge.graphql); gh api graphql -f query="$Q"',
+             "could not be read"),
+            (f"gh api graphql -F query=@- <<Q\n{SUB}\nQ", "could not be read"),
             # THE ENDPOINT BY ITS LAST SEGMENT (pr#446's fourth DECISION, row 2).
             ("gh api /graphql -f query='mutation { mergePullRequest(input: "
              "{}) { clientMutationId } }'", "through `gh api`"),
@@ -3238,11 +3252,14 @@ def main():
               "merge" not in r.stderr.lower()
               and "could not be read" not in r.stderr, out(r)[:500])
         for cmd in (f"gh api graphql -F query=@- <<< '{SUB}'",
-                    f"gh api graphql -F query=@- <<'Q' | cat\n{SUB}\nQ"):
+                    f"gh api graphql -F query=@- <<'Q' | cat\n{SUB}\nQ",
+                    "gh api graphql -f query='query($c: String) { x(after: "
+                    "$c) }' >| $SP/c.json"):
             r = ask(f.base, tool="Bash", env=worker, command=cmd)
             name = cmd[:44].replace("\n", " ")
-            check(f"#442: CONTROL: `{name}` is read, stdin fed by the "
-                  "segment's one heredoc or here-string",
+            check(f"#442: CONTROL: `{name}` is read: stdin fed by one quoted "
+                  "heredoc or here-string, a `$` in single quotes or a "
+                  "redirect's target",
                   "merge" not in r.stderr.lower()
                   and "could not be read" not in r.stderr, out(r)[:500])
         r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
@@ -3787,7 +3804,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 564
+    EXPECTED = 577
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

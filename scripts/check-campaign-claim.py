@@ -157,6 +157,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # What makes a directory this repository's root: the script that cuts a claim.
 HERE = Path(__file__).resolve().parent
@@ -430,6 +431,24 @@ def split_punct(token):
     return out
 HEREDOC_OPEN = re.compile(
     r"<<-?\s*(?:(['\"])([^'\"]+)\1|([A-Za-z_][A-Za-z0-9_]*))")
+# A `$` or backtick the shell leaves as it is -- inside single quotes, or
+# escaped -- is masked by `openers` before shlex strips the quotes, and put
+# back once each token has recorded whether it still holds one the shell
+# expands (pr#446's fourth DECISION, row 1). Two private-use characters,
+# which no command here spells.
+MASK = {"$": "\ue000", "`": "\ue001"}
+UNMASK = str.maketrans({v: k for k, v in MASK.items()})
+# The operators whose next word is a file the shell writes, not an argument.
+WRITES_TO = {">", ">>", ">|", "&>", "&>>", ">&"}
+
+
+class Shell(NamedTuple):
+    """What the shell does to a segment beyond its words, for the GraphQL
+    reading: whether a pipe feeds it, whether it expands something in each
+    token, and whether a heredoc on it has an unquoted delimiter."""
+    piped: bool
+    expands: tuple
+    open_heredoc: bool
 
 
 def load(src, alias):
@@ -1196,7 +1215,9 @@ def held(repo_root, issue=None, repo=None):
 
 
 def openers(line, quote):
-    """([(delimiter, is `<<-`)], the quote state at the end of the line).
+    """([(delimiter, is `<<-`, is quoted)], the quote state at the end of the
+    line, the line with every `$` and backtick the shell leaves as it is
+    masked by MASK).
 
     A `<<` IS ONLY A HEREDOC WHERE IT IS SYNTAX. Searching the raw line for one
     read `git commit -m 'about the <<EOF form'` as opening a heredoc, deleted
@@ -1260,14 +1281,17 @@ def openers(line, quote):
     <<EOF ...` from allowed into refused. Missing a comment that opens straight
     after `(` costs nothing this reads, since a comment there needs no `<<`
     after it on the same line to be a comment."""
-    found, i, n, stack = [], 0, len(line), []
+    found, i, n, stack, chars = [], 0, len(line), [], list(line)
     while i < n:
         c = line[i]
         if quote == "'":
             quote = None if c == "'" else quote
+            chars[i] = MASK.get(c, c)
             i += 1
             continue
         if c == "\\":
+            if i + 1 < n:
+                chars[i + 1] = MASK.get(line[i + 1], line[i + 1])
             i += 2
             continue
         if line.startswith("$(", i):
@@ -1299,16 +1323,18 @@ def openers(line, quote):
             m = HEREDOC_OPEN.match(line, i)
             if m:
                 found.append((m.group(2) or m.group(3),
-                              m.group(0).startswith("<<-")))
+                              m.group(0).startswith("<<-"),
+                              m.group(1) is not None))
                 i = m.end()
                 continue
         i += 1
-    return found, quote
+    return found, quote, "".join(chars)
 
 
 def strip_heredocs(command):
-    """(the command with every heredoc BODY removed, the bodies in the order
-    their openers appear).
+    """(the command with every heredoc BODY removed and `openers`' MASK
+    applied, the bodies in the order their openers appear, the indices of the
+    bodies whose delimiter is unquoted).
 
     A HEREDOC BODY IS DATA, NOT A COMMAND (kalaluthien/campaign-base#193). It
     was part of the string handed to shlex, so an ordinary commit message with
@@ -1322,14 +1348,15 @@ def strip_heredocs(command):
     for `<<-`. An unterminated body runs to the end, which is what a shell
     would fail on and what this must not traceback on."""
     lines = command.split("\n")
-    out, bodies, quote = [], [], None
+    out, bodies, quote, unquoted = [], [], None, set()
     i = 0
     while i < len(lines):
-        line = lines[i]
-        out.append(line)
-        opens, quote = openers(line, quote)
+        opens, quote, masked = openers(lines[i], quote)
+        out.append(masked)
         i += 1
-        for delim, dash in opens:
+        for delim, dash, quoted in opens:
+            if not quoted:
+                unquoted.add(len(bodies))
             body = []
             while i < len(lines):
                 cur = lines[i]
@@ -1338,7 +1365,7 @@ def strip_heredocs(command):
                     break
                 body.append(cur)
             bodies.append("\n".join(body))
-    return "\n".join(out), bodies
+    return "\n".join(out), bodies, unquoted
 
 
 def segments(command):
@@ -1353,8 +1380,8 @@ def segments(command):
 
 
 def paired_segments(command):
-    """[(tokens, the heredoc bodies it opened, whether it is outer, whether a
-    pipe feeds it)], or (None, why).
+    """[(tokens, the heredoc bodies it opened, whether it is outer, its
+    Shell)], or (None, why).
 
     `punctuation_chars` makes `;`, `|`, `&` their own tokens.
 
@@ -1367,7 +1394,7 @@ def paired_segments(command):
     heredoc comment silently while refusing the `-b` spelling of the same
     thing. Pairing on the LINE instead would read the commit message in
     `bash x.sh && git commit -F - <<M` as a comment body."""
-    command, heredocs = strip_heredocs(command)
+    command, heredocs, unquoted = strip_heredocs(command)
     # A LINE CONTINUATION IS NOT A SEPARATOR, and it has to go first: with the
     # newline made a token below, `git commit \\<newline> -m x` would split
     # into two segments and the flags would leave with the second.
@@ -1449,8 +1476,14 @@ def paired_segments(command):
             cur.append(t)
             continue
         if cur:
-            out.append([cur, depth == 0 and t not in PIPES
-                        and t != BACKGROUND, before in PIPES])
+            # A `$` or backtick left after MASK is one the shell expands, and
+            # an unquoted backtick closing the segment substitutes into its
+            # last word.
+            expands = [("$" in x or "`" in x) for x in cur]
+            expands[-1] = expands[-1] or t == "`"
+            out.append([[x.translate(UNMASK) for x in cur], depth == 0
+                        and t not in PIPES and t != BACKGROUND,
+                        before in PIPES, tuple(expands)])
             cur = []
             before = t
         elif before not in PIPES:
@@ -1483,13 +1516,15 @@ def paired_segments(command):
     # one.
     taken = 0
     paired = []
-    for seg, outer, piped in list(out):
+    for seg, outer, piped, expands in list(out):
         # A here-string is `<<` then `<` to shlex and opens no body.
         opens = sum(t == "<<" and seg[j + 1:j + 2] != ["<"]
                     for j, t in enumerate(seg))
         mine = heredocs[taken:taken + opens]
+        shell = Shell(piped, expands,
+                      any(k in unquoted for k in range(taken, taken + opens)))
         taken += opens
-        paired.append((seg, mine, outer, piped))
+        paired.append((seg, mine, outer, shell))
         word, rest = head(seg)
         if word is None:
             continue
@@ -1811,7 +1846,7 @@ def shell_findings(pairs, cwd=None):
     the call in a repository that has none, and unreadable is an allow.
     """
     out, notes, where = [], [], cwd
-    for seg, _heredocs, outer, _piped in pairs:
+    for seg, _heredocs, outer, _shell in pairs:
         word, rest = head(seg)
         # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
         # subshell, a pipeline stage, a `bash -c` string or a heredoc script
@@ -2123,18 +2158,25 @@ def merge_target(tokens):
     return words[2] if len(words) > 2 else None
 
 
-def graphql_text(tokens, heredocs, piped):
+def graphql_text(tokens, heredocs, shell):
     """The text a `gh api graphql` segment sends, or None where this does not
     read it.
 
-    AN ALLOW-LIST (pr#446's third DECISION), after three rounds of a deny-list
-    each closed the stdin spellings raised and found more. The text is read
-    from two places only: the segment's own words, when no value names a
-    file; and those words plus the ONE heredoc or here-string on the segment,
-    when `@-` or `--input -` reads stdin, no other `<` redirects it and no
-    pipe feeds it. Everything else is None, so a spelling nobody listed is
-    refused by construction: `@path`, `/dev/stdin`, `/dev/fd/0`, a FIFO,
-    `<(...)`, `< file` beside a heredoc, a pipe, two heredocs."""
+    AN ALLOW-LIST OF LITERAL TEXT (pr#446's third and fourth DECISIONs),
+    after three rounds of a deny-list each closed the spellings raised and
+    found more. The text is read from two places only: the segment's own
+    words, when no value names a file; and those words plus the ONE heredoc or
+    here-string on the segment, when `@-` or `--input -` reads stdin, no other
+    `<` redirects it, no pipe feeds it and the heredoc's delimiter is quoted.
+    Either way the shell may expand nothing in a word gh receives -- no `$`
+    or backtick outside single quotes; a redirect's target is not such a
+    word. Everything else is None, so a spelling nobody listed is refused by
+    construction: `@path`, `/dev/stdin`, `/dev/fd/0`, a FIFO, `<(...)`,
+    `< file` beside a heredoc, a pipe, two heredocs, `"$(cat f)"`, `$Q`."""
+    tail = shell.expands[len(shell.expands) - len(tokens):]
+    if any(e and not (j and tokens[j - 1] in WRITES_TO)
+           for j, e in enumerate(tail)):
+        return None
     named = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
     named += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
     named += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
@@ -2143,7 +2185,7 @@ def graphql_text(tokens, heredocs, piped):
     # A here-string is `<<` then `<` to shlex; that `<` is the only one allowed.
     after = {j + 1 for j, t in enumerate(tokens) if t == "<<"}
     strings = sum(tokens[j:j + 1] == ["<"] for j in after)
-    if (any(n != "-" for n in named) or piped
+    if (any(n != "-" for n in named) or shell.piped or shell.open_heredoc
             or len(heredocs) + strings != 1):
         return None
     if any(t in ("<", "<&") and j not in after for j, t in enumerate(tokens)):
@@ -2151,7 +2193,7 @@ def graphql_text(tokens, heredocs, piped):
     return "\n".join([*tokens, *heredocs])
 
 
-def merge_kind(tokens, heredocs=(), piped=False):
+def merge_kind(tokens, heredocs, shell):
     """How a `gh` segment merges a pull request, or None: `cli` for `gh pr
     merge`, `api` for the REST endpoint or a GraphQL merge mutation, and
     `unread` for a GraphQL write whose query this could not read."""
@@ -2163,7 +2205,7 @@ def merge_kind(tokens, heredocs=(), piped=False):
     if any(API_MERGE.search(t) for t in tokens[1:]):
         return "api"
     if any(GRAPHQL_ENDPOINT.search(w) for w in words[1:]):
-        text = graphql_text(tokens, list(heredocs), piped)
+        text = graphql_text(tokens, list(heredocs), shell)
         if text is None:
             return "unread"
         if GRAPHQL_MERGE.search(text):
@@ -2863,7 +2905,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
     shape, unread, unjudged, warnings, stale, pins = [], [], [], [], [], []
-    for tokens, heredocs, _outer, _piped in pairs:
+    for tokens, heredocs, _outer, _shell in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue
@@ -2945,10 +2987,10 @@ def bash_call(command, cwd: Path, session_id=""):
     # planner's licence refused it as off the campaign plane and then the
     # claim reading let any claim under the root carry it.
     merges, hidden = [], []
-    for tokens, heredocs, _outer, piped in pairs:
+    for tokens, heredocs, _outer, shell in pairs:
         word, rest = head(tokens)
         if word == "gh":
-            kind = merge_kind(rest, heredocs, piped)
+            kind = merge_kind(rest, heredocs, shell)
             if kind:
                 merges.append((rest, kind))
         elif hides_merge(tokens):

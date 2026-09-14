@@ -23,8 +23,3 @@ same answer without asking you anything.
   hypothesis nobody thought to test, not the one tested twice.
 - A cause, not a symptom: a finding that names a metric without naming the code
   or data that moves it leaves the reader where they started.
-
-## SDLC profile
-
-`optional = skippable` -- a finding lands on an issue and runs nothing; a
-change that lands something runnable owes the stages above it like any other.

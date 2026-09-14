@@ -51,7 +51,7 @@ extension, since a Python suite drives a shell script.
 A DECLARATION, NOT A MENTION. Until #268 the tie was any whole-word occurrence
 of a declared command name in the suite's text, which is forgeable -- a comment
 ties a code path it never exercises -- and accidental, since a short name
-(`Sanity`, `NoOrphan`) ties whatever prose happens to spell it. The
+(`Sanity`, `Cov_Work`) ties whatever prose happens to spell it. The
 `# witnesses:` line is a form that has to be written on purpose, matched
 EXACTLY against the declared names, so what ties is something the author
 declared and not something the text happens to contain. AGENTS.md's "prefer
@@ -169,9 +169,9 @@ fixture -- has the list after; the reading says which was read.
 
 THE SKIP, and why nothing declares one here
 
-`maySkip[c, s]` in spec/sdlc/system.als licenses a skip when the kind's
-profile allows the stage AND the stage's `criterion` holds: for Test and for
-Code that is "the change has written no test and no code path". A change
+`maySkip[c, s]` in spec/sdlc/system.als licenses a skip of a skippable stage
+when the `criterion` holds: "the change has written no test and no code
+path", or when the change reuses the stage. A change
 that writes a code path therefore has no skip to declare to this check --
 the criterion is false by the fact this check reads -- and a change that
 writes none is judged on nothing here, which IS its skip of Test and Code,
@@ -354,7 +354,7 @@ LEGACY = (
     # check-campaign-claim-test.py drives the verdicts the table decides.
     ".claude/skills/assuming-role/scripts/campaign-roles.py",
     # Its suite reads a directory's leftovers and drives no scenario over
-    # `LocalOnly`, the set this script reads (R5b needs an agent's push).
+    # `LocalOnly`, the set this script reads.
     "scripts/campaign-local-work.py",
     # No model rule: what is installed and declared on this machine.
     "scripts/campaign-primitives.py",

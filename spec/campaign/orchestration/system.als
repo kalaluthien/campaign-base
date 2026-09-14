@@ -34,8 +34,8 @@
  * ATTRIBUTION IS DERIVED, NOT STORED. `holder` reads which agent a sub-issue's
  * claim belongs to off ONE fact a later session can still see: the checkout in
  * its campaign directory is on the claim's branch. It says nothing about
- * liveness, deliberately -- every caller applies that itself, `AttributionIsSound`
- * by quantifying over `Live` and `holderStaysAttributed` by guarding on it, so
+ * liveness, deliberately -- every caller applies that itself, as
+ * `AttributionIsSound` does by quantifying over `Live`, so
  * a holder that has died is still the holder of the workspace it left. Nothing
  * writes it and nothing can go stale against it.
  * `AttributionIsSound` is what that costs, and R4c is its counterexample.
@@ -137,7 +137,7 @@ var sig Live     in Agent {}
    branch no remote has. */
 var sig LocalOnly    in Agent {}
 /* Its branch is on the remote -- checkable from anywhere, and a different fact
-   from LocalOnly. The gap between the two is R5b. */
+   from LocalOnly: a pushed agent can still hold uncommitted work. */
 var sig PushedToRemote  in Agent {}
 var sig Reported in Agent {}
 var sig Asked    in Agent {}
@@ -229,8 +229,6 @@ fact AgentWellFormed {
   always PushedToRemote in PushedToRemote'     -- a branch on the remote stays on the remote
 }
 
-pred coLocated[s: Session, a: Agent] { s.machine = a.host }
-
 /* WHO HOLDS A SUB-ISSUE'S CLAIM: the WORKSPACE the ref is checked out in, not
    a session. No record, so nothing to go stale, and the answer survives a
    harness restart and a rename -- neither touches a checkout. Empty is a real
@@ -259,9 +257,6 @@ fun holder[i: Issue]: set Agent {
                and campaignDirAt[campaignOf[i], a.host].checkedOut[i.repo] = a.branch }
 }
 
-pred liveUnder[c: Campaign] {
-  some a: Agent | a in Live and (a.task in c.memberIssues or a.host in machinesHolding[c])
-}
 /* What one session can actually read: `herdr agent list` on its own machine.
 
    TWO DISJUNCTS, AND THEY ARE NOT THE SAME CLAIM. The first is an agent on a
@@ -297,13 +292,6 @@ pred liveUnderLocally[c: Campaign, m: Machine] {
          or (m in machinesHolding[c] and namedForThis[a, c]))
 }
 
-/* github's `closable` is the GitHub half. These two add the half that needs
-   an agent: the rule as written, and the honest local reading a session on
-   one machine can actually perform. There is no third, narrower reading --
-   the close reads `herdr agent list` and nothing keyed to a tree. */
-pred closableWithAgents[c: Campaign]          { closable[c] and not liveUnder[c] }
-pred closableLocally[s: Session, c: Campaign] { closable[c] and not liveUnderLocally[c, s.machine] }
-
 /* <slug>/<issue>-<topic>: two agents share a branch only when
    campaign, sub-issue and topic all match. That it separates two SUB-ISSUES is
    definitional and is not run; R4e is what it leaves. */
@@ -316,12 +304,12 @@ pred sameBranch[a1, a2: Agent] {
 /* ---------------- observable events ---------------- */
 
 one sig Work, Push, Status, Answer, Report, Blocked, Decide,
-        Confirm, ConfirmElsewhere, Review, StandDown, Retire,
+        Confirm, Review, StandDown, Retire,
         AgentDie, LimitStop, LimitReset extends Event {}
 
 fun orchestrationOwn: set Event {
   Work + Push + Status + Answer + Report + Blocked + Decide
-  + Confirm + ConfirmElsewhere + Review + StandDown + Retire
+  + Confirm + Review + StandDown + Retire
   + AgentDie + LimitStop + LimitReset
 }
 /* `DeleteDir` is NOT here: no bit of this entity has the directory's
@@ -520,28 +508,16 @@ pred decide[a: Agent] {
 }
 
 /* Stated as an ABSENCE, because "confirm the branch is pushed" has no passing
-   form for an agent that correctly produced nothing. It reads a tree on the
-   session's own machine and sends the agent nothing, which is why a dead
-   agent's pull request still lands. */
+   form for an agent that correctly produced nothing. It reads the agent's
+   working tree and sends the agent nothing, which is why a dead agent's pull
+   request still lands. */
 pred confirm[a: Agent] {
-  coLocated[Who.session, a]
   a.task in Who.session.worksOn.memberIssues
   a not in LocalOnly
   Confirmed' = Confirmed + a
   Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepStopped and keepContext
   keepReview and keepMessages and keepShutdown and keepLaunched
   Now.event = Confirm and Now.issue = a.task and Target.agent = a
-}
-
-/* It reads the SESSION's working tree, so there is no `a not in LocalOnly` guard:
-   nothing on this machine could fail it. That is the defect, not a shortcut. */
-pred confirmElsewhere[a: Agent] {
-  not coLocated[Who.session, a]
-  a.task in Who.session.worksOn.memberIssues
-  Confirmed' = Confirmed + a
-  Live' = Live and LocalOnly' = LocalOnly and PushedToRemote' = PushedToRemote and keepStopped and keepContext
-  keepReview and keepMessages and keepShutdown and keepLaunched
-  Now.event = ConfirmElsewhere and Now.issue = a.task and Target.agent = a
 }
 
 /* KEYED ON THE ISSUE, NOT ON AN AGENT: the review reads GitHub, so keying it
@@ -673,7 +649,7 @@ pred handoff[p, t: Session] {
     /* Cleared on the heir and not merely kept: `confirm` has no liveness
        guard, so an heir can be Confirmed before it is launched, and keeping
        that bit let `retire` destroy the work the heir inherited on a stale
-       confirmation, which TwoStepCoLocatedSuffices shows. */
+       confirmation. */
     Confirmed'      = Confirmed - olds.h
     Asked'          = Asked - olds.h
     Answered'       = Answered - olds.h
@@ -684,8 +660,8 @@ pred handoff[p, t: Session] {
   no Target.agent
 }
 
-/* Both guards are what a session can actually read. Liveness elsewhere is
-   not, so R6 is the residue that leaves. */
+/* Both guards are what a session can actually read: pushed work on GitHub,
+   and liveness on its own machine. */
 pred agentRelease {
   Now.event = Release
   no a: Agent | a.task = Now.issue and a in PushedToRemote
@@ -790,7 +766,7 @@ pred orchestrationStep {
   or (some a: Agent |
         launch[a] or work[a] or push[a]
         or status[a] or answer[a] or report[a]
-        or blocked[a] or decide[a] or confirm[a] or confirmElsewhere[a]
+        or blocked[a] or decide[a] or confirm[a]
         or standDown[a] or retire[a] or agentDie[a] or limitStop[a])
   or limitReset
   or (some i: Issue | review[i])

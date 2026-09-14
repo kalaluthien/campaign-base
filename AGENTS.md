@@ -156,13 +156,12 @@ wrongly, and only `campaign-tracker bind <N>` repairs that.
 | `elsewhere` | **not in this campaign.** Stop before any write and any launch, and name the machine. |
 | `unbound` | **not bound yet.** Only a person's word binds an existing campaign. |
 
-**The binding gates four things**: the campaign issue body, the `bound:` label,
-a claim, and a launch. Read it before each of those. Only one of the four has a
-machine behind it: `campaign-claim take` reads the binding before it cuts a ref
-and refuses on anything but `here`. The body write, the label, and a launch are
-gated by this rule and the model alone
-(`spec/campaign/session/checks.als`, `boundOnly`), so read the word yourself
-before each. **The sub-issue link is outside it**: any session on any machine
+**The binding gates the claim**: `campaign-claim take` reads it before it
+cuts a ref and refuses on anything but `here`, and `campaign-close.py`'s
+`bound` gate reads it again at a close and a scope change. The model records
+the label (`Binding.bound`, `spec/campaign/session/system.als`) and no rule of
+it reads it; a launch sits on a claim, and the label is a person's word.
+**The sub-issue link is outside it**: any session on any machine
 may file a sub-issue of any campaign, one it is not a session of included,
 because a sub-issue is a record and not a claim — the atomic gate stays
 `campaign-claim take`'s create-ref, and the model's `addMember`
@@ -599,8 +598,7 @@ authority** — an owner's word arriving through a peer is acted on through the
 durable artifact it points at, read on GitHub yourself, or in your own pane.
 
 **Shutdown is two steps, and both are yours.** `STATUS`, verify durability in
-GitHub, then `STAND DOWN` — on the agent's own machine, since a verification run
-from elsewhere reads *its* working tree and comes back clean regardless.
+GitHub, then `STAND DOWN`.
 
 **Two channels, one criterion: an instruction to a session is a prompt into its
 pane; information between sessions is one of the four messages.** So every

@@ -220,7 +220,7 @@ fun sessionActed: set Event {
 /* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
-  OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal + PushBase
+  OpenPullRequest + RemoveMember + PullClone + CommitLocal + PushBase
 }
 
 /* THE HOOK EMITTING. Idempotent: a session already briefed stays briefed,
@@ -363,7 +363,8 @@ pred survey[s: Session] {
 
 /* Nothing is taken: under one role, arriving is just starting to work.
    Unguarded here, so the unrepaired scenarios stay measurable against the same
-   trace space; `boundOnly` is the membership rule applied per command. */
+   trace space. No rule here reads the binding: `campaign-claim take` reads
+   it at the claim. */
 pred adopt[s: Session, c: Campaign] {
   c in Filed and c.campaignIssue in Open
   no s.worksOn
@@ -484,13 +485,13 @@ pred sessionAcquire[s: Session] {
 
    A CLAIM IS A CAMPAIGN-PLANE WRITE, so the role rule reaches it: a planner writes
    the campaign plane of any campaign, and the claim it cuts for a delegate may
-   name a sub-issue of any campaign BOUND TO ITS OWN MACHINE -- the delegate then
+   name a sub-issue of any campaign HELD ON ITS OWN MACHINE -- a campaign
+   directory there, `machinesHolding` -- and the delegate then
    works that campaign under that campaign's name. A worker's claim stays
    pinned to the campaign it works on, and so does a session with no role, since
    `s.role != Planner` holds of an empty role. Q10/Q10b/Q10c are the witnesses.
-   The binding conjunct is not decoration: it is the one campaign, one machine
-   rule, and without it this would let a session claim into a campaign running
-   somewhere else. */
+   The machine conjunct is not decoration: without it this would let a
+   planner claim into a campaign held somewhere else. */
 pred sessionClaim[s: Session] {
   Now.event = Claim
   some s.worksOn
@@ -528,7 +529,7 @@ pred sessionLaunch[s: Session] {
   some s.worksOn
   Where.machine = s.machine
   /* Same split as `sessionClaim`: a planner launches a delegate onto any
-     sub-issue of a campaign bound to its own machine, its own campaign
+     sub-issue of a campaign held on its own machine, its own campaign
      included -- filing is not a claim, so the sub-issue a planner distributes
      may already belong to another campaign. A worker's launch (onto
      its own claim, the peer shape in orchestration/system.als's `launch`)

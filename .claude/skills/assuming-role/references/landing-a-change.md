@@ -69,10 +69,10 @@ dead one beside it. `tieDiscipline` is the reading at the commit.
 
 A rename or a removal is a commit that breaks a tie (`renameArtifact`,
 `removeArtifact`). A removal breaks it by taking a suite and leaving its
-code path (`commitCheck`), or a scenario and leaving a suite that declares
-it (`removeDiscipline`). So remove a code path with its suite, and with any
-scenario only that suite witnessed, in one commit
-(`S9a_ChainRemovedInOneCommit`). A rename breaks the two relations
+code path (`commitCheck`), or a scenario and leaving a suite or an html form
+that names it (`removeDiscipline`). So an artifact leaves with everything
+naming it in one commit: a code path with its suite, and with any scenario
+only that suite witnessed (`S9a_ChainRemovedInOneCommit`). A rename breaks the two relations
 at different ends: `witnesses` at the scenario's
 (`S4b_ScenarioRenameBreak`), `drives` at either of its own
 (`S4_CodeRenameBreak` for the code path, `S4c_TestRenameBreak`

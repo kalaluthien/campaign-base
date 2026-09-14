@@ -90,7 +90,8 @@ word is `cat`, `head`, `tail`, or `sed` with `-n`; nothing else. A read word in
 a later segment -- `cd x && cat f`, `git log | head` -- is counted apart as a
 floor line, never as a read. Its file is the Read's `file_path`, or the
 segment's last path argument resolved against the record's cwd; a read naming
-none is unsplittable and counted apart. Its bytes are its result's, measured
+none, or only a path the shell would expand (`$P/f`), is unsplittable and
+counted apart. Its bytes are its result's, measured
 as `tool-echo` measures them, over the one walk both share.
 
 A file is over the threshold when it has more than `--threshold` lines, 350 by
@@ -269,15 +270,18 @@ def read_operand(word, tokens):
     """(word, path) for a segment opening with a read word: its last path argument.
 
     Operands stop at the first redirection. Stdout sent to a file returns no
-    content, so that segment is no read; `2>/dev/null` is not stdout. `sed`
-    reads only with `-n`, and its first operand is the script unless `-e` or
-    `-f` gave one; `head` and `tail` take a value after a bare `-n` or `-c`.
+    content, so that segment is no read; `2>/dev/null` and `1>&2` still
+    return it. `sed` reads only with `-n` (or `--quiet`, `--silent`) and never
+    with `-i`, and its first operand is the script unless `-e` or `-f` gave
+    one; `head` and `tail` take a value after a bare `-n` or `-c`. A path the
+    shell would expand -- `$P/f`, `$(ls)` -- names no file this can read, so
+    it is no path.
     """
     args = tokens[1:]
     cut = next((i for i, t in enumerate(args) if t and set(t) <= set("<>&")),
                len(args))
     fd = args[cut - 1] if 0 < cut < len(args) and args[cut - 1].isdigit() else None
-    if cut < len(args) and ">" in args[cut] and fd in (None, "1"):
+    if cut < len(args) and args[cut] in (">", ">>", "&>", "&>>") and fd in (None, "1"):
         return "none", None
     args = args[:cut - 1] if fd else args[:cut]
     operands, quiet, script_given, i = [], False, False, 0
@@ -285,7 +289,11 @@ def read_operand(word, tokens):
         t = args[i]
         i += 1
         if t.startswith("-") and len(t) > 1:
-            if word == "sed" and not t.startswith("--") and "n" in t:
+            if word == "sed" and (t in ("--in-place", "-i")
+                                  or (not t.startswith("--") and "i" in t)):
+                return "none", None
+            if word == "sed" and (t in ("--quiet", "--silent")
+                                  or (not t.startswith("--") and "n" in t)):
                 quiet = True
             if word == "sed" and t in ("-e", "-f"):
                 script_given = True
@@ -299,7 +307,8 @@ def read_operand(word, tokens):
             return "none", None
         if not script_given:
             operands = operands[1:]
-    return "read", (operands[-1] if operands else None)
+    path = operands[-1] if operands else None
+    return "read", (None if path and ("$" in path or "`" in path) else path)
 
 
 def die(why):
@@ -1008,6 +1017,9 @@ def cmd_reads(corpus, args):
     print(f"  over by the read's own result rather than the file: "
           f"{share(own, read_bytes)} -- a bounded read of a long file is over "
           f"by its file")
+    print(f"  lines from a result, the file gone from disk: "
+          f"{share(sum(r['bytes'] for r in reads if files[r['file']]['from'] == 'result'), read_bytes)}"
+          f" -- a bounded read undercounts its file, so over-threshold is a floor")
     for key, what in (("no_path", "reads naming no file (unsplittable)"),
                       ("unsplit", "commands that would not split, so may hold a read"),
                       ("later", "commands reading a named file after their first "
@@ -1103,6 +1115,8 @@ def tool_results(corpus):
 @functools.cache
 def disk_lines(path):
     """The file's line count now, or None when it is not a readable file."""
+    if not os.path.isfile(path):
+        return None
     try:
         with open(path, "rb") as fh:
             data = fh.read()

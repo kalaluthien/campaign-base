@@ -379,6 +379,19 @@ def build(tmp):
                            "input": {"file_path": str(rd / "long.py"),
                                      "offset": 100, "limit": 20}}]),
         result("r3", day + "04:02:01Z", 1000),
+        # Four shapes that are no read by the rule, 100 bytes each: sed without
+        # -n, stdout sent to a file, a read after the first segment (a floor),
+        # and a path the shell would expand (no path, a floor).
+        *[x for n, command in enumerate(("sed 's/y/z/' short.py",
+                                         "cat short.py > out.txt",
+                                         "cd /tmp && sed -n 1,5p short.py",
+                                         "P=/x; cat $P/long.py"))
+          for x in (assistant(f"m-not{n}", day + f"04:1{n}:00Z", str(rd),
+                              session="s2", out=5,
+                              blocks=[{"type": "tool_use", "name": "Bash",
+                                       "id": f"n{n}",
+                                       "input": {"command": command}}]),
+                    result(f"n{n}", day + f"04:1{n}:01Z", 100))],
     ])
     # A subagent of s2 reading short.py again: its own context, so no re-read.
     write(root / "proj" / "s2" / "subagents" / "agent-b1.jsonl", [
@@ -607,9 +620,26 @@ def main():
               row(reads, "machinery-worker-9") and
               row(reads, "machinery-worker-9")["reads"] == "1",
               str(row(reads, "machinery-worker-9")))
-        check("reads' share is of every tool result's bytes",
-              "read bytes 13,700 of 30,200" in reads and "(45.4%)" in reads,
-              reads[-600:])
+        check("reads' share is of every tool result's bytes, sed without -n "
+              "and stdout sent to a file no reads",
+              "read bytes 13,700 of 30,600" in reads and "(44.8%)" in reads,
+              reads[-900:])
+        check("a path the shell would expand is a no-path floor, not a file",
+              "1 reads naming no file (unsplittable), carrying 100 bytes" in reads
+              and row(reads, "$P/long.py") is None, reads[-900:])
+        check("only the first segment's read word counts; a later one is a floor",
+              "1 commands reading a named file after their first segment, "
+              "which the rule does not count, carrying 100 bytes" in reads,
+              reads[-900:])
+        at = row(run(root, base, "reads", pr_map, ("--threshold", "400")),
+                 "camp-260101/worktrees/315/long.py")
+        check("a file of exactly --threshold lines is not over it",
+              at and at["over"] == "no", str(at))
+        empty = run(root, base, "reads", pr_map,
+                    ("--since", "2025-01-01T00:00:00Z", "--until", "2025-01-02T00:00:00Z"))
+        check("an empty window says stop, not build",
+              "0 reads of 0 files" in empty and "verdict: stop" in empty,
+              empty[-600:])
         # Over-threshold 4,000 and re-read 1,000 overlap on long.py: their
         # union is 29.2% of read bytes and says stop, their sum 36.5% would
         # say build -- and so would counting the subagent's read as a re-read.

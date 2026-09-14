@@ -23,8 +23,9 @@
  *   Briefed   the sessions whose CURRENT CONTEXT holds their role's brief.
  *   Stamped   the sessions whose herdr pane record carries their own id.
  *   Binding   the campaign issue's `bound:<machine>` label.
- *   Who       the observer: which session performed the current event, and on
- *             a handoff which session it took over from.
+ *   Who       the observer: which session performed the current event, on a
+ *             handoff which session it took over from, and on a model switch
+ *             which sessions it addressed.
  *
  * A session is in a campaign exactly when the campaign is bound to its machine.
  * What this entity does NOT know is whether anything is running, so every
@@ -172,9 +173,13 @@ fact BindingWellFormed {
 
 /* `predecessor` is set on a `Handoff` and on nothing else: it is the session
    the performer takes over from, which no other event has. */
-one sig Who { var session: lone Session, var predecessor: lone Session }
+one sig Who { var session: lone Session, var predecessor: lone Session, var addressed: set Session }
 
 fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Handoff) }
+
+/* `addressed` is set on a `ModelSwitch` and on nothing else, for the same
+   reason: no other event names more than one session. */
+fact AddressedOnlyOnSwitch { always (Now.event != ModelSwitch implies no Who.addressed) }
 
 /* SESSIONS AN `/exit` HAS CLOSED: a handoff's successor sent it to its
    predecessor, or the planner's heartbeat sent it to a worker done and
@@ -200,9 +205,9 @@ fun working: set Session { { s: Session | some s.worksOn and s.machine in machin
 /* `Handoff` is declared here and not in orchestration/system.als, where the
    agents it moves live, for the reason `Launch` sits in directory: this
    is the lowest entity holding a field it moves -- the claims. */
-one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit, Stamp, Unstamp extends Event {}
+one sig Survey, Adopt, ReadBody, EditReadme, Brief, ContextReset, Handoff, SessionExit, Stamp, Unstamp, ModelSwitch extends Event {}
 
-fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit + Stamp + Unstamp }
+fun sessionOwn: set Event { Survey + Adopt + ReadBody + EditReadme + Brief + ContextReset + Handoff + SessionExit + Stamp + Unstamp + ModelSwitch }
 
 /* `MergePullRequest` is here rather than in `unattended` because landing a pull request
    is somebody's act, and naming whose is what lets orchestration/checks.als's
@@ -304,6 +309,35 @@ pred sessionHandoff[t, p: Session] {
   and reposInBodyAsRead' = reposInBodyAsRead and Surveyed' = Surveyed
   and campaignNamed' = campaignNamed and Briefed' = Briefed
   bound' = bound
+}
+
+/* ONE OWNER WORD MOVES EVERY SESSION OF A ROLE ONTO ANOTHER MODEL, in place.
+   The owner's word of 2026-09-14 (rule-check#431): a model switch in the
+   running session IS the hand-off, so no successor is launched, no claim
+   moves and no session exits -- the session, its name, its context and its
+   claims all stay, and `ModelSwitchKeepsEverySession` is the check.
+   `sessionHandoff` stays the path for what a switch cannot do: a slug rename,
+   a context too large to compact, a harness upgrade.
+
+   THE ADDRESS IS THE ROLE, READ FROM THE NAME, ON THIS MACHINE: every session
+   `herdr agent list` shows here whose name carries the role word, whatever
+   campaign it is of, since the order was about planners as such. An exited
+   session is listed by nothing. The owner speaks, so no session performs it:
+   the session running the script is its hands, and nothing reads which.
+
+   WHAT IS NOT MODELLED, and is
+   `.claude/skills/assuming-role/scripts/campaign-model.py`'s: the model a
+   session runs, which the script reads off its transcript to narrow the
+   address (`--from`); the pane that cannot take a prompt -- mid-turn, at a
+   dialog, at a limit banner -- which it skips and names rather than queueing
+   into; the three prompts a switch is (`/model`, the `Switch model?`
+   dialog a session with history answers, `/effort`), probed on
+   rule-check#431; and the user's default model and effort, which each
+   switch rewrites and the script puts back (the owner's DECISION there). */
+pred modelSwitch[r: Role, m: Machine] {
+  Now.event = ModelSwitch and no Now.issue and no Who.session
+  Who.addressed = { s: Session - Exited | s.role = r and s.machine = m }
+  sessionFrame
 }
 
 /* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
@@ -534,6 +568,7 @@ pred sessionStep {
         or sessionClaim[s] or sessionRelease[s] or sessionLaunch[s] or sessionMergePullRequest[s]
         or brief[s] or contextReset[s] or sessionExit[s] or stamp[s] or unstamp[s])
   or (some t, p: Session | sessionHandoff[t, p])
+  or (some r: Role, m: Machine | modelSwitch[r, m])
   or (some s: Session, c: Campaign | adopt[s,c])
   or (some s: Session, r: Repo | editReadme[s,r])
   or (Now.event in unattended and sessionFrame and no Who.session)

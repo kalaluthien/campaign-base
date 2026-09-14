@@ -131,6 +131,20 @@ pred R4_RepolessCampaign {
   }
 }
 
+/* R5. A MODEL SWITCH IS NO HANDOFF (system.als's `modelSwitch`): nobody is
+   taken over, nobody exits, every claim, campaign and name stays where it
+   was, and the address is one role. Dropping `sessionFrame` from the event,
+   or only its `claimedIssues` clause, reddens this. A predecessor on the
+   event does not: `PredecessorOnlyOnHandoff` already forbids one, so that
+   mutation leaves `Cov_ModelSwitch`, its witness fired while a claim is
+   held, with no instance instead. */
+assert ModelSwitchKeepsEverySession {
+  always (Now.event = ModelSwitch implies
+    (no Who.predecessor and Exited' = Exited and claimedIssues' = claimedIssues
+     and worksOn' = worksOn and campaignNamed' = campaignNamed
+     and lone Who.addressed.role))
+}
+
 /* ---------------- commands ---------------- */
 
 -- the loss
@@ -153,11 +167,15 @@ run R3_DeleteUnderWorkingSession for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- `- none` opens, claims and closes
 run R4_RepolessCampaign          for 2 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 
+-- a model switch moves nothing a handoff moves
+check ModelSwitchKeepsEverySession for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 0
+
 pred Cov_WriteBodyBySession              { eventually (Now.event = WriteBody and some Who.session) }
 pred Cov_ReadBody          { eventually Now.event = ReadBody }
 pred Cov_EditReadme        { eventually Now.event = EditReadme }
 /* Both pinned on the post-state, so each fails when its update is dropped. */
 pred Cov_Stamp             { eventually (Now.event = Stamp and Who.session not in Stamped and Who.session in Stamped') }
+pred Cov_ModelSwitch       { eventually (Now.event = ModelSwitch and some Who.addressed and some Session.claimedIssues) }
 
 /* ---------------- commands ---------------- */
 
@@ -165,3 +183,4 @@ run Cov_WriteBodyBySession              for 3 Issue, 1 PullRequest, 2 Campaign, 
 run Cov_ReadBody          for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_EditReadme        for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_Stamp             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
+run Cov_ModelSwitch       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1

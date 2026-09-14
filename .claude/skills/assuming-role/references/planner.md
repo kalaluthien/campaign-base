@@ -137,6 +137,11 @@ Rewrite the `.campaign` marker with the label. The worker's side is in
 The state travels in the NOTE, the claim refs, and the sub-issue index; the
 old pane, its transcript and a scratchpad carry none of it.
 
+**A model move needs no successor**: the owner counts a switch in the running
+session as the hand-off (rule-check#431), so
+`.claude/skills/assuming-role/scripts/campaign-model.py` moves every session
+of a role in place, and the steps above stay for what a switch cannot do.
+
 ## A helper planner
 
 A second planner may run beside the campaign's own, to keep the tree in order

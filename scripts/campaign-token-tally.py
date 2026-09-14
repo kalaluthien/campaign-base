@@ -1185,7 +1185,7 @@ def scan_reads(corpus):
 # and a sentence, `Reason: Blocked by classifier.` -- the second is most of them
 # (pr#444 round 2: 91 of 111 on this machine).
 DENY = re.compile(r"Permission for this action was denied by the Claude Code "
-                  r"auto mode classifier\. Reason: (?:\[([^\]]+)\]|([^.]+)\.)")
+                  r"auto mode classifier\. Reason: (?:\[([^\]]+)\]|(.+?)\.(?=\s+[A-Z]|\s*$))")
 REVIEW_POST = re.compile(r"gh pr (comment|review)\b.*\bREVIEW ", re.S)
 PR_POSTS = {("pr", "comment"), ("pr", "review")}
 ASSIGN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.S)
@@ -1197,7 +1197,7 @@ def posted_review(command, written, cwd):
     `gh pr comment|review` segment's `--body-file` names when the last Write
     to that path opened `REVIEW `.
 
-    The segments and the flag are read by the guard's own `segments`,
+    The segments and the flag are read by the guard's own `segments`, `head`,
     `gh_words` and `flag_value`, the one reading of that grammar here. A `$VAR`
     in the path is expanded only from a `VAR=value` word earlier in the same
     command, and a relative path against the record's cwd, as the guard does."""

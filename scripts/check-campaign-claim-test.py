@@ -3237,6 +3237,14 @@ def main():
         r = ask(member, path=str(note), env=stranger)
         check("#442: ...not a worker of another campaign in the same clone",
               r.returncode == 2, out(r)[:500])
+        # ONLY UNDER THAT CAMPAIGN DIRECTORY (pr#446's REVIEW, finding 2): at
+        # 8e41aa8 the clone's claim licensed all three of these.
+        for target in (f.base / "AGENTS.md", f.base / "scripts" / "x.py",
+                       f.base / "other-dir" / "notes.md"):
+            r = ask(member, path=str(target), env=worker)
+            check(f"#442: ...and not `{target.relative_to(f.base)}`, outside "
+                  f"its campaign directory", r.returncode == 2
+                  and "Clause 2 does not hold" in r.stderr, out(r)[:500])
         git(member, "switch", "-q", "main")
         r = ask(member, path=str(note), env=worker)
         check("#442: ...and not from the clone off its claim",
@@ -3715,7 +3723,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 525
+    EXPECTED = 528
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

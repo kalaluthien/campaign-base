@@ -2713,8 +2713,16 @@ def file_call(tool, target: Path, cwd: Path, session_id=""):
     # since `own_claim` was written; without it here a delegate on its claim
     # was refused a note in its own campaign directory, which AGENTS.md
     # § Execution mode says any mode may write.
+    #
+    # THAT DIRECTORY AND NOTHING ELSE (pr#446's REVIEW, finding 2): a target
+    # that is scratch -- in no checkout -- inside the campaign directory
+    # holding the clone. Unbounded, the clone's claim licensed the base's own
+    # files and another campaign's directory, which clause 2 over the base's
+    # worktrees had refused.
     own = own_claim(cwd)
-    if (not holders and own is not None
+    camp = campaign_dir_of(Path(target).resolve(), root.resolve())
+    if (not holders and own is not None and scratch and camp is not None
+            and camp == campaign_dir_of(Path(own[0]).resolve(), root.resolve())
             and (not own_only or campaign is None
                  or claim_token(own[1]) == campaign)):
         holders = [own]

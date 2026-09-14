@@ -48,9 +48,3 @@ worked until a person closes it.
 - Deleting the old path in the change that enables the new one. Removal is a
   later sub-issue, filed once the new path has carried real load.
 - A cutover with no rollback, or one whose rollback needs data it destroys.
-
-## SDLC profile
-
-`optional = skippable` -- a runbook, a rollback note, a finding or an accepted
-difference lands with every stage below the plan waived; a change that lands a
-code path owes its scenario and test like any other.

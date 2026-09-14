@@ -25,16 +25,15 @@ nothing records the skip.
 | code | a path under `scripts/` or `.claude/` that a test drives | the merge | nothing runs | `Code`, `criterion` |
 
 A member repository maps the last three onto its own tree. The criterion column
-is only half of `maySkip`; the other half is the next section.
+is half of `maySkip`; reuse, in the next section, is the other half.
 
 ## The two readings of a skip
 
-`maySkip` is the kind's profile and the `criterion` together;
-neither alone licenses a skip. The kind is the sub-issue's `kind:<k>` label,
-and the profile is one line in that kind's reference beside this one,
-`kind-<k>.md`; a sub-issue with no label takes `development`'s. The profile
-says what the kind never goes without; the criterion decides the rest, per
-change.
+`maySkip` is the `criterion`, or reuse: a skippable stage may be absent while
+the change has written nothing that runs, and a stage the change's tests
+witness or drive is held, not skipped. No kind narrows this; a sub-issue's
+`kind:<k>` label picks the reference beside this one, `kind-<k>.md`, which
+says what its changes write.
 
 The order reads `maySkip` for each absent stage when you write past it
 (`orderDiscipline`), and the merge reads it again against the change as it
@@ -45,15 +44,14 @@ past the stage can be stale by the merge — `S5b_WithoutTheLandingCheck` is a
 chain that keeps the first reading and still lands wrong. The remedy is to
 write the stage after all.
 
-So a profile is permission and not a plan, and two readings narrow it further.
+So a skip is permission and not a plan, and two readings narrow it further.
 `criterion` is that nothing runs, so a change that writes a test or a code path
-cannot skip its scenario whatever its kind allows. And
+cannot skip its scenario. And
 `tieDiscipline` reads at every commit, not at the merge, so a code path a
 commit leaves in the tree owes a scenario even on a branch that never lands.
-A profile naming `Spec` is live only for a change that writes nothing below its
-plan. The tie does not widen it -- `criterion` reads what the CHANGE wrote,
+The tie does not widen the skip -- `criterion` reads what the CHANGE wrote,
 never what the tree ties -- so a change that lands a code path cannot waive its
-scenario however that path ties (`S5_CodeWithoutSpec`).
+scenario however that path ties (`S5a_WithoutTheCommitCheck`).
 
 ## The tie
 

@@ -237,8 +237,8 @@ jobs:
           fetch-depth: 2
 
       # `landDiscipline`, GIVEN A READER (sdlc-alloy#363): every stage the
-      # change has no artifact for is licensed by its kind's profile and the
-      # criterion. ADVISORY: `continue-on-error` while `LEGACY` in
+      # change has no artifact for is licensed by the criterion, or held by
+      # reuse. ADVISORY: `continue-on-error` while `LEGACY` in
       # check-sdlc-tie.py holds a line, because a change writing an untied
       # path lands with no Spec and would be refused; the pull request that
       # empties the list removes that line (sdlc-alloy#363). It prints its word,

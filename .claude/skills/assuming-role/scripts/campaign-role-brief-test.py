@@ -431,10 +431,10 @@ def main():
 
     r, _, _ = run(prompt, agents=NAMED, labels=["kind:development"])
     check("a `kind:development` sub-issue emits its own reference, the one "
-          "that states the profile a kind-less sub-issue takes",
+          "a kind-less sub-issue takes",
           r.returncode == 0 and "# Kind: development" in r.stdout
           and f"# Kind of {REPO}#{ISSUE}: development" in r.stdout
-          and "`optional = skippable`" in r.stdout,
+          and "`reusedStages`" in r.stdout,
           f"out {r.stdout[-200:]!r} err {r.stderr!r}")
 
     r, _, _ = run(prompt, agents=NAMED, labels=["backlog"])

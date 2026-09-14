@@ -12,7 +12,7 @@
  *   OnDisk        the campaign directories that currently exist.
  *   Where         the observer: which machine and which repository the current
  *                 event touched.
- *   BaseBehind, BaseUnpushed, CloneBehind
+ *   BaseUnpushed, CloneBehind
  *                 how far behind origin a machine's two base checkouts are;
  *                 the last section, "the two base checkouts", says why two.
  *
@@ -128,7 +128,7 @@ fun unreached[c: Campaign, m: Machine]: set Repo { (m.installed & landingRepos[c
    campaign issue alone, on purpose: a sub-issue settles at its merge, and the
    install catching up is the campaign's to wait for.
 
-   ITS ESCAPE, shown rather than closed here (S16e): a machine deletes its
+   ITS ESCAPE, left open here: a machine deletes its
    directory and the close then reads no machine at all. The script is not
    escaped that way -- with no directory its installed step reads the campaign
    issue body, on the machine it runs on -- but which machine closes is a
@@ -158,7 +158,7 @@ pred createDir[t: CampaignDir] {
 
 /* Unguarded: this entity has no role, so "no campaign closes while a role is
    live under its tree" cannot be stated here. orchestration/checks.als's
-   NoOrphanIfGuarded is that rule assumed and checked. */
+   `noDeleteUnderLiveAgent` is that rule, and A11 checks it. */
 pred deleteDir[t: CampaignDir] {
   t in OnDisk
   OnDisk'  = OnDisk - t
@@ -250,7 +250,6 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * this entity because a clone lives in a campaign directory and a launch
  * happens in one.
  *
- *   BaseBehind    machines whose outer checkout is behind origin/main.
  *   BaseUnpushed  machines whose outer checkout holds commits origin lacks.
  *   CloneBehind        machines whose inner clone is behind origin/main.
  *
@@ -258,13 +257,11 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * are cleared by different acts: a clone is cut fresh from origin/main, which
  * says nothing about the outer checkout it sits inside.
  *
- * This section declares no signature of its own. It adds three subsets of
- * Machine, five events, and the two facts that govern all three subsets end
- * to end.
+ * This section declares no signature of its own. It adds two subsets of
+ * Machine, four events, and the two facts that govern both subsets end to
+ * end.
  */
 
-/* The OUTER base checkout a campaign session runs from. */
-var sig BaseBehind   in Machine {}
 /* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push
    (`push-campaign-branch.sh`). */
 var sig BaseUnpushed in Machine {}
@@ -275,28 +272,22 @@ var sig CloneBehind in Machine {}
 
 /* ---------------- observable events ---------------- */
 
-one sig PullBase, PullClone, CommitLocal, PushBase, Launch extends Event {}
+one sig PullClone, CommitLocal, PushBase, Launch extends Event {}
 
 fun synchronizationEvents: set Event {
-  PullBase + PullClone + CommitLocal + PushBase + Launch
+  PullClone + CommitLocal + PushBase + Launch
 }
 
-/* This section writes no frame predicate. BaseBehind, BaseUnpushed
-   and CloneBehind are governed end to end by BaseCheckoutFrame and
-   CloneCheckoutFrame below, because the act that moves them most is a
-   MergePullRequest, an event this section does not own -- so there is nothing
-   left for a step branch to frame, and the branches carry only the observer
-   constraint. */
-
-pred pullBase[m: Machine] {
-  m in BaseBehind
-  BaseBehind' = BaseBehind - m and BaseUnpushed' = BaseUnpushed
-  Now.event = PullBase and no Now.issue and Where.machine = m and no Where.repo
-}
+/* This section writes no frame predicate. BaseUnpushed and CloneBehind
+   are governed end to end by BaseCheckoutFrame and CloneCheckoutFrame below,
+   because the act that moves the clone's is a MergePullRequest, an event this
+   section does not own -- so there is nothing left for a step branch to
+   frame, and the branches carry only the observer constraint. The outer
+   checkout's own lag is `Base not in m.current`, the install reading above. */
 
 pred pullClone[m: Machine] {
   m in CloneBehind
-  BaseBehind' = BaseBehind and BaseUnpushed' = BaseUnpushed
+  BaseUnpushed' = BaseUnpushed
   Now.event = PullClone and no Now.issue and Where.machine = m and no Where.repo
 }
 
@@ -306,7 +297,7 @@ pred pullClone[m: Machine] {
    person at a terminal -- names none. */
 pred commitLocal[m: Machine] {
   m not in BaseUnpushed
-  BaseUnpushed' = BaseUnpushed + m and BaseBehind' = BaseBehind
+  BaseUnpushed' = BaseUnpushed + m
   Now.event = CommitLocal and Where.machine = m and no Where.repo
 }
 
@@ -314,7 +305,7 @@ pred commitLocal[m: Machine] {
    hook pushes a campaign branch the moment it has a commit. */
 pred pushBase[m: Machine] {
   m in BaseUnpushed
-  BaseUnpushed' = BaseUnpushed - m and BaseBehind' = BaseBehind
+  BaseUnpushed' = BaseUnpushed - m
   Now.event = PushBase and no Now.issue and Where.machine = m and no Where.repo
 }
 
@@ -332,10 +323,7 @@ pred launch[m: Machine] {
    running campaign -- but it agrees BY CONSTRUCTION, so read it as a
    restatement of the assumption and not as evidence. */
 fact BaseCheckoutFrame {
-  always ((Now.event not in PullBase + CommitLocal + PushBase) implies
-    (BaseUnpushed' = BaseUnpushed and
-     ((Now.event = MergePullRequest and Now.issue.repo = Base)
-        implies BaseBehind' = Machine else BaseBehind' = BaseBehind)))
+  always ((Now.event not in CommitLocal + PushBase) implies BaseUnpushed' = BaseUnpushed)
 }
 
 fact CloneCheckoutFrame {
@@ -347,12 +335,12 @@ fact CloneCheckoutFrame {
 }
 
 pred synchronizationInit {
-  no BaseBehind and no BaseUnpushed and no CloneBehind
+  no BaseUnpushed and no CloneBehind
 }
 
 pred synchronizationStep {
   (Now.event = Stutter and no Where.machine and no Where.repo)
-  or (some m: Machine | pullBase[m] or pullClone[m] or commitLocal[m] or pushBase[m] or launch[m])
+  or (some m: Machine | pullClone[m] or commitLocal[m] or pushBase[m] or launch[m])
   /* A github or directory event: those set `Where` themselves where they touch
      a machine, and this section has no state a branch could frame. */
   or (Now.event in githubEvents + directoryEvents)

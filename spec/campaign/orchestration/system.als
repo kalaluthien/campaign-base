@@ -92,7 +92,9 @@ sig Agent {
    `MergePullRequest` is on neither plane deliberately: AGENTS.md's three merge
    conditions hold it and none of them names a role, so putting it on the code
    plane would make a planner unable to land a reviewed pull request and putting
-   it on the campaign plane would let one land any. `Review`, `Launch`, the four
+   it on the campaign plane would let one land any. Which session may land
+   one is `mergedByPlannerOrHolder` in checks.als: the planner of the head's
+   campaign, or the worker holding its claim. `Review`, `Launch`, the four
    messages, `Retire` and the survey events are on neither because they are not
    writes to either half. */
 abstract sig Plane {}

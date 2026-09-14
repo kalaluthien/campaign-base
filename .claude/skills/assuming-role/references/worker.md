@@ -5,8 +5,10 @@ and, on a claim, the code the sub-issue names.
 
 `campaign-roles.py` states the licence; these are the moments.
 
-1. **Read the sub-issue body and its comments** before touching anything. A
-   decision on the issue outranks the brief that sent you.
+1. **Run `scripts/campaign-context.py <issue>`, then read the sub-issue
+   body**, before touching anything: it prints the comments on the issue, on
+   what its body cites, and the campaign issue's notes naming it. A decision
+   on the issue outranks the brief that sent you.
 2. **Cut the claim**: `campaign-claim take <N> <issue> <topic>`. Every
    sub-issue cuts one, work that lands no commit included. Create-ref is what
    makes it atomic across machines; a survey-then-file is not.
@@ -49,7 +51,7 @@ and, on a claim, the code the sub-issue names.
    install. A worker that merges where no planner runs holds the same three
    conditions, then runs
    `scripts/campaign-installed.py reach <README> <owner/repo> <merge sha>` and
-   quotes the line it prints, which names the install's sha.
+   quotes the line it prints, which names the install's sha, in its `REPORT`.
 9. **Release the claim** when the sub-issue is settled. The release compacts
    this pane, so a reused worker does not carry a finished transcript into the
    next sub-issue.

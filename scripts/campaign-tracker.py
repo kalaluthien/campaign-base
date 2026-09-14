@@ -227,6 +227,8 @@ BOUND_LABEL_PREFIX = "bound:"
 # `campaign` and `campaign:` do not collide -- the plain label has no colon --
 # and `startswith` is not how the kind is decided, `==` is.
 SLUG_LABEL_PREFIX = "campaign:"
+# How many labels one listing asks for; a listing that fills it may be cut.
+LABEL_LIMIT = 200
 # THE SUB-ISSUE'S WORK KIND, stored the same way the slug and the binding are:
 # one label, read by exact name. It is NOT the structural kind `kind_of` below
 # decides -- that one is the `campaign` label and the parent link, and it names
@@ -616,40 +618,44 @@ def cmd_issue(args):
     return 0
 
 
-def cmd_slugs(args):
-    """Every slug this tracker has ever spent, read off the LABELS and not off
-    the issues wearing them.
+def spent_slugs(repo, limit):
+    """(every slug this tracker has ever spent, the label count, why
+    unreadable), read off the LABELS and not off the issues wearing them.
 
     A label outlives the campaign it was minted for and a closed campaign's
     slug stays spent, so this is what a planner minting a fresh one reads. It
     is also the reason nothing here has to survey issues for uniqueness: GitHub
-    refuses a second label of one name."""
-    text, why = gh_read(["gh", "label", "list", "-R", args.repo, "--limit",
-                         str(args.limit), "--json", "name"])
+    refuses a second label of one name. campaign-context.py reads it too, to
+    tell a cited `<slug>#N` from a slug-shaped word."""
+    text, why = gh_read(["gh", "label", "list", "-R", repo, "--limit",
+                         str(limit), "--json", "name"])
     if why:
-        print(f"campaign-tracker slugs: could not read {args.repo}'s labels -- "
-              f"{why}\n  A reading that did not happen is not an empty pool.",
-              file=sys.stderr)
-        return 2
+        return None, 0, (f"could not read {repo}'s labels -- {why}\n  A "
+                         f"reading that did not happen is not an empty pool.")
     try:
         listed = json.loads(text)
         if not isinstance(listed, list):
             raise TypeError(type(listed).__name__)
     except (ValueError, TypeError) as e:
-        print(f"campaign-tracker slugs: could not parse gh's output "
-              f"({e.__class__.__name__})", file=sys.stderr)
-        return 2
+        return None, 0, f"could not parse gh's output ({e.__class__.__name__})"
     # A label listing is the `labels` array an issue carries.
     labels = label_names({"labels": listed})
-    if len(listed) >= args.limit:
-        print(f"campaign-tracker slugs: the label listing came back at --limit "
-              f"{args.limit}, so it may be truncated, and a truncated listing "
-              f"reads exactly like a complete one. Raise --limit and re-run.",
-              file=sys.stderr)
+    if len(listed) >= limit:
+        return None, 0, (f"the label listing came back at --limit {limit}, so "
+                         f"it may be truncated, and a truncated listing reads "
+                         f"exactly like a complete one. Raise --limit and "
+                         f"re-run.")
+    return (sorted(n[len(SLUG_LABEL_PREFIX):] for n in labels
+                   if n.startswith(SLUG_LABEL_PREFIX)), len(labels), None)
+
+
+def cmd_slugs(args):
+    """Every slug this tracker has ever spent: `spent_slugs`, printed."""
+    spent, labels, why = spent_slugs(args.repo, args.limit)
+    if why:
+        print(f"campaign-tracker slugs: {why}", file=sys.stderr)
         return 2
-    spent = sorted(n[len(SLUG_LABEL_PREFIX):] for n in labels
-                   if n.startswith(SLUG_LABEL_PREFIX))
-    print(f"read {args.repo}: {len(labels)} label(s), {len(spent)} spent slug(s)")
+    print(f"read {args.repo}: {labels} label(s), {len(spent)} spent slug(s)")
     for s in spent:
         print(f"  {s}")
     if not spent:
@@ -1340,7 +1346,7 @@ def main():
 
     a = sub.add_parser("slugs", help="every slug this tracker has spent")
     a.add_argument("repo", nargs="?", default=DEFAULT_REPO)
-    a.add_argument("--limit", type=int, default=200)
+    a.add_argument("--limit", type=int, default=LABEL_LIMIT)
     a.set_defaults(fn=cmd_slugs)
 
     # The optional positional repository is the override seam these three share.

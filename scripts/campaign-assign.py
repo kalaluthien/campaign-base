@@ -213,9 +213,17 @@ ASSIGNMENT = re.compile(r"Work sub-issue (?P<repo>[\w.-]+/[\w.-]+)#(?P<issue>\d+
 def prompt_for(repo, issue):
     """The one sentence. THE BRIEF IS THE SUB-ISSUE (AGENTS.md § Delegate
     launch), so this names it and says nothing else: anything restated here is
-    a second copy of the body that goes stale the moment the body is edited."""
-    return (f"Work sub-issue {repo}#{issue} now: its body is the whole brief, "
-            f"including how to claim, land and report it.")
+    a second copy of the body that goes stale the moment the body is edited.
+    campaign-context.py is named because it reads what the body cannot hold,
+    the comments on it and on what it cites (rule-check#416). Its path is
+    absolute, this script's own directory, because a delegate sits in a member
+    clone where `scripts/` is not the base's."""
+    context = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                           "campaign-context.py")
+    return (f"Work sub-issue {repo}#{issue} now: run "
+            f"`{context} {issue} {repo}` first, then read its "
+            f"body, which is the whole brief, including how to claim, land and "
+            f"report it.")
 
 
 def main():

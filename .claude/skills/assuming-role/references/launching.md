@@ -12,7 +12,8 @@ Probed herdr facts beyond this procedure are
 Launch in `<campaign>/repos/<repo>/`.
 
 - **The brief is the sub-issue.** Make the launched prompt one short sentence
-  naming the issue number and telling the delegate to read the body first. herdr
+  naming the issue number and telling the delegate to run
+  `<base>/scripts/campaign-context.py <issue>`, then read the body. herdr
   types the launch line into the pane, and a terminal silently drops a line past
   1024 bytes — nothing runs and the launch looks like a slow agent — so the
   prompt has to be short either way, and a `gh issue view` is the shortest thing

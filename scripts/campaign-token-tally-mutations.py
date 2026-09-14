@@ -92,8 +92,21 @@ MUT = [
      '        if word in INTERPRETERS:',
      '        if False:'),
     ("the result is charged to every script the command runs",
-     '                        if rank == 0:',
-     '                        if True:'),
+     '            if rank == 0:',
+     '            if True:'),
+    # reads, one branch at a time.
+    ("a re-read is any read of the file, whatever context read it first",
+     '        key = (r["context"], r["file"])',
+     '        key = r["file"]'),
+    ("the verdict sums over-threshold and re-read bytes, double counting",
+     '    either = sum(r["bytes"] for r in reads if r["reread"] or files[r["file"]]["over"])',
+     '    either = over + again'),
+    ("lines come from the result even when the file is on disk",
+     '        on_disk = disk_lines(path)',
+     '        on_disk = None'),
+    ("a shell read's path is not resolved against the record's cwd",
+     '            "file": os.path.normpath(os.path.join(turn["cwd"], os.path.expanduser(str(path)))),',
+     '            "file": os.path.normpath(os.path.expanduser(str(path))),'),
 ]
 
 fails = 0

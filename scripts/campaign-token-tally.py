@@ -80,6 +80,27 @@ SUBCOMMANDS
              that spawned it (`nested` counts how many)
   tool-echo  turns whose tool results are the output of this repository's own
              scripts, and what those results cost to carry
+  reads      what reading files returned: per file, per session, and the
+             shares the routing verdict below reads
+
+THE READS RULE, WRITTEN BEFORE ITS FIRST RUN (rule-check#412)
+
+A read is a Read tool call, or a Bash command whose FIRST segment's command
+word is `cat`, `head`, `tail`, or `sed` with `-n`; nothing else. A read word in
+a later segment -- `cd x && cat f`, `git log | head` -- is counted apart as a
+floor line, never as a read. Its file is the Read's `file_path`, or the
+segment's last path argument resolved against the record's cwd; a read naming
+none is unsplittable and counted apart. Its bytes are its result's, measured
+as `tool-echo` measures them, over the one walk both share.
+
+A file is over the threshold when it has more than `--threshold` lines, 350 by
+default: counted on disk when the file exists now, else from the largest
+result it returned, and the table says which. A re-read is a read of a file
+the same context -- a session, or one subagent -- already read.
+
+The verdict: when the bytes of reads that are over the threshold OR re-reads
+-- the union, since one read can be both -- are at least 30% of all read
+bytes, build the routing step; below that, stop.
 
 Columns are `output`, `input_new` (`input_tokens` + `cache_creation_input_tokens`)
 and `cache_read`, kept apart because they are priced apart and move for different
@@ -92,6 +113,7 @@ Usage:
   scripts/campaign-token-tally.py turns --since ... > turns.jsonl
   scripts/campaign-token-tally.py reviews --since ...
   scripts/campaign-token-tally.py tool-echo --since ...
+  scripts/campaign-token-tally.py reads --since ... [--threshold 350]
 """
 import argparse
 import functools
@@ -152,6 +174,9 @@ SCRIPT_NAME = re.compile(r"^((?:campaign|check|install)-[a-z0-9-]+)\.(?:py|sh)$"
 # runs against a double count on every argument-less `-c`, and the missed ones
 # land in the `charged` floor this subcommand already prints.
 INTERPRETERS = {"python", "python3"}
+# The reads rule in the docstring, as the two values it names.
+SHELL_READS = {"cat", "head", "tail", "sed"}
+BUILD_AT = 0.30
 
 
 @functools.cache
@@ -218,6 +243,63 @@ def scripts_called(command, grammar):
         if m:
             called.append(m.group(1))
     return called
+
+
+def shell_read(command, grammar):
+    """(word, path) for one Bash command, by the reads rule in the docstring.
+
+    `read` with the path the first segment names, or None when it names none;
+    `later` when only a later segment reads a named file, which the rule does
+    not count; `none` when it reads no file into the window; `unsplit` when it
+    will not split. The segments and the command word are the guard's, as for
+    `scripts_called`.
+    """
+    segs, _why = grammar.segments(command)
+    if segs is None:
+        return "unsplit", None
+    words = [(w, rest) for w, rest in map(grammar.head, segs) if w is not None]
+    if words and words[0][0] in SHELL_READS:
+        return read_operand(*words[0])
+    if any(w in SHELL_READS and read_operand(w, rest)[1] for w, rest in words[1:]):
+        return "later", None
+    return "none", None
+
+
+def read_operand(word, tokens):
+    """(word, path) for a segment opening with a read word: its last path argument.
+
+    Operands stop at the first redirection. Stdout sent to a file returns no
+    content, so that segment is no read; `2>/dev/null` is not stdout. `sed`
+    reads only with `-n`, and its first operand is the script unless `-e` or
+    `-f` gave one; `head` and `tail` take a value after a bare `-n` or `-c`.
+    """
+    args = tokens[1:]
+    cut = next((i for i, t in enumerate(args) if t and set(t) <= set("<>&")),
+               len(args))
+    fd = args[cut - 1] if 0 < cut < len(args) and args[cut - 1].isdigit() else None
+    if cut < len(args) and ">" in args[cut] and fd in (None, "1"):
+        return "none", None
+    args = args[:cut - 1] if fd else args[:cut]
+    operands, quiet, script_given, i = [], False, False, 0
+    while i < len(args):
+        t = args[i]
+        i += 1
+        if t.startswith("-") and len(t) > 1:
+            if word == "sed" and not t.startswith("--") and "n" in t:
+                quiet = True
+            if word == "sed" and t in ("-e", "-f"):
+                script_given = True
+                i += 1
+            elif word in ("head", "tail") and t in ("-n", "-c"):
+                i += 1
+            continue
+        operands.append(t)
+    if word == "sed":
+        if not quiet:
+            return "none", None
+        if not script_given:
+            operands = operands[1:]
+    return "read", (operands[-1] if operands else None)
 
 
 def die(why):
@@ -671,13 +753,16 @@ def cmd_issues(corpus, args):
           f"{fmt(grand['input_new'])} input_new, {fmt(grand['cache_read'])} cache_read")
 
 
+def session_label(t):
+    """A turn's session row: its name, or the name of the session a subagent ran under."""
+    if t["kind"] == "subagent":
+        return f"(subagent of {t['session_name'] or t['session_id'][:8]})"
+    return t["session_name"] or f"(unnamed {t['session_id'][:8]})"
+
+
 def cmd_sessions(corpus, args):
     sample_line(corpus)
-    def name(t):
-        if t["kind"] == "subagent":
-            return f"(subagent of {t['session_name'] or t['session_id'][:8]})"
-        return t["session_name"] or f"(unnamed {t['session_id'][:8]})"
-    buckets = group(corpus.turns, name)
+    buckets = group(corpus.turns, session_label)
     rows = []
     for key in sorted(buckets, key=lambda k: -totals(buckets[k])["output"]):
         got = totals(buckets[key])
@@ -866,19 +951,128 @@ def cmd_tool_echo(corpus, args):
           "heading.")
 
 
+def cmd_reads(corpus, args):
+    """What reading files returned, per file and per session, and the verdict
+    the reads rule in the docstring gives."""
+    sample_line(corpus)
+    reads, all_bytes, apart = scan_reads(corpus)
+    files = {}
+    for r in reads:
+        f = files.setdefault(r["file"], {"reads": 0, "rereads": 0, "bytes": 0,
+                                         "result_lines": 0})
+        f["reads"] += 1
+        f["rereads"] += r["reread"]
+        f["bytes"] += r["bytes"]
+        f["result_lines"] = max(f["result_lines"], r["lines"])
+    for path, f in files.items():
+        on_disk = disk_lines(path)
+        f["from"] = "result" if on_disk is None else "disk"
+        f["lines"] = f["result_lines"] if on_disk is None else on_disk
+        f["over"] = f["lines"] > args.threshold
+    table([[shown(path, corpus.bases), fmt(f["lines"]), f["from"],
+            "yes" if f["over"] else "no", fmt(f["reads"]), fmt(f["rereads"]),
+            fmt(f["bytes"])]
+           for path, f in sorted(files.items(), key=lambda kv: -kv[1]["bytes"])],
+          ["file", "lines", "from", "over", "reads", "rereads", "result_bytes"])
+    sessions = {}
+    for r in reads:
+        s = sessions.setdefault(r["session"], {"reads": 0, "rereads": 0, "bytes": 0,
+                                               "reread_bytes": 0, "over_bytes": 0})
+        s["reads"] += 1
+        s["bytes"] += r["bytes"]
+        if r["reread"]:
+            s["rereads"] += 1
+            s["reread_bytes"] += r["bytes"]
+        if files[r["file"]]["over"]:
+            s["over_bytes"] += r["bytes"]
+    print()
+    table([[name, fmt(s["reads"]), fmt(s["rereads"]), fmt(s["bytes"]),
+            fmt(s["reread_bytes"]), fmt(s["over_bytes"])]
+           for name, s in sorted(sessions.items(), key=lambda kv: -kv[1]["bytes"])],
+          ["session", "reads", "rereads", "result_bytes", "reread_bytes", "over_bytes"])
+
+    def share(n, d):
+        return f"{fmt(n)} ({100 * n / max(1, d):.1f}%)"
+    read_bytes = sum(r["bytes"] for r in reads)
+    over = sum(r["bytes"] for r in reads if files[r["file"]]["over"])
+    again = sum(r["bytes"] for r in reads if r["reread"])
+    either = sum(r["bytes"] for r in reads if r["reread"] or files[r["file"]]["over"])
+    own = sum(r["bytes"] for r in reads if r["lines"] > args.threshold)
+    print()
+    print(f"{fmt(len(reads))} reads of {fmt(len(files))} files; read bytes "
+          f"{fmt(read_bytes)} of {fmt(all_bytes)} in every "
+          f"tool result of the kept turns ({100 * read_bytes / max(1, all_bytes):.1f}%)")
+    print(f"of the read bytes: over-threshold (> {args.threshold} lines) "
+          f"{share(over, read_bytes)}; re-read {share(again, read_bytes)}; "
+          f"either {share(either, read_bytes)}")
+    print(f"  over by the read's own result rather than the file: "
+          f"{share(own, read_bytes)} -- a bounded read of a long file is over "
+          f"by its file")
+    for key, what in (("no_path", "reads naming no file (unsplittable)"),
+                      ("unsplit", "commands that would not split, so may hold a read"),
+                      ("later", "commands reading a named file after their first "
+                                "segment, which the rule does not count")):
+        n, size = apart[key]
+        print(f"{fmt(n)} {what}, carrying {fmt(size)} bytes: a floor on the "
+              f"tables above, not a zero")
+    verdict = "build" if either >= BUILD_AT * read_bytes and read_bytes else "stop"
+    print(f"verdict: {verdict} -- over-threshold or re-read is "
+          f"{100 * either / max(1, read_bytes):.1f}% of read bytes, against "
+          f"{BUILD_AT:.0%} (the reads rule in this script's docstring)")
+
+
+def shown(path, bases):
+    """A path under a base root, relative to it; any other path whole."""
+    for b in bases:
+        if path.startswith(b + "/"):
+            return path[len(b) + 1:]
+    return path
+
+
 def scan_script_calls(corpus):
     """What this repository's scripts printed back at an agent, per script.
 
     Returns the per-script rows, their byte total, and the byte total of *every*
     tool result in the kept turns, so a share can be read rather than asserted.
     """
-    keep = {t["message_id"] for t in corpus.turns}
     grammar = guard_module()
     by_script = {}
     charged = 0
     all_bytes = 0
     unsplittable = 0
     invocations = 0
+    for _turn, use, text in tool_results(corpus):
+        called = []
+        if use.get("name") == "Bash":
+            called = scripts_called(str(use.get("input", {}).get("command", "")), grammar)
+            if called is None:
+                unsplittable += 1
+                called = []
+        size = len(text)
+        all_bytes += size
+        invocations += len(called)
+        for rank, script in enumerate(called):
+            row = by_script.setdefault(
+                script, {"charged": 0, "also_run": 0, "result_bytes": 0})
+            if rank == 0:
+                row["charged"] += 1
+                row["result_bytes"] += size
+                charged += size
+            else:
+                row["also_run"] += 1
+    return by_script, charged, all_bytes, unsplittable, invocations
+
+
+def tool_results(corpus):
+    """(turn, tool_use block, result text) for every tool call a kept turn made.
+
+    The one walk `tool-echo` and `reads` share, so their shares are of one
+    denominator. A call is kept by its turn, which the corpus already
+    attributed; a result is paired to its call by `tool_use_id` within one file.
+    """
+    keep = {}
+    for t in corpus.turns:
+        keep.setdefault(t["message_id"], t)
     for path in sorted({t["file"] for t in corpus.turns}):
         pending = {}
         for line in open(path, errors="replace"):
@@ -898,31 +1092,68 @@ def scan_script_calls(corpus):
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "tool_use":
-                    if message.get("id") not in keep:
-                        continue
-                    called = []
-                    if block.get("name") == "Bash":
-                        called = scripts_called(
-                            str(block.get("input", {}).get("command", "")), grammar)
-                        if called is None:
-                            unsplittable += 1
-                            called = []
-                    pending[block.get("id")] = called
+                    turn = keep.get(message.get("id"))
+                    if turn is not None:
+                        pending[block.get("id")] = (turn, block)
                 elif block.get("type") == "tool_result" and block.get("tool_use_id") in pending:
-                    called = pending.pop(block["tool_use_id"])
-                    size = len("\n".join(text_blocks({"content": [block]})))
-                    all_bytes += size
-                    invocations += len(called)
-                    for rank, script in enumerate(called):
-                        row = by_script.setdefault(
-                            script, {"charged": 0, "also_run": 0, "result_bytes": 0})
-                        if rank == 0:
-                            row["charged"] += 1
-                            row["result_bytes"] += size
-                            charged += size
-                        else:
-                            row["also_run"] += 1
-    return by_script, charged, all_bytes, unsplittable, invocations
+                    turn, use = pending.pop(block["tool_use_id"])
+                    yield turn, use, "\n".join(text_blocks({"content": [block]}))
+
+
+@functools.cache
+def disk_lines(path):
+    """The file's line count now, or None when it is not a readable file."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+
+
+def scan_reads(corpus):
+    """Every read by the reads rule, in time order, and what the walk set aside.
+
+    Returns (reads, all_bytes, apart): each read a dict of its file, context,
+    session label, size and result lines; `apart` counts and sizes what is not
+    a read but bears on the count -- unsplittable reads, commands that would
+    not split, and reads in a later segment.
+    """
+    grammar = guard_module()
+    reads, all_bytes = [], 0
+    apart = {k: [0, 0] for k in ("no_path", "unsplit", "later")}
+    for turn, use, text in tool_results(corpus):
+        size = len(text)
+        all_bytes += size
+        name, inp = use.get("name"), use.get("input") or {}
+        if name == "Read":
+            word, path = "read", inp.get("file_path")
+        elif name == "Bash":
+            word, path = shell_read(str(inp.get("command", "")), grammar)
+        else:
+            continue
+        if word == "read" and not path:
+            word = "no_path"
+        if word in apart:
+            apart[word][0] += 1
+            apart[word][1] += size
+        if word != "read":
+            continue
+        reads.append({
+            "file": os.path.normpath(os.path.join(turn["cwd"], os.path.expanduser(str(path)))),
+            "context": (turn["session_id"], turn["agent_id"]),
+            "session": session_label(turn),
+            "timestamp": turn["timestamp"],
+            "bytes": size,
+            "lines": text.count("\n") + 1 if text else 0,
+        })
+    reads.sort(key=lambda r: r["timestamp"])
+    seen = set()
+    for r in reads:
+        key = (r["context"], r["file"])
+        r["reread"] = key in seen
+        seen.add(key)
+    return reads, all_bytes, apart
 
 
 COMMANDS = {
@@ -931,6 +1162,7 @@ COMMANDS = {
     "turns": cmd_turns,
     "reviews": cmd_reviews,
     "tool-echo": cmd_tool_echo,
+    "reads": cmd_reads,
 }
 
 
@@ -959,6 +1191,8 @@ def parse_args(argv):
     p.add_argument("--pr-map", help="JSON list of {number, headRefName}, instead of gh")
     p.add_argument("--offline", action="store_true",
                    help="do not call gh; leave the pull-request map empty")
+    p.add_argument("--threshold", type=int, default=350,
+                   help="reads: a file over this many lines is over the threshold")
     args = p.parse_args(argv)
     # The base's name is campaign-repos.py's (rule-check#370 row 5).
     if args.repo is None:

@@ -404,6 +404,13 @@ def main() -> int:
               (word, code) == ("licensed", 0)
               and "kind-development.md" in text, f"{word} {code} {text}")
 
+        # A kind whose reference is absent from the tree takes `development`'s.
+        word, code, text = land("nofile", {"README.md": "bye\n"},
+                                issue=sub_issue("research"))
+        check("a kind with no reference file reads development's profile",
+              (word, code) == ("licensed", 0)
+              and "kind-development.md" in text, f"{word} {code} {text}")
+
         # S6_NarrowingTestWaiver: the profile, not the criterion, refuses.
         word, code, text = land("narrow", {"README.md": "bye\n"},
                                 issue=sub_issue("research"),

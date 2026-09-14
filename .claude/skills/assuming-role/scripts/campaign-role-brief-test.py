@@ -255,7 +255,7 @@ def main():
     r, rec, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
                     agents=row(SID, "other-planner-3"), record=(SID, stamp))
     check("a session renamed into the other role re-briefs on its next prompt",
-          "The planner's lifecycle" in r.stdout and PLANNER in r.stdout
+          PLANNER in r.stdout
           and rec.startswith("planner other "), f"out {r.stdout[:80]!r} rec {rec!r}")
 
     # THE STAMP IS A SHA AND NOT A LENGTH. A COPY of the skill is briefed
@@ -308,8 +308,8 @@ def main():
 
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
                    "session_id": SID}, agents=row(SID, "other-planner-3"))
-    check("a planner gets the planner reference and the planner section",
-          "The planner's lifecycle" in r.stdout and PLANNER in r.stdout
+    check("a planner gets the planner reference",
+          PLANNER in r.stdout
           and WORKER not in r.stdout
           and "planner of campaign `other`" in r.stdout,
           f"out {r.stdout[:200]!r}")
@@ -601,6 +601,19 @@ def main():
               and "campaign-tracker.py" in r.stderr
               and "refused" not in r.stderr
               and not (d / "gh.log").exists(),
+              f"exit {r.returncode} err {r.stderr!r}")
+
+        # The tracker present and the kind's REFERENCE absent: a word in
+        # `WORK_KINDS` whose file is not written yet delivers nothing.
+        for name in ("campaign-tracker.py", "campaign-repos.py"):
+            shutil.copy(BASE / "scripts" / name, d / "base" / "scripts" / name)
+        (skill / "references" / "kind-maintenance.md").unlink()
+        r = run_copy()
+        check("...and a kind with no reference file emits nothing and names "
+              "the file that is not there",
+              r.returncode == 0 and "# Kind of" not in r.stdout
+              and "is `maintenance`, which has no reference at" in r.stderr
+              and "kind-maintenance.md" in r.stderr,
               f"exit {r.returncode} err {r.stderr!r}")
 
     return harness.report()

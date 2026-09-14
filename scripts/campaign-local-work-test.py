@@ -175,7 +175,8 @@ def main():
 
     # AN EXCLUDED FILE IN A CLONE IS LOCAL-ONLY WORK. `git status --porcelain
     # --ignored=matching` reports an info/exclude'd file as `!!`, exactly as it
-    # reports a build directory, and nothing in a clone is exempt by name.
+    # reports a build directory. This case sees one name; an exemption added
+    # for any other would pass it.
     #
     # `read_checkouts` and not the filter alone: the reading is a branch inside
     # that loop, and a case that re-implemented the condition would pass with

@@ -574,7 +574,8 @@ notification.** The message carries no fact the comment does not, so a peer that
 missed it loses nothing but the timing. Which is why the comment goes where its
 reader is — a `REPORT` on the pull request, beside the `REVIEW` it answers, so
 one round is one thread and the disposition can be checked against the findings
-mechanically; a `BLOCKED`, a `DECISION` and a `NOTE` on the sub-issue.
+mechanically, or on the sub-issue where there is none; a `BLOCKED`, a
+`DECISION` and a `NOTE` on the sub-issue.
 `STATUS` and `STAND DOWN` have no comment kind at all: they are prompts into a
 pane, by the two-channel criterion below, and there is nothing durable in
 either.

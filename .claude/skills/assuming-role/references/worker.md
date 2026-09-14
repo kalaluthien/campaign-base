@@ -56,11 +56,14 @@ and, on a claim, the code the sub-issue names.
    turn.** The `REPORT` goes on the pull request, or on the sub-issue where
    there is none, and to the planner: the merge sha beside the head it pins,
    or the closing comment of a sub-issue with no pull request; that nothing is
-   left only on this machine; and that the release follows. It is a `REPORT`
-   and not a fifth message, so it comes before the release: the model's
-   `report` needs a live agent and `agentRelease` needs none. The planner
-   reads the release off the ref. The release compacts this pane, so a reused
-   worker does not carry a finished transcript into the next sub-issue.
+   left only on this machine; and that the release follows. A worker that
+   merged with no planner folds it into step 8's `REPORT` and sends none. It
+   is a `REPORT` and not a fifth message, so it comes before the release: the
+   model's `report` needs a live agent and `agentRelease` needs none. The one
+   turn is the pane's, not the model's: the release's compaction fires when
+   the turn ends, after the `REPORT`. The planner reads the release off the
+   ref. The release compacts this pane, so a reused worker does not carry a
+   finished transcript into the next sub-issue.
 
 How to review and to launch: `references/reviewing.md`, `references/launching.md`.
 

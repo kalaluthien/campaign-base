@@ -31,7 +31,13 @@ and, on a claim, the code the sub-issue names.
 
    A question and a hand-up take one channel: a `BLOCKED` on the sub-issue
    whose `BLOCKED <name>:` line says which of the two it is, then the message
-   -- not a NOTE, a question in the pane, or a DECISION of your own.
+   -- not a NOTE, a question in the pane, or a DECISION of your own -- and
+   stop until the planner's prompt delivers its `DECISION`. With no planner
+   running on the sub-issue, ask the owner with `AskUserQuestion` in your own
+   turn instead of posting a `BLOCKED`. Where the planner drives the
+   sub-issue a step at a time, the `NOTE` that ends a step is followed by a
+   message to the planner naming it, then the same stop: the planner's watch
+   counts a pull request's comments and none on the sub-issue.
 5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.

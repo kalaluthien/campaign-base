@@ -126,7 +126,7 @@ toward keep.
 NO READING IS STORED. Every verdict is a function of what the sources say
 now, so a run repeated with nothing changed says the same thing.
 
---watch IS THE PLANNER'S WAKE: it polls every 60 seconds (WATCH_EVERY) until
+--watch IS THE PLANNER'S WAKE: it polls every 300 seconds (WATCH_EVERY) until
 killed or quiet and prints only what changed, so a Monitor over it wakes the
 planner on an event, and the planner runs this with --apply. Keyed by N and
 its slug, which the planner holds at launch; a pull request that appears later
@@ -553,9 +553,11 @@ def verdict(role, own, status, banner, reading, refs):
 # --------------------------------------------------------- the watch
 
 # THE WATCH'S CLOCKS, the owner's numbers (DECISION on rule-check#296,
-# 2026-09-11). A poll a minute, since a claim, a push or a comment is minutes
-# of work; a stall or an idle worker is news after the time a turn takes.
-WATCH_EVERY = 60
+# 2026-09-11; the poll from DECISION on rule-check#438, 2026-09-14). A poll
+# every five minutes, since a worker messages the planner after a REPORT, a
+# BLOCKED or a step NOTE, so none of those waits on the poll; a stall or an
+# idle worker is news after the time a turn takes.
+WATCH_EVERY = 5 * 60
 STUCK_AFTER = 30 * 60
 IDLE_AFTER = 10 * 60
 REPRINT_AFTER = 30 * 60

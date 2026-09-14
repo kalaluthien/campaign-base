@@ -1184,6 +1184,18 @@ def scan_reads(corpus):
 DENY = re.compile(r"Permission for this action was denied by the Claude Code "
                   r"auto mode classifier\. Reason: \[([^\]]+)\]")
 REVIEW_POST = re.compile(r"gh pr (comment|review)\b.*\bREVIEW ", re.S)
+BODY_FILE = re.compile(r"gh pr (?:comment|review)\b.*?(?:--body-file|-F)[ =]"
+                       r"(?:'([^']*)'|\"([^\"]*)\"|(\S+))", re.S)
+
+
+def posted_review(command, written):
+    """The REVIEW text a call posts: the command itself, or the file its
+    `--body-file` names when the last Write to that path opened `REVIEW `."""
+    if REVIEW_POST.search(command):
+        return command
+    m = BODY_FILE.search(command)
+    body = written.get(next(g for g in m.groups() if g is not None), "") if m else ""
+    return body if body.startswith("REVIEW ") else None
 
 
 def denial(txt):
@@ -1248,14 +1260,19 @@ def cmd_denials(roots):
 
 def cmd_review_posts(roots):
     """A row is a Bash call whose command holds `REVIEW ` anywhere, so a REPORT
-    quoting a REVIEW is a row too."""
+    quoting a REVIEW is a row too; or one posting a `--body-file` (`-F`) whose
+    last Write in the same transcript opened `REVIEW `, the shape a reviewer
+    posts in since sdlc-alloy#430. A body the shell wrote is not seen."""
     rows = []
     for f in transcript_files(roots):
-        calls = {}
+        calls, written = {}, {}
         for d, c in transcript_blocks(f):
+            if c.get("type") == "tool_use" and c.get("name") == "Write":
+                inp = c.get("input") or {}
+                written[inp.get("file_path")] = inp.get("content") or ""
             if c.get("type") == "tool_use" and c.get("name") == "Bash":
-                cmd = (c.get("input") or {}).get("command", "")
-                if REVIEW_POST.search(cmd):
+                cmd = posted_review((c.get("input") or {}).get("command", ""), written)
+                if cmd:
                     calls[c["id"]] = (d.get("timestamp", "?")[:19],
                                       d.get("sessionId", "?")[:8], cmd)
             if c.get("type") == "tool_result" and c.get("tool_use_id") in calls:

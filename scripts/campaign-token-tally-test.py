@@ -801,6 +801,25 @@ def main():
               "3 REVIEW post(s)" in r.stdout
               and "{'REFUSED Self-Approval': 1, 'ok': 1, 'error': 1}" in r.stdout,
               r.stdout + r.stderr)
+        # A --body-file post is a REVIEW post when its file was written as one.
+        write(root / "-proj-b" / "agent-x.jsonl", [
+            assistant("m5", "2026-01-02T02:00:00Z", d, blocks=[
+                {"type": "tool_use", "id": "w1", "name": "Write",
+                 "input": {"file_path": "/s/review.md",
+                           "content": "REVIEW w-1: approve at abc1234"}},
+                {"type": "tool_use", "id": "w2", "name": "Write",
+                 "input": {"file_path": "/s/report.md", "content": "REPORT w-1: x"}},
+                call("t5", "gh pr comment 9 --body-file /s/review.md"),
+                call("t6", "gh pr comment 9 --body-file /s/report.md")]),
+            user("2026-01-02T02:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t5", "posted"), result("t6", "posted")]}},
+        ])
+        r = machine("review-posts")
+        check("review-posts counts a --body-file post whose Write opened REVIEW, "
+              "and not one whose Write did not",
+              "4 REVIEW post(s)" in r.stdout
+              and "| True | w-1: | ok" in r.stdout, r.stdout + r.stderr)
         r = machine("denials", "--since", "2026-01-02T00:00:00Z")
         check("a machine command refuses a window rather than ignoring it",
               r.returncode == 2 and "takes no window" in r.stderr, r.stderr)

@@ -575,6 +575,10 @@ reader is — a `REPORT` on the pull request, beside the `REVIEW` it answers, so
 one round is one thread and the disposition can be checked against the findings
 mechanically, or on the sub-issue where there is none; a `BLOCKED`, a
 `DECISION` and a `NOTE` on the sub-issue.
+**A step-end `NOTE` is notified the same way, and that is not a fifth
+message**: where a planner drives a sub-issue a step at a time, the worker's
+message names the `NOTE` that ends the step and carries no fact it does not
+(`assuming-role`'s `worker.md` step 4).
 `STATUS` and `STAND DOWN` have no comment kind at all: they are prompts into a
 pane, by the two-channel criterion below, and there is nothing durable in
 either.
@@ -619,6 +623,11 @@ only when (1) a review has been read **at the sha being merged**, (2) that revie
 was written by **an agent that did not write the commits**, and (3) the branch
 **contains the current `main`** when it merges. Whoever satisfies all three may
 merge, the author included; a session that cannot satisfy one may not.
+**Which session merges is the claim's question, not a condition's**: the
+planner of the head's campaign, or the worker holding its claim.
+`check-campaign-claim.py` reads it off the branch the merge names, so a merge
+names its pull request by that branch, never by its number; the model is
+`mergedByPlannerOrHolder` in `spec/campaign/orchestration/checks.als`.
 
 Condition 3 serializes landings: 1 and 2 are each true of a branch *in isolation*,
 so containing a `main` that moved means merging it in, that merge is a push, **a

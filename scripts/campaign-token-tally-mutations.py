@@ -46,7 +46,7 @@ MUT = [
      '        m = WORKTREE.search(cwd)\n        if m:\n            return int(m.group(1)), "worktree"',
      '        m = None'),
     ("branch rule removed",
-     '        m = self.branch.match(branch_field)\n        if m:\n            return int(m.group(1)), "branch"',
+     '        m = self.branch.match(branch_field) if self.branch else None\n        if m:\n            return int(m.group(1)), "branch"',
      '        m = None'),
     ("brief rule removed",
      '        if is_sub and brief_issue is not None:\n            return brief_issue, "brief"',

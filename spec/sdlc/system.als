@@ -5,8 +5,8 @@
  *
  * It opens nothing. The moment its checks run is the commit, which
  * github/system does not model, and a tie is between files in one tree, which
- * no entity of spec/campaign holds. Composing `Change` with `Issue` and `Land`
- * with `MergePullRequest` is a layer above this one, and the whole of
+ * no entity of spec/campaign holds. Composing `Change` with `Issue` and
+ * `MergeChange` with `MergePullRequest` is a layer above this one, and the whole of
  * spec/campaign folds this entity's five stages into its one `Launch` event --
  * which is the gap this entity fills, from beside it and not from inside it.
  *
@@ -16,7 +16,7 @@
  *               what it WITNESSES and what it DRIVES
  *   Html        a Spec artifact drawn for a reader, and the scenarios it
  *               REFINES
- *   Written     the artifacts that exist; Landed, the changes that merged;
+ *   Written     the artifacts that exist; Merged, the changes that merged;
  *               Licensed, the code paths the tie guard's allow-list exempts
  *   Step        the observer: which event, on which artifact or change
  *
@@ -37,14 +37,16 @@
  *   scripts/alloy-check.py spec/sdlc/checks.als -o /tmp/alloy-sdlc
  *   scripts/alloy-check.py --commands spec        -- and --write to update
  *
- * THE FOUR MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
- * `tieDiscipline`, `landDiscipline` and `keepDiscipline` in checks.als are
+ * THE FIVE MECHANISMS ARE DISCIPLINES, NOT FACTS. `orderDiscipline`,
+ * `tieDiscipline`, `mergeDiscipline`, `keepDiscipline` and
+ * `removeDiscipline` in checks.als are
  * each assumed by a check and dropped by its `_Bites`, the shape
  * github/system.als's `closeDiscipline` takes, because a rule written into
  * an event is true in every world the model admits and no command can exhibit
- * its absence. The events below are therefore LOOSE: `write` does not read
- * the order, the tie or the allow-list, `land` does not read the skip rule,
- * `rename` does not read who may move a scenario.
+ * its absence. The events below are therefore LOOSE: `writeArtifact` does
+ * not read the order, the tie or the allow-list, `mergeChange` does not read
+ * the skip rule, `renameArtifact` does not read who may move a scenario,
+ * `removeArtifact` does not read what still names what it takes.
  */
 module sdlc/system
 
@@ -62,7 +64,7 @@ one sig Intent, Plan, Spec, Test, Code extends Stage {}
 
 /* WHAT EACH STAGE OWES THE NEXT: its artifact, or an absence the skip rule
    licenses, before the next stage's artifact is written. The relation is read
-   by `orderDiscipline` and by nothing structural: a `write` out of order is
+   by `orderDiscipline` and by nothing structural: a `writeArtifact` out of order is
    what `OrderedByFeeds_Bites` shows. */
 fun feeds: Stage -> Stage { Intent->Plan + Plan->Spec + Spec->Test + Test->Code }
 
@@ -96,10 +98,10 @@ sig Change {}
    a PAIRING OF TWO NAMES, `t -> k` holding where the test's name and the code
    path's name answer to each other. Both are static, because an atom is one
    text under one name: a commit that renames puts a new atom in the old
-   one's place (`rename`), and the arrows into the old atom stay on it,
+   one's place (`renameArtifact`), and the arrows into the old atom stay on it,
    outside Written. So renaming a scenario leaves every text declaring it
    pointing at nothing unless the same commit replaces those texts, while
-   renaming a test carries its text along -- `rename` copies `witnesses` and
+   renaming a test carries its text along -- `renameArtifact` copies `witnesses` and
    leaves `drives` to the new name -- which is the asymmetry
    `S4c_TestRenameBreak` and `S4d` pin.
 
@@ -125,7 +127,7 @@ sig Artifact {
 sig Html in Artifact { refines: some Artifact }
 
 var sig Written in Artifact {}
-var sig Landed  in Change {}
+var sig Merged  in Change {}
 
 /* THE CODE PATHS THE ALLOW-LIST EXEMPTS from the tie: `LEGACY` in
    scripts/check-sdlc-tie.py, the paths the tree held untied when the guard
@@ -216,13 +218,13 @@ fun witnessed: set Artifact { (Written & stage.Test).witnesses & Written }
    an absence licensed at one write is stale by landing if a later artifact
    of the same change turned the criterion false -- a scenario skipped at the
    change's first test, and a code path written after it, which is
-   `S5b_WithoutTheLandingCheck`. The moment that decides is `land`, under
-   `landDiscipline`.
+   `S5b_WithoutTheLandingCheck`. The moment that decides is `mergeChange`, under
+   `mergeDiscipline`.
 
    OR THE STAGE IS REUSED, whatever the criterion says: the
    change's tests witness a written scenario, or drive a written code path, so
    what the stage owes exists. Reuse goes stale too, from the other side -- a
-   later commit may rename what was reused -- which is why `AbsenceLicensed`
+   later commit may rename or remove what was reused -- which is why `AbsenceLicensed`
    reads it at the landing. */
 pred criterion[c: Change] { no writtenOf[c] & stage.(Test + Code) }
 pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in skippable and criterion[c]) }
@@ -230,11 +232,12 @@ pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in skippable and 
 /* ---------------- observable events ---------------- */
 
 abstract sig Event {}
-one sig Stutter, Write, Rename, Land extends Event {}
+one sig Stutter, WriteArtifact, RenameArtifact, RemoveArtifact, MergeChange extends Event {}
 
-/* The artifact a write or a rename is about, and the change whose step it
-   is: a write's own change, the change landing, and for a rename the change
-   committing it -- any change, since a later commit may rename what a landed
+/* The artifact a write, a rename or a removal is about, and the change whose
+   step it is: a write's own change, the change landing, and for a rename or a
+   removal the change committing it -- any change, since a later commit may
+   rename or remove what a landed
    change wrote. The stage is the artifact's. */
 one sig Step {
   var event:    one Event,
@@ -244,16 +247,16 @@ one sig Step {
 
 /* A commit is the one step that may move the allow-list, so every other step
    holds it where it was. */
-pred sdlcFrame { Written' = Written and Landed' = Landed and Licensed' = Licensed }
+pred sdlcFrame { Written' = Written and Merged' = Merged and Licensed' = Licensed }
 
 /* ONE COMMIT WRITING ONE NEW TEXT. Loose on the order (`orderDiscipline`),
    on the tie and on the allow-list (`tieDiscipline`). What the artifact
    witnesses and drives came with its text. */
-pred write[a: Artifact] {
-  a.change not in Landed
+pred writeArtifact[a: Artifact] {
+  a.change not in Merged
   a not in Written
-  Written' = Written + a and Landed' = Landed
-  Step.event = Write and Step.artifact = a and Step.subject = a.change
+  Written' = Written + a and Merged' = Merged
+  Step.event = WriteArtifact and Step.artifact = a and Step.subject = a.change
 }
 
 /* A COMMIT THAT RENAMES AN ARTIFACT. The text moves: `b` declares what `a`
@@ -276,26 +279,44 @@ pred write[a: Artifact] {
    as it reads a write. Nothing else moves, and the tests that enter belong to
    the changes whose tests left, so a rename adds no stage to a change, takes
    none away, and turns no criterion: what `AbsenceLicensed` and
-   `OrderedByFeeds` rest on, since neither discipline reads a rename. */
-pred rename[a, b: Artifact] {
+   `OrderedByFeeds` rest on, since neither discipline reads a rename. A
+   removal is the one step that takes a stage away, and each names it. */
+pred renameArtifact[a, b: Artifact] {
   a in Written and b not in Written
   b.change = a.change and b.stage = a.stage
-  Landed' = Landed
+  Merged' = Merged
   a not in Written' and b in Written'
   Written - Written' - a in witnesses.a & stage.Test
   Written' - Written - b in stage.Test
   (Written - Written' - a).change = (Written' - Written - b).change
   b.witnesses = a.witnesses
-  Step.event = Rename and Step.artifact = a and one Step.subject
+  Step.event = RenameArtifact and Step.artifact = a and one Step.subject
 }
 
 /* THE CHANGE MERGES. Structurally it waits on nothing: whether each absent
-   stage was LICENSED is `landDiscipline`'s, and whether what was written TIES
+   stage was LICENSED is `mergeDiscipline`'s, and whether what was written TIES
    is `tieDiscipline`'s. */
-pred land[c: Change] {
-  c not in Landed
-  Landed' = Landed + c and Written' = Written and Licensed' = Licensed
-  Step.event = Land and no Step.artifact and Step.subject = c
+pred mergeChange[c: Change] {
+  c not in Merged
+  Merged' = Merged + c and Written' = Written and Licensed' = Licensed
+  Step.event = MergeChange and no Step.artifact and Step.subject = c
+}
+
+/* A COMMIT THAT REMOVES AN ARTIFACT, and with it whatever other texts the
+   same commit deletes: a scenario with the suites declaring it, a code path
+   with its suite. `a` is the one the step is about; nothing enters and
+   nothing is renamed. Loose like the others: whether a text left behind
+   still names what left is `removeDiscipline`'s, and whether the tree is
+   still tied is `tieDiscipline`'s. The allow-list is held -- a line naming a
+   removed path is a count in the tie guard's reading, not a refusal (T5) --
+   and any change may commit it, since a later commit may remove what a
+   landed change wrote. `S9_DeadElimination` is a scenario nothing witnesses
+   leaving on its own, `S9a_ChainRemovedInOneCommit` a script leaving with
+   its suite and the scenario it witnessed. */
+pred removeArtifact[a: Artifact] {
+  a in Written and a not in Written' and Written' in Written
+  Merged' = Merged and Licensed' = Licensed
+  Step.event = RemoveArtifact and Step.artifact = a and one Step.subject
 }
 
 pred stutter {
@@ -303,13 +324,14 @@ pred stutter {
   Step.event = Stutter and no Step.artifact and no Step.subject
 }
 
-pred sdlcInit { no Written and no Landed }
+pred sdlcInit { no Written and no Merged }
 
 pred sdlcStep {
   stutter
-  or (some a: Artifact | write[a])
-  or (some a, b: Artifact | rename[a, b])
-  or (some c: Change | land[c])
+  or (some a: Artifact | writeArtifact[a])
+  or (some a, b: Artifact | renameArtifact[a, b])
+  or (some a: Artifact | removeArtifact[a])
+  or (some c: Change | mergeChange[c])
 }
 
 fact SdlcTrace { sdlcInit and always sdlcStep }

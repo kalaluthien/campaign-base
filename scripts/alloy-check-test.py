@@ -347,13 +347,13 @@ def main() -> int:
         "------State 0-------",
         f"{q}Artifact<:witnesses={{{q}Artifact$1->{q}Artifact$0}}",
         f"{q}Artifact<:drives={{{q}Artifact$1->{q}Artifact$2}}",
-        f"{q}Step<:event={{{q}Step$0->{q}Write$0}}",
+        f"{q}Step<:event={{{q}Step$0->{q}WriteArtifact$0}}",
         f"{q}Step<:artifact={{{q}Step$0->{q}Artifact$0}}",
         f"{q}Step<:subject={{}}",
         f"{q}Written={{}}",
         f"{q}Licensed={{}}",
         "------State 1 (loop)-------",
-        f"{q}Step<:event={{{q}Step$0->{q}Land$0}}",
+        f"{q}Step<:event={{{q}Step$0->{q}MergeChange$0}}",
         f"{q}Step<:subject={{{q}Step$0->{q}Change$0}}",
         f"{q}Written={{{q}Artifact$0}}",
         f"{q}Licensed={{{q}Artifact$0}}", ""])
@@ -376,8 +376,8 @@ def main() -> int:
         # A cell is `label=value`; the first case asks for the column whatever
         # its value, so the observer strip is the second case's alone.
         for name, head, tail, where in [
-                ("sdlc's `Step.event` is the event column", "ev=", "Write", s0),
-                ("sdlc's observer atom is stripped from a cell", "ev=Land", "", s1),
+                ("sdlc's `Step.event` is the event column", "ev=", "WriteArtifact", s0),
+                ("sdlc's observer atom is stripped from a cell", "ev=MergeChange", "", s1),
                 ("sdlc's `Step.artifact` is shown", "artifact=Ar0", "", s0),
                 ("sdlc's `Step.subject` is shown", "change=Ch0", "", s1),
                 ("sdlc's `witnesses` is static", "Artifact<:witnesses=Ar1->Ar0", "", static),

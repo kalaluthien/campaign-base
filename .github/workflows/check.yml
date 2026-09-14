@@ -236,7 +236,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      # `landDiscipline`, GIVEN A READER (sdlc-alloy#363): every stage the
+      # `mergeDiscipline`, GIVEN A READER (sdlc-alloy#363): every stage the
       # change has no artifact for is licensed by the criterion, or held by
       # reuse. ADVISORY: `continue-on-error` while `LEGACY` in
       # check-sdlc-tie.py holds a line, because a change writing an untied
@@ -253,7 +253,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           scripts/check-merge-review.py ${{ github.event.pull_request.number }} \
-            --repo ${{ github.repository }} --land HEAD^1
+            --repo ${{ github.repository }} --merge HEAD^1
 
       # MERGE CONDITION 1, GIVEN A READER (rule-check#274): a review read at the
       # sha being merged. This is the required-status half: with `check` in

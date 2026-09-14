@@ -16,8 +16,8 @@
                         `unknown`, and the status agrees: 0, 1, 2.
                         check-campaign-claim.py calls it on every REPORT a
                         `gh pr` verb posts, and refuses the post on `stale`.
-    check-merge-review.py <pr> --land BEFORE  [--repo OWNER/REPO]
-                        THE LANDING. Reads `landDiscipline` in
+    check-merge-review.py <pr> --merge BEFORE  [--repo OWNER/REPO]
+                        THE LANDING. Reads `mergeDiscipline` in
                         spec/sdlc/checks.als over the checkout's HEAD against
                         the tree BEFORE names: every stage the change has no
                         artifact for is one the criterion licenses. The
@@ -390,7 +390,7 @@ def change_of(before):
             "untied": [k for k in wrote_code if not tree.tied(k)]}, None
 
 
-def land(repo, pr, base, guard, before):
+def merge(repo, pr, base, guard, before):
     """Is every stage the change has no artifact for licensed at the landing?"""
     ref, why = head_ref(repo, pr)
     if why:
@@ -430,7 +430,7 @@ def land(repo, pr, base, guard, before):
                                   f"the criterion licenses", trail)
     return answer("unlicensed", f"{repo}#{pr} lands without {', '.join(refused)}, "
                                 f"which the criterion does not license",
-                  trail + ["landDiscipline in spec/sdlc/checks.als: the remedy "
+                  trail + ["mergeDiscipline in spec/sdlc/checks.als: the remedy "
                            "is to write the stage after all."])
 
 
@@ -474,8 +474,8 @@ def parse(argv, base):
                          "the sha a check run is recorded against")
     ap.add_argument("--report", metavar="FILE",
                     help="judge this REPORT body's sha instead, `-` for stdin")
-    ap.add_argument("--land", metavar="BEFORE",
-                    help="judge landDiscipline over HEAD against this ref instead")
+    ap.add_argument("--merge", metavar="BEFORE",
+                    help="judge mergeDiscipline over HEAD against this ref instead")
     try:
         return ap.parse_args(argv), None
     except ValueError as e:
@@ -503,8 +503,8 @@ def main(argv=None) -> int:
     if pattern is None:
         return answer("unknown", f"the comment-kind reading would not build: "
                                  f"{guard.FIRST_LINE_UNREADABLE}")
-    if args.land is not None:
-        return land(args.repo, args.pr, base or args.repo, guard, args.land)
+    if args.merge is not None:
+        return merge(args.repo, args.pr, base or args.repo, guard, args.merge)
     if args.report is None:
         return gate(args.repo, args.pr, pattern, args.head)
     body, why = read_body(args.report)

@@ -113,6 +113,14 @@ herdr agent start <name> --kind claude --pane <pane_id> -- <claude args...>
   with `/remote-control`: stalled at 5000 ms, the pane showing the dialog).
   Read the pane before concluding, and dismiss the dialog rather than
   re-sending.
+- **`/model <m>` and `/effort <e>` switch a running session in place, and
+  each rewrites the user's default** -- `model` and `effortLevel` in
+  `~/.claude/settings.json`, as the pane says (`saved as your default for new
+  sessions`). A session with history answers `/model` with a `Switch model?`
+  dialog, option 1 `Yes` selected, and the next prompt's Enter answers it and
+  is lost; a fresh session gets no dialog, and `/effort` gets none either.
+  The transcript's assistant `model` changes only at the next turn (probed
+  2026-09-14, claude-code 2.1.270, rule-check#431).
 - **A pane footer is stale UI, not state**: a limit-blocked session kept
   showing "2 shells still running" after `pgrep` found none. Probe the
   process table before treating a footer claim as a running job.

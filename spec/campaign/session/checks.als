@@ -225,6 +225,18 @@ pred R4_RepolessCampaign {
   }
 }
 
+/* R5. A MODEL SWITCH IS NO HANDOFF (system.als's `modelSwitch`): nobody is
+   taken over, nobody exits, every claim, campaign and name stays where it
+   was, and the address is one role. Dropping `sessionFrame` from the event,
+   or letting it name a predecessor, reddens this; `Cov_ModelSwitch` is its
+   witness, fired while a claim is held. */
+assert ModelSwitchKeepsEverySession {
+  always (Now.event = ModelSwitch implies
+    (no Who.predecessor and Exited' = Exited and claimedIssues' = claimedIssues
+     and worksOn' = worksOn and campaignNamed' = campaignNamed
+     and lone Who.addressed.role))
+}
+
 /* ---------------- commands ---------------- */
 
 -- the loss
@@ -259,6 +271,9 @@ run R3_DeleteUnderWorkingSession for 3 Issue, 1 PullRequest, 1 Campaign, 2 Sessi
 -- `- none` opens, claims and closes
 run R4_RepolessCampaign          for 2 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 
+-- a model switch moves nothing a handoff moves
+check ModelSwitchKeepsEverySession for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 0
+
 
 /* ---------------- reachability floor ----------------
  * The events this entity introduces, and every refinement it adds to a
@@ -288,6 +303,7 @@ pred Cov_ReleaseBySession  { eventually (Now.event = Release and some Who.sessio
 pred Cov_LaunchBySession   { eventually (Now.event = Launch and some Who.session) }
 pred Cov_MergeBySession    { eventually (Now.event = MergePullRequest and some Who.session) }
 pred Cov_Bound             { eventually (Now.event = FileCampaignIssue and some Binding.bound') }
+pred Cov_ModelSwitch       { eventually (Now.event = ModelSwitch and some Who.addressed and some Session.claimedIssues) }
 
 /* ---------------- commands ---------------- */
 
@@ -312,3 +328,4 @@ run Cov_ReleaseBySession  for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 M
 run Cov_LaunchBySession   for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_MergeBySession    for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
 run Cov_Bound             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1
+run Cov_ModelSwitch       for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 2 Machine, 3 Repo, 2 Branch, 4 CampaignDir, 12 steps expect 1

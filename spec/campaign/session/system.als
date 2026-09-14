@@ -145,8 +145,8 @@ fact StampedByTheHook {
    ONE READ, THREE BITS: the rule judges one call alone, so one atom with its
    bits left free is every case -- the solver tries each combination -- and a
    `one sig` needs no scope, where a new top-level sig would owe one in every
-   command that opens this module. `Long` and `Diff` are said of the file the
-   read names. */
+   command that opens this module. `Long` is said of the lines the read would
+   return, and `Diff` of the file it names. */
 one sig FileRead {}
 sig Ranged, Long, Diff in FileRead {}
 

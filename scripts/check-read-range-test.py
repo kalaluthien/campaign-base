@@ -3,7 +3,8 @@
 """Prove check-read-range.py steers a whole Read of a long file, and nothing else.
 
 The table runs `decide` against files written to a fixture directory, one
-case per outcome: steered, a diff exempt by its name or its text, a notebook,
+case per outcome: steered, a diff exempt by its name, its `diff --git` line
+or its hunks alone, a notebook,
 a ranged read, an offset near the end and one from the top, a short file at
 the threshold, a last line with no newline, a binary file, a missing one, and
 a tool that is not Read. Each is then broken in turn by a
@@ -38,7 +39,8 @@ def lines(n):
 FILES = {"long.py": lines(351), "short.py": lines(350), "review.diff": lines(400),
          "blob.bin": b"\0" + b"x\n" * 400, "big.ipynb": lines(400),
          "saved.txt": "From github.com:o/r\ndiff --git a/x b/x\n" + lines(400),
-         "open-end.py": lines(350) + "line 351"}
+         "open-end.py": lines(350) + "line 351",
+         "rtk.txt": " a.py | 2 +-\nChanges:\n@@ -1,3 +1,3 @@\n" + lines(400)}
 for name, body in FILES.items():
     (ROOT / name).write_bytes(body if isinstance(body, bytes) else body.encode())
 
@@ -68,6 +70,7 @@ CASES = {
     "an offset from the top is steered": decided("long.py", 2, "from line 1", offset=1),
     "diff exempt": decided("review.diff", 0, "a diff"),
     "a saved diff exempt by its text": decided("saved.txt", 0, "holds a diff"),
+    "a diff with hunks alone exempt": decided("rtk.txt", 0, "holds a diff"),
     "notebook": decided("big.ipynb", 0, "notebook"),
     "ranged": decided("long.py", 0, "ranged", offset=10, limit=40),
     "ranged by offset near the end": decided("long.py", 0, "52 of 351", offset=300),
@@ -82,6 +85,8 @@ MUTATIONS = [
     ("the diff exemption dropped", "if path.endswith(DIFF_SUFFIXES):", "if False:", "diff exempt"),
     ("the diff text ignored", "if DIFF_LINE.search(data):", "if False:",
      "a saved diff exempt by its text"),
+    ("the hunk header dropped", 'rb"^(diff --git |@@ -\\d+(,\\d+)? \\+\\d+)"', 'rb"^(diff --git )"',
+     "a diff with hunks alone exempt"),
     ("the notebook exemption dropped", "if path.endswith(NOTEBOOK_SUFFIX):", "if False:", "notebook"),
     ("the range ignored", 'if inp.get("limit") is not None or inp.get("pages") is not None:',
      "if False:", "ranged"),

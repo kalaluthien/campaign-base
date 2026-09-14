@@ -11,8 +11,9 @@ THE RULE, STATED HERE ONCE
   A Read naming `limit` or `pages` is ranged and passes. One naming `offset`
   alone returns the file from that line on, so those lines are what is judged.
   A diff passes, read whole: a path ending in one of DIFF_SUFFIXES, or text
-  holding a line that opens `diff --git` -- a diff the harness saved from a
-  command's output, whatever its name. A review reads its diff whole, and
+  holding a line DIFF_LINE matches -- `diff --git`, or a hunk header, which is
+  all a diff rewritten by rtk keeps -- as a diff the harness saved from a
+  command's output does, whatever its name. A review reads its diff whole, and
   every line of it is the point.
   A notebook (NOTEBOOK_SUFFIX) passes: Read shows it whole whatever the range,
   so a range is no way forward.
@@ -50,7 +51,7 @@ import sys
 
 LONG_LINES = 350
 DIFF_SUFFIXES = (".diff", ".patch")
-DIFF_LINE = re.compile(rb"^diff --git ", re.M)
+DIFF_LINE = re.compile(rb"^(diff --git |@@ -\d+(,\d+)? \+\d+)", re.M)
 NOTEBOOK_SUFFIX = ".ipynb"
 
 

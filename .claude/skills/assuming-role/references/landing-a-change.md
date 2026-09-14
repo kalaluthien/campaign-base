@@ -67,8 +67,12 @@ with no test is a claim the solver checks on its own. Every name on the line mus
 (`everyWitnessExists`): one live name ties the code path but does not cover a
 dead one beside it. `tieDiscipline` is the reading at the commit.
 
-A rename is the one commit that breaks a tie (`renameArtifact`), and the two relations
-break at different ends: `witnesses` at the scenario's
+A rename or a removal is a commit that breaks a tie (`renameArtifact`,
+`removeArtifact`). A removal breaks it by taking a suite and leaving its
+code path, or a scenario and leaving a suite that declares it, so remove
+the code path with its suite and a scenario with the suites naming it, in
+one commit (`removeDiscipline`). A rename breaks the two relations
+at different ends: `witnesses` at the scenario's
 (`S4b_ScenarioRenameBreak`), `drives` at either of its own
 (`S4_CodeRenameBreak` for the code path, `S4c_TestRenameBreak`
 for the suite). Move both ends in the same commit

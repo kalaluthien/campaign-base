@@ -138,10 +138,13 @@ pred S21_StandingBlocksTheClose {
 /* THE PERSON'S HOLD ON A SUB-ISSUE, and the claim it refuses. S22 asks for the
    trace `backlogDiscipline` must not have: a claim cut on a sub-issue in
    `Backlog`; it goes SAT the instant the discipline stops reading the label.
-   S22a is the control, as S21a is: the same claim with the hold off is still
+   S22a is the control: the same claim with the hold off is still
    reachable, so the UNSAT is the discipline's and not the model's. */
 pred S22_BacklogBlocksTheClaim {
   backlogDiscipline and eventually (Now.event = Claim and Now.issue in Backlog)
+}
+pred S22a_ControlTheClaimHappensWithTheHoldOff {
+  backlogDiscipline and eventually (Now.event = Claim and Now.issue not in Backlog)
 }
 
 /* ---------------- commands ---------------- */
@@ -158,6 +161,7 @@ run S18_PlainBaseIssue              for exactly 2 Issue, 1 PullRequest, exactly 
 run S20_TheBaseIsNeverListed          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
 
 run S21_StandingBlocksTheClose        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
+run S22a_ControlTheClaimHappensWithTheHoldOff for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
 run S22_BacklogBlocksTheClaim         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
 
 /* ---------------- properties ---------------- */

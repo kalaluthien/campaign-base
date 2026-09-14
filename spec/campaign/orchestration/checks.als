@@ -8,6 +8,13 @@ module orchestration/checks
 
 open orchestration/system
 
+/* ---------------- the property ---------------- */
+
+/* The one thing the protocol is for. */
+pred noWorkDestroyed {
+  always (Now.event = Retire implies Target.agent not in LocalOnly)
+}
+
 /* ---------------- disciplines: the shutdown ---------------- */
 
 /* Both conjuncts are load-bearing: the answer names work only the agent
@@ -1791,6 +1798,15 @@ run M2c_AFreshReviewAfterThePushLands         for 3 Issue, 1 PullRequest, 1 Camp
 
 /* ---------------- properties ---------------- */
 
+/* The shutdown protocol keeps the work it is for. `Confirmed` cleared by any
+   later `work` is what makes this green survive an agent that keeps working
+   after being confirmed; dropping either conjunct of `twoStepShutdown` finds
+   a counterexample. */
+assert TwoStepShutdownSuffices { twoStepShutdown implies noWorkDestroyed }
+
+/* Dropping the ANSWER is safe as long as the confirmation is kept. */
+assert SilenceResolutionStaysSafe { resolveSilenceExternally implies noWorkDestroyed }
+
 /* Nothing written in THIS file carries it, so it tests the composition idiom:
    dropping `githubFrame` from github/system's fall-through branch reddens it. */
 assert NoLostWork {
@@ -1941,6 +1957,8 @@ pred Cov_CloseIssueInOrchestration           { eventually Now.event = CloseIssue
 pred Cov_WriteBody            { eventually Now.event = WriteBody }
 pred Cov_OpenPullRequestInOrchestration      { eventually Now.event = OpenPullRequest }
 pred Cov_CommitLocal          { eventually Now.event = CommitLocal }
+pred Cov_StandDown        { eventually Now.event = StandDown }
+pred Cov_Retire           { eventually Now.event = Retire }
 pred Cov_Decide           { eventually Now.event = Decide }
 pred Cov_RemoveMemberInOrchestration     { eventually Now.event = RemoveMember }
 pred Cov_Acquire          { eventually Now.event = Acquire }
@@ -2004,6 +2022,9 @@ pred P8_TwoSubIssuesOneSession {
 /* ---------------- commands ---------------- */
 
 -- a death or a delete never un-completes
+-- the shutdown protocol, and rule 3's repair, destroy no work
+check TwoStepShutdownSuffices    for 2 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
+check SilenceResolutionStaysSafe for 2 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
 check NoLostWork        for 3 Issue, 2 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 0
 
 -- what a planner does not share: the work bit, the REPORT, and being a delegate
@@ -2031,6 +2052,8 @@ run Cov_CloseIssueInOrchestration           for 3 Issue, 1 PullRequest, 1 Campai
 run Cov_WriteBody            for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_OpenPullRequestInOrchestration      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
 run Cov_CommitLocal          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+run Cov_StandDown        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
+run Cov_Retire           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Decide           for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 3 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_RemoveMemberInOrchestration     for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 10 steps expect 1
 run Cov_Acquire          for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 3 Repo, 2 Branch, 1 CampaignDir, 10 steps expect 1

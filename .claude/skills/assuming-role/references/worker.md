@@ -31,7 +31,8 @@ and, on a claim, the code the sub-issue names.
 
    A question and a hand-up take one channel: a `BLOCKED` on the sub-issue
    whose `BLOCKED <name>:` line says which of the two it is, then the message
-   -- not a NOTE, a question in the pane, or a DECISION of your own.
+   -- not a NOTE, a question in the pane, or a DECISION of your own -- and
+   stop until the planner's prompt delivers its `DECISION`.
 5. **Open the pull request on the first commit**, not when the work is ready.
    The hook has already pushed the branch; a late pull request only keeps
    published work out of sight.

@@ -126,6 +126,10 @@ fun planeOf[e: Event]: lone Plane {
    that set once; the dotted `a.role` form is unambiguous and is left alone. */
 fun plannerAgents: set Agent { (Agent <: role).Planner }
 
+/* The planner of a sub-issue, while it runs: a delegate's launch and a
+   `decide` both need one, and this is the one statement of which. */
+fun livePlannersOn[i: Issue]: set Agent { plannerAgents & Live & task.i }
+
 var sig Launched in Agent {}
 var sig Live     in Agent {}
 /* THE one encoding of "only on its host": uncommitted, unpushed, or on a
@@ -360,7 +364,7 @@ pred launch[a: Agent] {
   /* A delegate is the planner's act: the launching session holds a live
      Planner atom on this sub-issue, the one that filed and distributes it. A
      session working its own claim needs none -- the one-worker shape. */
-  no a.peer implies (some p: plannerAgents | p.peer = Who.session and p.task = a.task and p in Live)
+  no a.peer implies Who.session in livePlannersOn[a.task].peer
   /* THE SUB-ISSUE'S OWN CAMPAIGN, not the launcher's `worksOn`: every other
      read of a.task goes through the sub-issue itself, and the launching
      session's campaign is only the same campaign by the binding discipline
@@ -491,10 +495,20 @@ pred blocked[a: Agent] {
   Now.event = Blocked and Now.issue = a.task and Target.agent = a and no Who.session
 }
 
+/* THE PLANNER'S, and only the planner's: a worker's own session does not
+   answer its own BLOCKED, and a session on another sub-issue does not either.
+   Where the answer is preference, scope or a destructive stake, the planner
+   asks the owner with AskUserQuestion and records what they say as this same
+   DECISION, so the owner decides through the planner and has no event of
+   their own. A planner's own BLOCKED is that case: its session is the one
+   that asks. With no planner running -- the one-worker shape -- nothing takes
+   this edge, and a BLOCKED stands until one runs (BlockedAgentDoesNotProceed).
+   When the planner answers is `answerInTurn`'s, in checks.als. */
 pred decide[a: Agent] {
   a in Live
   a in Waiting
   a.task in Who.session.worksOn.memberIssues
+  Who.session in livePlannersOn[a.task].peer
   Waiting' = Waiting - a
   Reported' = Reported and Asked' = Asked and Answered' = Answered
   keepLife and keepReview and keepShutdown and keepLaunched and keepContext

@@ -27,10 +27,14 @@ Contents: the moments below, then
    The planner holds no claim of its own.
 6. **Deliver an assignment as a prompt**, never as one of the four messages: a
    prompt is the session's own user turn, so its hooks run.
-7. **Answer a `BLOCKED`**: a `DECISION` on the sub-issue is the record and a
-   prompt into the worker's pane delivers it (`AGENTS.md` § The four
-   messages); or carry it to the owner when it is preference, scope or a
-   destructive stake. Never leave one standing. A question's `DECISION` cites
+7. **Answer a `BLOCKED` in the turn it reaches you, before anything else**,
+   one already standing when you start included: decide it yourself, or, when
+   it is preference, scope or a destructive stake, ask the owner with
+   `AskUserQuestion` and record their answer as the `DECISION`. The
+   `DECISION` on the sub-issue is the record and a prompt into the worker's
+   pane delivers it (`AGENTS.md` § The four messages); the model is `decide`
+   and `answerInTurn` in `spec/campaign/orchestration/`. A question's
+   `DECISION` cites
    the brief's line, or is the line the brief lacked; a question asked twice
    goes into the sub-issue template or the kind's reference. What reaches you
    is [worker](worker.md) step 4's. A relay is never the authority; point at

@@ -405,6 +405,40 @@ pred mergedOnCurrentReview {
 }
 
 
+/* ---------------- discipline: an escalation answered in its turn ---------------- */
+
+/* Live agents waiting on a BLOCKED whose sub-issue has a planner running. */
+fun waitingOnPlanner: set Agent { { a: Waiting & Live | some livePlannersOn[a.task] } }
+
+/* planner.md step 7: in the turn a BLOCKED reaches the planner, its first act
+   is the DECISION -- its own, or the owner's answer to AskUserQuestion -- and
+   nothing else runs first. "Reaches" covers a planner starting with one
+   already standing, so it is read off the state and not off `Blocked`. */
+pred answerInTurn {
+  always (some waitingOnPlanner implies (Now.event = Decide and Target.agent in waitingOnPlanner))
+}
+
+/* That the discipline is enough: no worker waits forever on a live planner. */
+assert WaitingWorkerIsAnswered {
+  answerInTurn implies
+    (all a: Agent | always (a in waitingOnPlanner implies eventually a not in Waiting))
+}
+
+/* The escalation round runs under the discipline: a worker's BLOCKED, then
+   the planner's DECISION. The owner's branch is this same trace, since their
+   answer is the planner's DECISION. */
+pred EscalationAnsweredInTurn {
+  answerInTurn
+  eventually (Now.event = Blocked and Target.agent.role = Worker
+              and some livePlannersOn[Target.agent.task] and after Now.event = Decide)
+}
+
+/* Restates `decide`'s planner guard, so deleting it is loud: without it a
+   worker's own session answers its own BLOCKED. */
+assert OnlyThePlannerDecides {
+  always (Now.event = Decide implies Who.session in livePlannersOn[Target.agent.task].peer)
+}
+
 /* ---------------- witnesses ---------------- */
 
 /* SAT means the disciplines forbid a counterexample rather than the protocol. */
@@ -423,6 +457,9 @@ pred ReportIsNotEvidence {
     and not complete[a.task] and after always not complete[a.task])
 }
 
+/* Held with no planner running, the one-worker shape: nothing takes `decide`
+   then. With one running, `answerInTurn` rules it out
+   (WaitingWorkerIsAnswered). */
 pred BlockedAgentDoesNotProceed {
   some a: Agent | eventually (a in Waiting and always (a in Waiting and Now.event != Work))
 }
@@ -1780,6 +1817,10 @@ run Sanity                          for exactly 2 Issue, 1 PullRequest, exactly 
 run ReportIsNotEvidence             for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
 -- BLOCKED stops the agent
 run BlockedAgentDoesNotProceed      for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 10 steps expect 1
+-- a live planner answers every BLOCKED in its turn
+check WaitingWorkerIsAnswered       for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
+run EscalationAnsweredInTurn        for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 1
+check OnlyThePlannerDecides         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 10 steps expect 0
 -- wait-for-the-answer strands a pane
 run SilentAgentIsRetirableUnderWait for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- rule 3's repair still retires it

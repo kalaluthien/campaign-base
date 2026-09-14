@@ -52,6 +52,19 @@ Contents: the moments below, then
    on the three conditions, then `reach`. The worker launches its own review;
    launch one only where a decision is in question or no worker holds the
    claim.
+10. **Survey the Scope** once per campaign (sdlc-alloy#244 DECISION): one
+    `kind:research` sub-issue whose Definition of done is the survey table
+    ([research](kind-research.md)), under six qualities -- modularity,
+    encapsulation, simplification, unification, structural completeness,
+    cognitive brevity. Deadness is decided in two parts (sdlc-alloy#421):
+    - a script prints every candidate with its reason --
+      `scripts/spec-dead-count.py --mode all` for `spec/`;
+    - an agent rules on each row by the three questions no script answers: a
+      premise never observed on this machine, a control no longer guarding a
+      live decision, two commands witnessing one behaviour;
+    - the table goes on the sub-issue as NOTEs, and waits for the owner's
+      veto there before any row is worked. Each row then routes like any
+      discovery (steps 3 and 4).
 
 Changing code is the one thing no reading licenses. Hand it to a worker: a
 session of its own on this machine, or a delegate on a claim.

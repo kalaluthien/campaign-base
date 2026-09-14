@@ -1343,12 +1343,12 @@ def segments(command):
     but the comment check wants, and it is a projection of that one rather than
     a second walk."""
     pairs, why = paired_segments(command)
-    return (None if pairs is None else [t for t, _, _ in pairs]), why
+    return (None if pairs is None else [t for t, *_ in pairs]), why
 
 
 def paired_segments(command):
-    """[(tokens, the heredoc bodies it opened, whether it is outer)], or
-    (None, why).
+    """[(tokens, the heredoc bodies it opened, whether it is outer, whether a
+    pipe feeds it)], or (None, why).
 
     `punctuation_chars` makes `;`, `|`, `&` their own tokens.
 
@@ -1428,7 +1428,15 @@ def paired_segments(command):
     # the separator before as well gave those two spellings OPPOSITE verdicts,
     # since `{` is a separator and reset it, and the suite pinned both answers
     # at once.
-    out, cur, depth = [], [], 0
+    #
+    # WHETHER A PIPE FEEDS THE SEGMENT is the separator BEFORE it, kept for
+    # the GraphQL reading alone (pr#446's third DECISION): zsh concatenates a
+    # pipe into the command it feeds with that command's own heredoc --
+    # `echo PIPE | cat <<Q` prints both, probed, where bash prints the heredoc
+    # alone -- and a group or a nested shell fed by the pipe does not. A pipe
+    # outlives the separators after it with nothing between, so `a |<newline>
+    # b` is piped, and `a | { b; }` is read as piped too, the safe side.
+    out, cur, depth, before = [], [], 0, None
     braces, closed = [], None
     for t in flat + [";"]:
         if t not in SEPARATORS:
@@ -1436,8 +1444,11 @@ def paired_segments(command):
             continue
         if cur:
             out.append([cur, depth == 0 and t not in PIPES
-                        and t != BACKGROUND])
+                        and t != BACKGROUND, before in PIPES])
             cur = []
+            before = t
+        elif before not in PIPES:
+            before = t
         if closed is not None:
             if t in PIPES or t == BACKGROUND:
                 for row in out[closed:]:
@@ -1466,10 +1477,10 @@ def paired_segments(command):
     # one.
     taken = 0
     paired = []
-    for seg, outer in list(out):
+    for seg, outer, piped in list(out):
         mine = heredocs[taken:taken + seg.count("<<")]
         taken += seg.count("<<")
-        paired.append((seg, mine, outer))
+        paired.append((seg, mine, outer, piped))
         word, rest = head(seg)
         if word is None:
             continue
@@ -1502,7 +1513,7 @@ def paired_segments(command):
             # Read the other way, `eval 'cd /tmp'; git commit --no-verify` was
             # refused over a directory holding no hook, and the reverse
             # spelling allowed a bypass over the one that does.
-            paired += [(t, h, in_this_shell and o) for t, h, o in more]
+            paired += [(t, h, in_this_shell and o, p) for t, h, o, p in more]
     # WHAT IS DELIBERATELY NOT READ, and why the line is here. A shell that
     # runs what it is HANDED -- `bash <<< '...'`, `... | bash` -- puts the
     # command in a quoted operand, where the `gh` is one word of one token.
@@ -1791,7 +1802,7 @@ def shell_findings(pairs, cwd=None):
     the call in a repository that has none, and unreadable is an allow.
     """
     out, notes, where = [], [], cwd
-    for seg, _heredocs, outer in pairs:
+    for seg, _heredocs, outer, _piped in pairs:
         word, rest = head(seg)
         # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
         # subshell, a pipeline stage, a `bash -c` string or a heredoc script
@@ -2099,31 +2110,33 @@ def merge_target(tokens):
     return words[2] if len(words) > 2 else None
 
 
-def graphql_text(tokens, heredocs, cwd):
-    """The text a `gh api graphql` segment sends -- its words, a heredoc on
-    `@-` or `--input -`, and a file named by `field=@path` or `--input path`
-    -- or None when a file it names cannot be read, or when `-` names stdin
-    and no heredoc feeds it: a pipe or a `<` this cannot read (pr#446's
-    second REVIEW, finding 1)."""
-    parts, here = list(tokens), Path(cwd) if cwd is not None else Path.cwd()
-    paths = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
-    paths += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
-    paths += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
-    for path in paths:
-        if path == "-":
-            if not heredocs:
-                return None
-            parts += heredocs
-            continue
-        resolved = Path(path) if Path(path).is_absolute() else here / path
-        try:
-            parts.append(resolved.read_text(encoding="utf-8"))
-        except OSError:
-            return None
-    return "\n".join(parts)
+def graphql_text(tokens, heredocs, piped):
+    """The text a `gh api graphql` segment sends, or None where this does not
+    read it.
+
+    AN ALLOW-LIST (pr#446's third DECISION), after three rounds of a deny-list
+    each closed the stdin spellings raised and found more. The text is read
+    from two places only: the segment's own words, when no value names a
+    file; and those words plus the ONE heredoc or here-string on the segment,
+    when `@-` or `--input -` reads stdin, no other `<` redirects it and no
+    pipe feeds it. Everything else is None, so a spelling nobody listed is
+    refused by construction: `@path`, `/dev/stdin`, `/dev/fd/0`, a FIFO,
+    `<(...)`, `< file` beside a heredoc, a pipe, two heredocs."""
+    named = [t.split("=@", 1)[1] for t in tokens if "=@" in t]
+    named += [tokens[j + 1] for j, t in enumerate(tokens[:-1]) if t == "--input"]
+    named += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
+    if not named:
+        return "\n".join(tokens)
+    if any(n != "-" for n in named) or piped or len(heredocs) != 1:
+        return None
+    # A here-string is `<<` then `<` to shlex; that `<` is the only one allowed.
+    after = {j + 1 for j, t in enumerate(tokens) if t == "<<"}
+    if any(t in ("<", "<&") and j not in after for j, t in enumerate(tokens)):
+        return None
+    return "\n".join([*tokens, *heredocs])
 
 
-def merge_kind(tokens, heredocs=(), cwd=None):
+def merge_kind(tokens, heredocs=(), piped=False):
     """How a `gh` segment merges a pull request, or None: `cli` for `gh pr
     merge`, `api` for the REST endpoint or a GraphQL merge mutation, and
     `unread` for a GraphQL write whose query this could not read."""
@@ -2135,7 +2148,7 @@ def merge_kind(tokens, heredocs=(), cwd=None):
     if any(API_MERGE.search(t) for t in tokens[1:]):
         return "api"
     if "graphql" in words:
-        text = graphql_text(tokens, list(heredocs), cwd)
+        text = graphql_text(tokens, list(heredocs), piped)
         if text is None:
             return "unread"
         if GRAPHQL_MERGE.search(text):
@@ -2173,8 +2186,9 @@ def merge_call(merges, hidden, rest, what, how, how_role, fell_back, campaign,
         if kind == "unread":
             return refuse([f"{what}: a GraphQL write whose query could not be "
                            f"read, so whether it merges could not be either.",
-                           f"Pass the query inline, or merge with "
-                           f"`{MERGE_FORM}` (rule-check#442).", *say])
+                           f"Pass the query inline or in one heredoc, or "
+                           f"merge with `{MERGE_FORM}` (rule-check#442).",
+                           *say])
         if kind == "api":
             return refuse([f"{what}: a merge through `gh api` names a number "
                            f"and no branch, so no claim can be read off it.",
@@ -2752,7 +2766,7 @@ CARVED = "its own campaign"
 
 def bash_call(command, cwd: Path, session_id=""):
     pairs, why = paired_segments(command)
-    segs = None if pairs is None else [t for t, _, _ in pairs]
+    segs = None if pairs is None else [t for t, *_ in pairs]
     if segs is None:
         # NAMES ONLY WHAT IT READ (#193 defect 2). This used to print "A gh
         # call this cannot split is not read as harmless" for a command with no
@@ -2834,7 +2848,7 @@ def bash_call(command, cwd: Path, session_id=""):
     # the shape, which names one edit, rather than the claim, which would send
     # the reader to take a claim it may already hold.
     shape, unread, unjudged, warnings, stale, pins = [], [], [], [], [], []
-    for tokens, heredocs, _outer in pairs:
+    for tokens, heredocs, _outer, _piped in pairs:
         word, rest = head(tokens)
         if word != "gh":
             continue
@@ -2916,10 +2930,10 @@ def bash_call(command, cwd: Path, session_id=""):
     # planner's licence refused it as off the campaign plane and then the
     # claim reading let any claim under the root carry it.
     merges, hidden = [], []
-    for tokens, heredocs, _outer in pairs:
+    for tokens, heredocs, _outer, piped in pairs:
         word, rest = head(tokens)
         if word == "gh":
-            kind = merge_kind(rest, heredocs, cwd)
+            kind = merge_kind(rest, heredocs, piped)
             if kind:
                 merges.append((rest, kind))
         elif hides_merge(tokens):

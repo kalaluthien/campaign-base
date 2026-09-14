@@ -856,6 +856,30 @@ def main():
               "9 REVIEW post(s)" in r.stdout
               and r.stdout.count("| w-2: | ok") == 5, r.stdout + r.stderr)
 
+        # THE SENTENCE-FORM REASON, and a prefixed `gh` (pr#444 round 2, N1
+        # and N3).
+        sentence = ("Permission for this action was denied by the Claude Code "
+                    "auto mode classifier. Reason: Blocked by classifier. If ...")
+        write(root / "-proj-d" / "s4.jsonl", [
+            assistant("m7", "2026-01-02T04:00:00Z", d, blocks=[
+                wrote("v8", "/s/r8.md"), wrote("v9", "/s/r9.md"),
+                call("t8", "gh pr comment 9 -b 'REVIEW w-3: approve'"),
+                call("t9", "time gh pr comment 9 -F /s/r8.md"),
+                call("t10", "GH_PAGER= gh pr comment 9 --body-file /s/r9.md")]),
+            user("2026-01-02T04:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t8", sentence, True), result("t9", "posted"),
+                result("t10", "posted")]}},
+        ])
+        r = machine("denials")
+        check("denials reads a reason written as a sentence, not only in brackets",
+              "2 classifier denial(s)" in r.stdout
+              and "Blocked by classifier | -proj-d" in r.stdout, r.stdout + r.stderr)
+        r = machine("review-posts")
+        check("review-posts reads that refusal, and a `gh` behind `time` or `VAR=`",
+              "12 REVIEW post(s)" in r.stdout
+              and "REFUSED Blocked by classifier" in r.stdout, r.stdout + r.stderr)
+
         r = machine("denials", "--since", "2026-01-02T00:00:00Z")
         check("a machine command refuses a corpus flag rather than ignoring it",
               r.returncode == 2 and "takes no --since" in r.stderr, r.stderr)

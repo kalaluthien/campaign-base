@@ -1181,8 +1181,11 @@ def scan_reads(corpus):
 # corpus: a refusal is a fact about the machine, not about one campaign's
 # turns, so both walk every transcript under --root, every project and no
 # window. `review-posts` is the denominator beside `denials`.
+# The reason comes in two spellings: a bracketed rule, `Reason: [Self-Approval]`,
+# and a sentence, `Reason: Blocked by classifier.` -- the second is most of them
+# (pr#444 round 2: 91 of 111 on this machine).
 DENY = re.compile(r"Permission for this action was denied by the Claude Code "
-                  r"auto mode classifier\. Reason: \[([^\]]+)\]")
+                  r"auto mode classifier\. Reason: (?:\[([^\]]+)\]|([^.]+)\.)")
 REVIEW_POST = re.compile(r"gh pr (comment|review)\b.*\bREVIEW ", re.S)
 PR_POSTS = {("pr", "comment"), ("pr", "review")}
 ASSIGN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.S)
@@ -1210,9 +1213,10 @@ def posted_review(command, written, cwd):
             m = ASSIGN.match(t)
             if m:
                 env[m.group(1)] = m.group(2)
-        if tuple(grammar.gh_words(seg)[:2]) not in PR_POSTS:
+        word, rest = grammar.head(seg)
+        if word != "gh" or tuple(grammar.gh_words(rest)[:2]) not in PR_POSTS:
             continue
-        path = grammar.flag_value(seg, grammar.BODY_FILE_VALUED)
+        path = grammar.flag_value(rest, grammar.BODY_FILE_VALUED)
         if not isinstance(path, str) or path == "-":
             continue
         path = VAR.sub(lambda v: env.get(v.group(1) or v.group(2), v.group(0)), path)
@@ -1228,7 +1232,7 @@ def denial(txt):
     """The classifier's reason when txt opens with its denial; a quote of one
     deeper in is not a denial."""
     m = DENY.search(txt)
-    return m.group(1) if m and m.start() <= 60 else None
+    return (m.group(1) or m.group(2)) if m and m.start() <= 60 else None
 
 
 def result_text(block):

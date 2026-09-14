@@ -56,7 +56,8 @@ launched (owner's DECISION, rule-check#278).
 to write the comment with the Write tool and post it in a separate Bash call
 with `gh pr comment <N> --body-file <path>`, never `gh pr review --approve`.
 The guard reads that file before the command runs and holds it to the comment
-ceiling, so a body the same call writes is refused unread. The auto-mode
+ceiling, so a body the same call writes is refused unread; it expands no
+`$VAR`, so the path is spelled out. The auto-mode
 classifier can refuse an author's session posting a review of its own
 commits, while the subagent wrote none, so the poster is the writer merge
 condition 2 names. Refused by the classifier, the reviewer stops and returns

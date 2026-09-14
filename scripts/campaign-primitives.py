@@ -45,7 +45,7 @@ complete list, and the reader concludes the thing is not there.
 WHAT IS LOCAL TO THIS REPOSITORY
 
 How a script is named and where it lives is the filing skill's,
-~/.claude/skills/filing/references/scripts.md. It states the rule this
+~/.claude/shared/hook-authoring.md. It states the rule this
 listing's two sections are the consequence of -- a reader is asked a question
 by a flow, and a guard acts without being asked -- and AGENTS.md's "Authoring a
 script or a skill" keeps that consequence as this repository's own, which is

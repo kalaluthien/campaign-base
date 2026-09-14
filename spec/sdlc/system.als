@@ -44,7 +44,8 @@
  * an event is true in every world the model admits and no command can exhibit
  * its absence. The events below are therefore LOOSE: `writeArtifact` does
  * not read the order, the tie or the allow-list, `mergeChange` does not read
- * the skip rule, `renameArtifact` does not read who may move a scenario.
+ * the skip rule, `renameArtifact` does not read who may move a scenario,
+ * `removeArtifact` does not read what still names what it takes.
  */
 module sdlc/system
 
@@ -222,7 +223,7 @@ fun witnessed: set Artifact { (Written & stage.Test).witnesses & Written }
    OR THE STAGE IS REUSED, whatever the criterion says: the
    change's tests witness a written scenario, or drive a written code path, so
    what the stage owes exists. Reuse goes stale too, from the other side -- a
-   later commit may rename what was reused -- which is why `AbsenceLicensed`
+   later commit may rename or remove what was reused -- which is why `AbsenceLicensed`
    reads it at the landing. */
 pred criterion[c: Change] { no writtenOf[c] & stage.(Test + Code) }
 pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in skippable and criterion[c]) }
@@ -230,11 +231,12 @@ pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in skippable and 
 /* ---------------- observable events ---------------- */
 
 abstract sig Event {}
-one sig Stutter, WriteArtifact, RenameArtifact, MergeChange extends Event {}
+one sig Stutter, WriteArtifact, RenameArtifact, RemoveArtifact, MergeChange extends Event {}
 
-/* The artifact a write or a rename is about, and the change whose step it
-   is: a write's own change, the change landing, and for a rename the change
-   committing it -- any change, since a later commit may rename what a landed
+/* The artifact a write, a rename or a removal is about, and the change whose
+   step it is: a write's own change, the change landing, and for a rename or a
+   removal the change committing it -- any change, since a later commit may
+   rename or remove what a landed
    change wrote. The stage is the artifact's. */
 one sig Step {
   var event:    one Event,
@@ -276,7 +278,8 @@ pred writeArtifact[a: Artifact] {
    as it reads a write. Nothing else moves, and the tests that enter belong to
    the changes whose tests left, so a rename adds no stage to a change, takes
    none away, and turns no criterion: what `AbsenceLicensed` and
-   `OrderedByFeeds` rest on, since neither discipline reads a rename. */
+   `OrderedByFeeds` rest on, since neither discipline reads a rename. A
+   removal is the one step that takes a stage away, and each names it. */
 pred renameArtifact[a, b: Artifact] {
   a in Written and b not in Written
   b.change = a.change and b.stage = a.stage
@@ -298,6 +301,22 @@ pred mergeChange[c: Change] {
   Step.event = MergeChange and no Step.artifact and Step.subject = c
 }
 
+/* A COMMIT THAT REMOVES AN ARTIFACT, and with it whatever other texts the
+   same commit deletes: a scenario with the suites declaring it, a code path
+   with its suite. `a` is the one the step is about; nothing enters and
+   nothing is renamed. Loose like the others: whether a text left behind
+   still names what left is `removeDiscipline`'s, and whether the tree is
+   still tied is `tieDiscipline`'s. The allow-list is held -- a line naming a
+   removed path is a count in the tie guard's reading, not a refusal (T5) --
+   and any change may commit it, since a later commit may remove what a
+   landed change wrote. `S9_DeadElimination` is a scenario nothing witnesses
+   leaving on its own. */
+pred removeArtifact[a: Artifact] {
+  a in Written and a not in Written' and Written' in Written
+  Merged' = Merged and Licensed' = Licensed
+  Step.event = RemoveArtifact and Step.artifact = a and one Step.subject
+}
+
 pred stutter {
   sdlcFrame
   Step.event = Stutter and no Step.artifact and no Step.subject
@@ -309,6 +328,7 @@ pred sdlcStep {
   stutter
   or (some a: Artifact | writeArtifact[a])
   or (some a, b: Artifact | renameArtifact[a, b])
+  or (some a: Artifact | removeArtifact[a])
   or (some c: Change | mergeChange[c])
 }
 

@@ -2,9 +2,9 @@
  * The disciplines over sdlc/system and the witnesses -- a full chain, a
  * prose-only change with nothing below its plan, the tie broken by a rename at
  * each of its three ends, each input of the skip rule, reuse being a change
- * that adds no feature -- then what must hold under each discipline, the
- * counterexample each one's absence admits, and the floor that says every
- * event is reachable at all.
+ * that adds no feature, a scenario nothing witnesses removed -- then what
+ * must hold under each discipline, the counterexample each one's absence
+ * admits, and the floor that says every event is reachable at all.
  * sdlc/system.als is this entity's entry point.
  */
 module sdlc/checks
@@ -45,10 +45,11 @@ pred orderDiscipline {
    allow-list exempts, and every witness it declares names a scenario. Read
    on the tree AFTER the commit, so a rename that leaves a name dangling is
    refused -- even where another name still ties the code path
-   (`WitnessesResolve_Bites`). This is the pre-commit check the campaign's
-   Scope names, scripts/check-sdlc-tie.py. */
+   (`WitnessesResolve_Bites`), and so is a removal that takes a suite and
+   leaves its code path, or takes a scenario a suite still declares. This is
+   the pre-commit check the campaign's Scope names, scripts/check-sdlc-tie.py. */
 pred commitCheck {
-  always ((Step.event in WriteArtifact + RenameArtifact) implies after (everyCodeHasScenario and everyWitnessExists))
+  always ((Step.event in WriteArtifact + RenameArtifact + RemoveArtifact) implies after (everyCodeHasScenario and everyWitnessExists))
 }
 /* THE ALLOW-LIST NEVER GROWS. Without it the commit check is green over any
    debt at all: a commit writes an untied code path and lists it in the same
@@ -63,24 +64,42 @@ pred tieDiscipline { commitCheck and licenceNeverGrows }
    is when it lands. A landing is a merge, so this reading belongs where the
    merge is gated -- the pull request's `check` -- and not to the commit,
    where a test written before its code path would read as an unlicensed
-   absence of Code. scripts/check-merge-review.py --land is that reading. */
+   absence of Code. scripts/check-merge-review.py --merge is that reading. */
 pred mergeDiscipline {
   always (Step.event = MergeChange implies all s: absentStages[Step.subject] | maySkip[Step.subject, s])
 }
 
 /* A CHANGE THAT ADDS NO FEATURE TAKES NO SCENARIO AWAY: no commit of a
    change with no scenario of its own moves one out of the tree. A write never
-   removes, so a rename is the step it bites. Read by names, as
-   scripts/check-sdlc-tie.py reads it, a commit that leaves the command list as
-   it was keeps every scenario by definition; what the guard refuses, as T8,
-   is the consequence, `FeaturelessKeeps`, over an edit this model has no step
-   for -- a suite's declaration rewritten, or a suite deleted, in place. */
+   removes, so a rename is the step it bites; a removal is left out of its
+   scope, a feature change by name as the guard reads a scenario's removal.
+   Read by names, as scripts/check-sdlc-tie.py reads it, a commit that leaves
+   the command list as it was keeps every scenario by definition; what the
+   guard refuses, as T8, is the consequence, `FeaturelessKeeps`, over two
+   edits this discipline does not read -- a suite's declaration rewritten in
+   place, which this model has no step for, and a suite deleted in place,
+   which is `removeArtifact`. */
 pred keepDiscipline {
   always ((Step.event in WriteArtifact + RenameArtifact and featureless[Step.subject])
           implies Written & (stage.Spec - Html) in Written')
 }
 
-pred allDisciplines { orderDiscipline and tieDiscipline and mergeDiscipline and keepDiscipline }
+/* A REMOVAL LEAVES NO NAME BEHIND: after the step no written text names what
+   left through `witnesses` or `refines`, unless that text left in the same
+   step -- an artifact goes with everything naming it, in one commit. Under
+   `tieDiscipline` its `witnesses` half is `everyWitnessExists` read after the
+   removal; `refines`, an html form's names, is the half nothing else reads,
+   so it is what `RemovalLeavesNoDangling_Bites` exhibits. `drives` is not
+   read: a test may name a code path not yet written, and the tie guard
+   refuses no suite whose code path is gone. scripts/check-sdlc-tie.py reads
+   it as T3 and T6. */
+pred removeDiscipline {
+  always (Step.event = RemoveArtifact implies no Written'.(witnesses + refines) & (Written - Written'))
+}
+
+pred allDisciplines {
+  orderDiscipline and tieDiscipline and mergeDiscipline and keepDiscipline and removeDiscipline
+}
 
 /* ---------------- witnesses ---------------- */
 
@@ -231,6 +250,27 @@ pred S8_FeaturelessChange {
   }
 }
 
+/* DEAD ELIMINATION: a scenario no suite witnesses leaves the tree on its
+   own, beside a code path that stays tied through another. What makes a
+   scenario dead is judged outside the model; this says only how it leaves. */
+pred S9_DeadElimination {
+  allDisciplines
+  eventually (Step.event = RemoveArtifact and Step.artifact.stage = Spec
+              and Step.artifact not in witnessed and Written' = Written - Step.artifact
+              and some Written & stage.Code and everyCodeHasScenario and after everyCodeHasScenario)
+}
+
+/* A WITNESSED SCENARIO LEAVES WITH THE SUITES DECLARING IT, in one commit:
+   the removal the tie guard admits, and the one a step taking one artifact
+   at a time could not make -- the suite left behind would declare a dead
+   name, and a suite taken first would untie its code path. */
+pred S9a_ScenarioRemovedWithItsSuites {
+  allDisciplines
+  eventually (Step.event = RemoveArtifact and Step.artifact.stage = Spec
+              and Step.artifact in witnessed and Step.artifact not in Written'
+              and some witnesses.(Step.artifact) & (Written - Written'))
+}
+
 /* ---------------- the order ---------------- */
 
 /* Under `orderDiscipline`, every stage a change has written stands on each
@@ -239,18 +279,22 @@ pred S8_FeaturelessChange {
    the write -- a later artifact of the same change can turn it false, and the
    order still held (`S5b_WithoutTheLandingCheck`). Without the discipline the
    same shape has a counterexample, and `OrderedByFeeds_Bites` demands it: a
-   code path written before the scenario that would have described it. */
+   code path written before the scenario that would have described it. A
+   removal takes a stage away from the change that wrote it, so a stage
+   written on a feeding stage since removed stands on that removal. */
 assert OrderedByFeeds {
   orderDiscipline implies always
     all c: Change, s: writtenStages[c], p: feeds.s |
       p in writtenStages[c]
       or once (Step.event = WriteArtifact and Step.artifact in change.c & stage.s and maySkip[c, p])
+      or once (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p)
 }
 pred OrderedByFeeds_Bites {
   not orderDiscipline
   eventually some c: Change, s: writtenStages[c], p: feeds.s |
     p not in writtenStages[c]
     and historically not (Step.event = WriteArtifact and Step.artifact in change.c & stage.s and maySkip[c, p])
+    and historically not (Step.event = RemoveArtifact and some (Written - Written') & change.c & stage.p)
 }
 
 /* ---------------- the tie ---------------- */
@@ -313,17 +357,20 @@ assert FormsTieNothing {
    nothing more, and a rename keeps its stages -- or was reused when it
    landed. Reuse is read with `once` because it
    does not stay: a later rename can take the reused scenario away. Without
-   the discipline: a change lands with an absence nothing licenses. */
+   the discipline: a change lands with an absence nothing licenses. A removal
+   since the merge is the one other way a landed change loses a stage. */
 assert AbsenceLicensed {
   mergeDiscipline implies always all c: Merged, s: absentStages[c] |
     (s in skippable and criterion[c])
     or once (Step.event = MergeChange and Step.subject = c and s in reusedStages[c])
+    or once (Step.event = RemoveArtifact and c in Merged and some (Written - Written') & change.c & stage.s)
 }
 pred AbsenceLicensed_Bites {
   not mergeDiscipline
   eventually some c: Merged, s: absentStages[c] |
     not (s in skippable and criterion[c])
     and historically not (Step.event = MergeChange and Step.subject = c and s in reusedStages[c])
+    and historically not (Step.event = RemoveArtifact and c in Merged and some (Written - Written') & change.c & stage.s)
 }
 
 /* ---------------- the keep rule ---------------- */
@@ -344,6 +391,23 @@ pred FeaturelessKeeps_Bites {
               and witnessed not in witnessed')
 }
 
+/* ---------------- the removal rule ---------------- */
+
+/* Under `removeDiscipline`, a removal from a tree whose every declared name
+   resolves leaves one whose every declared name resolves: nothing the step
+   takes is still named, and nothing enters. Without it, and with every other
+   discipline kept: a scenario leaves while an html form still refines it. */
+assert RemovalLeavesNoDangling {
+  removeDiscipline implies always
+    ((Step.event = RemoveArtifact and Written.(witnesses + refines) in Written)
+     implies Written'.(witnesses + refines) in Written')
+}
+pred RemovalLeavesNoDangling_Bites {
+  orderDiscipline and tieDiscipline and mergeDiscipline and keepDiscipline
+  eventually (Step.event = RemoveArtifact and Written.(witnesses + refines) in Written
+              and Written'.(witnesses + refines) not in Written')
+}
+
 /* ---------------- reachability floor ----------------
  * An event no trace can reach silently removes a whole question from the
  * commands above, and an over-tight frame is the cheapest way to cause it
@@ -351,6 +415,7 @@ pred FeaturelessKeeps_Bites {
  */
 pred Cov_WriteArtifact  { eventually Step.event = WriteArtifact }
 pred Cov_RenameArtifact { eventually Step.event = RenameArtifact }
+pred Cov_RemoveArtifact { eventually Step.event = RemoveArtifact }
 pred Cov_MergeChange   { eventually Step.event = MergeChange }
 
 /* ---------------- commands ---------------- */
@@ -367,6 +432,8 @@ run S4d_TestRenameWitnessLoss  for exactly 1 Change, exactly 6 Artifact, 10 step
 run S5a_WithoutTheCommitCheck  for 2 Change, 6 Artifact, 10 steps expect 0
 run S5b_WithoutTheLandingCheck for 2 Change, 6 Artifact, 10 steps expect 1
 run S6a_DevelopmentTestWaiver  for exactly 1 Change, exactly 3 Artifact, 10 steps expect 1
+run S9_DeadElimination        for exactly 1 Change, exactly 6 Artifact, 10 steps expect 1
+run S9a_ScenarioRemovedWithItsSuites for exactly 1 Change, exactly 5 Artifact, 10 steps expect 1
 -- S8 needs eight commits, so no trace shorter than nine states holds it; the
 -- floor spares the solver refuting each shorter length, past ten minutes without it
 run S8_FeaturelessChange       for 2 Change, 7 Artifact, 9..10 steps expect 1
@@ -395,7 +462,12 @@ run   AbsenceLicensed_Bites    for 2 Change, 6 Artifact, 10 steps expect 1
 check FeaturelessKeeps         for 2 Change, 6 Artifact, 10 steps expect 0
 run   FeaturelessKeeps_Bites   for 2 Change, 6 Artifact, 10 steps expect 1
 
+-- the removal rule: a removal leaves no name behind under it, and does without it
+check RemovalLeavesNoDangling  for 2 Change, 6 Artifact, 10 steps expect 0
+run   RemovalLeavesNoDangling_Bites for 2 Change, 6 Artifact, 10 steps expect 1
+
 -- every own event fires in some trace
 run Cov_WriteArtifact   for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_RenameArtifact  for 2 Change, 4 Artifact, 8 steps expect 1
+run Cov_RemoveArtifact  for 2 Change, 4 Artifact, 8 steps expect 1
 run Cov_MergeChange    for 2 Change, 4 Artifact, 8 steps expect 1

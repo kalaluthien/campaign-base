@@ -174,7 +174,7 @@ pred deleteDir[t: CampaignDir] {
    installer (scripts/install-hooks.sh), and otherwise a shim carrying the machine-wide
    no-main-commits guard AND the claim gate; acquire-repo.sh verifies the guard is chained on
    both paths, and refuses to install a gate it cannot run. That the shim also carries the gate
-   is half of what `acquired` below is. For a repository shipping this base's installer, one
+   is what `acquired` below is. For a repository shipping this base's installer, one
    writer owns the slot
    -- the installer, which adopts the shim in either of its shapes and refuses anything else --
    because two writers left every delegate clone with no hook of the repository's own, and a

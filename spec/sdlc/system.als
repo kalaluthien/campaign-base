@@ -79,10 +79,10 @@ fun skippable: set Stage { Spec + Test + Code }
    on the sub-issue, and its reference under
    .claude/skills/assuming-role/references/, kind-<k>.md, states this set in
    one line, and a sub-issue with no kind takes `development`'s. The two
-   profiles in checks.als (`developmentProfile`, `narrowingProfile`) are what those lines derive from -- the second a
-   profile no kind states, kept as the only one that
-   narrows anything, and so the only one that witnesses this half of
-   `maySkip`. No kind is an atom here: the model owns how a
+   profiles in checks.als (`developmentProfile`, `narrowingProfile`) are what
+   those lines derive from -- the second a profile no kind states, kept as the
+   only one that narrows anything, and so the only one that witnesses this
+   half of `maySkip`. No kind is an atom here: the model owns how a
    profile and a change combine, and the kinds own their profiles, so adding
    a kind changes no model. Reuse is the third input, and licenses an absence
    without either of the other two.

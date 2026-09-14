@@ -777,8 +777,8 @@ pred R11_HolderThroughAnotherCampaignsDir {
    launched into such a clone, because the clone it starts in is where it
    commits; and a commit on campaign work is made in one, because that is
    where the claim gate runs -- a member repository ships no installer.
-   Neither failure is observable: an ungated commit looks like a gated one
-   that passed.
+   The commit's failure is not observable: an ungated commit looks like a
+   gated one that passed.
 
    Delegates only for the launch: a session launching an in-process subagent,
    or working by its own hands, starts no process in a clone, and its commits

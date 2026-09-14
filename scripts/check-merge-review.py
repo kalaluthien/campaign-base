@@ -69,15 +69,15 @@ WHAT THE LANDING READS
 The sub-issue is the one the head branch claims -- check-campaign-claim.py's
 `claim_issue` -- and from it `## Intent`, `## Plan` and the `kind:` label,
 through campaign-tracker.py's own readers. The kind's profile is the
-`optional = ...` line of its reference, kind-<k>.md in the tree judged; a
-kind with none, and a sub-issue with no label, take `development`'s,
-kind-development.md. The change is the paths `git diff BEFORE HEAD` touches, and the tree
-is HEAD's, both read by check-sdlc-tie.py's own functions. As the model says,
-an artifact the change REUSES is the change's: a code path it wrote holds Test
-through its suite and Spec through a scenario that suite witnesses, and a
-suite it wrote holds Code through the path it drives. Spec is also held by a
-rewritten spec/commands.snapshot.json -- a command added, renamed or removed.
-The criterion is that the change wrote no suite and no code path.
+`optional = ...` line of its reference, kind-<k>.md in the tree judged; a kind
+with none, and a sub-issue with no label, take `development`'s,
+kind-development.md. The change is the paths `git diff BEFORE HEAD` touches,
+and the tree is HEAD's, both read by check-sdlc-tie.py's own functions. As the
+model says, an artifact the change REUSES is the change's: a code path it wrote
+holds Test through its suite and Spec through a scenario that suite witnesses,
+and a suite it wrote holds Code through the path it drives. Spec is also held
+by a rewritten spec/commands.snapshot.json -- a command added, renamed or
+removed. The criterion is that the change wrote no suite and no code path.
 
 The model's stages are per change, not per path, so a change writing one tied
 and one untied code path holds all three: the untied ones are printed by name

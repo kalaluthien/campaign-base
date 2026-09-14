@@ -3,9 +3,10 @@
 """Prove `acquire-repo.sh` leaves a clone with what a delegate needs: a commit gate.
 
 #190: `install_commit_guard` ran a clone's own `scripts/install-hooks.sh` only
-when the clone shipped one, and a member repository ships none, so every member clone got the machine-wide
-no-main-commits guard and NO claim gate -- while check-campaign-claim.py went on
-calling that clone campaign work whose shell writes "land at the commit".
+when the clone shipped one, and a member repository ships none, so every member
+clone got the machine-wide no-main-commits guard and NO claim gate -- while
+check-campaign-claim.py went on calling that clone campaign work whose shell
+writes "land at the commit".
 #214: the two decisions about an existing pre-commit -- may this one be
 overwritten, and did the repository's own installer leave one chaining the
 guard -- were both `grep -q 'no-main-commits'` over the whole file, so a hook

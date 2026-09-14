@@ -2105,6 +2105,10 @@ MERGE_FORM = "gh pr merge <slug>/<issue>-<topic> -R <owner/repo>"
 API_MERGE = re.compile(r"(?:^|/)repos/[^/]+/[^/]+/pulls/\d+/merge/?(?:[?#].*)?$")
 GRAPHQL_MERGE = re.compile(
     r"\b(?:mergePullRequest|enablePullRequestAutoMerge|enqueuePullRequest)\b")
+# The GraphQL endpoint by its last path segment, so `graphql`, `/graphql` and
+# `https://api.github.com/graphql` are one endpoint (pr#446's fourth DECISION,
+# row 2), with API_MERGE's optional query string.
+GRAPHQL_ENDPOINT = re.compile(r"(?:^|/)graphql/?(?:[?#].*)?$")
 
 
 def merge_target(tokens):
@@ -2158,7 +2162,7 @@ def merge_kind(tokens, heredocs=(), piped=False):
         return None
     if any(API_MERGE.search(t) for t in tokens[1:]):
         return "api"
-    if "graphql" in words:
+    if any(GRAPHQL_ENDPOINT.search(w) for w in words[1:]):
         text = graphql_text(tokens, list(heredocs), piped)
         if text is None:
             return "unread"

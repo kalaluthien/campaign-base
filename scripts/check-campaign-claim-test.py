@@ -3212,6 +3212,12 @@ def main():
              "could not be read"),
             ("gh api graphql -F query=@- <<< 'mutation { mergePullRequest("
              "input: {}) { clientMutationId } }'", "through `gh api`"),
+            # THE ENDPOINT BY ITS LAST SEGMENT (pr#446's fourth DECISION, row 2).
+            ("gh api /graphql -f query='mutation { mergePullRequest(input: "
+             "{}) { clientMutationId } }'", "through `gh api`"),
+            ("gh api https://api.github.com/graphql -f query='mutation { "
+             "mergePullRequest(input: {}) { clientMutationId } }'",
+             "through `gh api`"),
             ("echo 7 | xargs gh pr merge", "cannot read for its branch"),
             ("G=gh; $G pr merge 7 --merge", "cannot read for its branch"),
         ]:
@@ -3781,7 +3787,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 560
+    EXPECTED = 564
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

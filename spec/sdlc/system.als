@@ -54,8 +54,7 @@ module sdlc/system
    `## Plan`; spec is a `run` or `check` command under spec/, by the name
    spec/commands.snapshot.json records; test is a case in a scripts/*-test.*
    suite; code is a path in scripts/ or .claude/ that a test drives. A member
-   repository maps the last three onto its own tree, and the profile line of
-   its sub-issue's kind says which of them it has at all.
+   repository maps the last three onto its own tree.
 
    An html form of a scenario, `Html` below, is a Spec artifact and no stage
    of its own; nothing requires one, and this base keeps none. */
@@ -73,25 +72,18 @@ fun feeds: Stage -> Stage { Intent->Plan + Plan->Spec + Spec->Test + Test->Code 
    `campaign-claim take` already refuses a sub-issue without `## Plan`. */
 fun skippable: set Stage { Spec + Test + Code }
 
-/* A CHANGE CARRIES ITS KIND'S PROFILE: `optional`, the skippable stages the
-   sub-issue's kind lets it skip at all. One input to `maySkip`, the criterion
-   being the other; neither alone licenses a skip. A kind is a `kind:<k>` label
-   on the sub-issue, and its reference under
-   .claude/skills/assuming-role/references/, kind-<k>.md, states this set in
-   one line, and a sub-issue with no kind takes `development`'s. The two
-   profiles in checks.als (`developmentProfile`, `narrowingProfile`) are what
-   those lines derive from -- the second a profile no kind states, kept as the
-   only one that narrows anything, and so the only one that witnesses this
-   half of `maySkip`. No kind is an atom here: the model owns how a
-   profile and a change combine, and the kinds own their profiles, so adding
-   a kind changes no model. Reuse is the third input, and licenses an absence
-   without either of the other two.
+/* A CHANGE IS ITS ARTIFACTS AND NOTHING MORE. Which stages it may skip is
+   `maySkip`'s: any skippable stage under the criterion, or one it reuses. A
+   sub-issue's `kind:<k>` label picks its reference under
+   .claude/skills/assuming-role/references/, kind-<k>.md, which says what its
+   changes write; no kind narrows the skip, so no kind is an atom here and
+   adding one changes no model.
 
    A SKIPPED STAGE IS AN ABSENT ARTIFACT. Nothing records a waiver: the
    stages a change has no artifact for are its skips, and whether each is
    licensed is read off the change as it stands -- by the order at each write,
    and by the landing check at the merge. */
-sig Change { optional: set Stage }
+sig Change {}
 
 /* ONE TEXT UNDER ONE NAME: what a stage produced for a change, what it
    witnesses and what it drives. An artifact is its writer's alone: a change
@@ -154,7 +146,6 @@ var sig Landed  in Change {}
 var sig Licensed in Artifact {}
 
 fact SdlcWellFormed {
-  all c: Change | c.optional in skippable
   /* WHICH STAGE MAY CARRY WHICH ARROW. A test is the one artifact that
      declares a scenario, and the one that pairs with a code path; nothing else
      carries either arrow, which is what makes `tie` a fact about tests. */
@@ -214,8 +205,8 @@ pred everyWitnessExists { all t: Written | t.witnesses in Written }
 /* THE WRITTEN SCENARIOS SOME WRITTEN TEST WITNESSES. */
 fun witnessed: set Artifact { (Written & stage.Test).witnesses & Written }
 
-/* THE SKIP RULE. A stage may be skipped when the kind's profile lets it be
-   AND the criterion holds of the change: it has written no test and no code
+/* THE SKIP RULE. A skippable stage may be skipped when the criterion holds
+   of the change: it has written no test and no code
    path -- nothing runs. One criterion serves all three skippable stages, a
    fact about the change's artifacts and not a judgement: Spec because
    nothing below it exists to formalise, and Test and Code together because
@@ -229,13 +220,13 @@ fun witnessed: set Artifact { (Written & stage.Test).witnesses & Written }
    `S5b_WithoutTheLandingCheck`. The moment that decides is `land`, under
    `landDiscipline`.
 
-   OR THE STAGE IS REUSED, whatever the profile and the criterion say: the
+   OR THE STAGE IS REUSED, whatever the criterion says: the
    change's tests witness a written scenario, or drive a written code path, so
    what the stage owes exists. Reuse goes stale too, from the other side -- a
    later commit may rename what was reused -- which is why `AbsenceLicensed`
    reads it at the landing. */
 pred criterion[c: Change] { no writtenOf[c] & stage.(Test + Code) }
-pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in c.optional and criterion[c]) }
+pred maySkip[c: Change, s: Stage] { s in reusedStages[c] or (s in skippable and criterion[c]) }
 
 /* ---------------- observable events ---------------- */
 

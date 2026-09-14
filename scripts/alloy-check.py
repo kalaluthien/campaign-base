@@ -482,7 +482,6 @@ VARYING = [
     ("OnDisk", "dirs"),
     ("CampaignDir<:checkedOut", "co"),
     # synchronization
-    ("BaseBehind", "behind"),
     ("BaseUnpushed", "unpushed"),
     ("CloneBehind", "cloneBehind"),
     # session
@@ -510,10 +509,10 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
           "CampaignDir<:campaign", "CampaignDir<:machine", "Session<:machine",
           "Agent<:role", "Agent<:task", "Agent<:host", "Agent<:launcher",
           "Agent<:branch",
-          # sdlc: which change an artifact is of and at which stage, what
-          # it witnesses and drives, and what the change's kind lets it skip
+          # sdlc: which change an artifact is of and at which stage, and
+          # what it witnesses and drives
           "Artifact<:change", "Artifact<:stage", "Artifact<:witnesses",
-          "Artifact<:drives", "Change<:optional"]
+          "Artifact<:drives"]
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 

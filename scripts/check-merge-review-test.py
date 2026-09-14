@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush, M2c_AFreshReviewAfterThePushLands, S5b_WithoutTheLandingCheck, S2a_ProseOnlyChange, S6_NarrowingTestWaiver
+# witnesses: M2_MergeInTheStateAfterAPush, M2b_TheRuleExcludesTheStalePush, M2c_AFreshReviewAfterThePushLands, S5b_WithoutTheLandingCheck, S2a_ProseOnlyChange
 """Prove check-merge-review refuses on every branch it claims to refuse on.
 
 One case per refusal, each named after the branch it exercises, and each one
@@ -96,15 +96,11 @@ def call(bindir, *args, stdin=None, cwd=None):
 
 
 # THE LANDING'S FIXTURE: a tree on `main` holding one tied code path, a.py, and
-# one untied, c.py, `development`'s profile line, and a change committed on top of
-# it. The sub-issue carries both sections unless a case takes one away. No kind
-# on this tree narrows its profile, so a case that needs one writes its own
-# reference: the reader reads the profile from the tree it judges.
+# one untied, c.py, and a change committed on top of it. The sub-issue carries
+# both sections unless a case takes one away.
 TREE = {"spec/commands.snapshot.json": '{"commands": [["spec/x/checks.als", "run", "S1"]]}\n',
         "scripts/a.py": "x = 1\n", "scripts/a-test.py": "# witnesses: S1\n",
-        "scripts/c.py": "x = 1\n", "README.md": "hi\n",
-        ".claude/skills/assuming-role/references/kind-development.md": "`optional = skippable`\n"}
-RESEARCH = ".claude/skills/assuming-role/references/kind-research.md"
+        "scripts/c.py": "x = 1\n", "README.md": "hi\n"}
 SECTIONS = "## Intent\n- i\n## Plan\n- p\n"
 
 
@@ -396,39 +392,6 @@ def main() -> int:
               (word, code) == ("licensed", 0)
               and "criterion (nothing runs): holds" in text, f"{word} {code} {text}")
 
-        # A sub-issue with no `kind:` label reads `development`'s reference:
-        # nothing else in the tree states a profile for it.
-        word, code, text = land("nokind", {"README.md": "bye\n"},
-                                issue={**sub_issue(), "labels": []})
-        check("a sub-issue with no kind reads development's profile",
-              (word, code) == ("licensed", 0)
-              and "kind-development.md" in text, f"{word} {code} {text}")
-
-        # A kind whose reference is absent from the tree takes `development`'s.
-        word, code, text = land("nofile", {"README.md": "bye\n"},
-                                issue=sub_issue("research"))
-        check("a kind with no reference file reads development's profile",
-              (word, code) == ("licensed", 0)
-              and "kind-development.md" in text, f"{word} {code} {text}")
-
-        # S6_NarrowingTestWaiver: the profile, not the criterion, refuses.
-        word, code, text = land("narrow", {"README.md": "bye\n"},
-                                issue=sub_issue("research"),
-                                base={RESEARCH: "`optional = Spec`\n"})
-        check("a prose-only change under a profile narrowed to Spec lands unlicensed",
-              (word, code) == ("unlicensed", 1) and "without Test, Code" in text
-              and "optional = Spec` from" in text, f"{word} {code} {text}")
-
-        # The profile is HEAD's: a wider copy left on disk uncommitted is not
-        # the tree judged, and must not license what HEAD's profile refuses.
-        word, code, text = land("disk", {"README.md": "bye\n"},
-                                issue=sub_issue("research"),
-                                base={RESEARCH: "`optional = Spec`\n"},
-                                disk={RESEARCH: "`optional = skippable`\n"})
-        check("the profile is read from HEAD, not an uncommitted copy on disk",
-              (word, code) == ("unlicensed", 1) and "optional = Spec` from" in text,
-              f"{word} {code} {text}")
-
         word, code, text = land("snapshot", {"scripts/b.py": "x = 1\n",
                                              "scripts/b-test.py": "x = 1\n",
                                              "spec/commands.snapshot.json": '{"commands": []}\n'})
@@ -443,11 +406,7 @@ def main() -> int:
               f"{word} {code} {text}")
 
         for case, issue, base, says in (
-                ("noissue", "not json at all", None, "could not parse"),
-                ("twokinds", sub_issue("research", "development"), None, "`kind:` labels"),
-                ("noline", sub_issue("research"), {RESEARCH: "no profile\n"}, "carries no"),
-                ("badword", sub_issue("research"), {RESEARCH: "`optional = Frob`\n"},
-                 "no skippable stage")):
+                ("noissue", "not json at all", None, "could not parse"),):
             word, code, text = land(case, {"README.md": "bye\n"}, issue=issue, base=base)
             check(f"--land answers unknown: {says}",
                   (word, code) == ("unknown", 2) and says in text, f"{word} {code} {text}")

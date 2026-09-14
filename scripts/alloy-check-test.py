@@ -345,7 +345,6 @@ def main() -> int:
     q = "scenarios/system/"
     trace = "\n".join([
         "------State 0-------",
-        f"{q}Change<:optional={{{q}Change$0->{q}Test$0}}",
         f"{q}Artifact<:witnesses={{{q}Artifact$1->{q}Artifact$0}}",
         f"{q}Artifact<:drives={{{q}Artifact$1->{q}Artifact$2}}",
         f"{q}Step<:event={{{q}Step$0->{q}Write$0}}",
@@ -381,7 +380,6 @@ def main() -> int:
                 ("sdlc's observer atom is stripped from a cell", "ev=Land", "", s1),
                 ("sdlc's `Step.artifact` is shown", "artifact=Ar0", "", s0),
                 ("sdlc's `Step.subject` is shown", "change=Ch0", "", s1),
-                ("sdlc's `Change.optional` is static", "Change<:optional=Ch0->Test", "", static),
                 ("sdlc's `witnesses` is static", "Artifact<:witnesses=Ar1->Ar0", "", static),
                 ("sdlc's `drives` is static", "Artifact<:drives=Ar1->Ar2", "", static),
                 ("sdlc's `Licensed` is a column that varies", "licensed=Ar0", "", s1)]:

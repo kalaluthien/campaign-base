@@ -20,8 +20,8 @@
                         THE LANDING. Reads `landDiscipline` in
                         spec/sdlc/checks.als over the checkout's HEAD against
                         the tree BEFORE names: every stage the change has no
-                        artifact for is one its kind's profile and the
-                        criterion license. The first word is `licensed`,
+                        artifact for is one the criterion licenses. The
+                        first word is `licensed`,
                         `unlicensed` or `unknown`: 0, 1, 2.
 
 `--head` IS THE SHA A CHECK RUN IS RECORDED AGAINST, and the branch's live tip
@@ -67,11 +67,8 @@ refuse a correctly written REVIEW for the channel it arrived on.
 WHAT THE LANDING READS
 
 The sub-issue is the one the head branch claims -- check-campaign-claim.py's
-`claim_issue` -- and from it `## Intent`, `## Plan` and the `kind:` label,
-through campaign-tracker.py's own readers. The kind's profile is the
-`optional = ...` line of its reference, kind-<k>.md in the tree judged; a kind
-with none, and a sub-issue with no label, take `development`'s,
-kind-development.md. The change is the paths `git diff BEFORE HEAD` touches,
+`claim_issue` -- and from it `## Intent` and `## Plan`, through
+campaign-tracker.py's own readers. The change is the paths `git diff BEFORE HEAD` touches,
 and the tree is HEAD's, both read by check-sdlc-tie.py's own functions. As the
 model says, an artifact the change REUSES is the change's: a code path it wrote
 holds Test through its suite and Spec through a scenario that suite witnesses,
@@ -110,13 +107,9 @@ TRACKER = HERE / "campaign-tracker.py"
 TIE = HERE / "check-sdlc-tie.py"
 
 # THE LANDING'S VOCABULARY is spec/sdlc/system.als's: its five stages, and
-# `skippable`, the three a profile may name.
+# `skippable`, the three the criterion may license.
 STAGES = ("Intent", "Plan", "Spec", "Test", "Code")
 SKIPPABLE = ("Spec", "Test", "Code")
-PROFILE = re.compile(r"^`optional = ([A-Za-z +]+)`", re.M)
-# Read from the tree being judged, so a change to a profile is judged by it.
-REFERENCES = Path(".claude/skills/assuming-role/references")
-DEFAULT_PROFILE = REFERENCES / "kind-development.md"
 
 # SEVEN, which is git's own floor for an abbreviation and this tracker's habit.
 # Shorter is not a sha anybody writes, and matching it would let a four-digit
@@ -365,30 +358,6 @@ def report(repo, pr, body, pattern, want_head):
                      "(AGENTS.md, § The four messages)."])
 
 
-def profile_of(kind, root):
-    """(optional stages, the file read, why). A kind with no reference, and
-    a sub-issue with no label, take `development`'s."""
-    where = REFERENCES / f"kind-{kind}.md" if kind else DEFAULT_PROFILE
-    # HEAD's copy, not the disk's: the tree judged is HEAD's.
-    if run("git", "-C", str(root), "cat-file", "-e", f"HEAD:{where}")[0] != 0:
-        where = DEFAULT_PROFILE
-    code, text, err = run("git", "-C", str(root), "show", f"HEAD:{where}")
-    if code != 0:
-        return None, where, f"HEAD:{where}: {err.strip()[:200]}"
-    m = PROFILE.search(text)
-    if not m:
-        return None, where, f"{where} carries no `optional = ...` line"
-    optional = set()
-    for word in (w.strip() for w in m.group(1).split("+")):
-        if word == "skippable":
-            optional |= set(SKIPPABLE)
-        elif word in SKIPPABLE:
-            optional.add(word)
-        else:
-            return None, where, f"`{word}` in {where}'s profile is no skippable stage"
-    return optional, where, None
-
-
 def change_of(before):
     """({code, suites, snapshot, stages, untied}, why) -- what the change
     wrote and which of Spec, Test and Code it holds, reused artifacts
@@ -435,16 +404,10 @@ def land(repo, pr, base, guard, before):
     tracker, why = tracker_module()
     if why:
         return answer("unknown", f"could not import the sub-issue readers -- {why}")
-    _title, body, names, _parent, why = tracker.issue_shape(base, issue)
-    if why:
-        return answer("unknown", f"{base}#{issue}: {why}")
-    kind, why = tracker.work_kind_of(names)
+    _title, body, _names, _parent, why = tracker.issue_shape(base, issue)
     if why:
         return answer("unknown", f"{base}#{issue}: {why}")
     change, why = change_of(before)
-    if why:
-        return answer("unknown", why)
-    optional, where, why = profile_of(kind, change["root"])
     if why:
         return answer("unknown", why)
     sections = set(tracker.REPOS.headings(body))
@@ -452,11 +415,8 @@ def land(repo, pr, base, guard, before):
     held |= change["stages"]
     criterion = not change["code"] and not change["suites"]
     absent = [s for s in STAGES if s not in held]
-    refused = [s for s in absent if not (s in optional and criterion)]
-    trail = [f"head {head[:12]} on `{branch}`, claiming {base}#{issue}, "
-             f"kind {kind or 'none (no label)'}",
-             f"profile `optional = {' + '.join(s for s in SKIPPABLE if s in optional) or 'none'}` "
-             f"from {where}",
+    refused = [s for s in absent if not (s in SKIPPABLE and criterion)]
+    trail = [f"head {head[:12]} on `{branch}`, claiming {base}#{issue}",
              f"against {before}: {change['touched']} path(s) touched; wrote "
              f"{len(change['code'])} code path(s), {len(change['suites'])} "
              f"suite(s)" + (", the snapshot" if change["snapshot"] else ""),
@@ -467,10 +427,9 @@ def land(repo, pr, base, guard, before):
              if change["untied"] else "untied code paths it wrote: none"]
     if not refused:
         return answer("licensed", f"every absent stage of {repo}#{pr} is one "
-                                  f"its profile and the criterion license", trail)
+                                  f"the criterion licenses", trail)
     return answer("unlicensed", f"{repo}#{pr} lands without {', '.join(refused)}, "
-                                f"which neither its profile nor the criterion "
-                                f"licenses",
+                                f"which the criterion does not license",
                   trail + ["landDiscipline in spec/sdlc/checks.als: the remedy "
                            "is to write the stage after all."])
 

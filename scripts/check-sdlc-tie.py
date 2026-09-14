@@ -51,7 +51,7 @@ extension, since a Python suite drives a shell script.
 A DECLARATION, NOT A MENTION. Until #268 the tie was any whole-word occurrence
 of a declared command name in the suite's text, which is forgeable -- a comment
 ties a code path it never exercises -- and accidental, since a short name
-(`Sanity`, `NoOrphan`) ties whatever prose happens to spell it. The
+(`Sanity`, `Cov_Work`) ties whatever prose happens to spell it. The
 `# witnesses:` line is a form that has to be written on purpose, matched
 EXACTLY against the declared names, so what ties is something the author
 declared and not something the text happens to contain. AGENTS.md's "prefer

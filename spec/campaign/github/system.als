@@ -203,8 +203,9 @@ fact WellFormed {
    reboot. */
 pred complete[i: Issue] { i not in Open and some i.pullRequest and i.pullRequest in Merged }
 
-/* Completion alone has no way to say "dropped", which is what
-   TerminationUnderFairness's counterexample is. */
+/* Completion alone has no way to say "dropped": a member closed without a
+   merged pull request never reads complete, so a campaign could never close
+   over one. Both readings are needed (S2_SubIssueDropped). */
 pred dropped[i: Issue] { i not in Open and not complete[i] }
 pred settled[i: Issue] { complete[i] or dropped[i] }
 
@@ -232,18 +233,6 @@ pred mergeClosed[s: set Issue] {
   always (all i: s | (Now.event = CloseIssue and Now.issue = i)
                      implies (some i.pullRequest and i.pullRequest in Merged))
 }
-
-/* Not a fact: the base's tracker holds THREE kinds of issue, and a
-   global fact admitting the third says nothing. S18/S18a are why. Read
-   `i.repo = Base` throughout as "its work lands in the base" --
-   the base as a member of its own campaign -- since filing is on the
-   base for every issue and so distinguishes nothing. */
-pred baseIssuesAreCampaignIssues {
-  all i: Issue | i.repo = Base implies (i in Campaign.campaignIssue or eventually i in Campaign.memberIssues)
-}
-
-/* The narrower reading, kept runnable beside it. */
-pred baseIsCampaignIssueOnly { always all i: Issue | i.repo = Base implies i in Campaign.campaignIssue }
 
 fun campaignOf[i: Issue]: lone Campaign { memberIssues.i }
 fun campaignIssueOf[i: Issue]: lone Campaign { campaignIssue.i }
@@ -300,8 +289,8 @@ pred fileCampaignIssue[c: Campaign] {
    gate against a member that returns to Open. Deliberately no session, machine
    or binding precondition: filing a sub-issue is a record, not a claim, so any
    session on any machine may do it (AGENTS.md § The binding). The binding
-   gates writeBody, the `bound:` label, the claim and the launch, which live in
-   session/system.als and the claim script, not here. */
+   gates the claim, which lives in session/system.als and the claim script,
+   not here. */
 pred addMember[c: Campaign, i: Issue] {
   c in Filed
   i not in Campaign.memberIssues and i not in Campaign.campaignIssue

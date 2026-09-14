@@ -215,7 +215,7 @@ fun sessionActed: set Event {
 /* `RemoveMember` is here because moving a sub-issue out has no sanctioned flow:
    it is a hand-run `gh issue edit --remove-parent`. */
 fun unattended: set Event {
-  OpenPullRequest + RemoveMember + PullBase + PullClone + CommitLocal + PushBase
+  OpenPullRequest + RemoveMember + PullClone + CommitLocal + PushBase
 }
 
 /* THE HOOK EMITTING. Idempotent: a session already briefed stays briefed,
@@ -329,7 +329,7 @@ pred survey[s: Session] {
 
 /* Nothing is taken: under one role, arriving is just starting to work.
    Unguarded here, so the unrepaired scenarios stay measurable against the same
-   trace space; `boundOnly` is the membership rule applied per command. */
+   trace space; the binding is read at the claim alone (`sessionClaim`). */
 pred adopt[s: Session, c: Campaign] {
   c in Filed and c.campaignIssue in Open
   no s.worksOn

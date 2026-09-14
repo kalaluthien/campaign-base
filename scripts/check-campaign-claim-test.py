@@ -3111,6 +3111,24 @@ def main():
                       r.returncode == 2
                       and "gh pr merge <slug>/<issue>-<topic>" in r.stderr,
                       out(r)[:500])
+        # A HERE-STRING OPENS NO HEREDOC (pr#446's third REPORT, row 3): read
+        # as one, it took every later line for its body and hid the merge.
+        for who, env in (("planner", planner), ("worker", worker)):
+            r = ask(f.base, tool="Bash", env=env,
+                    command="grep a <<< b\ngh pr merge 7 --merge")
+            check(f"#442: a {who}'s merge on the line after a here-string is "
+                  f"read, and refused",
+                  r.returncode == 2
+                  and "gh pr merge <slug>/<issue>-<topic>" in r.stderr,
+                  out(r)[:500])
+        r = ask(f.base, tool="Bash", env=worker,
+                command="cat <<< x && gh api graphql -F query=@- <<'Q'\n"
+                        "mutation { mergePullRequest(input: {}) "
+                        "{ clientMutationId } }\nQ")
+        check("#442: ...and a heredoc after a here-string is paired to its own "
+              "segment, so its merge is read",
+              r.returncode == 2 and "through `gh api`" in r.stderr,
+              out(r)[:500])
         r = ask(f.base, tool="Bash", command="gh pr merge demo/7-x --merge",
                 env=foreign_planner)
         check("#442: a planner of another campaign is refused",
@@ -3763,7 +3781,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 557
+    EXPECTED = 560
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

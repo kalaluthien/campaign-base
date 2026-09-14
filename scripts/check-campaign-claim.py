@@ -1289,6 +1289,12 @@ def openers(line, quote):
             quote = c
             i += 1
             continue
+        # A HERE-STRING IS NOT AN OPENER (pr#446's third REPORT, row 3): read
+        # as one, `<<<x` took its word for a delimiter and every later line
+        # for a body, so `grep a <<< b` hid the `gh` write on the next line.
+        if line.startswith("<<<", i):
+            i += 3
+            continue
         if line.startswith("<<", i):
             m = HEREDOC_OPEN.match(line, i)
             if m:
@@ -1478,8 +1484,11 @@ def paired_segments(command):
     taken = 0
     paired = []
     for seg, outer, piped in list(out):
-        mine = heredocs[taken:taken + seg.count("<<")]
-        taken += seg.count("<<")
+        # A here-string is `<<` then `<` to shlex and opens no body.
+        opens = sum(t == "<<" and seg[j + 1:j + 2] != ["<"]
+                    for j, t in enumerate(seg))
+        mine = heredocs[taken:taken + opens]
+        taken += opens
         paired.append((seg, mine, outer, piped))
         word, rest = head(seg)
         if word is None:
@@ -2127,10 +2136,12 @@ def graphql_text(tokens, heredocs, piped):
     named += [t[len("--input="):] for t in tokens if t.startswith("--input=")]
     if not named:
         return "\n".join(tokens)
-    if any(n != "-" for n in named) or piped or len(heredocs) != 1:
-        return None
     # A here-string is `<<` then `<` to shlex; that `<` is the only one allowed.
     after = {j + 1 for j, t in enumerate(tokens) if t == "<<"}
+    strings = sum(tokens[j:j + 1] == ["<"] for j in after)
+    if (any(n != "-" for n in named) or piped
+            or len(heredocs) + strings != 1):
+        return None
     if any(t in ("<", "<&") and j not in after for j, t in enumerate(tokens)):
         return None
     return "\n".join([*tokens, *heredocs])

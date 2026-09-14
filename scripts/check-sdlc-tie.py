@@ -2,7 +2,7 @@
 """Refuse a commit whose scenario, test and code path stop tying by name.
 
 The reader of `tieDiscipline` in spec/sdlc/checks.als: after a commit that
-writes or renames an artifact the tree is tied (`everyCodeHasScenario` in
+writes, renames or removes an artifact the tree is tied (`everyCodeHasScenario` in
 spec/sdlc/system.als), which is to say every code path the allow-list does not
 exempt walks back to a scenario through the test that drives it, and every
 name a test declares is a scenario (`everyWitnessExists`); and of what
@@ -79,11 +79,18 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       `S4_CodeRenameBreak` at the code path's end and
       `S4c_TestRenameBreak` at the suite's -- one relation,
       `drives`, broken by renaming either end; the rename that passes is
-      `S4a_TiedCodeRename`, whose suite moves in the same commit.
+      `S4a_TiedCodeRename`, whose suite moves in the same commit. The
+      deletion is `removeArtifact` taking the suite and leaving its code
+      path, which `commitCheck` refuses; the removal that passes takes the
+      code path with its suite and any scenario that suite alone witnessed
+      (`S9a_ChainRemovedInOneCommit`, and T8 below), or leaves every code
+      path tied, as `S9_DeadElimination` does.
   T3  a code path that was tied still has its suite, and the suite declares no
       scenario any more: the scenario was renamed or deleted, or the
       `# witnesses:` line was dropped. The same rename read at the scenario's
-      end (`S4b_ScenarioRenameBreak`).
+      end (`S4b_ScenarioRenameBreak`); the deletion is `removeArtifact` of a
+      scenario a suite still declares, which `removeDiscipline` refuses. The
+      removal that passes is one nothing names (`S9_DeadElimination`).
   T4  a code path THIS CHANGE TOUCHED that is untied both before and after it
       and that the allow-list below does not name: the debt grew where nothing
       here could see it, by a bypassed hook or a merge this never ran over. The
@@ -117,7 +124,9 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       name that resolved before the change and does not after it; the dead
       names left in unopened suites are counted in the reading. An html
       form's `data-refines` names are read the same way, against the
-      commands of its own entity.
+      commands of its own entity. A name a `removeArtifact` left dead is
+      `removeDiscipline`'s, over `witnesses` and `refines` alike; a scenario
+      nothing names leaves clean (`S9_DeadElimination`).
   T7  an html form that refines no scenario, or refines one no suite's
       `# witnesses:` line declares. The form is a Spec artifact tied by
       name, so a view of nothing, or of a scenario nothing tests, is refused
@@ -128,12 +137,15 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       and none declares after it, where the commit leaves the snapshot's
       command list as it was. That commit adds no feature, and a change that
       adds none keeps what is witnessed (`FeaturelessKeeps_Bites`): the model
-      proves it from `keepDiscipline` and `rename`, and this reads it over the
-      edit the model has no step for, a declaration rewritten or a suite
-      deleted in place. A commit that changes the command list is a feature
-      change and is not read here, where the model reads a rename by a change
+      proves it from `keepDiscipline` and `renameArtifact`, and this reads it
+      over two edits that discipline does not read: a declaration rewritten
+      in place, which the model has no step for, and a suite deleted in
+      place, `removeArtifact`, which it leaves out of scope. A commit that
+      changes the command list is a feature change and is not read here, where the model reads a rename by a change
       with no scenario of its own as that change's; deleting a script with its
-      suite retires its scenario in the same commit.
+      suite retires its scenario in the same commit, a feature change by name
+      (`S9a_ChainRemovedInOneCommit`); keeping the scenario it alone
+      witnessed is this code.
 
 THE ALLOW-LIST, AND WHY IT IS NOT A REPORT
 
@@ -176,7 +188,7 @@ that writes a code path therefore has no skip to declare to this check --
 the criterion is false by the fact this check reads -- and a change that
 writes none is judged on nothing here, which IS its skip of Test and Code,
 declared by the absence and by no syntax. Whether that absence was licensed
-is `landDiscipline`'s, which check-merge-review.py --land reads where the
+is `mergeDiscipline`'s, which check-merge-review.py --merge reads where the
 merge is gated, and not the commit's.
 
 WHAT IT DOES NOT CATCH

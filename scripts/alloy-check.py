@@ -467,7 +467,6 @@ VARYING = [
     ("Step<:artifact", "artifact"),
     ("Step<:subject", "change"),
     ("Written", "written"),
-    ("Landed", "landed"),
     ("Licensed", "licensed"),
     # github
     ("Open", "open"),
@@ -516,7 +515,7 @@ STATIC = ["Issue<:repo", "Campaign<:campaignIssue", "Request<:covers",
 
 WANTED = {key for key, _ in VARYING} | set(STATIC)
 
-# `Now->OpenPR`, `Step->Write` and `Target->A0`: the observer atom adds nothing
+# `Now->OpenPR`, `Step->WriteArtifact` and `Target->A0`: the observer atom adds nothing
 # to a cell whose column already names it.
 OBSERVER = re.compile(r"\b(?:Now|Step|Where|Who|Target)->")
 

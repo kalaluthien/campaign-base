@@ -63,7 +63,7 @@ def fake_gh(bindir, head=HEAD, comments=(), reviews=(), status=0, stdout=None,
     `status` and `stdout` are the two ways an answer goes wrong -- a call that
     failed, and one that is not JSON -- and they apply to the `gh api` calls;
     `view_stdout` is the same for the head call. `issue` is the sub-issue
-    `--land` reads, as `gh issue view --json title,body,labels,parent`."""
+    `--merge` reads, as `gh issue view --json title,body,labels,parent`."""
     body = json.dumps({"headRefOid": head, "headRefName": branch} if head else {})
     if view_stdout is not None:
         body = view_stdout
@@ -359,14 +359,14 @@ def main() -> int:
 
         # ---- the landing ---------------------------------------------------
 
-        def land(case, change, issue=None, branch="sdlc-alloy/363-x", before="main"):
+        def merge(case, change, issue=None, branch="sdlc-alloy/363-x", before="main"):
             fake_gh(bindir, branch=branch, issue=issue or sub_issue())
-            return call(bindir, "366", "--repo", "o/r", "--land", before,
+            return call(bindir, "366", "--repo", "o/r", "--merge", before,
                         cwd=landing(d, case, change))
 
         # S5b_WithoutTheLandingCheck: a code path written with a suite that
         # witnesses nothing lands with no Spec, and only this reading refuses.
-        word, code, text = land("s5b", {"scripts/b.py": "x = 1\n",
+        word, code, text = merge("s5b", {"scripts/b.py": "x = 1\n",
                                         "scripts/b-test.py": "x = 1\n"})
         check("a code path whose suite witnesses no scenario lands unlicensed",
               (word, code) == ("unlicensed", 1) and "without Spec" in text,
@@ -374,54 +374,54 @@ def main() -> int:
         check("...and the reading names the untied path",
               "untied code paths it wrote: scripts/b.py" in text, text)
 
-        word, code, text = land("tied", {"scripts/a.py": "x = 2\n"})
+        word, code, text = merge("tied", {"scripts/a.py": "x = 2\n"})
         check("a tied code path lands licensed, its suite and scenario reused",
               (word, code) == ("licensed", 0)
               and "stages held: Intent, Plan, Spec, Test, Code" in text,
               f"{word} {code} {text}")
 
         # S2a_ProseOnlyChange: nothing runs, so the three skippable stages go.
-        word, code, text = land("prose", {"README.md": "bye\n"})
+        word, code, text = merge("prose", {"README.md": "bye\n"})
         check("a prose-only change lands licensed",
               (word, code) == ("licensed", 0)
               and "criterion (nothing runs): holds" in text, f"{word} {code} {text}")
 
-        word, code, text = land("snapshot", {"scripts/b.py": "x = 1\n",
+        word, code, text = merge("snapshot", {"scripts/b.py": "x = 1\n",
                                              "scripts/b-test.py": "x = 1\n",
                                              "spec/commands.snapshot.json": '{"commands": []}\n'})
         check("a rewritten snapshot holds Spec for the change",
               (word, code) == ("licensed", 0) and "the snapshot" in text,
               f"{word} {code} {text}")
 
-        word, code, text = land("suite", {"scripts/a-test.py": "# witnesses: S1\nx = 2\n"})
+        word, code, text = merge("suite", {"scripts/a-test.py": "# witnesses: S1\nx = 2\n"})
         check("a suite the change wrote holds Code through the path it drives",
               (word, code) == ("licensed", 0)
               and "stages held: Intent, Plan, Spec, Test, Code" in text,
               f"{word} {code} {text}")
 
-        word, code, text = land("noissue", {"README.md": "bye\n"}, issue="not json at all")
-        check("--land answers unknown: could not parse",
+        word, code, text = merge("noissue", {"README.md": "bye\n"}, issue="not json at all")
+        check("--merge answers unknown: could not parse",
               (word, code) == ("unknown", 2) and "could not parse" in text,
               f"{word} {code} {text}")
 
-        word, code, text = land("noplan", {"README.md": "bye\n"},
+        word, code, text = merge("noplan", {"README.md": "bye\n"},
                                 issue=sub_issue(body="## Intent\n- i\n"))
         check("a sub-issue with no Plan lands unlicensed",
               (word, code) == ("unlicensed", 1) and "without Plan" in text,
               f"{word} {code} {text}")
 
-        word, code, text = land("mixed", {"scripts/a.py": "x = 2\n",
+        word, code, text = merge("mixed", {"scripts/a.py": "x = 2\n",
                                           "scripts/c.py": "x = 2\n"})
         check("an untied path beside a tied one is named and does not decide",
               (word, code) == ("licensed", 0)
               and "untied code paths it wrote: scripts/c.py" in text,
               f"{word} {code} {text}")
 
-        word, code, text = land("noclaim", {"README.md": "bye\n"}, branch="feature")
+        word, code, text = merge("noclaim", {"README.md": "bye\n"}, branch="feature")
         check("a head branch that is no claim is unknown",
               (word, code) == ("unknown", 2) and "no claim" in text, f"{word} {code}")
 
-        word, code, text = land("nobefore", {"README.md": "bye\n"}, before="gone")
+        word, code, text = merge("nobefore", {"README.md": "bye\n"}, before="gone")
         check("a before-ref that names no commit is unknown",
               (word, code) == ("unknown", 2) and "names no commit" in text,
               f"{word} {code} {text}")

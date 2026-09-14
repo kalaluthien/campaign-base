@@ -47,10 +47,24 @@ prices both. Write the brief as `"review PR <N> at <level>"`, level right
 after `at`, naming what to check after a blank line.
 
 **The brief says what a reviewer may do**: it reads, checks as the shape of a
-round below says, and edits, kills or launches nothing. That is one sentence of
-the brief and not a mechanism -- no reviewer agent definition, and no branch in
-the guard reading what kind of agent is being launched (owner's DECISION,
-rule-check#278).
+round below says, posts its own `REVIEW`, and edits, kills or launches nothing.
+That is one sentence of the brief and not a mechanism -- no reviewer agent
+definition, and no branch in the guard reading what kind of agent is being
+launched (owner's DECISION, rule-check#278).
+
+**The reviewer posts its own `REVIEW`** (sdlc-alloy#427): the brief tells it
+to write the comment with the Write tool and post it in a separate Bash call
+with `gh pr comment <N> --body-file <path>`, never `gh pr review --approve`.
+The guard reads that file before the command runs and holds it to the comment
+ceiling, so a body the same call writes is refused unread; it expands no
+`$VAR`, so the path is spelled out. The auto-mode
+classifier can refuse an author's session posting a review of its own
+commits, while the subagent wrote none, so the poster is the writer merge
+condition 2 names. Refused by the classifier, the reviewer stops and returns
+the refusal verbatim, and the launcher files a `BLOCKED` rather than posting
+it from its own pane; refused by the guard on shape, it fixes the shape and
+posts again. `campaign-token-tally.py review-posts` counts how those posts
+ended.
 
 **`/code-review low` is under the bar and outside it.** It costs about what a
 narrowed plain brief does and cannot fan out, which is why the guard's
@@ -219,3 +233,10 @@ Two readers decide it, and a comment either fails costs a red required check
 rather than a wasted round: its first line is the `KIND` shape
 `scripts/check-campaign-claim.py` owns, and its body must name the pull
 request's head sha the way `scripts/check-merge-review.py` reads one.
+
+- The first line is `REVIEW <launcher's session name>: ...`, the model and
+  level after the colon; the guard resolves the name from the parent session,
+  which is the subagent's too.
+- The sha is the head's full 40 characters, copied from
+  `gh pr view <N> --json headRefOid`: a typed abbreviation that is not the
+  head's prefix pins nothing, as pr#428's `5c1d60f7` for `5c1d60ff` did not.

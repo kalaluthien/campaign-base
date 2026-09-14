@@ -753,6 +753,58 @@ def main():
               r.returncode == 2 and "--repo has no default" in r.stderr
               and "Traceback" not in r.stderr, r.stderr[-300:])
 
+    # THE CLASSIFIER COUNTERS read every transcript under --root, and a
+    # denial is one only where it OPENS the result.
+    deny = ("Permission for this action was denied by the Claude Code auto "
+            "mode classifier. Reason: [Self-Approval] ...")
+
+    def call(cid, command):
+        return {"type": "tool_use", "id": cid, "name": "Bash",
+                "input": {"command": command}}
+
+    def result(cid, text, error=False):
+        return {"type": "tool_result", "tool_use_id": cid, "content": text,
+                "is_error": error}
+
+    with _tf.TemporaryDirectory() as d:
+        root = Path(d)
+        write(root / "-proj-a" / "s1.jsonl", [
+            assistant("m1", "2026-01-02T01:00:00Z", d, blocks=[
+                call("t1", "gh pr review 9 --approve -b 'REVIEW w-1: approve'")]),
+            user("2026-01-02T01:00:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t1", deny, True)]}},
+            assistant("m2", "2026-01-02T01:01:00Z", d, blocks=[
+                call("t2", "gh pr comment 9 -b 'REVIEW w-1: approve at abc1234'")]),
+            user("2026-01-02T01:01:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t2", "posted")]}},
+            assistant("m3", "2026-01-02T01:02:00Z", d, blocks=[
+                call("t3", "gh pr comment 9 -b 'REVIEW w-1: again'")]),
+            user("2026-01-02T01:02:01Z", d, "")
+            | {"message": {"role": "user", "content": [result("t3", "HTTP 500", True)]}},
+            assistant("m4", "2026-01-02T01:03:00Z", d, blocks=[call("t4", "grep x")]),
+            user("2026-01-02T01:03:01Z", d, "")
+            | {"message": {"role": "user", "content": [
+                result("t4", "x" * 80 + " quoting: " + deny)]}},
+        ])
+
+        def machine(command, *extra):
+            return subprocess.run([sys.executable, str(SCRIPT), command,
+                                   "--root", d, "--base", d, *extra],
+                                  capture_output=True, text=True)
+
+        r = machine("denials")
+        check("denials counts a denial that opens its result, not one quoted "
+              "deeper in", "1 classifier denial(s)" in r.stdout
+              and "Self-Approval | -proj-a" in r.stdout, r.stdout + r.stderr)
+        r = machine("review-posts")
+        check("review-posts pairs each REVIEW post with how it ended",
+              "3 REVIEW post(s)" in r.stdout
+              and "{'REFUSED Self-Approval': 1, 'ok': 1, 'error': 1}" in r.stdout,
+              r.stdout + r.stderr)
+        r = machine("denials", "--since", "2026-01-02T00:00:00Z")
+        check("a machine command refuses a window rather than ignoring it",
+              r.returncode == 2 and "takes no window" in r.stderr, r.stderr)
+
     return harness.report()
 
 

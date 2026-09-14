@@ -82,6 +82,10 @@ SUBCOMMANDS
              scripts, and what those results cost to carry
   reads      what reading files returned: per file, per session, and the
              shares the routing verdict below reads
+  denials    auto-mode classifier denials, by reason, over every transcript
+             under --root, every project and no window
+  review-posts  the `gh pr comment`/`gh pr review` calls that posted a REVIEW,
+             and how each ended: the denominator beside `denials`
 
 THE READS RULE, WRITTEN BEFORE ITS FIRST RUN (rule-check#412)
 
@@ -115,8 +119,11 @@ Usage:
   scripts/campaign-token-tally.py reviews --since ...
   scripts/campaign-token-tally.py tool-echo --since ...
   scripts/campaign-token-tally.py reads --since ... [--threshold 350]
+  scripts/campaign-token-tally.py denials [--root DIR]
+  scripts/campaign-token-tally.py review-posts [--root DIR]
 """
 import argparse
+import collections
 import functools
 import json
 import os
@@ -1170,6 +1177,109 @@ def scan_reads(corpus):
     return reads, all_bytes, apart
 
 
+# THE CLASSIFIER COUNTERS (sdlc-alloy#427, landed by #430). Neither reads the
+# corpus: a refusal is a fact about the machine, not about one campaign's
+# turns, so both walk every transcript under --root, every project and no
+# window. `review-posts` is the denominator beside `denials`.
+DENY = re.compile(r"Permission for this action was denied by the Claude Code "
+                  r"auto mode classifier\. Reason: \[([^\]]+)\]")
+REVIEW_POST = re.compile(r"gh pr (comment|review)\b.*\bREVIEW ", re.S)
+
+
+def denial(txt):
+    """The classifier's reason when txt opens with its denial; a quote of one
+    deeper in is not a denial."""
+    m = DENY.search(txt)
+    return m.group(1) if m and m.start() <= 60 else None
+
+
+def result_text(block):
+    txt = block.get("content")
+    if isinstance(txt, list):
+        txt = " ".join(x.get("text", "") for x in txt if isinstance(x, dict))
+    return txt if isinstance(txt, str) else ""
+
+
+def transcript_blocks(path):
+    """(record, content block) for every block of every record in one file."""
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except Exception:           # noqa: BLE001 -- a torn line is skipped
+                continue
+            content = (d.get("message") or {}).get("content")
+            if not isinstance(content, list):
+                continue
+            for c in content:
+                if isinstance(c, dict):
+                    yield d, c
+
+
+def transcript_files(roots):
+    import glob
+    return [f for r in roots for f in glob.glob(f"{r}/**/*.jsonl", recursive=True)]
+
+
+def cmd_denials(roots):
+    rows = []
+    files = transcript_files(roots)
+    for f in files:
+        calls = {}
+        for d, c in transcript_blocks(f):
+            if c.get("type") == "tool_use":
+                calls[c.get("id")] = (c.get("name"), c.get("input"))
+            if c.get("type") == "tool_result":
+                reason = denial(result_text(c))
+                if not reason:
+                    continue
+                name, inp = calls.get(c.get("tool_use_id"), ("?", {}))
+                cmd = (inp or {}).get("command") or (inp or {}).get("file_path") or str(inp)[:80]
+                root = next(r for r in roots if f.startswith(r))
+                rows.append((reason, os.path.relpath(f, root).split("/")[0],
+                             d.get("sessionId", "?")[:8], d.get("timestamp", "?")[:19],
+                             name, cmd[:140]))
+    print(f"read {len(files)} transcript files under {', '.join(roots)}; "
+          f"{len(rows)} classifier denial(s)")
+    print("by reason:", dict(collections.Counter(r[0] for r in rows)))
+    for r in sorted(rows, key=lambda r: r[3]):
+        print(" | ".join(r))
+
+
+def cmd_review_posts(roots):
+    """A row is a Bash call whose command holds `REVIEW ` anywhere, so a REPORT
+    quoting a REVIEW is a row too."""
+    rows = []
+    for f in transcript_files(roots):
+        calls = {}
+        for d, c in transcript_blocks(f):
+            if c.get("type") == "tool_use" and c.get("name") == "Bash":
+                cmd = (c.get("input") or {}).get("command", "")
+                if REVIEW_POST.search(cmd):
+                    calls[c["id"]] = (d.get("timestamp", "?")[:19],
+                                      d.get("sessionId", "?")[:8], cmd)
+            if c.get("type") == "tool_result" and c.get("tool_use_id") in calls:
+                reason = denial(result_text(c))
+                outcome = (f"REFUSED {reason}" if reason
+                           else "error" if c.get("is_error") else "ok")
+                ts, sid, cmd = calls[c["tool_use_id"]]
+                who = re.search(r"REVIEW (\S+)", cmd)
+                rows.append((ts, sid, os.path.basename(f).startswith("agent-"),
+                             who.group(1) if who else "?", outcome))
+    print(f"{len(rows)} REVIEW post(s) with a result, under {', '.join(roots)}")
+    print("by outcome:", dict(collections.Counter(r[4] for r in rows)))
+    print("by is-subagent-transcript:", dict(collections.Counter(r[2] for r in rows)))
+    for r in sorted(rows):
+        print(" | ".join(map(str, r)))
+
+
+# Commands that read the whole machine rather than the corpus.
+MACHINE_COMMANDS = {
+    "denials": cmd_denials,
+    "review-posts": cmd_review_posts,
+}
+
+
 COMMANDS = {
     "issues": cmd_issues,
     "sessions": cmd_sessions,
@@ -1182,7 +1292,7 @@ COMMANDS = {
 
 def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("command", choices=sorted(COMMANDS))
+    p.add_argument("command", choices=sorted({**COMMANDS, **MACHINE_COMMANDS}))
     p.add_argument("--since", help="UTC ISO timestamp, e.g. 2026-09-04T00:45:00Z; "
                                    "turns before it are dropped")
     p.add_argument("--until", help="UTC ISO timestamp; turns after it are dropped")
@@ -1248,6 +1358,12 @@ def checked_bound(value, name):
 
 def main(argv):
     args = parse_args(argv)
+    if args.command in MACHINE_COMMANDS:
+        if args.since or args.until:
+            die(f"{args.command} reads every transcript and takes no window; "
+                f"drop --since and --until")
+        MACHINE_COMMANDS[args.command]([os.path.expanduser(r) for r in args.root])
+        return 0
     corpus = Corpus(args).read()
     COMMANDS[args.command](corpus, args)
     return 0

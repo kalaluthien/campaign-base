@@ -71,15 +71,18 @@ the reasoning that needed a reader. Broad and shallow takes a lighter one. Judge
 the change; the launcher's own model is not the input, and a session running
 light does not license a lighter reviewer. **Two rounds are the exception and
 run on Sonnet at `low`** (owner, pr#367 and rule-check#441), each a plain brief
-and not `/code-review low`:
+and not `/code-review low`, **and only on a pull request none of whose rounds
+has returned a defect verdict**:
 
 - **the closing review**: once a round returns refinement only, the one
   narrowed review of the commit that applies it;
 - **a clean merge of `main`**, reviewed on the merge commit's diff alone.
 
 Either is the last round before the merge, and a wording note it returns is
-accepted in the REPORT, not fixed. A fix round after a defect verdict is not
-one of them: it stays narrowed on Opus at `low`. Measured over two weeks
+accepted in the REPORT, not fixed. **Once any round has returned a defect,
+every later narrowed review stays on Opus at `low` to the end**, the closing
+one and a clean merge's included (owner, pr#409 and pr#420, kept by
+rule-check#441). Measured over two weeks
 (rule-check#441), rounds past the first refinement-only verdict found 3
 defect verdicts in 28 rounds, while taking 5.3% of all review tokens.
 
@@ -167,8 +170,9 @@ round claiming "all fixed" without re-running its sweep is what keeps happening.
 **A reconciliation with `main` decides the breadth of the review it needs**, and
 a full re-review is due at one moment only, a reconciliation that needed a hand
 resolution. It is a push, so condition 1
-wants a review at the combined sha either way. A clean auto-merge earns the
-Sonnet `low` round the model knob names, on the merge commit's diff alone. A
+wants a review at the combined sha either way. A clean auto-merge earns a
+`low` round on the merge commit's diff alone, on the model the model knob
+names: Sonnet, or Opus once any round has returned a defect. A
 merge that needed a hand resolution earns a full one, and its brief says it
 reads the combination: **containment buys attention from nobody**, and the
 resolution is where the two branches actually met.
@@ -184,9 +188,9 @@ what multiplies it.
 **A round returning only refinement ends the loop**: when every finding is
 wording, a number in prose, a name or a claim softened -- no behavioural defect
 in shipped code and no test that passes with its branch deleted -- apply them in
-one commit, review that diff narrowed on Sonnet at `low` (the model knob,
-above), and merge, rather than commissioning another round. A number a check enforces
-is not prose.
+one commit, review that diff narrowed at `low` on the model the model knob
+names (above), and merge, rather than commissioning another round. A number a
+check enforces is not prose.
 
 One reviewer per pull request, one verifier per fix round. Every angle the review
 should take is a section of the one reviewer's brief. Fan out into parallel

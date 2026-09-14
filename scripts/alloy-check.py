@@ -467,7 +467,6 @@ VARYING = [
     ("Step<:artifact", "artifact"),
     ("Step<:subject", "change"),
     ("Written", "written"),
-    ("Landed", "landed"),
     ("Licensed", "licensed"),
     # github
     ("Open", "open"),

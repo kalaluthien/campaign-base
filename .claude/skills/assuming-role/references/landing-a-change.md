@@ -37,7 +37,7 @@ says what its changes write.
 
 The order reads `maySkip` for each absent stage when you write past it
 (`orderDiscipline`), and the merge reads it again against the change as it
-finally stands (`landDiscipline`, which `scripts/check-merge-review.py --land`
+finally stands (`mergeDiscipline`, which `scripts/check-merge-review.py --merge`
 reads in `check`). The second is not the first restated:
 `criterion` reads `writtenOf`, which grows, so a skip licensed when you wrote
 past the stage can be stale by the merge — `S5b_WithoutTheLandingCheck` is a
@@ -67,7 +67,7 @@ with no test is a claim the solver checks on its own. Every name on the line mus
 (`everyWitnessExists`): one live name ties the code path but does not cover a
 dead one beside it. `tieDiscipline` is the reading at the commit.
 
-A rename is the one commit that breaks a tie (`rename`), and the two relations
+A rename is the one commit that breaks a tie (`renameArtifact`), and the two relations
 break at different ends: `witnesses` at the scenario's
 (`S4b_ScenarioRenameBreak`), `drives` at either of its own
 (`S4_CodeRenameBreak` for the code path, `S4c_TestRenameBreak`

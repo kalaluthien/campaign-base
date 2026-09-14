@@ -128,7 +128,7 @@ and a suite dropping a scenario nothing else witnesses reads T8 beside them:
       and none declares after it, where the commit leaves the snapshot's
       command list as it was. That commit adds no feature, and a change that
       adds none keeps what is witnessed (`FeaturelessKeeps_Bites`): the model
-      proves it from `keepDiscipline` and `rename`, and this reads it over the
+      proves it from `keepDiscipline` and `renameArtifact`, and this reads it over the
       edit the model has no step for, a declaration rewritten or a suite
       deleted in place. A commit that changes the command list is a feature
       change and is not read here, where the model reads a rename by a change
@@ -176,7 +176,7 @@ that writes a code path therefore has no skip to declare to this check --
 the criterion is false by the fact this check reads -- and a change that
 writes none is judged on nothing here, which IS its skip of Test and Code,
 declared by the absence and by no syntax. Whether that absence was licensed
-is `landDiscipline`'s, which check-merge-review.py --land reads where the
+is `mergeDiscipline`'s, which check-merge-review.py --merge reads where the
 merge is gated, and not the commit's.
 
 WHAT IT DOES NOT CATCH

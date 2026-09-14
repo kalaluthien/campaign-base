@@ -97,6 +97,8 @@
     ["campaign/orchestration/checks.als", "run", "M5_WorkerMergesByAnotherClaim"],
     ["campaign/orchestration/checks.als", "run", "M5b_TheRuleRefusesAnotherClaim"],
     ["campaign/orchestration/checks.als", "run", "M5c_WorkerLandsAClaimItDidNotCut"],
+    ["campaign/orchestration/checks.als", "run", "M5d_WorkerMergesAClaimCheckedOutElsewhere"],
+    ["campaign/orchestration/checks.als", "run", "M5e_TheRuleRefusesACheckoutElsewhere"],
     ["campaign/orchestration/checks.als", "run", "M6_MergeOfAHeadThatIsNoClaim"],
     ["campaign/orchestration/checks.als", "run", "M6b_TheRuleRefusesAHeadThatIsNoClaim"],
     ["campaign/orchestration/checks.als", "run", "M7_PlannerOfNoCampaignMerges"],

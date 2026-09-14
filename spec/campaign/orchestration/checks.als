@@ -1618,6 +1618,25 @@ pred M5c_WorkerLandsAClaimItDidNotCut {
                     and Now.issue not in s.claimedIssues)
 }
 
+/* M5d. THE HOST, pinned (pr#446's second REVIEW, finding 5): a worker of the
+   head's campaign merges a claim whose only checkouts are on another machine.
+   SAT without the rule. Two machines: at one, every checkout is on the
+   merger's, and `some holder[Now.issue]` passed every command. */
+pred M5d_WorkerMergesAClaimCheckedOutElsewhere {
+  some s: Session, i: Issue {
+    s.role = Worker
+    eventually (Now.event = MergePullRequest and Who.session = s and Now.issue = i
+                and i in s.worksOn.memberIssues and some holder[i]
+                and (all a: holder[i] | a.host != s.machine))
+  }
+}
+
+/* M5e. The rule refuses it. `some holder[Now.issue]` in place of the host
+   equality turns it SAT. */
+pred M5e_TheRuleRefusesACheckoutElsewhere {
+  mergedByPlannerOrHolder and M5d_WorkerMergesAClaimCheckedOutElsewhere
+}
+
 /* M8. A worker of ANOTHER campaign merges a claim a checkout on its machine
    is on. SAT without the rule. */
 pred M8_WorkerOfAnotherCampaignMerges {
@@ -1999,6 +2018,8 @@ run M5b_TheRuleRefusesAnotherClaim                for 3 Issue, 1 PullRequest, 1 
 run M7_PlannerOfNoCampaignMerges                 for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
 run M7b_TheRuleRefusesAPlannerOfNoCampaign      for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 run M5c_WorkerLandsAClaimItDidNotCut             for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1
+run M5d_WorkerMergesAClaimCheckedOutElsewhere    for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
+run M5e_TheRuleRefusesACheckoutElsewhere         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 1 Agent, 2 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run M8_WorkerOfAnotherCampaignMerges             for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 1
 run M8b_TheRuleRefusesAnotherCampaignsWorker     for 3 Issue, 1 PullRequest, 2 Campaign, 2 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 2 CampaignDir, 12 steps expect 0
 run M6_MergeOfAHeadThatIsNoClaim                  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 1

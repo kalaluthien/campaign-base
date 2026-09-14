@@ -252,6 +252,11 @@ def answer(w, a):
             return subprocess.CompletedProcess(a, 1, "", "no socket")
         return ok(json.dumps({"result": {"pane": {"pane_id": cur,
                                                   "tab_id": TAB}}}))
+    if a[:3] == ["herdr", "pane", "read"]:
+        return ok(w.get("screen", ""))
+    if a[:3] == ["herdr", "pane", "send-keys"]:
+        w.setdefault("keys", []).append(a[3:])
+        return ok("")
     if a[:3] == ["herdr", "tab", "close"]:
         return subprocess.CompletedProcess(a, w.get("tab_close", 0), "",
                                            "tab close failed")
@@ -286,6 +291,16 @@ def drive(m, argv, w):
     polls = iter(w.get("polls", []))
     m.CLAIM.herdr_sessions = ((lambda: next(polls, (None, "no more polls")))
                               if "polls" in w else (lambda: (w["sessions"], None)))
+    if "blocked" in w:
+        # A pane held at the dialog: listed until the key it answers to
+        # lands, and one poll more, as the probe still read it then.
+        after = []
+
+        def blocked_read():
+            if [PANE, w["blocked"]] in w.get("keys", []):
+                after.append(1)
+            return (w["left"] if len(after) > 1 else w["sessions"]), None
+        m.CLAIM.herdr_sessions = blocked_read
     m.CLAIM.base_root = lambda: (w["root"], None)
     m.CLAIM.remote_of = lambda clone: w["origin"]
     m.CLAIM.issue_repo = lambda issue, default: w["lands"].get(
@@ -603,6 +618,60 @@ def case_leave_tab_shared(m):
     ok, asked, out = refused(m, HANDOVER, w, "tab",
                              f"tab {TAB} holds {OTHER} beside {PANE}")
     return ok and len(prompts(asked)) == 1 and not tab_closes(asked), out
+
+
+# The background-work dialog as `herdr pane read --source visible` showed it
+# on a throwaway tab, 2026-09-14 (rule-check#400), under the transcript.
+DIALOG_SCREEN = """\
+⏺ started
+✻ Churned for 5s · done 10:14 AM · 1 shell still running
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Background work is running
+   The following will stop when you exit:
+   shell · sleep 900
+   ❯ 1. Exit and stop tasks
+     2. Move to background and exit
+     3. Stay
+   Enter to confirm · Esc to cancel
+"""
+# The words quoted in a transcript, as rule-check#400's NOTE put them.
+DIALOG_QUOTED = ('- then the dialog "Background work is running / The following '
+                 'will stop when you exit" with 1. Exit and stop tasks, 2. Move '
+                 'to background and exit, 3. Stay.')
+
+
+def blocked(**over):
+    """A handover whose PANE sits at the dialog, listed until `1` lands."""
+    over.setdefault("screen", DIALOG_SCREEN)
+    return world(current=OTHER, sessions=LEAVER, left=LEFT, blocked="1", **over)
+
+
+def case_leave_dialog(m):
+    w = blocked()
+    code, out, asked, _ = drive(m, HANDOVER, w)
+    return (code == 0 and w.get("keys") == [[PANE, "1"]]
+            and [ln.split()[0] for ln in out.splitlines()][-4:]
+                == ["exit", "dialog", "gone", "tab"]
+            and f"dialog      holds -- {PANE} showed 'Background work is "
+                f"running'; sent 1, `1. Exit and stop tasks`" in out
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_leave_dialog_other_row(m):
+    """Row 1 no longer the stop: nothing is sent, and the wait says why."""
+    w = blocked(screen=DIALOG_SCREEN.replace("1. Exit and stop tasks",
+                                             "1. Move to background and exit"))
+    ok, asked, out = refused(m, HANDOVER, w, "gone",
+                             f"poll 36: {PANE} is still listed; its screen shows "
+                             "'Background work is running' with no row "
+                             "`1. Exit and stop tasks`, so nothing was sent")
+    return ok and not w.get("keys") and not tab_closes(asked), out
+
+
+def case_dialog_of(m):
+    got = [m.dialog_of(s) for s in (DIALOG_SCREEN, DIALOG_QUOTED, "",
+                                    DIALOG_SCREEN.split("   ❯")[0])]
+    return got == [True, None, None, False], got
 
 
 def leave_refusal(gate, *says, argv=SELF_LEAVE, **over):
@@ -1050,6 +1119,12 @@ CASES = {
         case_leave_tab_shared,
     "leave: the spawned run leads a session of its own and writes the log":
         case_spawn_detaches,
+    "leave: a pane held at the background-work dialog gets 1, then goes":
+        case_leave_dialog,
+    "leave: a dialog whose row 1 is not the stop gets no key":
+        case_leave_dialog_other_row,
+    "leave: the dialog is its header as a line, not the words quoted":
+        case_dialog_of,
     "refuse leave: HERDR_ENV is not 1": leave_refusal("herdr", "not 1", env={}),
     "refuse leave: herdr pane current did not read": leave_refusal(
         "self", "herdr pane current exited 1: no socket", current=None),
@@ -1646,6 +1721,19 @@ MUTATIONS = [
      "leave: the spawned run leads a session of its own and writes the log"),
     ("leave: the spawn is this scope, detached", '"leave", n, pane,\n            "--detached"]',
      '"leave", n, pane]', "leave: its own pane is left by a detached run of the same scope"),
+    ("dialog: the wait answers it", "    gone, note = wait_gone(pane, listed=listed)",
+     "    gone, note = wait_gone(pane)",
+     "leave: a pane held at the background-work dialog gets 1, then goes"),
+    ("dialog: the key is 1", 'DIALOG_KEY = "1"', 'DIALOG_KEY = "2"',
+     "leave: a pane held at the background-work dialog gets 1, then goes"),
+    ("dialog: row 1 is read before the key", "    if not shown:\n        return False, (",
+     "    if False:\n        return False, (",
+     "leave: a dialog whose row 1 is not the stop gets no key"),
+    ("dialog: answered once", "        if answered:\n            return None",
+     "        if False:\n            return None",
+     "leave: a pane held at the background-work dialog gets 1, then goes"),
+    ("dialog: its header is a line", "if ln == DIALOG]", "if DIALOG in ln]",
+     "leave: the dialog is its header as a line, not the words quoted"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
 ]

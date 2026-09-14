@@ -67,23 +67,10 @@ print(json.dumps(json.loads(os.environ.get("FAKE_LABELS", "[]"))))
 # the KIND record's text, and every `gh` call the tracker made under it.
 LAST = {}
 
-# The campaign AGENTS.md a scaffolded campaign holds: the three sections #227
-# put in `opening-campaign/assets/AGENTS.md`, each with a marker no other
-# briefed file contains, so a case can say WHICH section was emitted.
-CAMPAIGN_AGENTS = """# Campaign principles: test
-
-## Every session
-
-EVERY-MARK
-
-## Planner
-
-PLANNER-MARK
-
-## Worker
-
-WORKER-MARK
-"""
+# What only one role's brief carries: each role reference's own heading, so a
+# case can say WHICH role was briefed.
+WORKER = "The worker's lifecycle"
+PLANNER = "The planner's lifecycle"
 
 def row(session_id, name="demo-worker-10"):
     return [{"pane_id": "w1:p1", "name": name,
@@ -91,7 +78,7 @@ def row(session_id, name="demo-worker-10"):
 
 
 def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
-        campaign_agents=CAMPAIGN_AGENTS, record=None, lock_runtime=False,
+        marker=True, record=None, lock_runtime=False,
         raw=None, record_swallows=False, labels=None, gh_fails=False,
         kind_record=None, state=None):
     """(completed process, the record's text or None, the campaign dir).
@@ -110,16 +97,16 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
         gh.write_text(FAKE_GH)
         gh.chmod(0o755)
         gh_log = d / "gh.log"
-        # THE TEMPDIR IS ITSELF A BASE, so `record_path`'s walk stops here
-        # rather than in the repository under test. Without it the
-        # no-campaign-AGENTS.md case wrote a record into this checkout's own
+        # THE TEMPDIR IS ITSELF A CAMPAIGN DIRECTORY, so `record_path`'s walk
+        # stops here rather than in the repository under test. Without it the
+        # no-marker case wrote a record into this checkout's own
         # `runtime/briefed/`, which is a suite editing its subject's tree.
-        (d / "AGENTS.md").write_text("# outer\n")
+        (d / ".campaign").write_text("0 outer\n")
         (d / "runtime").mkdir()
         camp = d / "dated"
         (camp / "runtime").mkdir(parents=True)
-        if campaign_agents is not None:
-            (camp / "AGENTS.md").write_text(campaign_agents)
+        if marker:
+            (camp / ".campaign").write_text("1 demo\n")
         if record is not None:
             rec = camp / "runtime" / "briefed"
             rec.mkdir(parents=True)
@@ -234,7 +221,7 @@ def main():
     r, stamp, _ = run({"hook_event_name": "UserPromptSubmit",
                        "session_id": SID}, agents=NAMED)
     check("UserPromptSubmit with no record emits, and writes one",
-          r.returncode == 0 and "WORKER-MARK" in r.stdout
+          r.returncode == 0 and WORKER in r.stdout
           and stamp is not None and stamp.startswith("worker demo "),
           f"out {r.stdout[:80]!r} rec {stamp!r}")
 
@@ -247,7 +234,7 @@ def main():
                          "session_id": SID}, agents=NAMED, record=(SID, stamp))
         check(f"SessionStart source={source} emits with the CURRENT stamp "
               f"already recorded",
-              r.returncode == 0 and "WORKER-MARK" in r.stdout,
+              r.returncode == 0 and WORKER in r.stdout,
               f"out {r.stdout[:80]!r} rec {rec!r}")
 
     r, rec, _ = run({"hook_event_name": "SessionStart", "source": "compact",
@@ -268,29 +255,51 @@ def main():
     r, rec, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
                     agents=row(SID, "other-planner-3"), record=(SID, stamp))
     check("a session renamed into the other role re-briefs on its next prompt",
-          "The planner's lifecycle" in r.stdout and "PLANNER-MARK" in r.stdout
+          "The planner's lifecycle" in r.stdout and PLANNER in r.stdout
           and rec.startswith("planner other "), f"out {r.stdout[:80]!r} rec {rec!r}")
 
-    # THE STAMP IS A SHA AND NOT A LENGTH. This campaign AGENTS.md differs from
-    # the one that produced `stamp` by exactly one character, in place -- so a
-    # stamp carrying `len(text)` matches and this case is the only thing that
-    # fails when the sha is put back to a length.
-    edited = CAMPAIGN_AGENTS.replace("WORKER-MARK", "WORKER-MARX")
-    r, _, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID},
-                  agents=NAMED, record=(SID, stamp), campaign_agents=edited)
-    check("a same-length edit to a briefed file re-briefs, so the stamp is a "
-          "sha and not a length",
-          r.returncode == 0 and "WORKER-MARX" in r.stdout,
-          f"out {r.stdout[:120]!r}")
+    # THE STAMP IS A SHA AND NOT A LENGTH. A COPY of the skill is briefed
+    # twice, its SKILL.md edited between the two by exactly one character in
+    # place -- so a stamp carrying `len(text)` matches and this case is the
+    # only thing that fails when the sha is put back to a length.
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        skill = d / "base" / ".claude" / "skills" / "assuming-role"
+        shutil.copytree(SCRIPT.parent.parent, skill)
+        camp = d / "camp"
+        (camp / "runtime").mkdir(parents=True)
+        (camp / ".campaign").write_text("1 demo\n")
+        bin_dir = d / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "herdr").write_text(FAKE)
+        (bin_dir / "herdr").chmod(0o755)
+        env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                   FAKE_AGENTS=json.dumps(NAMED), CLAUDE_PROJECT_DIR=str(camp))
+
+        def prompt_turn():
+            return subprocess.run(
+                [sys.executable, str(skill / "scripts" / SCRIPT.name)], env=env,
+                cwd=str(camp), capture_output=True, text=True,
+                input=json.dumps({"hook_event_name": "UserPromptSubmit",
+                                  "session_id": SID}))
+
+        first = prompt_turn()
+        page = skill / "SKILL.md"
+        page.write_text(page.read_text().replace("Assuming a role",
+                                                 "Assuming a rolE", 1))
+        r = prompt_turn()
+        check("a same-length edit to a briefed file re-briefs, so the stamp is "
+              "a sha and not a length",
+              "Assuming a role" in first.stdout and "Assuming a rolE" in r.stdout,
+              f"first {first.stderr[-200:]!r} then {r.stderr[-200:]!r}")
 
     # ---- what the brief carries ----
 
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
                    "session_id": SID}, agents=NAMED)
-    check("the brief carries the campaign's `## Every session` and the role's "
-          "own section, and not the other role's",
-          "EVERY-MARK" in r.stdout and "WORKER-MARK" in r.stdout
-          and "PLANNER-MARK" not in r.stdout, f"out {r.stdout[-400:]!r}")
+    check("the brief carries the role's own reference and not the other role's",
+          WORKER in r.stdout and PLANNER not in r.stdout,
+          f"out {r.stdout[-400:]!r}")
     check("...and the skill and the role's reference, without frontmatter",
           "Assuming a role" in r.stdout
           and "The worker's lifecycle" in r.stdout
@@ -300,77 +309,17 @@ def main():
     r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
                    "session_id": SID}, agents=row(SID, "other-planner-3"))
     check("a planner gets the planner reference and the planner section",
-          "The planner's lifecycle" in r.stdout and "PLANNER-MARK" in r.stdout
-          and "WORKER-MARK" not in r.stdout
+          "The planner's lifecycle" in r.stdout and PLANNER in r.stdout
+          and WORKER not in r.stdout
           and "planner of campaign `other`" in r.stdout,
           f"out {r.stdout[:200]!r}")
 
-    # A HEADING INSIDE A FENCE IS TEXT. A campaign document quoting `## Worker`
-    # in an example used to open the section there and emit the rest of the
-    # file, this marker included.
-    fenced = CAMPAIGN_AGENTS.replace("PLANNER-MARK", """```
-## Worker
-FENCE-MARK
-```""")
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED, campaign_agents=fenced)
-    check("a `## Worker` inside a fenced block opens nothing",
-          "FENCE-MARK" not in r.stdout and "WORKER-MARK" in r.stdout,
-          f"out {r.stdout[-300:]!r}")
-
-    # AN OPENER WITH NO CLOSER IS NOT A FENCE. Both directions are silent
-    # failures: one before the role heading drops the campaign's section
-    # entirely, one inside it emits to end of file.
-    stray_before = CAMPAIGN_AGENTS.replace("PLANNER-MARK", "```\nPLANNER-MARK")
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED,
-                  campaign_agents=stray_before)
-    check("an unclosed fence before the role's heading does not hide it",
-          "WORKER-MARK" in r.stdout, f"out {r.stdout[-200:]!r}")
-
-    stray_inside = (CAMPAIGN_AGENTS.replace("WORKER-MARK", "```\nWORKER-MARK")
-                    + "\n# Later\n\nTAIL-MARK\n")
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED,
-                  campaign_agents=stray_inside)
-    check("...and one inside it does not run the section to end of file",
-          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
-          f"out {r.stdout[-200:]!r}")
-
-    # UP TO THREE SPACES IS STILL A HEADING (CommonMark), and a campaign
-    # document is somebody's prose.
-    indented = CAMPAIGN_AGENTS + "\n   # Later\n\nTAIL-MARK\n"
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED, campaign_agents=indented)
-    check("a heading indented three spaces still closes the section",
-          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
-          f"out {r.stdout[-200:]!r}")
-
-    # A LEVEL-1 HEADING ENDS THE SECTION. `## Worker` is the template's last
-    # section, so whatever a campaign appends after it is what this protects.
-    tail = CAMPAIGN_AGENTS + "\n# Notes of our own\n\nTAIL-MARK\n"
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED, campaign_agents=tail)
-    check("a `# ` heading after the role's section closes it",
-          "WORKER-MARK" in r.stdout and "TAIL-MARK" not in r.stdout,
-          f"out {r.stdout[-300:]!r}")
-
-    # ...AND A `###` DOES NOT: a subheading belongs to its section.
-    sub = CAMPAIGN_AGENTS.replace("WORKER-MARK",
-                                  "WORKER-MARK\n\n### Detail\n\nSUB-MARK")
-    r, _, _ = run({"hook_event_name": "SessionStart", "source": "startup",
-                   "session_id": SID}, agents=NAMED, campaign_agents=sub)
-    check("a `###` subheading stays inside the role's section",
-          "SUB-MARK" in r.stdout, f"out {r.stdout[-300:]!r}")
-
     r, rec, where = run({"hook_event_name": "SessionStart", "source": "startup",
-                         "session_id": SID}, agents=NAMED, campaign_agents=None)
-    check("a campaign with no AGENTS.md of its own still gets the skill's "
-          "brief",
-          r.returncode == 0 and "The worker's lifecycle" in r.stdout
-          and "WORKER-MARK" not in r.stdout, f"out {r.stdout[:120]!r}")
+                         "session_id": SID}, agents=NAMED, marker=False)
+    check("a directory with no `.campaign` marker still gets the skill's brief",
+          r.returncode == 0 and WORKER in r.stdout, f"out {r.stdout[:120]!r}")
     # THE RECORD'S FALLBACK, which nothing asserted: the walk takes the NEAREST
-    # ancestor holding both `AGENTS.md` and `runtime/`, so a directory that is
+    # ancestor holding both `.campaign` and `runtime/`, so a directory that is
     # not a campaign does not capture the record and the last resort is not the
     # repository the script happens to live in.
     check("...and its record lands at the nearest ancestor that has both, not "
@@ -386,7 +335,7 @@ FENCE-MARK
                      "session_id": SID}, agents=NAMED, lock_runtime=True)
     check("a record that could not be written is EMITTED anyway and the "
           "verdict line says it was not written",
-          r.returncode == 0 and "WORKER-MARK" in r.stdout
+          r.returncode == 0 and WORKER in r.stdout
           and "not written" in r.stderr, f"err {r.stderr!r}")
 
     r, rec, _ = run({"hook_event_name": "SessionStart", "source": "startup",
@@ -421,7 +370,7 @@ FENCE-MARK
     # THE LAST-RESORT RECORD PATH, which no case above can reach: every one of
     # them runs under a directory that HAS a base, which is what the walk finds
     # first. Run a COPY of the skill so `BASE` is a temporary tree, from a cwd
-    # with no `AGENTS.md` above it at all, and the fallback is the only branch
+    # with no `.campaign` above it at all, and the fallback is the only branch
     # left. Reported in the REPORT for fix round 1 as covered when it was not.
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
@@ -473,8 +422,8 @@ FENCE-MARK
           f"rec {stamp_kind!r} err {r.stderr!r}")
     check("...and the role brief comes FIRST, so a session reads who it is "
           "before what the work is",
-          "WORKER-MARK" in r.stdout
-          and r.stdout.index("WORKER-MARK") < r.stdout.index(MAINTENANCE_HEAD),
+          WORKER in r.stdout
+          and r.stdout.index(WORKER) < r.stdout.index(MAINTENANCE_HEAD),
           f"out {r.stdout[:80]!r}")
     check("...over exactly one gh call, for that issue",
           len(LAST["gh"]) == 1 and f"issues/{ISSUE}" in LAST["gh"][0],
@@ -592,7 +541,7 @@ FENCE-MARK
     check("a session herdr does not name gets the kind reference all the same, "
           "and still no role brief",
           r.returncode == 0 and MAINTENANCE_HEAD in r.stdout
-          and "WORKER-MARK" not in r.stdout and "no role read for" in r.stderr
+          and WORKER not in r.stdout and "no role read for" in r.stderr
           and rec is None and LAST["kind"] is not None,
           f"out {r.stdout[:120]!r} err {r.stderr!r}")
 

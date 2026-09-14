@@ -78,7 +78,6 @@ was read and which branch was taken, and the kind path's own lines open
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -173,71 +172,13 @@ def body(path):
     return text.lstrip("\n")
 
 
-# What opens or closes a fenced block, and what ends a section. A HEADING OF
-# LEVEL 1 OR 2 ends it: the template's `## Worker` is its last section, so
-# anything a campaign appends -- a `# Notes` of its own -- used to be swallowed
-# into the brief. `###` does not, because a subheading is part of its section.
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-HEADING = re.compile(r"^ {0,3}#{1,2} ")
-
-
-def fenced_lines(lines):
-    """The line numbers inside a CLOSED fence.
-
-    AN OPENER WITH NO CLOSER IS NOT A FENCE, and that is the whole reason this
-    is a first pass rather than a running flag. A stray triple backtick made
-    everything after it text: a heading below it stopped closing sections, so
-    an unclosed fence before the role's heading dropped the campaign's section
-    entirely and one inside it emitted to end of file. Both failures are
-    silent, and a campaign document is somebody's prose -- the shape shows up.
-    Unbalanced, the run is read as the text it is."""
-    inside, open_at, run = set(), None, None
-    for i, line in enumerate(lines):
-        m = FENCE.match(line)
-        if not m:
-            continue
-        if open_at is None:
-            open_at, run = i, m.group(1)
-        elif m.group(1)[0] == run[0] and len(m.group(1)) >= len(run):
-            inside.update(range(open_at, i + 1))
-            open_at, run = None, None
-    return inside
-
-
-def campaign_section(role):
-    """The campaign `AGENTS.md`'s section for one role, if there is one. The
-    campaign directory is found from cwd, so a session outside one gets no
-    section rather than another campaign's.
-
-    A HEADING INSIDE A FENCE IS TEXT, not a heading. A campaign document
-    quoting `## Worker` in an example opened the section there and emitted the
-    rest of the file -- the same reading `check-rule-readers.py` gets right for
-    the opposite reason, and the shape a markdown scanner gets wrong first."""
-    cwd = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path.cwd())
-    for d in [cwd, *cwd.parents]:
-        f = d / "AGENTS.md"
-        if not (f.is_file() and (d / "runtime").is_dir()):
-            continue
-        want = f"## {role.capitalize()}"
-        lines = f.read_text().splitlines()
-        fenced = fenced_lines(lines)
-        out, keep = [], False
-        for i, line in enumerate(lines):
-            if i not in fenced and HEADING.match(line):
-                keep = line.strip() in (want, "## Every session")
-            if keep:
-                out.append(line)
-        return "\n".join(out) or None
-    return None
-
-
 def record_path(session_id):
-    """`<campaign>/runtime/briefed/<session>` where a campaign directory is
-    reachable, else `<base>/runtime/`. Printed, never guessed at by the reader:
-    a base worktree cannot reach a campaign directory's runtime."""
+    """`<campaign>/runtime/briefed/<session>` where a campaign directory -- a
+    `.campaign` marker beside `runtime/` -- is reachable, else
+    `<base>/runtime/`. Printed, never guessed at by the reader."""
     cwd = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path.cwd())
     for d in [cwd, *cwd.parents]:
-        if (d / "runtime").is_dir() and (d / "AGENTS.md").is_file():
+        if (d / "runtime").is_dir() and (d / ".campaign").is_file():
             return d / "runtime" / "briefed" / session_id
     return BASE / "runtime" / "briefed" / session_id
 
@@ -437,9 +378,6 @@ def brief(role, campaign):
         t = body(p)
         if t:
             parts.append(t)
-    section = campaign_section(role)
-    if section:
-        parts.append(section)
     return "\n\n".join(parts)
 
 

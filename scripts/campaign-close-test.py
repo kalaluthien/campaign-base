@@ -170,7 +170,7 @@ def whole(readme=README_NEW, body=README_OLD, derived=None, marker=True,
     (d / "runtime").mkdir(parents=True)
     (d / "scripts").mkdir()
     (d / "scripts" / ".gitkeep").write_text("")
-    (d / "AGENTS.md").write_text("# principles\n")
+    (d / "notes.md").write_text("# notes\n")
     (d / "repos" / "member").mkdir(parents=True)
     if marker:
         (d / ".campaign").write_text(f"{N} {SLUG}\n")
@@ -803,7 +803,7 @@ def case_campaign_closes(m):
             == "NOTE rc-planner-1: campaign closed."
             and w["comment"].startswith(f"NOTE rc-planner-1: closing campaign #{N} "
                                         f"from {m.TRACKER_MODULE.this_machine()}. ")
-            and "AGENTS.md" in w["comment"] and "scripts/.gitkeep" in w["comment"]
+            and "notes.md" in w["comment"] and "scripts/.gitkeep" in w["comment"]
             and "runtime" not in w["comment"].split("```")[1]
             and (d / "README.md").read_text() == README_NEW + "\n"
             and (d / "runtime" / "campaign-issue-body-derived.md").read_text()
@@ -818,7 +818,7 @@ def case_leftovers(m):
     (wt / "scripts" / "a.py").write_text("")
     (w["dir"] / "repos" / "member" / "x").write_text("")
     got = m.leftovers(w["dir"])
-    return got == [".campaign", "AGENTS.md", "README.md", "scripts",
+    return got == [".campaign", "README.md", "notes.md", "scripts",
                    "scripts/.gitkeep", "worktrees",
                    "worktrees/40-x/ (a git checkout)"], got
 

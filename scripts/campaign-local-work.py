@@ -414,16 +414,6 @@ def read_checkouts(campaign_dir, rep):
         name = slug(repo)
         for line in git(repo, "status", "--porcelain", "--ignored=matching").splitlines():
             state, path = line[:2].strip(), line[3:].strip().strip('"')
-            # `CLAUDE.local.md` is the campaign's principles, written into each
-            # delegate's clone and excluded in that clone's `.git/info/exclude`
-            # -- and `--ignored=matching` reports an info/exclude'd file exactly
-            # as it reports a build directory (probed 2026-09-04: it comes back
-            # `!! CLAUDE.local.md`). It is not work: it is derived from the
-            # campaign's own AGENTS.md and is rewritten at the next launch, so
-            # counting it made every campaign that ever launched a delegate read
-            # NOT clear for ever, which is a close gate that can never pass.
-            if path == "CLAUDE.local.md" and state == "!!":
-                continue
             kind = "ignored" if state == "!!" else "uncommitted"
             rep.add(name, kind, path.split("/")[0] if kind == "ignored" else path,
                     "git status --porcelain --ignored=matching", "discard")

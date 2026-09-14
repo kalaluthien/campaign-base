@@ -77,8 +77,8 @@ has returned a defect verdict**:
 
 - **the closing review**: once a round returns refinement only, the one
   narrowed review of the commit that applies it;
-- **a clean merge of `main`** onto a sha a review has already read, reviewed on
-  the merge commit's diff alone.
+- **a clean merge of `main`**, reviewed as the reconciliation paragraph below
+  says.
 
 Either is meant as the last round before the merge, and a wording note it
 returns is accepted in the REPORT, not fixed. **Once any round has returned a
@@ -86,8 +86,8 @@ defect, every later narrowed review stays on Opus at `low` to the end**, the
 closing one and a clean merge's included (owner, pr#409 and pr#420, kept by
 rule-check#441). Measured over two weeks (rule-check#441), the rounds past the
 one closing review allowed found 3 defect verdicts in 28 and took 5.3% of all
-review tokens; the closing reviews themselves, the rounds this moves to Sonnet,
-found 4 in 45.
+review tokens. The 45 closing reviews found 4, all on pull requests already
+past a defect verdict; the 16 this moves to Sonnet found none.
 
 **Level, by how much there is to read** -- many files, many call sites, a claim
 to check everywhere it is stated. `medium` is the working baseline of a full

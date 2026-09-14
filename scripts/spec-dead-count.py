@@ -18,13 +18,14 @@ judgement; how one leaves is `RemoveArtifact` in spec/sdlc/system.als, and
   undefined    a declared witness or refines name the snapshot does not list;
                a path-like token in a code file naming no tracked file
   untied       a code path with no suite, or whose suite declares no listed
-               scenario; each compared with check-sdlc-tie.py's LEGACY
+               scenario; each compared with the tree's own LEGACY,
+               read as check-sdlc-tie.py reads it
   premise      a definition whose name carries a multi-machine or handoff
                premise, one no tree fact can observe
   mismatch     a declared witness name spelled nowhere else in its suite
 
-WHAT IT READS: the tracked files of the repository at ROOT (default: the
-working directory), through `git ls-files`. What a suite, a code path, a
+WHAT IT READS: the tracked files of the repository holding ROOT (default: the
+working directory), from its top, through `git ls-files`. What a suite, a code path, a
 scenario, a declaration and a refinement are is check-sdlc-tie.py's `Tree`,
 and what a script's own directory is check-tree-shape.py's `in_scripts_dir`,
 both imported from beside this file, so the candidates are counted over the
@@ -86,16 +87,15 @@ def cls(name):
     return "cov" if name.startswith("Cov_") else "control" if NEG.search(name) else "scenario"
 
 
-def is_suite(path):
-    return tie.stem(path).endswith("-test")
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="all", choices=("all",) + MODES)
     ap.add_argument("root", nargs="?", default=".")
     args = ap.parse_args()
-    os.chdir(args.root)
+    # The tree's top, not ROOT itself: `git ls-files` below a subdirectory
+    # lists paths relative to it, and nothing would start with `spec/`.
+    os.chdir(subprocess.run(["git", "-C", args.root, "rev-parse", "--show-toplevel"],
+                            capture_output=True, text=True, check=True).stdout.strip())
     want = lambda m: args.mode in ("all", m)
     head = lambda m, n, what: print(f"{m}\t{n}\t{what}")
     row = lambda m, e, n, why: print(f"{m}\t{e}\t{n}\t{why}")
@@ -120,6 +120,7 @@ def main():
                        if not g.endswith(".als") and g != tie.SNAPSHOT and c[n]]
                 defs.append((f.split("/")[-2], k, n, inspec, out))
     cmds = [(e, k, n) for e, k, n, _, _ in defs if k in ("check", "run")]
+    suites = set(tree.suites)
     witnesses = {s: sorted(tree.declared(s)) for s in tree.suites}
     refines = {h: sorted(tree.refines(h)) for h in tree.htmls}
     declared = tree.declared_by_suites() | {n for v in refines.values() for n in v}
@@ -146,7 +147,7 @@ def main():
              f"{len(tree.suites)} suites and {len(tree.htmls)} html forms")
         named = {n: o for e, k, n, _, o in defs if k in ("check", "run")}
         for m, k, n in dead:
-            cited = [g for g in named.get(n, []) if not is_suite(g)]
+            cited = [g for g in named.get(n, []) if g not in suites]
             row("unwitnessed", m.split("/")[-2], n, f"{k} declared by no suite; class "
                 f"{cls(n)}; named outside spec by: {','.join(cited) or 'nothing'}")
 
@@ -189,7 +190,7 @@ def main():
         tracked = set(files)
         paths = set()
         for f in files:
-            if not re.search(r"\.(py|sh|yml|md|als|html)$", f) or "/fixtures/" in f or is_suite(f):
+            if not re.search(r"\.(py|sh|yml|md|als|html)$", f) or "/fixtures/" in f or f in suites:
                 continue
             for m in PATH.finditer(text[f]):
                 p = m.group(1).rstrip(".")
@@ -207,7 +208,10 @@ def main():
             row("undefined", f, p, "path token names no tracked file")
 
     if want("untied"):
-        legacy = set(tie.LEGACY)
+        held, why = tie.own_list(tree)   # the tree's own list, as the guard reads it
+        legacy = held or set()
+        if held is None:
+            print(f"untied\t-\tLEGACY\tnot read: {why}", file=sys.stderr)
         rows = []
         for k in sorted(tree.code):
             suites = tree.suites_of(k)

@@ -5,13 +5,14 @@
 `S9_DeadElimination` is the removal of a scenario nothing witnesses, beside a
 code path that stays tied through another. Which scenario that is gets judged
 outside the model, from the candidates this script prints; so the case is the
-fixture S9 starts from: one code path, its suite declaring `S1_Live`, and
-`S2_Dead` declared by nothing.
+fixture S9 starts from: one code path, its suite declaring `S1_Live`, an html
+form refining `S3_Refined`, and `S2_Dead` declared by nothing.
 
-THE NAMED FAILING CASE is `the dead scenario is listed, the live one is not`:
-it reddens a reader that drops the declaration filter (every command listed)
-or reads declarations off no suite (both listed), which is the difference
-between a candidate set and the whole snapshot.
+THE NAMED FAILING CASE is `the dead scenario is listed, the witnessed and the
+refined ones are not`:
+it reddens a reader that drops the declaration filter (every command listed),
+reads declarations off no suite, or reads no html form's refinement -- the
+difference between a candidate set and the whole snapshot.
 
 Usage: scripts/spec-dead-count-test.py
 """
@@ -31,9 +32,12 @@ check = harness.check
 MODULE = "spec/demo/checks.als"
 FIXTURE = {
     "spec/commands.snapshot.json": json.dumps({"commands": [
-        [MODULE, "run", "S1_Live"], [MODULE, "run", "S2_Dead"]]}),
+        [MODULE, "run", "S1_Live"], [MODULE, "run", "S2_Dead"],
+        [MODULE, "run", "S3_Refined"]]}),
     MODULE: ("pred S1_Live { some univ }\npred S2_Dead { no univ }\n"
-             "run S1_Live expect 1\nrun S2_Dead expect 1\n"),
+             "pred S3_Refined { lone univ }\n"
+             "run S1_Live expect 1\nrun S2_Dead expect 1\nrun S3_Refined expect 1\n"),
+    "spec/demo/refined.html": '<section data-scenario data-refines="S3_Refined"></section>\n',
     "scripts/demo.py": "print('demo')\n",
     "scripts/demo-test.py": "# witnesses: S1_Live\nprint('S1_Live')\n",
 }
@@ -56,14 +60,20 @@ def main() -> int:
         lines = r.stdout.splitlines()
         rows = [l.split("\t") for l in lines[1:]]
         check("unwitnessed exits 0", r.returncode == 0, f"exit {r.returncode}: {r.stderr[:300]}")
-        check("the count line counts one of two snapshot commands",
-              lines[:1] and lines[0].startswith("unwitnessed\t1\tof 2 snapshot commands"),
+        check("the count line counts one of three snapshot commands",
+              lines[:1] and lines[0].startswith("unwitnessed\t1\tof 3 snapshot commands"),
               repr(lines[:1]))
-        check("the dead scenario is listed, the live one is not",
+        check("the dead scenario is listed, the witnessed and the refined ones are not",
               [x[2] for x in rows] == ["S2_Dead"], repr(rows))
         check("its row carries the entity and the reason",
               rows[:1] and rows[0][1] == "demo" and "declared by no suite" in rows[0][3],
               repr(rows[:1]))
+
+        # A ROOT below the tree's top reads the whole tree, not an empty one:
+        # `git ls-files` there lists paths relative to it, none under spec/.
+        r = run(root / "scripts", "--mode", "unwitnessed")
+        check("a ROOT below the top reads the same tree",
+              r.stdout.splitlines() == lines, repr(r.stdout.splitlines()[:2]))
 
         r = run(root)
         modes = [l.split("\t")[0] for l in r.stdout.splitlines() if l.split("\t")[1:2] != ["-"]]

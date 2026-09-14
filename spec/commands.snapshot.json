@@ -203,6 +203,8 @@
     ["campaign/session/checks.als", "run", "R2c_SurveyAtFileAdmitsOne"],
     ["campaign/session/checks.als", "run", "R3_DeleteUnderWorkingSession"],
     ["campaign/session/checks.als", "run", "R4_RepolessCampaign"],
+    ["campaign/session/checks.als", "run", "SR1_WholeReadOfALongFileIsSteered"],
+    ["campaign/session/checks.als", "run", "SR1b_ARangeADiffOrAShortFilePasses"],
     ["sdlc/checks.als", "check", "AbsenceLicensed"],
     ["sdlc/checks.als", "check", "DebtNeverGrows"],
     ["sdlc/checks.als", "check", "FeaturelessKeeps"],

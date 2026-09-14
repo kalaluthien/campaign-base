@@ -30,9 +30,9 @@ INSTALLER = HERE / "install-hooks.sh"
 def _needed():
     """Every script the installed hooks run, read from the installer.
 
-    An `# installs:` entry is `<repo-relative path>:<Event>[,<Event>]` since
-    #227; the events are the installer's business and the path is this
-    suite's. A `# runs:` entry is still a bare name under `scripts/`."""
+    An `# installs:` entry is `<repo-relative path>:<Event>[,<Event>][:<matcher>]`
+    since #227 and rule-check#443; the events and the matcher are the
+    installer's business and the path is this suite's. A `# runs:` entry is still a bare name under `scripts/`."""
     out = ["install-hooks.sh"]
     for line in INSTALLER.read_text().splitlines():
         for key in ("# runs: ", "# installs: ", "# imports: "):

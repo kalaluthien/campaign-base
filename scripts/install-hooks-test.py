@@ -51,7 +51,8 @@ def _needed():
             if line.startswith(key):
                 for n in line[len(key):].split():
                     # An `# installs:` entry carries its events after a colon
-                    # (#227); only the path names a file to place.
+                    # (#227), and a matcher after a second (rule-check#443);
+                    # only the path names a file to place.
                     n = n.split(":", 1)[0]
                     if n not in out:
                         out.append(n)
@@ -752,6 +753,18 @@ def main():
                   for ev in ("SessionStart", "UserPromptSubmit")
                   for e in settings.get("hooks", {}).get(ev, [])),
               str(settings.get("hooks", {}).get("SessionStart"))[:200])
+        # ONE SLOT PER MATCHER (rule-check#443): the read hook fires on Read
+        # alone and the guard never on Read, so a slot shared between them
+        # would run each on the other's tools.
+        def matchers(name):
+            return [e.get("matcher") for e in settings["hooks"].get("PreToolUse", [])
+                    if any(name in h["command"] for h in e["hooks"])]
+        check("the read hook is registered on PreToolUse under `Read` alone",
+              matchers("check-read-range.py") == ["Read"],
+              str(settings["hooks"].get("PreToolUse"))[:300])
+        check("...and the guard keeps its own matcher, without Read",
+              matchers("check-campaign-claim.py") == ["Edit|Write|NotebookEdit|Bash|Agent|Skill"],
+              str(settings["hooks"].get("PreToolUse"))[:300])
         # The pane stamp every role and liveness reading keys on. Its readers
         # are all here, so a registration that missed an event would leave a
         # pane unstamped exactly when that event was its only chance.

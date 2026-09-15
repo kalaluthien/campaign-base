@@ -53,8 +53,9 @@ relative one; `WALKERS` says why. Its ceilings: a root the shell composes
 breaks at its braces; a root above the home folder (`/`, `/Users`) is not this
 rule; a path is compared as text, so a symlink into a guarded folder passes; a
 wrapper the split does not strip (`timeout 60`, `xargs`) hides the verb, and a
-`cd` inside a subshell is not tracked, as for the bypass rule; a quoted `~` is
-read as home though the shell leaves it, which over-refuses; and a python
+`cd` inside a subshell is not tracked, as for the bypass rule; a quoted `~`,
+or one after `=` (`--search-path=~/x`, zsh's `magic_equal_subst` being off),
+is read as home though the shell leaves it, which over-refuses; and a python
 `glob` in a heredoc is data, like every heredoc body.
 
 A NEWLINE ENDS A COMMAND, which shlex does not say -- it is whitespace there,

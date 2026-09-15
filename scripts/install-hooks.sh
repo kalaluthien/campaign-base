@@ -316,10 +316,12 @@ fi
 # kalaluthien/campaign-base#278: a launch is where a review's model is chosen
 # and a `Skill` call is where a review fans out, and a tool absent from the
 # matcher reaches the guard not at all -- which is why both rules on the call
-# were prose nothing could enforce however the guard was written.
+# were prose nothing could enforce however the guard was written. Glob and
+# Grep joined it with the same issue's reopen: each walks the tree its `path`
+# names, which is the walk of a guarded folder the Bash rule refuses.
 # check-read-range.py is its own entry on `Read` alone (rule-check#443): steering
 # a read is no claim question, and a fault in it must not touch the guard.
-# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
+# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this

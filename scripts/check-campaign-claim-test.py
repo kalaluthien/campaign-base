@@ -2448,6 +2448,115 @@ def main():
               "stops every process matching it" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
+    # A WALK OF A GUARDED FOLDER (kalaluthien/campaign-base#278, reopened
+    # 2026-09-16). The named case is rule-check-planner-10's call of 2026-09-15
+    # 14:48, which raised the Photos and MediaLibrary prompts; the home is this
+    # machine's, read the way the guard reads it. Each refusal asserts the verb
+    # and the root it printed, and each allow is a shape a scan over the words
+    # alone would have refused.
+    home = Path.home()
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, command, verb, root in (
+                ("the incident: `find` at the home folder",
+                 f"find {home} -maxdepth 4 -name CLAUDE.local.md 2>/dev/null "
+                 f"| head", "find", home),
+                ("`~` as the root", "tree -L 2 ~", "tree", home),
+                ("an expanded `$HOME`", 'du -sh "$HOME"', "du", home),
+                ("a guarded folder", "rg --files ~/Downloads", "rg",
+                 home / "Downloads"),
+                ("a pattern named by a flag", "rg --regexp=foo ~/Music", "rg",
+                 home / "Music"),
+                ("a path under one", "fd -e md . ~/Documents/notes", "fd",
+                 home / "Documents" / "notes"),
+                ("`find`'s own option before the root", "find -L ~/Movies -name x",
+                 "find", home / "Movies"),
+                ("`grep` with its recursive flag", "grep --recursive foo ~/Desktop",
+                 "grep", home / "Desktop"),
+                ("`ls` with its recursive flag", "ls -lR ~/Pictures", "ls",
+                 home / "Pictures"),
+                ("no operand, after a `cd` home", "cd ~ && rg foo 2>/dev/null",
+                 "rg", home),
+                # pr#451's review: a valued flag's value is not an operand, and
+                # one attached mid-cluster takes no next word.
+                ("a value attached to a cluster", "grep -rnC2 foo ~/Desktop",
+                 "grep", home / "Desktop"),
+                ("a pattern named by `-e`", "grep -rn -e foo ~/Music", "grep",
+                 home / "Music"),
+                ("`fd`'s root flag", "fd --search-path ~/Documents x", "fd",
+                 home / "Documents"),
+                ("a folder spelled in another case", "find ~/documents -name x",
+                 "find", home / "documents"),
+                # pr#451's narrowed review: BSD `ls -T` takes no value, and a
+                # root flag's value may be attached.
+                ("`ls -T`, a flag of BSD's that takes no value",
+                 "ls -lRT ~/Pictures", "ls", home / "Pictures"),
+                ("`fd`'s root flag with its value attached",
+                 "fd --search-path=$HOME/Documents x", "fd", home / "Documents")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is refused, naming the verb and the root",
+                  r.returncode == 2 and f"`{verb}` walks" in out(r)
+                  and f"read as {root}:" in out(r)
+                  and "charged to herdr" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        for name, command in (
+                ("a walk of a folder nobody guards", "find ~/campaign-base -name x"),
+                ("one file in a guarded folder", "cat ~/Documents/x.md"),
+                ("a non-recursive grep there", "grep -n foo ~/Documents/x.md"),
+                ("a non-recursive ls of the home folder", "ls -la ~"),
+                ("`ls -r`, which sorts and does not recurse", "ls -r ~"),
+                ("a tilde as grep's pattern", "grep -rn '~' ."),
+                ("a quoted `$HOME`, which is text", "find '$HOME' -name x"),
+                ("a tilde after `find`'s expression began", "find . -name ~"),
+                ("a redirection into a guarded folder", "du -sh . > ~/Documents/du.txt"),
+                ("a folder whose name only starts like one", "find ~/Documentsx"),
+                ("a search for the text of a guarded path",
+                 "rg -n -C 2 '~/Downloads' scripts/"),
+                ("a long flag's value", "du -sh --exclude ~/Downloads ~/campaign-base"),
+                ("the command `fd -x` runs", "fd x -x rm ~"),
+                ("a cluster whose `R` is `-e`'s value", "grep -eRoot ~/Documents/x.md")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"...and {name} is allowed",
+                  r.returncode == 0 and "walks `" not in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Bash", command="find ~ -name x", run_cwd=d)
+        check("the same walk outside every base is allowed, saying the rule",
+              r.returncode == 0 and "`find` walks `~`" in out(r)
+              and "in no campaign" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+
+    # THE HARNESS'S OWN WALKERS, read by the same rule over their `path`. The
+    # named case is the DoD's: a `Glob` at ~/Downloads, the folder the
+    # reviewer's heredoc glob of 2026-09-14 raised the first prompt for.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, tool, path, root in (
+                ("a `Glob` at ~/Downloads", "Glob", "~/Downloads", home / "Downloads"),
+                ("a `Grep` at the home folder", "Grep", str(home), home)):
+            r = ask(wt, tool=tool, tool_input={"pattern": "*.pdf", "path": path},
+                    run_cwd=wt)
+            check(f"{name} is refused, naming the tool and the root",
+                  r.returncode == 2 and f"`{tool}` walks `{path}`" in out(r)
+                  and f"read as {root}:" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+        for name, tool, tool_input, said in (
+                ("a `Grep` at a folder nobody guards", "Grep",
+                 {"pattern": "x", "path": "~/campaign-base"}, "no folder macOS guards"),
+                ("a `Glob` naming no path", "Glob", {"pattern": "**/*.md"},
+                 "naming no `path`")):
+            r = ask(wt, tool=tool, tool_input=tool_input, run_cwd=wt)
+            check(f"...and {name} is allowed, saying why",
+                  r.returncode == 0 and said in out(r) and "walks `" not in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Glob", tool_input={"pattern": "*", "path": "~/Downloads"},
+                run_cwd=d)
+        check("the same `Glob` outside every base is allowed, saying the rule",
+              r.returncode == 0 and "`Glob` walks `~/Downloads`" in out(r)
+              and "in no campaign" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+
     # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
     # Three spellings reaching one end, so three branches, each asserted on
     # its own sentence. The ALLOWS are read first, as this repository's own
@@ -3069,11 +3178,11 @@ def main():
     # fire for a tool the harness never routes here, so the declaration is
     # asserted here; install-hooks-test reads the slot it produces.
     matcher = (HERE / "install-hooks.sh").read_text()
-    check("install-hooks.sh registers the guard on Agent and Skill",
-          "scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill "
+    check("install-hooks.sh registers the guard on Agent, Skill, Glob and Grep",
+          "scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep "
           in matcher,
-          "the guard's `# installs:` matcher no longer lists both; the rules on the call would be "
-          "unreachable however this file is written")
+          "the guard's `# installs:` matcher no longer lists all four; the rules on the call "
+          "and the walk rule's tool half would be unreachable however this file is written")
 
     # ------------------------------------------------------ rule-check#442
     # WHO MERGES: the planner of the head's campaign, or the worker holding
@@ -3805,7 +3914,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 577
+    EXPECTED = 613
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

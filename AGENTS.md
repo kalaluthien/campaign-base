@@ -579,7 +579,7 @@ mechanically, or on the sub-issue where there is none; a `BLOCKED`, a
 **A step-end `NOTE` is notified the same way, and that is not a fifth
 message**: where a planner drives a sub-issue a step at a time, the worker's
 message names the `NOTE` that ends the step and carries no fact it does not
-(`assuming-role`'s `worker.md` step 4).
+(`assuming-role`'s `role-worker.md` step 4).
 `STATUS` and `STAND DOWN` have no comment kind at all: they are prompts into a
 pane, by the two-channel criterion below, and there is nothing durable in
 either.
@@ -697,7 +697,7 @@ release` enqueues it, and says why when it did not — a planner's release,
 or a `/compact` already pending.
 
 **The session limit is a first-class cause of death, and it kills in batches**;
-a planner's own pacing against it is `.claude/skills/assuming-role/references/planner.md`
+a planner's own pacing against it is `.claude/skills/assuming-role/references/role-planner.md`
 § The planner's clock.
 
 Retire finished agents as the campaign runs, not when it closes, and sweep with

@@ -412,7 +412,7 @@ pred mergedByPlannerOrHolder {
 /* Live agents waiting on a BLOCKED whose sub-issue has a planner running. */
 fun waitingOnPlanner: set Agent { { a: Waiting & Live | some livePlannersOn[a.task] } }
 
-/* planner.md step 7: in the turn a BLOCKED reaches the planner, its first act
+/* role-planner.md step 7: in the turn a BLOCKED reaches the planner, its first act
    is the DECISION -- its own, or the owner's answer to AskUserQuestion -- and
    nothing else runs first. "Reaches" covers a planner starting with one
    already standing, so it is read off the state and not off `Blocked`.
@@ -1536,7 +1536,7 @@ pred A5_ReviewRuleBlocksTheCollision {
 }
 
 /* M3. The planner lands a pull request of its own campaign's claim, one it
-   did not cut: the landing planner.md step 9 describes. Dropping the Planner
+   did not cut: the landing role-planner.md step 9 describes. Dropping the Planner
    disjunct turns it UNSAT. */
 pred M3_PlannerLandsItsCampaignsClaim {
   mergedByPlannerOrHolder
@@ -1548,7 +1548,7 @@ pred M3_PlannerLandsItsCampaignsClaim {
   }
 }
 
-/* M3b. The worker holding the claim lands it: worker.md step 8's shape
+/* M3b. The worker holding the claim lands it: role-worker.md step 8's shape
    where no planner runs. Dropping the Worker disjunct turns it UNSAT. */
 pred M3b_WorkerLandsItsOwnClaim {
   mergedByPlannerOrHolder

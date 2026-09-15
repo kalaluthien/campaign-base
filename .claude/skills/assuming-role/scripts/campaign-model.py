@@ -12,7 +12,7 @@ that to every session the address names: `/model <to>` into its pane, and
 `/effort <level>` after it when asked. No successor, no NOTE, no leave -- the
 model is `modelSwitch` in spec/campaign/session/system.als, whose
 `ModelSwitchKeepsEverySession` says nothing a hand-off moves is moved here.
-A switch cannot do what `planner.md` § Handing off does for a slug rename or
+A switch cannot do what `role-planner.md` § Handing off does for a slug rename or
 a context too large to compact; that path stays.
 
 THE ADDRESS is every row `herdr agent list` shows whose name carries the role

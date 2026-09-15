@@ -478,7 +478,7 @@ pred report[a: Agent] {
 /* Silence is not this message: an agent that stops without sending it
    looks identical to one thinking. An agent sends it for a decision or a
    question about its brief, one event because both leave it Waiting;
-   `.claude/skills/assuming-role/references/worker.md` step 4 sorts them.
+   `.claude/skills/assuming-role/references/role-worker.md` step 4 sorts them.
    Only to a planner running on the sub-issue: with none, the one-worker
    shape, the worker asks the owner in its own turn and sends no BLOCKED, so
    no agent comes to wait with nobody who could `decide`. A planner that dies
@@ -623,7 +623,7 @@ fun heirOf[p, t: Session]: Agent -> Agent {
    WHAT IS NOT MODELLED: the predecessor's `NOTE <old>: handed off to <new>`,
    and that the successor reads it on GitHub before it runs
    `scripts/campaign-close.py leave <N> <pane>`. The ordering is the
-   procedure's, in `.claude/skills/assuming-role/references/planner.md`
+   procedure's, in `.claude/skills/assuming-role/references/role-planner.md`
    § Handing off and its worker twin; this event is the instant that leave's
    `/exit` lands.
 

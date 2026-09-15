@@ -37,7 +37,7 @@ Contents: the moments below, then
    `DECISION` cites
    the brief's line, or is the line the brief lacked; a question asked twice
    goes into the sub-issue template or the kind's reference. What reaches you
-   is [worker](worker.md) step 4's. A relay is never the authority; point at
+   is [worker](role-worker.md) step 4's. A relay is never the authority; point at
    the durable artifact instead.
 8. **Retire agents as the campaign runs.** The heartbeat retires a worker,
    idle or mid-turn, whose last assigned sub-issue has no claim ref left, with
@@ -89,7 +89,7 @@ absorb**: absorbing one is a push, and a push retires the review.
 
 **Brief a chosen mechanism whole and an open one a step at a time** (measure,
 probe, choose), each decision yours, the worker's measurements arriving as a
-NOTE and the ask as the `BLOCKED` of [worker](worker.md) step 4; run a large
+NOTE and the ask as the `BLOCKED` of [worker](role-worker.md) step 4; run a large
 design as design NOTE, adversarial NOTE, one superseding `DECISION`. Route,
 claim and hand a defect to a worker in one turn: a note nobody works is never
 read again.
@@ -136,7 +136,7 @@ Rename the slug only once `campaign-claim live <N>` prints no row under either
 claims group, `landed` refs released first with `campaign-claim release`: a
 claim ref keeps the old slug, and nothing reads that prefix after the rename.
 Rewrite the `.campaign` marker with the label. The worker's side is in
-[worker](worker.md).
+[worker](role-worker.md).
 
 1. **The predecessor posts its last comment**, `NOTE <old>: handed off to
    <new>`, on the campaign issue: the pending list (which sub-issue each

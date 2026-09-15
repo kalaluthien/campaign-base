@@ -126,7 +126,7 @@ ROLES = {
         # WHICH CLAIM A `gh pr merge` STANDS ON (rule-check#442), the licence
         # the head decides. "campaign": any claim of the planner's own
         # campaign, checked out or not, because the planner lands what its
-        # workers reviewed (planner.md step 9) and holds no claim itself.
+        # workers reviewed (role-planner.md step 9) and holds no claim itself.
         # "held": the claim a checkout this session stands in or holds is on.
         # The guard reads the claim off the branch the merge names; that
         # reading is its, not this table's.

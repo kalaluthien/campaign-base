@@ -85,8 +85,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent.parent.parent.parent      # .../.claude/skills/<skill>/scripts
 SKILL = HERE.parent
-REFERENCES = {"planner": SKILL / "references" / "planner.md",
-              "worker": SKILL / "references" / "worker.md"}
+REFERENCES = {"planner": SKILL / "references" / "role-planner.md",
+              "worker": SKILL / "references" / "role-worker.md"}
 # The one reader of the `kind:` label, asked as a subprocess. BASE is derived
 # from this file's own path, so the tracker is found from a session started
 # anywhere -- a worktree, a clone, a campaign directory.

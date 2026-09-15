@@ -2448,6 +2448,64 @@ def main():
               "stops every process matching it" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
+    # A WALK OF A GUARDED FOLDER (kalaluthien/campaign-base#278, reopened
+    # 2026-09-16). The named case is rule-check-planner-10's call of 2026-09-15
+    # 14:48, which raised the Photos and MediaLibrary prompts; the home is this
+    # machine's, read the way the guard reads it. Each refusal asserts the verb
+    # and the root it printed, and each allow is a shape a scan over the words
+    # alone would have refused.
+    home = Path.home()
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, command, verb, root in (
+                ("the incident: `find` at the home folder",
+                 f"find {home} -maxdepth 4 -name CLAUDE.local.md 2>/dev/null "
+                 f"| head", "find", home),
+                ("`~` as the root", "tree -L 2 ~", "tree", home),
+                ("an expanded `$HOME`", 'du -sh "$HOME"', "du", home),
+                ("a guarded folder", "rg --files ~/Downloads", "rg",
+                 home / "Downloads"),
+                ("a pattern named by a flag", "rg --regexp=foo ~/Music", "rg",
+                 home / "Music"),
+                ("a path under one", "fd -e md . ~/Documents/notes", "fd",
+                 home / "Documents" / "notes"),
+                ("`find`'s own option before the root", "find -L ~/Movies -name x",
+                 "find", home / "Movies"),
+                ("`grep` with its recursive flag", "grep --recursive foo ~/Desktop",
+                 "grep", home / "Desktop"),
+                ("`ls` with its recursive flag", "ls -lR ~/Pictures", "ls",
+                 home / "Pictures"),
+                ("no operand, after a `cd` home", "cd ~ && rg foo 2>/dev/null",
+                 "rg", home)):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"{name} is refused, naming the verb and the root",
+                  r.returncode == 2 and f"`{verb}` walks" in out(r)
+                  and f"read as {root}:" in out(r)
+                  and "charged to herdr" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        for name, command in (
+                ("a walk of a folder nobody guards", "find ~/campaign-base -name x"),
+                ("one file in a guarded folder", "cat ~/Documents/x.md"),
+                ("a non-recursive grep there", "grep -n foo ~/Documents/x.md"),
+                ("a non-recursive ls of the home folder", "ls -la ~"),
+                ("`ls -r`, which sorts and does not recurse", "ls -r ~"),
+                ("a tilde as grep's pattern", "grep -rn '~' ."),
+                ("a quoted `$HOME`, which is text", "find '$HOME' -name x"),
+                ("a tilde after `find`'s expression began", "find . -name ~"),
+                ("a redirection into a guarded folder", "du -sh . > ~/Documents/du.txt"),
+                ("a folder whose name only starts like one", "find ~/Documentsx")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"...and {name} is allowed",
+                  r.returncode == 0 and "walks `" not in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Bash", command="find ~ -name x", run_cwd=d)
+        check("the same walk outside every base is allowed, saying the rule",
+              r.returncode == 0 and "`find` walks `~`" in out(r)
+              and "in no campaign" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+
     # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
     # Three spellings reaching one end, so three branches, each asserted on
     # its own sentence. The ALLOWS are read first, as this repository's own
@@ -3805,7 +3863,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 577
+    EXPECTED = 598
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

@@ -36,14 +36,20 @@ narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
 shell string is an unbounded language, and a shell write on campaign work
 lands at the commit, where the other half reads it.
 
-TWO SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
-than past that ceiling: a PATTERN KILL, and a HOOK BYPASS. Neither is a write
-with a landing, so neither reaches the commit gate, and each has an incident
-behind it (kalaluthien/campaign-base#278). They are read from the segment's
-command word and its own flags, so a command matching neither name is allowed
-unread exactly as it was. The bypass half asks one thing more, the repository
-the call would run in: a hook that is not installed is not one being skipped,
-and the `cd`s of the command are walked to find it.
+THREE SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
+than past that ceiling: a PATTERN KILL, a HOOK BYPASS, and a WALK OF A GUARDED
+FOLDER. None is a write with a landing, so none reaches the commit gate, and
+each has an incident behind it (kalaluthien/campaign-base#278). They are read
+from the segment's command word and its own flags, so a command matching no
+name is allowed unread exactly as it was. The bypass half asks one thing more,
+the repository the call would run in: a hook that is not installed is not one
+being skipped, and the `cd`s of the command are walked to find it. The walk
+half reads the ROOT a walking verb is given -- the home folder, or one of the
+six folders macOS guards or a path under them -- and the same `cd`s place a
+relative one; `WALKERS` says why. Its ceilings: a root the shell composes
+(`~/*`, `"$HOME/$d"`) is unread, a root above the home folder (`/`, `/Users`)
+is not this rule, a path is compared as text so a symlink into a guarded folder
+passes, and a python `glob` in a heredoc is data, like every heredoc body.
 
 A NEWLINE ENDS A COMMAND, which shlex does not say -- it is whitespace there,
 and a glued `);` or `&&\n` matches no separator either. Both are put back
@@ -345,6 +351,38 @@ HERDR_PRE_VALUED = {"--session", "--remote"}
 # previous reading standing, and the guard then answered confidently about a
 # directory the shell had left (#281's narrowed rounds).
 MOVES = {"cd", "pushd", "popd"}
+
+# A WALK ROOTED AT THE HOME FOLDER, OR AT OR UNDER A FOLDER MACOS GUARDS
+# (kalaluthien/campaign-base#278, reopened 2026-09-16). The first time a
+# process lists one of these folders, tccd raises a permission prompt, and for
+# anything run in a herdr pane it names `responsible=` herdr -- so the prompt
+# lands on a person's screen, not in the pane, and the call hangs until
+# somebody answers it: a reviewer's glob over ~/Downloads sat 25 minutes. The
+# grant is keyed on herdr's Cellar path, so every herdr upgrade raises the whole
+# wave again. Whether to grant herdr Full Disk Access is the machine's question;
+# this refuses the walk either way.
+#
+# THE VERB DECIDES WHETHER IT WALKS, and the root is its path operand: `cat
+# ~/Documents/x.md` reads one file and passes, `find ~/campaign-base` walks a
+# folder nobody guards and passes. `grep` and `ls` walk only with their flag.
+WALKERS = {"find", "bfs", "fd", "rg", "du", "tree"}
+WALKS_WITH = {"grep": ("rR", ("--recursive", "--dereference-recursive")),
+              "ls": ("R", ("--recursive",))}
+# THE FIRST OPERAND OF THESE IS A PATTERN, not a root -- unless a flag names
+# the pattern, which frees every operand to be a path. Read wrong, `grep -rn
+# '~' .` searched for a tilde and was refused as a walk of the home folder.
+PATTERN_FIRST = {"grep": ("-e", "-f", "--regexp", "--file"),
+                 "rg": ("-e", "-f", "--regexp", "--file", "--files"),
+                 "fd": ()}
+# `find`'s own options before its paths, as BSD spells them, alone or in a
+# cluster; the first word after them that opens with `-` starts the
+# expression, which holds no root.
+FIND_OPTS = set("HLPEXdsx")
+GUARDED = ("Pictures", "Music", "Movies", "Documents", "Desktop", "Downloads")
+# `$HOME` and `${HOME}` are the home folder when the shell expands them, and
+# only then: in single quotes they are six characters of text.
+HOME_VAR = re.compile(r"^\$(?:HOME|\{HOME\})(?=/|$)")
+HOME_RULE = "a walk of a guarded folder"
 
 # A HOOK BYPASS IS A FLAG, AND MOVING THE HOOKS IS THE SAME BYPASS SHAPED LIKE
 # CONFIGURATION. `AGENTS.md` § Execution mode says a hook is never bypassed;
@@ -1655,11 +1693,14 @@ def gh_write(tokens):
     return False, "gh " + " ".join(pair) + ", not a write"
 
 
-def literal_path(token, base):
+def literal_path(token, base, lexical=False):
     """The directory a token names, or None when the shell would compose it.
 
     `base` is what a relative path is resolved against, and is itself None once
-    a `cd` this could not read has moved the shell somewhere unknown."""
+    a `cd` this could not read has moved the shell somewhere unknown.
+    `lexical` normalises the text and touches no file, for a path under a
+    folder macOS guards, where resolving it would list the folder the rule is
+    there to keep this machine out of."""
     # `~` IS IN `COMPOSED` because the shell expands it and this guard expands
     # nothing: a `cd ~` is a place it did not look, which is the third outcome.
     # `cd` with NO operand is different -- that is cd's own default and needs
@@ -1685,10 +1726,81 @@ def literal_path(token, base):
             if base is None:
                 return None
             path = base / path
+    if lexical:
+        return Path(os.path.normpath(path))
     try:
         return path.resolve()
     except (OSError, RuntimeError):
         return None
+
+
+def walk_roots(word, rest, expands, where):
+    """[(the operand as written, the path it names or None)] for a segment
+    that walks a tree, or [] for one that does not.
+
+    No operand is the shell's own directory, which every walker here defaults
+    to. The word after a redirection is a file the shell opens, not a root."""
+    if word in WALKS_WITH:
+        letters, longs = WALKS_WITH[word]
+        if not any(t in longs or (t[:1] == "-" and t[1:2] != "-"
+                                  and any(c in t[1:] for c in letters))
+                   for t in rest[1:]):
+            return []
+    elif word not in WALKERS:
+        return []
+    redirect = lambda t: bool(t) and set(t) <= set("<>&|")
+    ops, skip = [], False
+    for i, t in enumerate(rest[1:], 1):
+        if skip:
+            skip = False
+            continue
+        if redirect(t):
+            skip = True
+            continue
+        if t.isdigit() and i + 1 < len(rest) and redirect(rest[i + 1]):
+            continue
+        if t.startswith("-"):
+            if word in ("find", "bfs") and not ops and set(t[1:]) <= FIND_OPTS:
+                continue
+            if word in ("find", "bfs"):
+                break
+            continue
+        ops.append((t, expands[i] if i < len(expands) else False))
+    if word in PATTERN_FIRST:
+        named = PATTERN_FIRST[word]
+        if not any(t.split("=", 1)[0] in named for t in rest[1:]):
+            ops = ops[1:]
+    if not ops:
+        return [(".", where)]
+    out = []
+    for t, expanded in ops:
+        m = HOME_VAR.match(t)
+        read = "~" + t[m.end():] if m and expanded else t
+        out.append((t, literal_path(read, where, lexical=True)))
+    return out
+
+
+def guarded(path):
+    """What a walk rooted at `path` reaches that macOS guards, or None."""
+    if path is None:
+        return None
+    home = Path.home()
+    if path == home:
+        return "the home folder, above every folder macOS guards"
+    for name in GUARDED:
+        g = home / name
+        if path == g or g in path.parents:
+            return f"~/{name}, a folder macOS guards"
+    return None
+
+
+def walk_finding(verb, token, root, what):
+    """The sentence a walk of a guarded folder is refused with: the verb, the
+    operand as written, the path it names, and what that path is."""
+    return (f"`{verb}` walks `{token}`, read as {root}: {what}. Listing one "
+            f"raises a macOS permission prompt charged to herdr, and the call "
+            f"hangs until a person answers it. Root the walk at the folder you "
+            f"mean, outside {', '.join('~/' + g for g in GUARDED)}.")
 
 
 def git_dir(rest, where):
@@ -1846,7 +1958,7 @@ def shell_findings(pairs, cwd=None):
     the call in a repository that has none, and unreadable is an allow.
     """
     out, notes, where = [], [], cwd
-    for seg, _heredocs, outer, _shell in pairs:
+    for seg, _heredocs, outer, shell in pairs:
         word, rest = head(seg)
         # ONLY AN OUTER `cd` MOVES THE SHELL the next command runs in. One in a
         # subshell, a pipeline stage, a `bash -c` string or a heredoc script
@@ -1868,6 +1980,11 @@ def shell_findings(pairs, cwd=None):
                 "`herdr agent kill` stops a session that has not agreed to "
                 "stop. A listed peer is asked and never killed: it is the only "
                 "thing that can say which claim it holds."))
+        cmd_at = len(seg) - len(rest)
+        for token, root in walk_roots(word, rest, shell.expands[cmd_at:], where):
+            what = guarded(root)
+            if what:
+                out.append((HOME_RULE, walk_finding(word, token, root, what)))
         # THE ASSIGNMENT FORM IS READ ON EVERY SEGMENT, not only a `git` one,
         # and over `seg` rather than `rest` so an env assignment before the
         # command word is in it. `git -c core.hooksPath=X`, the two
@@ -1880,7 +1997,6 @@ def shell_findings(pairs, cwd=None):
         # was refused. A setting position is one of two: before the command
         # word, which is an environment assignment, or straight after a `-c`.
         bypass = []
-        cmd_at = len(seg) - len(rest)
         for i, t in enumerate(seg):
             name, sep, value = t.partition("=")
             # `sep` HAD NO CASE. The sweep could not make a named case fail

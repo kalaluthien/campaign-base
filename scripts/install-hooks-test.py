@@ -763,7 +763,7 @@ def main():
               matchers("check-read-range.py") == ["Read"],
               str(settings["hooks"].get("PreToolUse"))[:300])
         check("...and the guard keeps its own matcher, without Read",
-              matchers("check-campaign-claim.py") == ["Edit|Write|NotebookEdit|Bash|Agent|Skill"],
+              matchers("check-campaign-claim.py") == ["Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep"],
               str(settings["hooks"].get("PreToolUse"))[:300])
         # The pane stamp every role and liveness reading keys on. Its readers
         # are all here, so a registration that missed an event would leave a

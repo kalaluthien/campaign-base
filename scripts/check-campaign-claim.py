@@ -8,7 +8,9 @@ commit half (spec/campaign/orchestration/checks.als, `claimBeforeWork` and
 `claimBeforeCommit`). A claim is a `<slug>/<issue>-<topic>` branch whose
 ref exists on the remote, and nothing on disk (#176).
 
-WHAT IS READ. Three bounded languages. A FILE TOOL names its target. An
+WHAT IS READ. Three bounded languages, and one field. A `Glob` or `Grep`
+call's `path` is read by the walk rule below and for nothing else. A FILE TOOL
+names its target. An
 `Agent` LAUNCH names its own two fields, `prompt` and `model`, and neither
 needs a claim or a role: AGENTS.md § Review's rules on the call gate cost and
 the choice of a reader, not a plane. A `gh`
@@ -233,6 +235,11 @@ PATH_KEYS = ("file_path", "notebook_path", "path")
 # what it refuses. 114 open with `/code-review`, and every one of them is now
 # allowed here -- they run no skill, and the channel that does is `skill_call`.
 AGENT_TOOL = "Agent"
+# The harness's own walkers. Each walks the tree its `path` names, which is
+# the walk of a guarded folder the Bash rule refuses; no `path` is the
+# session's directory, and passes.
+WALK_TOOLS = {"Glob", "Grep"}
+WALK_PATH = "path"
 AGENT_PROMPT, AGENT_MODEL = "prompt", "model"
 # A fork runs on the launcher's own model and a `model` given to one is
 # IGNORED, so for a fork "no model" is the correct spelling rather than a
@@ -3513,6 +3520,33 @@ def skill_call(tool_input, cwd: Path):
     return refuse([f"{what}: {read}", f"  {finding}", how])
 
 
+def walk_tool_call(tool, tool_input, cwd: Path):
+    """A `Glob` or `Grep` call, its `path` read by the Bash walk rule's own
+    `guarded`, and by nothing else: neither tool writes, so no claim and no
+    role is read. A missing `path` passes -- the tool then walks the session's
+    directory. The path is taken as text the way the tool takes it, so `~`
+    is home and `$HOME` is five characters; resolved against the payload's cwd
+    and never on disk. A `pattern` holding an absolute path is not read."""
+    raw = str(tool_input.get(WALK_PATH) or "")
+    if not raw:
+        return allow([f"a `{tool}` call naming no `{WALK_PATH}`: it walks the "
+                      f"session's directory, which is not read."])
+    root = literal_path(raw, cwd, lexical=True)
+    what = guarded(root)
+    if not what:
+        return allow([f"a `{tool}` call at `{raw}`, read as {root}: no folder "
+                      f"macOS guards, so {HOME_RULE} is not broken."])
+    head_line = (f"a `{tool}` call breaking {HOME_RULE}, which names no "
+                 f"target, so no claim licenses it.")
+    finding = f"  {walk_finding(tool, raw, root, what)}"
+    base, how = session_root(cwd)
+    if base is None or not (base / BASE_MARKER).is_file():
+        why = how if base is None else f"{how}, which is a repository and not a base"
+        return allow([head_line, finding, f"{why}, so this session is in no "
+                      f"campaign and the rule broken is one of this repository's."])
+    return refuse([head_line, finding, how])
+
+
 def pre(payload):
     # CLEARED ON THE CLAIM, not on release: one process judges one call in
     # production, but a caller that judges two -- a suite, a replay -- would
@@ -3542,6 +3576,8 @@ def pre(payload):
         return agent_call(tool_input, cwd)
     if tool == SKILL_TOOL:
         return skill_call(tool_input, cwd)
+    if tool in WALK_TOOLS:
+        return walk_tool_call(tool, tool_input, cwd)
     return 0
 
 

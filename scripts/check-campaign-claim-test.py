@@ -2521,6 +2521,36 @@ def main():
               r.returncode == 0 and "`find` walks `~`" in out(r)
               and "in no campaign" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
 
+    # THE HARNESS'S OWN WALKERS, read by the same rule over their `path`. The
+    # named case is the DoD's: a `Glob` at ~/Downloads, the folder the
+    # reviewer's heredoc glob of 2026-09-14 raised the first prompt for.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        for name, tool, path, root in (
+                ("a `Glob` at ~/Downloads", "Glob", "~/Downloads", home / "Downloads"),
+                ("a `Grep` at the home folder", "Grep", str(home), home)):
+            r = ask(wt, tool=tool, tool_input={"pattern": "*.pdf", "path": path},
+                    run_cwd=wt)
+            check(f"{name} is refused, naming the tool and the root",
+                  r.returncode == 2 and f"`{tool}` walks `{path}`" in out(r)
+                  and f"read as {root}:" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+        for name, tool, tool_input, said in (
+                ("a `Grep` at a folder nobody guards", "Grep",
+                 {"pattern": "x", "path": "~/campaign-base"}, "no folder macOS guards"),
+                ("a `Glob` naming no path", "Glob", {"pattern": "**/*.md"},
+                 "naming no `path`")):
+            r = ask(wt, tool=tool, tool_input=tool_input, run_cwd=wt)
+            check(f"...and {name} is allowed, saying why",
+                  r.returncode == 0 and said in out(r) and "walks `" not in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+    with tempfile.TemporaryDirectory() as d:
+        r = ask(d, tool="Glob", tool_input={"pattern": "*", "path": "~/Downloads"},
+                run_cwd=d)
+        check("the same `Glob` outside every base is allowed, saying the rule",
+              r.returncode == 0 and "`Glob` walks `~/Downloads`" in out(r)
+              and "in no campaign" in out(r), f"exit {r.returncode}: {out(r)[:300]}")
+
     # A HOOK BYPASS (kalaluthien/campaign-base#278, #272's ledger row 1).
     # Three spellings reaching one end, so three branches, each asserted on
     # its own sentence. The ALLOWS are read first, as this repository's own
@@ -3142,11 +3172,11 @@ def main():
     # fire for a tool the harness never routes here, so the declaration is
     # asserted here; install-hooks-test reads the slot it produces.
     matcher = (HERE / "install-hooks.sh").read_text()
-    check("install-hooks.sh registers the guard on Agent and Skill",
-          "scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill "
+    check("install-hooks.sh registers the guard on Agent, Skill, Glob and Grep",
+          "scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep "
           in matcher,
-          "the guard's `# installs:` matcher no longer lists both; the rules on the call would be "
-          "unreachable however this file is written")
+          "the guard's `# installs:` matcher no longer lists all four; the rules on the call "
+          "and the walk rule's tool half would be unreachable however this file is written")
 
     # ------------------------------------------------------ rule-check#442
     # WHO MERGES: the planner of the head's campaign, or the worker holding
@@ -3878,7 +3908,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 606
+    EXPECTED = 611
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

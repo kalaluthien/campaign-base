@@ -2477,7 +2477,17 @@ def main():
                 ("`ls` with its recursive flag", "ls -lR ~/Pictures", "ls",
                  home / "Pictures"),
                 ("no operand, after a `cd` home", "cd ~ && rg foo 2>/dev/null",
-                 "rg", home)):
+                 "rg", home),
+                # pr#451's review: a valued flag's value is not an operand, and
+                # one attached mid-cluster takes no next word.
+                ("a value attached to a cluster", "grep -rnC2 foo ~/Desktop",
+                 "grep", home / "Desktop"),
+                ("a pattern named by `-e`", "grep -rn -e foo ~/Music", "grep",
+                 home / "Music"),
+                ("`fd`'s root flag", "fd --search-path ~/Documents x", "fd",
+                 home / "Documents"),
+                ("a folder spelled in another case", "find ~/documents -name x",
+                 "find", home / "documents")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"{name} is refused, naming the verb and the root",
                   r.returncode == 2 and f"`{verb}` walks" in out(r)
@@ -2494,7 +2504,12 @@ def main():
                 ("a quoted `$HOME`, which is text", "find '$HOME' -name x"),
                 ("a tilde after `find`'s expression began", "find . -name ~"),
                 ("a redirection into a guarded folder", "du -sh . > ~/Documents/du.txt"),
-                ("a folder whose name only starts like one", "find ~/Documentsx")):
+                ("a folder whose name only starts like one", "find ~/Documentsx"),
+                ("a search for the text of a guarded path",
+                 "rg -n -C 2 '~/Downloads' scripts/"),
+                ("a long flag's value", "du -sh --exclude ~/Downloads ~/campaign-base"),
+                ("the command `fd -x` runs", "fd x -x rm ~"),
+                ("a cluster whose `R` is `-e`'s value", "grep -eRoot ~/Documents/x.md")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"...and {name} is allowed",
                   r.returncode == 0 and "walks `" not in out(r),
@@ -3863,7 +3878,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 598
+    EXPECTED = 606
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

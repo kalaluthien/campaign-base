@@ -47,9 +47,13 @@ being skipped, and the `cd`s of the command are walked to find it. The walk
 half reads the ROOT a walking verb is given -- the home folder, or one of the
 six folders macOS guards or a path under them -- and the same `cd`s place a
 relative one; `WALKERS` says why. Its ceilings: a root the shell composes
-(`~/*`, `"$HOME/$d"`) is unread, a root above the home folder (`/`, `/Users`)
-is not this rule, a path is compared as text so a symlink into a guarded folder
-passes, and a python `glob` in a heredoc is data, like every heredoc body.
+(`~/*`, `"$HOME/$d"`) is unread, and so is a bare `${HOME}`, which the split
+breaks at its braces; a root above the home folder (`/`, `/Users`) is not this
+rule; a path is compared as text, so a symlink into a guarded folder passes; a
+wrapper the split does not strip (`timeout 60`, `xargs`) hides the verb, and a
+`cd` inside a subshell is not tracked, as for the bypass rule; a quoted `~` is
+read as home though the shell leaves it, which over-refuses; and a python
+`glob` in a heredoc is data, like every heredoc body.
 
 A NEWLINE ENDS A COMMAND, which shlex does not say -- it is whitespace there,
 and a glued `);` or `&&\n` matches no separator either. Both are put back
@@ -369,18 +373,58 @@ WALKERS = {"find", "bfs", "fd", "rg", "du", "tree"}
 WALKS_WITH = {"grep": ("rR", ("--recursive", "--dereference-recursive")),
               "ls": ("R", ("--recursive",))}
 # THE FIRST OPERAND OF THESE IS A PATTERN, not a root -- unless a flag names
-# the pattern, which frees every operand to be a path. Read wrong, `grep -rn
-# '~' .` searched for a tilde and was refused as a walk of the home folder.
-PATTERN_FIRST = {"grep": ("-e", "-f", "--regexp", "--file"),
-                 "rg": ("-e", "-f", "--regexp", "--file", "--files"),
-                 "fd": ()}
+# the pattern (these short letters, or `PATTERN_LONGS`), which frees every
+# operand to be a path. Read wrong, `grep -rn '~' .` searched for a tilde and
+# was refused as a walk of the home folder.
+PATTERN_FIRST = {"grep": "ef", "rg": "ef", "fd": ""}
+PATTERN_LONGS = {"--regexp", "--file", "--files"}
+# FLAGS WHOSE VALUE IS THE NEXT WORD, per verb: short letters, then long
+# names. Without them the value was counted as an operand and dropped as the
+# pattern, so `rg -C 2 '~/Downloads' scripts/` -- a search for the text -- was
+# read as a walk of ~/Downloads (pr#451's review, F1). A short letter mid-cluster
+# carries its value attached (`-C2`, `-rnA3`) and takes no next word. A flag
+# missing here reads its value as an operand, which refuses only where that
+# value is itself a guarded path.
+WALK_VALUED = {
+    "grep": ("ABCDdefm", {"--after-context", "--before-context", "--context",
+                          "--regexp", "--file", "--max-count", "--include",
+                          "--exclude", "--exclude-dir", "--label", "--devices",
+                          "--directories", "--binary-files"}),
+    "rg": ("ABCEMTdefgjmrt", {"--after-context", "--before-context",
+                              "--context", "--regexp", "--file", "--glob",
+                              "--iglob", "--type", "--type-not", "--type-add",
+                              "--max-count", "--max-columns", "--max-depth",
+                              "--max-filesize", "--threads", "--encoding",
+                              "--replace", "--pre", "--pre-glob", "--sort",
+                              "--sortr", "--color", "--colors", "--engine",
+                              "--ignore-file", "--path-separator",
+                              "--context-separator"}),
+    "fd": ("EScdejot", {"--extension", "--type", "--exclude", "--max-depth",
+                        "--min-depth", "--exact-depth", "--size", "--color",
+                        "--threads", "--owner", "--changed-within",
+                        "--changed-before", "--max-results", "--ignore-file",
+                        "--path-separator", "--batch-size", "--format"}),
+    "du": ("BIdtX", {"--max-depth", "--exclude", "--exclude-from",
+                     "--block-size", "--threshold", "--time-style",
+                     "--files0-from"}),
+    "tree": ("HILPTo", {"--filelimit", "--charset", "--sort", "--timefmt",
+                        "--gitfile", "--infile"}),
+    "ls": ("DITw", {"--hide", "--ignore", "--width", "--tabsize",
+                    "--block-size", "--format", "--sort", "--time",
+                    "--time-style", "--quoting-style", "--indicator-style"}),
+}
+# `fd`'s flags whose value IS a root, and the ones after which every word is
+# the command `fd` runs, which holds none.
+ROOT_FLAGS = {"--search-path", "--base-directory"}
+EXEC_FLAGS = {"-x", "-X", "--exec", "--exec-batch"}
 # `find`'s own options before its paths, as BSD spells them, alone or in a
 # cluster; the first word after them that opens with `-` starts the
 # expression, which holds no root.
 FIND_OPTS = set("HLPEXdsx")
 GUARDED = ("Pictures", "Music", "Movies", "Documents", "Desktop", "Downloads")
-# `$HOME` and `${HOME}` are the home folder when the shell expands them, and
-# only then: in single quotes they are six characters of text.
+# `$HOME` is the home folder when the shell expands it, and only then: in
+# single quotes it is five characters of text. `${HOME}` reaches this whole
+# only inside double quotes; bare, its braces are separators to the split.
 HOME_VAR = re.compile(r"^\$(?:HOME|\{HOME\})(?=/|$)")
 HOME_RULE = "a walk of a guarded folder"
 
@@ -1740,42 +1784,61 @@ def walk_roots(word, rest, expands, where):
 
     No operand is the shell's own directory, which every walker here defaults
     to. The word after a redirection is a file the shell opens, not a root."""
+    valued, longs = WALK_VALUED.get(word, ("", set()))
     if word in WALKS_WITH:
-        letters, longs = WALKS_WITH[word]
-        if not any(t in longs or (t[:1] == "-" and t[1:2] != "-"
-                                  and any(c in t[1:] for c in letters))
+        # A cluster's letters count up to its first valued one, whose value
+        # the rest is: `grep -eRoot` searches for `Root` and does not recurse.
+        letters, walks = WALKS_WITH[word]
+        if not any(t in walks or (t[:1] == "-" and t[1:2] != "-" and any(
+                c in letters for c in re.split(f"[{valued}]", t[1:], 1)[0]))
                    for t in rest[1:]):
             return []
     elif word not in WALKERS:
         return []
     redirect = lambda t: bool(t) and set(t) <= set("<>&|")
-    ops, skip = [], False
-    for i, t in enumerate(rest[1:], 1):
-        if skip:
-            skip = False
-            continue
+    ops, roots, named, i = [], [], False, 1
+    while i < len(rest):
+        t, i = rest[i], i + 1
         if redirect(t):
-            skip = True
+            i += 1
             continue
-        if t.isdigit() and i + 1 < len(rest) and redirect(rest[i + 1]):
+        if t.isdigit() and i < len(rest) and redirect(rest[i]):
             continue
-        if t.startswith("-"):
-            if word in ("find", "bfs") and not ops and set(t[1:]) <= FIND_OPTS:
-                continue
-            if word in ("find", "bfs"):
+        if word in ("find", "bfs"):
+            if not t.startswith("-"):
+                ops.append(i - 1)
+            elif not set(t[1:]) <= FIND_OPTS:
                 break
             continue
-        ops.append((t, expands[i] if i < len(expands) else False))
-    if word in PATTERN_FIRST:
-        named = PATTERN_FIRST[word]
-        if not any(t.split("=", 1)[0] in named for t in rest[1:]):
-            ops = ops[1:]
+        name, eq, _ = t.partition("=")
+        if name in EXEC_FLAGS and word == "fd":
+            break
+        if t.startswith("--"):
+            named = named or name in PATTERN_LONGS
+            rooted = word == "fd" and name in ROOT_FLAGS
+            if rooted and not eq and i < len(rest):
+                roots.append(i)
+            if (rooted or name in longs) and not eq:
+                i += 1
+            continue
+        if t.startswith("-") and len(t) > 1:
+            for k, c in enumerate(t[1:], 1):
+                named = named or c in PATTERN_FIRST.get(word, "")
+                if c in valued:
+                    i += k == len(t) - 1
+                    break
+            continue
+        ops.append(i - 1)
+    if word in PATTERN_FIRST and not named:
+        ops = ops[1:]
+    ops += roots
     if not ops:
         return [(".", where)]
     out = []
-    for t, expanded in ops:
+    for j in ops:
+        t = rest[j]
         m = HOME_VAR.match(t)
-        read = "~" + t[m.end():] if m and expanded else t
+        read = "~" + t[m.end():] if m and j < len(expands) and expands[j] else t
         out.append((t, literal_path(read, where, lexical=True)))
     return out
 
@@ -1784,11 +1847,13 @@ def guarded(path):
     """What a walk rooted at `path` reaches that macOS guards, or None."""
     if path is None:
         return None
-    home = Path.home()
+    # CASE-FOLDED, because this machine's APFS is case-insensitive: `find
+    # ~/documents` walks ~/Documents (pr#451's review, F4).
+    path, home = Path(str(path).casefold()), Path(str(Path.home()).casefold())
     if path == home:
         return "the home folder, above every folder macOS guards"
     for name in GUARDED:
-        g = home / name
+        g = home / name.casefold()
         if path == g or g in path.parents:
             return f"~/{name}, a folder macOS guards"
     return None

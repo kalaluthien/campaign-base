@@ -385,8 +385,9 @@ WALKS_WITH = {"grep": ("rR", ("--recursive", "--dereference-recursive")),
 # was refused as a walk of the home folder.
 PATTERN_FIRST = {"grep": "ef", "rg": "ef", "fd": ""}
 PATTERN_LONGS = {"--regexp", "--file", "--files"}
-# FLAGS WHOSE VALUE IS THE NEXT WORD, per verb: short letters, then long
-# names. Without them the value was counted as an operand and dropped as the
+# FLAGS WHOSE VALUE IS THE NEXT WORD, per verb: short letters as this
+# machine's tools spell them -- BSD `ls`, `du` and `grep`, where `ls -T` and
+# `-w` take none (pr#451's narrowed review, G1) -- then long names. Without them the value was counted as an operand and dropped as the
 # pattern, so `rg -C 2 '~/Downloads' scripts/` -- a search for the text -- was
 # read as a walk of ~/Downloads (pr#451's review, F1). A short letter mid-cluster
 # carries its value attached (`-C2`, `-rnA3`) and takes no next word. A flag
@@ -411,14 +412,12 @@ WALK_VALUED = {
                         "--threads", "--owner", "--changed-within",
                         "--changed-before", "--max-results", "--ignore-file",
                         "--path-separator", "--batch-size", "--format"}),
-    "du": ("BIdtX", {"--max-depth", "--exclude", "--exclude-from",
+    "du": ("BIdt", {"--max-depth", "--exclude", "--exclude-from",
                      "--block-size", "--threshold", "--time-style",
                      "--files0-from"}),
     "tree": ("HILPTo", {"--filelimit", "--charset", "--sort", "--timefmt",
                         "--gitfile", "--infile"}),
-    "ls": ("DITw", {"--hide", "--ignore", "--width", "--tabsize",
-                    "--block-size", "--format", "--sort", "--time",
-                    "--time-style", "--quoting-style", "--indicator-style"}),
+    "ls": ("D", set()),
 }
 # `fd`'s flags whose value IS a root, and the ones after which every word is
 # the command `fd` runs, which holds none.
@@ -1811,9 +1810,10 @@ def walk_roots(word, rest, expands, where):
             continue
         if t.isdigit() and i < len(rest) and redirect(rest[i]):
             continue
+        word_at = (t, i - 1 < len(expands) and expands[i - 1])
         if word in ("find", "bfs"):
             if not t.startswith("-"):
-                ops.append(i - 1)
+                ops.append(word_at)
             elif not set(t[1:]) <= FIND_OPTS:
                 break
             continue
@@ -1823,8 +1823,10 @@ def walk_roots(word, rest, expands, where):
         if t.startswith("--"):
             named = named or name in PATTERN_LONGS
             rooted = word == "fd" and name in ROOT_FLAGS
-            if rooted and not eq and i < len(rest):
-                roots.append(i)
+            if rooted and eq:
+                roots.append((t[len(name) + 1:], word_at[1]))
+            elif rooted and i < len(rest):
+                roots.append((rest[i], i < len(expands) and expands[i]))
             if (rooted or name in longs) and not eq:
                 i += 1
             continue
@@ -1835,17 +1837,16 @@ def walk_roots(word, rest, expands, where):
                     i += k == len(t) - 1
                     break
             continue
-        ops.append(i - 1)
+        ops.append(word_at)
     if word in PATTERN_FIRST and not named:
         ops = ops[1:]
     ops += roots
     if not ops:
         return [(".", where)]
     out = []
-    for j in ops:
-        t = rest[j]
+    for t, expanded in ops:
         m = HOME_VAR.match(t)
-        read = "~" + t[m.end():] if m and j < len(expands) and expands[j] else t
+        read = "~" + t[m.end():] if m and expanded else t
         out.append((t, literal_path(read, where, lexical=True)))
     return out
 
@@ -3529,8 +3530,9 @@ def walk_tool_call(tool, tool_input, cwd: Path):
     and never on disk. A `pattern` holding an absolute path is not read."""
     raw = str(tool_input.get(WALK_PATH) or "")
     if not raw:
-        return allow([f"a `{tool}` call naming no `{WALK_PATH}`: it walks the "
-                      f"session's directory, which is not read."])
+        return allow([f"a `{tool}` call naming no `{WALK_PATH}`, so nothing "
+                      f"was read: it walks the session's directory, or a root "
+                      f"its `pattern` spells, which this does not read."])
     root = literal_path(raw, cwd, lexical=True)
     what = guarded(root)
     if not what:

@@ -2487,7 +2487,13 @@ def main():
                 ("`fd`'s root flag", "fd --search-path ~/Documents x", "fd",
                  home / "Documents"),
                 ("a folder spelled in another case", "find ~/documents -name x",
-                 "find", home / "documents")):
+                 "find", home / "documents"),
+                # pr#451's narrowed review: BSD `ls -T` takes no value, and a
+                # root flag's value may be attached.
+                ("`ls -T`, a flag of BSD's that takes no value",
+                 "ls -lRT ~/Pictures", "ls", home / "Pictures"),
+                ("`fd`'s root flag with its value attached",
+                 "fd --search-path=$HOME/Documents x", "fd", home / "Documents")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"{name} is refused, naming the verb and the root",
                   r.returncode == 2 and f"`{verb}` walks" in out(r)
@@ -3908,7 +3914,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 611
+    EXPECTED = 613
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

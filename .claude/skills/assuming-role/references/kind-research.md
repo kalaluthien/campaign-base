@@ -26,7 +26,7 @@ same answer without asking you anything.
 
 ## The Scope survey
 
-One shape of this kind, the one [planner](planner.md) step 10 files. Its
+One shape of this kind, the one [planner](role-planner.md) step 10 files. Its
 Definition of done is a table, one row per finding: the module or document,
 the quality it fails, evidence a check can read, and the follow-up
 (`reopen <slug>#N`, `covered by <slug>#N`, `new`). No evidence, no row; a fix

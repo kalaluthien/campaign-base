@@ -4,7 +4,7 @@
     .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> [--apply]
     .claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch
 
-The planner runs this on every wake (planner.md § The planner's clock). It
+The planner runs this on every wake (role-planner.md § The planner's clock). It
 reads every session of campaign N -- a herdr row whose name carries N's slug,
 this planner's own pane included -- and prints one line per session, the
 verdict first, then what it read and from where:

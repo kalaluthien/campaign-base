@@ -41,8 +41,8 @@ statement of that; anything restating it in prose has already drifted.
 
 | the session | its reference |
 | --- | --- |
-| files the sub-issues, distributes them, changes no code | [planner](references/planner.md) |
-| takes one sub-issue, cuts its claim, lands its commits | [worker](references/worker.md) |
+| files the sub-issues, distributes them, changes no code | [planner](references/role-planner.md) |
+| takes one sub-issue, cuts its claim, lands its commits | [worker](references/role-worker.md) |
 
 A session that turns out to be the other role renames itself and reads the
 other reference. Nothing durable carries the old name: a claim is a ref and a

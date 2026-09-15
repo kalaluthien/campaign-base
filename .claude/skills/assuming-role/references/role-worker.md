@@ -54,7 +54,7 @@ and, on a claim, the code the sub-issue names.
    report that does not pin its sha is unactionable. After it the next move is
    the planner's -- the merge, the next pull request of a multi-PR Plan, or the
    next assignment -- so wait for its prompt and launch nothing.
-8. **The merge is the planner's** ([planner](planner.md) step 9): it merges
+8. **The merge is the planner's** ([planner](role-planner.md) step 9): it merges
    on the three conditions of `AGENTS.md` § Merge conditions and reaches the
    install. A worker that merges where no planner runs holds the same three
    conditions, names the branch of the claim it holds as that step spells the

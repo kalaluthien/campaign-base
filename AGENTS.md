@@ -712,7 +712,11 @@ reading, then the same leave.
 `scripts/check-campaign-claim.py` refuses
 `herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
 matching it, which is the incident's shape. It reads the verb and not the
-operands, so `kill` passes in every form — that half stays prose.
+operands, so `kill` passes in every form — that half stays prose. **It also
+refuses a walk rooted at the home folder or at a folder macOS guards**, from
+`Bash`, `Glob` or `Grep`: macOS charges the permission prompt to herdr, so the
+call hangs on a screen nobody in the pane sees; which roots and verbs, and the
+gaps, are its docstring's.
 
 **Delete any local branch whose commits already sit on `main` or the remote**,
 whoever created it, and report a branch holding the only copy of its work instead

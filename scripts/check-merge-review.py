@@ -304,11 +304,19 @@ def answer(word, line, extra=()):
 
 
 # --------------------------------------------- the pull request thread, at shadow
-# TWO READINGS OVER THE ONE THREAD THIS FILE ALREADY FETCHED, asked in ONE call
-# through scripts/campaign-jev.py: `C-report-disposes-finding` and
-# `C-review-not-the-author`. scripts/jev/readings.json holds both -- the
+# FOUR READINGS OVER THE ONE THREAD THIS FILE ALREADY FETCHED, asked in ONE call
+# through scripts/campaign-jev.py: `C-report-disposes-finding`,
+# `C-review-not-the-author`, `unverified-done` and its address `noul`
+# `report-addresses-judge`. scripts/jev/readings.json holds all four -- the
 # questions, the state slice, the prefilter, the cuts and the tier -- and this
 # reads them and writes none of them.
+#
+# FOUR READINGS, ONE CALL, AND NO NEW STATE FIELD. `unverified-done` and
+# `report-addresses-judge` both read `report`, which `thread_state` already
+# builds for `C-report-disposes-finding`, so the pair costs this gate 0 new
+# calls a state -- counted by check-merge-review-test.py's "one gate run sends
+# one request whatever the group holds", 1 with the group's two readings and 1
+# with its four.
 #
 # WHY HERE: `bodies_of` is THE reader of a pull request's whole thread in this
 # tree -- both channels, each paginated in full -- and `gate` calls it anyway
@@ -457,7 +465,7 @@ def flag_of(reading, raw):
 
 
 def read_thread(repo, pr, found, pattern):
-    """The two readings, asked once over the one thread. Returns nothing, prints
+    """The four readings, asked once over the one thread. Returns nothing, prints
     nothing, and never raises: a judgment is an aside to a verdict `gate` has
     already made, so a traceback here must not cost a merge its gate."""
     jev, why = load(JEV, "campaign_jev")

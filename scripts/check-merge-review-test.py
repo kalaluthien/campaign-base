@@ -28,14 +28,17 @@ Usage: scripts/check-merge-review-test.py   (needs ~/.local/bin/alloy)
 """
 import contextlib
 import hashlib
+import http.server
 import importlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "check-merge-review.py"
@@ -57,6 +60,47 @@ JEV_LOG = JEV_ROOT / "jev.log"
 with contextlib.closing(socket.socket()) as _s:
     _s.bind(("127.0.0.1", 0))
     JEV_CLOSED = f"http://127.0.0.1:{_s.getsockname()[1]}/v1/systemone"
+
+
+# ONE LOG ROW PER READING OF THE GROUP, so a case counting rows reads the
+# registry rather than a number that drifts the next time the group grows.
+THREAD_READINGS = len(
+    [e for e in json.loads((SCRIPT.parent / "jev" / "readings.json")
+                           .read_text(encoding="utf-8")).values()
+     if e.get("group") == "pull-request-thread"])
+
+# WHAT ONE `gate` RUN COSTS THE ENDPOINT, counted rather than argued. The
+# thread readings ride in ONE call however many the group holds, so a reading
+# added to `pull-request-thread` must not move this number -- and the only way
+# to know is to count the POSTs a whole gate run makes. The stub answers every
+# question `unknown` by returning no answer at all: what is measured here is
+# the REQUEST, not the reply.
+POSTS = {"count": 0, "questions": []}
+
+
+class _Counting(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        POSTS["count"] += 1
+        try:
+            POSTS["questions"].append(
+                sorted(json.loads(raw.decode()).get("questions") or {}))
+        except ValueError:
+            POSTS["questions"].append([])
+        data = json.dumps({"model": "jev-1.13.0", "answers": {}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+_COUNTER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Counting)
+threading.Thread(target=_COUNTER.serve_forever, daemon=True).start()
+JEV_COUNTED = f"http://127.0.0.1:{_COUNTER.server_address[1]}/v1/systemone"
 
 
 COMMENT_ID = [5700000000]
@@ -508,7 +552,8 @@ def main() -> int:
              CAMPAIGN_JEV_LOG=None, CAMPAIGN_JEV_URL=None,
              TYPESAFE_API_KEY=None, HOME=str(nohome))
         check("...and the control proves it is those variables doing it",
-              shared_lines() == before + 2, (before, shared_lines()))
+              shared_lines() == before + THREAD_READINGS,
+              (before, shared_lines(), THREAD_READINGS))
 
         # ---- the pull request thread, at shadow ----------------------------
         # THE READING RIDES ON THE THREAD THE GATE ALREADY FETCHED, and it
@@ -553,7 +598,8 @@ def main() -> int:
         by = {r.get("reading"): r for r in rows if r.get("reading")}
         check("...and logs one row per reading of the group",
               sorted(by) == ["C-report-disposes-finding",
-                             "C-review-not-the-author"], rows)
+                             "C-review-not-the-author",
+                             "report-addresses-judge", "unverified-done"], rows)
         check("...each carrying the join key as fields, repository beside "
               "every number",
               all(r.get("repo") == "o/r" and r.get("pull_request") == 274
@@ -579,6 +625,49 @@ def main() -> int:
         check("...and costs the gate no timeout",
               all((r.get("latency") or 0) < 1.0 for r in by.values()),
               [r.get("latency") for r in by.values()])
+
+        # ---- 0 new calls a state -------------------------------------------
+        # THE CLAIM IS A NUMBER, SO IT IS COUNTED. `unverified-done` and
+        # `report-addresses-judge` ride in the call the group already makes, so
+        # ONE gate run sends ONE request however many readings the group holds.
+        # Measured on this fixture at 1 with the group's two readings and at 1
+        # with its four (rule-check#455 pr 5).
+        #
+        # THE STORE IS CLEARED BEFORE EACH RUN, because a second run over the
+        # same state would be answered out of `jev-cache` and send nothing --
+        # which would make the control below read as the invariant holding.
+        def counted_run(*args, **kw):
+            POSTS["count"], POSTS["questions"] = 0, []
+            shutil.rmtree(jevlog.parent / "jev-cache", ignore_errors=True)
+            jevlog.write_text("")
+            return call(bindir, *args, CAMPAIGN_JEV_LOG=str(jevlog),
+                        CAMPAIGN_JEV_URL=JEV_COUNTED, HOME=str(emptyhome),
+                        TYPESAFE_API_KEY="stub-key", **kw)
+
+        fake_gh(bindir, comments=[comment(review), comment(report)])
+        word, code, _text = counted_run("274", "--repo", "o/r")
+        sent = POSTS["questions"][0] if POSTS["questions"] else []
+        check("one gate run sends one request whatever the group holds",
+              POSTS["count"] == 1 and (word, code) == ("reviewed", 0),
+              (POSTS["count"], word, code))
+        check("...carrying every reading of the group, the new two included",
+              [q for q in sent if not q.startswith("C-report-disposes")]
+              == ["C-review-not-the-author", "report-addresses-judge",
+                  "unverified-done"], sent)
+        # THE CONTROL: a run over a DIFFERENT thread, which the store cannot
+        # answer, must move the counter -- otherwise the 1 above is a stub
+        # nothing reached rather than an invariant.
+        other = report.replace("fix round 1", "fix round 2")
+        fake_gh(bindir, comments=[comment(review), comment(other)])
+        counted_run("274", "--repo", "o/r")
+        first = POSTS["count"]
+        fake_gh(bindir, comments=[comment(review), comment(report)])
+        POSTS["questions"] = []
+        call(bindir, "274", "--repo", "o/r", CAMPAIGN_JEV_LOG=str(jevlog),
+             CAMPAIGN_JEV_URL=JEV_COUNTED, HOME=str(emptyhome),
+             TYPESAFE_API_KEY="stub-key")
+        check("...and the control proves the counter counts",
+              first == 1 and POSTS["count"] == 2, (first, POSTS["count"]))
 
         # A THREAD WITH NO REPORT AFTER ITS REVIEW HAS NO ROUND TO JUDGE, and
         # the reading still logs: a call that asked nothing is a fact about the

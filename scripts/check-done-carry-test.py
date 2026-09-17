@@ -294,10 +294,10 @@ class RecordingJev:
     reader's side of the rule is asserted where the reader makes it: every
     call names the reader's OWN base, never the process's cwd, which is what
     puts a production row in that reader's `runtime/jev.log` when a session
-    runs it from some other checkout. `STATE_BUDGET` is read from the real
-    module, since a double holding its own copy passes a moved budget."""
+    runs it from some other checkout. Its budget is `BUDGET`, this file's one
+    reading of the real one, since a copy of its own passes a moved budget."""
 
-    STATE_BUDGET = None      # set from campaign-jev.py by the case below
+    STATE_BUDGET = BUDGET    # the real one, read once at the top of this file
 
     def __init__(self):
         self.cwds = []
@@ -341,7 +341,6 @@ def every_jev_call_names_the_readers_base(t):
     main() itself, because a case that calls the inner function supplies the
     argument the call site was supposed to be pinned for -- that is how this
     case lost main()'s skips once (the REVIEW at 318a053, D1)."""
-    RecordingJev.STATE_BUDGET = t.m.load_sibling("campaign-jev.py").STATE_BUDGET
     conds = {"c1": "a condition one test could carry"}
     cands = {"h1": {"path": "scripts/tool-test.py", "text": "@@ -1 +1 @@\n+x"}}
     inner, over = RecordingJev(), RecordingJev()
@@ -350,7 +349,7 @@ def every_jev_call_names_the_readers_base(t):
     t.m.ask_issue({"done-test-select": SELECT, "done-test-claim": CLAIM},
                   "tracker#9 REPORT 5", conds,
                   {"h1": {"path": "scripts/tool-test.py",
-                          "text": "x" * (RecordingJev.STATE_BUDGET + 1)}}, over)
+                          "text": "x" * (BUDGET + 1)}}, over)
     seen, counts = [], []
     for kw in ({"answers": {"pr view"}},          # the pull request read failed
                {"answers": {"issue view"}},       # the issue read failed

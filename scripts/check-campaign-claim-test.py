@@ -2230,21 +2230,25 @@ def main():
         rows = logged(pr_note_log, 1, 50)
         check("a NOTE on a pull request starts no reading", rows == [],
               (out(r)[:300], rows))
-        # T2: A REPORT ASKING FOR THE MERGE IS HANDED TO check-done-carry.py,
-        # after its sha read: the stub gh answers no pull request, so the
-        # sha is unchecked and the reader logs the skip for its own read.
+        # T2 AND Cl1: A REPORT ASKING FOR THE MERGE IS HANDED TO BOTH
+        # check-done-carry.py and check-done-report.py, after its sha read: the
+        # stub gh answers no pull request, so the sha is unchecked and each
+        # reader logs the skip for its own read. They run in parallel, so the
+        # rows are read sorted and never in start order.
         report_log = Path(d) / "report.log"
         r = ask(tree, tool="Bash",
                 env=dict(env, CAMPAIGN_JEV_LOG=str(report_log)),
                 command=f"gh pr comment 7 -b 'REPORT demo-worker-1: pr#7 at "
                         f"{head}, asking for the merge'")
-        rows = logged(report_log, 1, 100)
+        rows = logged(report_log, 2, 100)
         check("a REPORT asking for the merge on a pull request is handed to "
-              "the done-test reading",
+              "both the done-test and the done-report readings",
               r.returncode == 0
-              and [(x["reader"], x["read"]) for x in rows]
-              == [("check-done-carry.py", "tracker#7 REPORT")]
-              and rows[0]["skipped"].startswith("the pull request read failed"),
+              and sorted((x["reader"], x["read"]) for x in rows)
+              == [("check-done-carry.py", "tracker#7 REPORT"),
+                  ("check-done-report.py", "tracker#7 REPORT")]
+              and all(x["skipped"].startswith("the pull request read failed")
+                      for x in rows),
               (out(r)[:300], rows))
 
     # ---------------------------------------------------------------- #389

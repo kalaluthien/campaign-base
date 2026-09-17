@@ -609,6 +609,14 @@ ISSUES = {
             {"name": "kind:development"}]},
     ("kalaluthien/campaign-base", 902): {
         "title": "Still being argued about", "state": "OPEN", "labels": []},
+    # TWO PARENTS FOR THE FILING JOIN: one whose slug the call offered as an
+    # option, and one whose slug it did not.
+    ("kalaluthien/campaign-base", 903): {
+        "title": "Mechanize the written rules", "state": "OPEN",
+        "labels": [{"name": "campaign"}, {"name": "campaign:rule-check"}]},
+    ("kalaluthien/campaign-base", 904): {
+        "title": "Define an SDLC on Alloy specs", "state": "OPEN",
+        "labels": [{"name": "campaign"}, {"name": "campaign:sdlc-alloy"}]},
 }
 
 
@@ -686,7 +694,8 @@ def joined(m, rows):
             fetch_thread=lambda repo, number: THREADS.get((repo, number)))
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
-               ("verb-first", "work-kind", "C-report-disposes-finding")}
+               ("verb-first", "work-kind", "C-report-disposes-finding",
+                "filing-scope-covers")}
     finally:
         m.CORPUS = was
         if old is None:
@@ -722,6 +731,222 @@ def join_reads_the_kind_label(m):
     got = (cases["work-kind"] or [{}])[0]
     return (got.get("truth") == "development"
             and got.get("label", {}).get("from") == "join:issue-kind-label"), got
+
+
+# ------------------------------------------- the filing reading's own three
+# A `choice` WHOSE OPTIONS ARE NOT IN THE ENTRY, an address `noul` read by code
+# before the option it guards, and a join that labels by the parent the create
+# named. Each is asserted on its own, and each has a mutation below.
+SCOPES = {"rule-check": "In: mechanise the written rules",
+          "homeops": "In: this machine's ops"}
+FILING_STATE = {"request": {"title": "Script the upkeep", "body": "- a body"},
+                "campaigns": SCOPES}
+
+
+def filing_entry(m, name="filing-scope-covers"):
+    return m.load_registry()[name]
+
+
+def the_options_are_built_from_the_state(m):
+    """A reading whose options are not knowable until the call names the state
+    field they come from, and `options_of` builds one option per key of it with
+    that key's value as its description."""
+    built = m.options_of(filing_entry(m), FILING_STATE)
+    return (set(built) == {"rule-check", "homeops", "none"}
+            and built["homeops"] == SCOPES["homeops"]), built
+
+
+def the_entry_s_own_option_wins_a_collision(m):
+    """A campaign that ever took the slug `none` must not overwrite the
+    no-match option's description, which is what the whole set is read
+    against."""
+    entry = filing_entry(m)
+    built = m.options_of(entry, {"request": {}, "campaigns": {"none": "a slug"}})
+    return built["none"] == entry["question"]["criteria"]["none"], built
+
+
+def the_built_options_are_what_is_sent(m):
+    """`question_of` is what `ask` and `branch` read, so the built options must
+    reach it -- and `options_from` must not, since it is this tree's own field
+    and no part of the question."""
+    spec = m.question_of(filing_entry(m), state=FILING_STATE)
+    return (set(spec["criteria"]) == {"rule-check", "homeops", "none"}
+            and m.OPTIONS_FROM not in spec), sorted(spec)
+
+
+def verdicts(choice="rule-check", noul=0.04):
+    """One `judge`'s verdicts for the filing group, without a call."""
+    return {"filing-scope-covers": m_Verdict(choice, {"type": "choice",
+                                                      "choice": choice,
+                                                      "confidence": 0.9}),
+            "filing-addresses-judge": m_Verdict(
+                "uncertain", None if noul is None
+                else {"type": "noul", "noul": noul})}
+
+
+class m_Verdict:
+    """The two fields `address_word` reads off a verdict."""
+    def __init__(self, word, raw):
+        self.word, self.raw = word, raw
+
+
+def the_address_routes_an_addressed_state_to_uncertain(m):
+    """rule-check#471 DECISION 5717901390: code reads the address first, and at
+    ADDRESS_OVER or over the guarded reading answers `uncertain`, whatever the
+    `choice` said. The CONTROL is the same option under the same cut with a
+    clean state, which must come back as the option."""
+    reg = m.load_registry()
+    hostile, why = m.address_word(reg, "filing-scope-covers",
+                                  verdicts(noul=m.ADDRESS_OVER))
+    clean, _why = m.address_word(reg, "filing-scope-covers",
+                                 verdicts(noul=m.ADDRESS_OVER - 0.01))
+    return (hostile == m.UNCERTAIN and "at or over" in why
+            and clean == "rule-check"), (hostile, clean, why)
+
+
+def an_address_that_gave_no_value_is_uncertain_too(m):
+    """A guard that did not answer did not rule the text out, and reading its
+    silence as clean is the direction this rule exists to refuse."""
+    word, why = m.address_word(m.load_registry(), "filing-scope-covers",
+                               verdicts(noul=None))
+    return word == m.UNCERTAIN and "gave no value" in why, (word, why)
+
+
+def a_reading_with_no_address_keeps_its_own_word(m):
+    """Every other reading may be asked this and comes back unchanged, which is
+    what lets one reader serve them all. Its own word is a DISTINCT one here,
+    so a reader that fell through to the address branch would be read as
+    changing it rather than as agreeing."""
+    held = verdicts(noul=0.99)
+    held["filing-addresses-judge"] = m_Verdict("yes", {"type": "noul",
+                                                       "noul": 0.99})
+    word, why = m.address_word(m.load_registry(), "filing-addresses-judge",
+                               held)
+    return word == "yes" and why == "", (word, why)
+
+
+def filing_row(call, parent, **kw):
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "filing-scope-covers",
+           "subject": f"kalaluthien/campaign-base#{parent} <- gh issue create",
+           "read": f"kalaluthien/campaign-base#{parent} <- gh issue create",
+           "repo": "kalaluthien/campaign-base", "issue": parent,
+           "state": dict(FILING_STATE), "wording": "0" * 12, "settled": None,
+           "tier": "shadow", "does": "nothing", "asked": MODEL,
+           "answered": MODEL, "latency": 0.5, "branch": "rule-check",
+           "raw": {"type": "choice", "choice": "rule-check", "confidence": 0.9},
+           "why": "", "endpoint": "real", "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_filing_join_labels_by_the_parent_s_slug(m):
+    """The row's own `--parent`, resolved to a slug: the reading runs before
+    the filed issue has a number, so the row's `issue` is the parent and the
+    label is its `campaign:` label."""
+    cases, _lines = joined(m, [filing_row("dddd", 903)])
+    got = (cases["filing-scope-covers"] or [{}])[0]
+    # AND IT IS HELD TO A BAND. The entry carries the no-match option alone,
+    # so a `band_of` reading the entry's own criteria would hold every case of
+    # this reading to no band and call none of them drift, for good.
+    return (got.get("truth") == "rule-check"
+            and got.get("label", {}).get("from") == "join:filing-parent-slug"
+            and got.get("band") == "confident"
+            and set(got.get("state") or {}) == {"request", "campaigns"}), got
+
+
+def a_parent_that_was_never_an_option_is_not_labelled(m):
+    """The options are the campaigns with a directory on the machine that made
+    the call. A parent outside that set is a case no answer could have got
+    right, so it waits rather than being written with a truth the reading
+    cannot answer."""
+    cases, _lines = joined(m, [filing_row("eeee", 904)])
+    return not cases["filing-scope-covers"], cases["filing-scope-covers"]
+
+
+def join_skips_a_subject_that_will_not_read(m):
+    """A ROW WHOSE SUBJECT WILL NOT READ IS SKIPPED, COUNTED AND NAMED, and the
+    run carries on: the shared log holds 410 rows naming `o/r#274`, a suite's
+    fixture repository, and calling those "not labelled yet" asks a reader to
+    fix a number that cannot move.
+
+    THE CONTROL IS A ROW OF THE SAME SHAPE WHOSE SUBJECT DOES READ, so what is
+    measured is the fetch and not the row. The fetch is counted too: one call
+    per subject however many rows name it."""
+    asked = []
+    def fetch(repo, number):
+        asked.append((repo, number))
+        return ISSUES.get((repo, number))
+    corpus = ROOT / "corpus-unfetchable"
+    if corpus.exists():
+        for f in corpus.glob("*"):
+            f.unlink()
+    log = ROOT / "unfetchable.log"
+    log.write_text("".join(json.dumps(r) + "\n" for r in [
+        log_row("uuu1", "verb-first", "Cache the weather feed", 8001),
+        log_row("uuu2", "verb-first", "Cache the weather feed", 8001),
+        log_row("uuu3", "verb-first", "Cache the weather feed", 900)]))
+    was, old = m.CORPUS, os.environ.get("CAMPAIGN_JEV_LOG")
+    m.CORPUS = corpus
+    os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            code = m.cmd_corpus_join(types.SimpleNamespace(
+                fetch=fetch, fetch_thread=lambda repo, number: None))
+        ids = sorted(c["id"] for c in m.read_corpus("verb-first"))
+    finally:
+        m.CORPUS = was
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    said = out.getvalue()
+    return (code == 0 and ids == ["verb-first-uuu3"]
+            and "2 row(s) SKIPPED" in said
+            and "kalaluthien/campaign-base#8001  2 row(s)" in said
+            and "0 row(s) not labelled yet" in said
+            and asked.count(("kalaluthien/campaign-base", 8001)) == 1
+            and len(log.read_text().splitlines()) == 3),\
+        (code, ids, asked, said)
+
+
+def join_writes_the_reading_s_own_state_slice(m):
+    """ONE `judge` CALL CARRIES THE UNION of every reading's fields, so a group
+    whose two readings name DIFFERENT fields wrote a case carrying both --
+    `judge` RAISES on such a state as an extra field, and `--live` would ask a
+    question about state the band was never measured with.
+
+    The control is the other reading of the same group over the SAME row: each
+    must get its own half and neither the union."""
+    rows = [thread_row("tttt", 702, {"F1": "the ceiling is stated twice"})]
+    cases, _lines = joined(m, rows)
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    reg = m.load_registry()
+    whole = set(rows[0]["state"])
+    return (sorted(got.get("state") or {})
+            == sorted(reg["C-report-disposes-finding"]["state"]["fields"])
+            and set(got.get("state") or {}) != whole), (got.get("state"), whole)
+
+
+CASES["a choice's options are built from the state field it names"] = \
+    the_options_are_built_from_the_state
+CASES["the entry's own option wins a name collision"] = \
+    the_entry_s_own_option_wins_a_collision
+CASES["the built options are what the question carries"] = \
+    the_built_options_are_what_is_sent
+CASES["an addressed state routes the reading it guards to uncertain"] = \
+    the_address_routes_an_addressed_state_to_uncertain
+CASES["an address that gave no value is uncertain too"] = \
+    an_address_that_gave_no_value_is_uncertain_too
+CASES["a reading that declares no address keeps its own word"] = \
+    a_reading_with_no_address_keeps_its_own_word
+CASES["the filing join labels by the parent the create named"] = \
+    the_filing_join_labels_by_the_parent_s_slug
+CASES["a parent that was never an option is not labelled"] = \
+    a_parent_that_was_never_an_option_is_not_labelled
+CASES["the join writes the reading's own slice of the state"] = join_writes_the_reading_s_own_state_slice
+CASES["a row whose subject will not read is skipped, counted and named"] = join_skips_a_subject_that_will_not_read
 
 
 def join_keeps_what_it_cannot_label(m):
@@ -876,6 +1101,40 @@ def a_case_held_to_no_band_is_listed(m):
             and "no-match case" in unplaced[0]), unplaced
 
 
+def a_case_code_settled_is_never_drift(m):
+    """THE DEFECT `report` PRINTED ON EVERY RUN: `work-kind-0873f14b0769`, an
+    issue whose `kind:` label settles the reading, came back at 0.40 against a
+    `confident` band of [0.53, 1.0] and was named as drift -- a value from a
+    state the prefilter means production never to send.
+
+    THE CONTROL IS THE SAME CASE WITH THE PREFILTER'S WORD REMOVED, so what is
+    measured is `settled` doing it and not the band, the wording or the model.
+    Both spellings are exercised, because `settled_of` reads two."""
+    entry = m.load_registry()["work-kind"]
+    def case(**kw):
+        out = {"id": "work-kind-settled", "reading": "work-kind", "role": "case",
+               "truth": "research", "band": "confident", "state": {},
+               "label": {"from": "join:issue-kind-label"},
+               "seen": [{"model": MODEL, "wording": m.wording(entry),
+                         "raw": {"type": "choice", "choice": "development",
+                                 "confidence": 0.40}}]}
+        out.update(kw)
+        return out
+    loose = case(settled="research")
+    nested = case(source={"kind": "log", "settled": "research"})
+    control = case(source={"kind": "log", "settled": None})
+    drifted, unplaced = m.drift_line(entry, [loose])
+    nested_drift, nested_unplaced = m.drift_line(entry, [nested])
+    control_drift, control_unplaced = m.drift_line(entry, [control])
+    return (drifted == "none" and len(unplaced) == 1
+            and "code settled it" in unplaced[0]
+            and nested_drift == "none" and len(nested_unplaced) == 1
+            and "work-kind-settled 0.40 outside confident" in control_drift
+            and not control_unplaced), (drifted, unplaced, nested_drift,
+                                        control_drift)
+
+
+CASES["a case code settled is never named as drift"] = a_case_code_settled_is_never_drift
 CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
 CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
@@ -1272,12 +1531,7 @@ def every_case_fits_its_entry(m):
         # `choice` cut on ONE option answers yes, no or unknown about that
         # option, exactly as a `noul` does -- so the option cut is read first,
         # and only a `choice` cut on the winner answers an option word.
-        if (entry.get("thresholds") or {}).get("option"):
-            words = {"yes", "no", "none"}
-        elif entry["question"]["type"] == m.CHOICE:
-            words = set(entry["question"]["criteria"]) | {"none"}
-        else:
-            words = {"yes", "no", "none"}
+        option_cut = (entry.get("thresholds") or {}).get("option")
         for c in m.read_corpus(name):
             if c.get("reading") != name:
                 bad.append(f"{c.get('id')}: reading `{c.get('reading')}`")
@@ -1285,6 +1539,23 @@ def every_case_fits_its_entry(m):
             if got != want:
                 bad.append(f"{c.get('id')}: state {sorted(got)}, entry names "
                            f"{sorted(want)}")
+            # A READING WHOSE OPTIONS ARE BUILT IS JUDGED AGAINST THE CASE'S
+            # OWN OPTION SET, not the entry's: the entry holds the no-match
+            # option alone and the rest come from the state the case carries,
+            # so `options_of` -- the one reader of that rule -- is asked with
+            # this case's state. Read per case and not per entry, because two
+            # cases of one reading may have been asked different option sets:
+            # a leave-one-out no-match case is a positive with its own
+            # campaign's option taken away.
+            # AND `none` IS NOT ADMITTED FOR FREE. A `choice` answers its own
+            # options and nothing else, so the set is exactly them: unioning
+            # `none` in admitted a truth of `none` for a reading whose
+            # no-match option is spelled `noMatch`, which is the one word this
+            # case exists to catch (pr#484 REVIEW 5720443119).
+            if option_cut or entry["question"]["type"] != m.CHOICE:
+                words = {"yes", "no", "none"}
+            else:
+                words = set(m.options_of(entry, c.get("state") or {}))
             truth = c.get("truth")
             if isinstance(truth, str) and truth not in words:
                 bad.append(f"{c.get('id')}: truth `{truth}` is no word of "
@@ -1502,6 +1773,119 @@ def the_ratio_counts_sent_calls_over_distinct_states(m):
         lines
 
 
+def a_row_says_which_kind_of_run_spent_it(m):
+    """PRODUCTION AND MEASURING, on the row and apart in the ratio. A measuring
+    run asks the same states ON PURPOSE -- the store off, so the noise is
+    measured and not the store -- so counting its calls with production's makes
+    "calls a state" a number about nothing.
+
+    Both writers are exercised: `ask`'s row and `judge`'s, since `judge` writes
+    its own row per reading and a `run` it swallowed would mark every reader's
+    call as production."""
+    read(m)
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5,
+          cache=False, run=m.MEASURING)
+    measuring = json.loads(LOG.read_text().splitlines()[-1])
+    serving()
+    m.judge("issue-shape", STATE, read="a label", env=env(), timeout=5,
+            cache=False, run=m.MEASURING)
+    judged = json.loads(LOG.read_text().splitlines()[-1])
+    serving()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    production = json.loads(LOG.read_text().splitlines()[-1])
+    return (measuring.get("run") == "measuring"
+            and judged.get("run") == "measuring"
+            and production.get("run") == "production"),\
+        (measuring.get("run"), judged.get("run"), production.get("run"))
+
+
+def the_ratio_shows_the_two_runs_apart(m):
+    """OLD ROWS STAY AND CANNOT BE RE-MARKED, so the all-time ratio they
+    dominate is printed as it is and the marked window beside it -- production
+    by itself, measuring by itself. A reader that averaged the two would report
+    a production ratio nobody measured."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        # four calls on one state, from before the field existed
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        # one production call, one state
+        {"reading": "verb-first", "state_hash": "bbb", "cached": False,
+         "run": "production"},
+        # two measuring calls on one state: the noise run, asking twice
+        {"reading": "verb-first", "state_hash": "ccc", "cached": False,
+         "run": "measuring"},
+        {"reading": "verb-first", "state_hash": "ccc", "cached": False,
+         "run": "measuring"},
+    ]))
+    lines = m.spend_lines(env=env())
+    where = {}
+    head = ""
+    for line in lines:
+        if line.startswith(("  all time", "    production", "    measuring",
+                            "  since the")):
+            head = line.strip().split(" ")[0]
+        elif "verb-first" in line:
+            where.setdefault(head, []).append(line)
+    return (len(where.get("all", [])) == 1
+            and "7 sent over 3 state(s), 2.3 a state" in where["all"][0]
+            and len(where.get("production", [])) == 1
+            and "1 sent over 1 state(s), 1.0 a state" in where["production"][0]
+            and len(where.get("measuring", [])) == 1
+            and "2 sent over 1 state(s), 2.0 a state" in where["measuring"][0]
+            and any("3 row(s) carry it, of 7" in ln for ln in lines)), lines
+
+
+def a_repeat_run_asks_a_sample_and_the_edges(m):
+    """THE RULE, AND WHAT IT KEEPS. A case whose value sits near an edge or a
+    band's end is asked EVERY run, because that is the case a run can move a
+    threshold with; a flip and a no-match are asked every run, because the live
+    half asserts on each by name; a case not yet seen under this wording is
+    asked, because nothing is known about it; and a seeded share of the rest.
+
+    THE SEED IS WHAT MAKES A BAND COMPARABLE between runs, so the same draw is
+    asserted twice rather than only its size."""
+    entry = {"tier": "advise", "group": "g",
+             "question": {"type": "choice", "instructions": "i",
+                          "criteria": {"a": "x", "b": "y", "none": "z"}},
+             "thresholds": {"floor": 0.50, "certain_over": 0.52,
+                            "no_match": "none"},
+             "bands": {"model": MODEL, "wording": "", "measured": "",
+                       "declared": {"confident": [0.53, 1.0],
+                                    "unsure": [0.11, 0.43]}}}
+    def seen(value):
+        return [{"model": MODEL, "wording": m.wording(entry),
+                 "raw": {"type": "choice", "choice": "a", "confidence": value}}]
+    cases = ([{"id": "near-edge", "role": "case", "seen": seen(0.47)},
+              {"id": "near-band-end", "role": "case", "seen": seen(0.55)},
+              # 0.75 sits near no mark, so what pins these two is the ROLE
+              {"id": "a-flip", "role": "flip", "seen": seen(0.75)},
+              {"id": "a-no-match", "role": "no-match", "seen": seen(0.75)},
+              {"id": "unseen", "role": "case", "seen": []},
+              # 0.99 sits against the `confident` band's 1.0, which is the
+              # scale's own end and no mark, so it is NOT pinned
+              {"id": "at-the-ceiling", "role": "case", "seen": seen(0.99)}]
+             + [{"id": f"settled-{i:02d}", "role": "case", "seen": seen(0.90)}
+                for i in range(20)])
+    asked, pinned = m.sample_of(entry, cases)
+    ids = [c["id"] for c in asked]
+    again = [c["id"] for c in m.sample_of(entry, cases)[0]]
+    return (set(pinned) == {"near-edge", "near-band-end", "a-flip",
+                            "a-no-match", "unseen"}
+            and all(i in ids for i in pinned)
+            and pinned["a-flip"] == "role flip"
+            and pinned["a-no-match"] == "role no-match"
+            and pinned["near-edge"].startswith("within")
+            and "at-the-ceiling" not in pinned
+            and len([i for i in ids if i not in pinned]) == 5 and ids == again
+            and ids == [c["id"] for c in cases if c["id"] in set(ids)]),\
+        (ids, pinned)
+
+
+CASES["a row says which kind of run spent the call"] = a_row_says_which_kind_of_run_spent_it
+CASES["report shows a measuring run and production apart"] = the_ratio_shows_the_two_runs_apart
+CASES["a repeat run asks a seeded sample and every case near an edge"] = a_repeat_run_asks_a_sample_and_the_edges
 CASES["a second identical ask replays and sends nothing"] = a_second_identical_ask_sends_nothing
 CASES["a replayed answer is logged as a hit, not as a call"] = a_hit_is_logged_as_a_hit
 CASES["a changed state misses the store"] = a_changed_state_misses
@@ -1579,18 +1963,63 @@ def a_row_of_no_real_endpoint_is_refused_by_the_join(m):
 
 
 def a_row_says_which_endpoint_answered_it(m):
-    """One plain word, on every row this module writes: `real` or `stub`. It is
-    what the join reads, so a row that did not carry it could be a suite's
-    answer imported as the tracker's own history."""
+    """One plain word, on every row this module writes, and it is a fact about
+    the RESPONSE: `stub` where one came back from a named endpoint, `none`
+    where nothing answered at all, and `real` only for the live one.
+
+    THE DEFECT, AND WHY IT IS NOT A DETAIL: the word was read off the
+    ENVIRONMENT -- `stub` when `CAMPAIGN_JEV_URL` is set, else `real` -- so
+    every run that merely forgot the variable wrote `real`. A fixture's `gh`
+    shim, a control call with no key, a reader whose endpoint timed out: each
+    put a row the join takes into the shared log, on the strength of a call
+    nobody made. The two calls below send nothing at all, and the stub is the
+    control that says the word still moves."""
     read(m)
     stubbed = json.loads(LOG.read_text().splitlines()[-1])
+    # NO URL AND NO KEY: `ask` reaches nothing, and the old rule read the
+    # absent variable as the live endpoint.
     root, log = a_base("endpoint-word")
     m.ask("a suite", "a label", STATE, BOTH, env={"HOME": str(HOME)}, cwd=root,
           timeout=5)
-    real = json.loads(log.read_text().splitlines()[-1])
+    keyless = json.loads(log.read_text().splitlines()[-1])
+    # A CLOSED PORT WITH A KEY: the request is built and nothing answers it.
+    LOG.write_text("")
+    clear_store()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(url=CLOSED), timeout=5)
+    closed = json.loads(LOG.read_text().splitlines()[-1])
     return (stubbed.get("endpoint") == "stub"
-            and real.get("endpoint") == "real"), (stubbed.get("endpoint"),
-                                                  real.get("endpoint"))
+            and keyless.get("endpoint") == "none"
+            and closed.get("endpoint") == "none"
+            and m.endpoint_word(m.DEFAULT_URL) == "real"
+            and m.endpoint_word(URL) == "stub"),\
+        (stubbed.get("endpoint"), keyless.get("endpoint"),
+         closed.get("endpoint"))
+
+
+def a_replay_says_where_the_answer_came_from(m):
+    """A REPLAY IS NOT A CALL, and the row must still say where the answer came
+    from, so the endpoint travels with the response in the store.
+
+    An entry written before it did -- a bare response, which is what the store
+    held until now -- replays and says `none`. Never `real`: the join takes a
+    `real` row, and nothing on disk can say which endpoint filled a file that
+    did not record one."""
+    read(m)
+    first = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    hit = json.loads(LOG.read_text().splitlines()[-1])
+    held = sorted((LOG.parent / "jev-cache").glob("*.json"))
+    for path in held:
+        path.write_text(json.dumps(json.loads(path.read_text())["response"]))
+    second = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    legacy = json.loads(LOG.read_text().splitlines()[-1])
+    return (len(held) == 1 and first.cached and hit.get("endpoint") == "stub"
+            and second.cached and legacy.get("endpoint") == "none"
+            and second.answers["verb_first"].word == "yes"),\
+        (len(held), first.cached, hit.get("endpoint"), second.cached,
+         legacy.get("endpoint"))
+
+
+CASES["a replayed answer says which endpoint answered it"] = a_replay_says_where_the_answer_came_from
 
 
 def a_skip_row_claims_no_endpoint(m):
@@ -1804,9 +2233,24 @@ MUTATIONS = [
     ("a stub allowed to write the shared log",
      "    if URL_ENV in env:", "    if False:",
      "a stubbed call never writes the shared log"),
-    ("the endpoint never written on a row",
-     "    return STUB if URL_ENV in (os.environ if env is None else env) else REAL",
+    ("the endpoint read off the environment instead of the response",
+     "    return REAL if url == DEFAULT_URL else STUB",
      "    return REAL", "a row says which endpoint answered it"),
+    ("a call that sent nothing claiming the real endpoint answered it",
+     "    key, why = read_key(env)\n    if why:\n"
+     '        return unknown_all(questions, why), "", why, False, NONE_SENT',
+     "    key, why = read_key(env)\n    if why:\n"
+     '        return unknown_all(questions, why), "", why, False, REAL',
+     "a row says which endpoint answered it"),
+    ("the endpoint never stored beside the answer",
+     "        path.write_text(json.dumps({STORED_ENDPOINT: word,",
+     "        path.write_text(json.dumps({STORED_ENDPOINT: REAL,",
+     "a replayed answer says which endpoint answered it"),
+    ("a store entry that names no endpoint replayed as the real one",
+     "        word = out.get(STORED_ENDPOINT)\n"
+     "        return held, word if word in (REAL, STUB) else NONE_SENT",
+     "        return held, REAL",
+     "a replayed answer says which endpoint answered it"),
     ("the join taking a row of any endpoint",
      '        if row.get("endpoint") != REAL:', "        if False:",
      "a row no real endpoint answered is refused by the join, and named"),
@@ -1829,6 +2273,45 @@ MUTATIONS = [
      '"flag": flag(name, raw) if callable(flag) else flag}',
      '"flag": flag(name, {}) if callable(flag) else flag}',
      "a flag the reader computes from the answers reaches the log row"),
+    # --- the built options, the address, and the filing join ---
+    ("the built options never built",
+     "    built = ({str(k): str(v) for k, v in given.items()}\n"
+     "             if isinstance(given, dict) else {})",
+     "    built = {}",
+     "a choice's options are built from the state field it names"),
+    ("the entry's own options overwritten by the built ones",
+     "    built.update(criteria)\n    return built",
+     "    criteria.update(built)\n    return criteria",
+     "the entry's own option wins a name collision"),
+    ("the built options never reaching the question",
+     '    if spec.pop(OPTIONS_FROM, None):\n'
+     '        spec["criteria"] = options_of(entry, state)',
+     "    spec.pop(OPTIONS_FROM, None)",
+     "the built options are what the question carries"),
+    ("the address read as an upper edge it never reaches",
+     "    if value >= ADDRESS_OVER:", "    if False:",
+     "an addressed state routes the reading it guards to uncertain"),
+    ("an address that gave no value read as clean",
+     "    if value is None:\n        return UNCERTAIN, (f\"the address "
+     "`{guard}` gave no value, so the state \"",
+     "    if value is None:\n        return word, (f\"the address "
+     "`{guard}` gave no value, so the state \"",
+     "an address that gave no value is uncertain too"),
+    ("every reading read as though it declared an address",
+     "    if not guard:\n        return word, \"\"",
+     "    if False:\n        return word, \"\"",
+     "a reading that declares no address keeps its own word"),
+    ("the filing join reading a label that is not the campaign's",
+     '    slugs = [n[len("campaign:"):] for n in names if n.startswith("campaign:")]',
+     "    slugs = list(names)",
+     "the filing join labels by the parent the create named"),
+    ("a parent outside the option set labelled all the same",
+     "    if slugs[0] not in offered:", "    if False:",
+     "a parent that was never an option is not labelled"),
+    ("a built-option case held against the entry's own options",
+     "    options = options_of(entry, case.get(\"state\"))",
+     '    options = entry["question"].get("criteria") or {}',
+     "the filing join labels by the parent the create named"),
     # --- the thread join ---
     ("the thread read restated here instead of asked for",
      "        found, why = reader.bodies_of(repo, number)",
@@ -1854,11 +2337,12 @@ MUTATIONS = [
      "the thread join waits for the merge where nothing was re-raised"),
     # --- the store of answers ---
     ("the store never read",
-     "    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None",
-     "    stored = None",
+     "    stored, word = (cache_read(cache_key(state, questions), env, cwd) if cache\n"
+     "                    else (None, NONE_SENT))",
+     "    stored, word = None, NONE_SENT",
      "a second identical ask replays and sends nothing"),
     ("the store never written",
-     "        cache_write(cache_key(state, questions), out, env, cwd)",
+     "        cache_write(cache_key(state, questions), out, word, env, cwd)",
      "        pass", "a second identical ask replays and sends nothing"),
     ("the state left out of the key",
      '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
@@ -1873,12 +2357,40 @@ MUTATIONS = [
      '    return f"{digest(state)}-{digest(sent)}"',
      "a changed model misses the store"),
     ("the noise switch ignored in `ask`",
-     "if cache else None", "if True else None",
+     "                    else (None, NONE_SENT))",
+     "                    else cache_read(cache_key(state, questions), env, cwd))",
      "the noise switch sends every time"),
     ("the noise switch swallowed by `judge`",
-     "timeout=timeout, log=False, cache=cache)",
-     "timeout=timeout, log=False, cache=True)",
+     "timeout=timeout, log=False, cache=cache,\n                      run=run)",
+     "timeout=timeout, log=False, cache=True,\n                      run=run)",
      "the noise switch sends every time"),
+    ("the marked window folded into the all-time one",
+     '    marked = [r for r in rows if r.get(RUN_FIELD) in RUNS]',
+     "    marked = rows",
+     "report shows a measuring run and production apart"),
+    ("the run word never written on a row",
+     '           "endpoint": answered_by, RUN_FIELD: run,',
+     '           "endpoint": answered_by, RUN_FIELD: PRODUCTION,',
+     "a row says which kind of run spent the call"),
+    ("judge swallowing the run word",
+     '               "endpoint": reading.endpoint, RUN_FIELD: run,',
+     '               "endpoint": reading.endpoint, RUN_FIELD: PRODUCTION,',
+     "a row says which kind of run spent the call"),
+    ("the repeat sample drawn afresh every run",
+     '    drawn = set(random.Random(SAMPLE_SEED).sample(sorted(rest), take)) if rest \\',
+     "    drawn = set(random.Random().sample(sorted(rest), take)) if rest \\",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("the scale's own ends counted as a band's edge",
+     "                  if isinstance(v, (int, float)) and 0.0 < v < 1.0]",
+     "                  if isinstance(v, (int, float))]",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("a case near an edge left to the sample",
+     "        if close:", "        if False:",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("a flip or a no-match left to the sample",
+     '        if c.get("role", "case") != "case":',
+     "        if False:",
+     "a repeat run asks a seeded sample and every case near an edge"),
     ("a hit counted as a call",
      '        if row.get("cached"):\n'
      '            hits[who] = hits.get(who, 0) + 1\n'
@@ -2005,6 +2517,26 @@ MUTATIONS = [
      '    if truth in options and truth != cuts.get("no_match"):',
      "    if False:",
      "a case the join writes is held to a band, and drift reads it"),
+    ("the drift line testing a case code settled against a band",
+     "        if not held_to_a_band(c):", "        if False:",
+     "a case code settled is never named as drift"),
+    ("held_to_a_band letting a settled case through",
+     '    return settled_of(case) is None or case.get("role") == "no-match"',
+     "    return True",
+     "a case code settled is never named as drift"),
+    ("the join writing the whole group's state into one reading's case",
+     '            "state": {k: v for k, v in (row.get("state") or {}).items()\n'
+     '                      if k in fields}, "truth": truth,',
+     '            "state": row.get("state") or {}, "truth": truth,',
+     "the join writes the reading's own slice of the state"),
+    ("a subject that will not read counted as waiting",
+     "        if fetched[(subject, repo, number)] is None:",
+     "        if False:",
+     "a row whose subject will not read is skipped, counted and named"),
+    ("the subject fetched once per row instead of once per subject",
+     "        if (subject, repo, number) not in fetched:",
+     "        if True:",
+     "a row whose subject will not read is skipped, counted and named"),
     ("an unplaced case skipped in silence",
      '            unplaced.append(f"{c[\'id\']} ({why})")', "            pass",
      "a case held to no band is listed, never skipped"),
@@ -2030,12 +2562,12 @@ MUTATIONS = [
      '        json.loads(path.read_text(encoding="utf-8")))',
      "a registry file carrying a bad act never loads"),
     ("a skip not logged",
-     '"endpoint": NONE_SENT, "skipped": why}\n    return log_call(',
-     '"endpoint": NONE_SENT, "skipped": why}\n    return "logged to" or log_call(',
+     '"skipped": why}\n    return log_call(',
+     '"skipped": why}\n    return "logged to" or log_call(',
      "a skipped reading is logged as one JSON line naming why"),
     ("a skip row claiming the real endpoint answered it",
-     '           "endpoint": NONE_SENT, "skipped": why}',
-     '           "endpoint": endpoint_word(env), "skipped": why}',
+     '           "endpoint": NONE_SENT, RUN_FIELD: PRODUCTION, "skipped": why}',
+     '           "endpoint": REAL, RUN_FIELD: PRODUCTION, "skipped": why}',
      "a skip row says no endpoint answered it, and the join refuses it"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
@@ -2084,14 +2616,9 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
-def held_to_a_band(jev, case):
-    """Whether this case's runs may set the reading's band. THE ONE READER of
-    that rule, because the run loop and the `--record` history both ask it and
-    the two disagreed: the loop skipped a case code settles while the history
-    still let its value widen the band, so the edge moved on a state production
-    never sends. A no-match case is excepted -- `verb-first`'s is settled too --
-    and `band_of` holds it to no band anyway."""
-    return jev.settled_of(case) is None or case.get("role") == "no-match"
+# Whether a case's runs may set or test a band is `campaign-jev.held_to_a_band`'s,
+# asked and never restated: this suite kept its own reading of it, and the drift
+# line kept a third, which called a case code settles drifted for good.
 
 
 # Which band a case is held to is `campaign-jev.band_of`'s, asked and never
@@ -2104,7 +2631,7 @@ def held_to_a_band(jev, case):
 # not read.
 
 
-def live(record, wording_hash=None):
+def live(record, wording_hash=None, whole=False):
     """THE CORPUS AGAINST THE REAL ENDPOINT, asked with the REGISTRY'S OWN
     question -- never a copy built here, which drifted within one round the
     last time this suite kept one.
@@ -2168,12 +2695,21 @@ def live(record, wording_hash=None):
         declared = (entry.get("bands") or {}).get("declared") or {}
         seen, outside, wrong, nomatch, flips = {}, [], [], [], []
         settled_here = []
-        for c in cases:
+        # WHICH CASES A REPEAT RUN ASKS IS `sample_of`'s, and the reason is its
+        # own: this run is the noise measurement, and asking every case every
+        # time is what put `work-kind` at 24 calls a state. `--all` is the way
+        # past it, for a wording change that has to be measured from scratch.
+        asked, _pinned = (list(cases) if whole else jev.sample_of(entry, cases)[0],
+                          None)
+        print(jev.sample_line(entry, cases, asked) if not whole
+              else f"  asked all {len(cases)} case(s)")
+        for c in asked:
             # THE STORE IS OFF HERE, as it is in `relive`: a band is what the
             # same state answers across runs, and a replayed answer would
             # report a drift of zero (DECISION 5716060001).
             r = jev.ask("campaign-jev-test.py --live", c["id"],
-                        c.get("state") or {}, q, log=False, cache=False)
+                        c.get("state") or {}, q, cache=False,
+                        run=jev.MEASURING)
             model = r.model or model
             a = r.answers[name]
             value = jev.band_value(entry, a.raw)
@@ -2184,19 +2720,12 @@ def live(record, wording_hash=None):
                 c.setdefault("seen", []).append(
                     {"model": r.model, "wording": wording, "at": at,
                      "word": a.word, "raw": a.raw})
-            # A CASE CODE SETTLED IS HELD TO NO BAND AND SCORED AGAINST
-            # NOTHING. A band is what the states production SENDS come back at,
-            # and the prefilter's whole job is that this one is never sent --
-            # `report` already counts such a case as code's rather than as one
-            # Jev got wrong (DECISION 5715993782). It is still ASKED and still
-            # printed, because what the model would have said about a state code
-            # settles is the evidence that the prefilter is worth having. Found
-            # by `work-kind-0873f14b0769`, an issue whose `kind:` label settles
-            # it, which came back `development` at 0.43 against a truth of
-            # `research` and was counted twice over as this reading's failure.
-            # A no-match case is excepted and stays below: `verb-first`'s is
-            # settled too, and where it lands is the whole point of keeping it.
-            if not held_to_a_band(jev, c):
+            # WHICH CASES A BAND IS OVER IS `held_to_a_band`'s, and why is its
+            # docstring's. What is this loop's own: such a case is still ASKED
+            # and still PRINTED, because what the model would have said about a
+            # state code settles is the evidence that the prefilter is worth
+            # having.
+            if not jev.held_to_a_band(c):
                 settled_here.append((c["id"], a.word, value))
                 continue
             key = jev.band_of(entry, c)[0]
@@ -2295,7 +2824,7 @@ def live(record, wording_hash=None):
             # this run is already in it.
             history = {}
             for c in cases:
-                if not held_to_a_band(jev, c):
+                if not jev.held_to_a_band(c):
                     continue
                 key = jev.band_of(entry, c)[0]
                 for s in c.get("seen") or []:
@@ -2319,7 +2848,8 @@ def live(record, wording_hash=None):
 def main(argv):
     if "--live" in argv:
         at = argv.index("--wording") if "--wording" in argv else None
-        live("--record" in argv, argv[at + 1] if at is not None else None)
+        live("--record" in argv, argv[at + 1] if at is not None else None,
+             "--all" in argv)
         return harness.report()
     pure_branches(load(SOURCE))
     harness.mutate(SOURCE, load, CASES, MUTATIONS)

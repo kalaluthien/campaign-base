@@ -267,17 +267,19 @@ VERB_FIRST_QUESTION = (
     "mission to carry out?")
 # The `noul` cuts, and the gap between them is `unknown`: a `noul` near 0.5 says
 # yes and no are equally likely, not that the title is half a mission, so one
-# cut would turn the model's own indecision into a verdict.
-# Measured 2026-09-17 over twenty issues of this tracker, asked with the state
-# below -- title AND body, because the body moves the title's answer (#203 came
-# back 0.57 on its title alone and 0.70 beside its body). Over four runs
-# verb-first came back in 0.88-0.96 and not-verb-first in 0.04-0.68. Both cuts
-# sit in that gap and on neither band, and `no_under` carries the wider margin
-# on purpose: the not-verb-first edge climbed 0.62, 0.66, 0.67, 0.68 across the
-# four runs while the verb-first floor did not move off 0.88, and a cut too low
-# costs a missed warning where one too high would cost a false one.
-VERB_FIRST_YES_OVER = 0.80
-VERB_FIRST_NO_UNDER = 0.76
+# cut would turn the model's own indecision into a verdict. The gap is narrow
+# because the measured bands leave little room, which is the honest shape and
+# not a comfortable one: a wrong warning costs a reader one glance, where a cut
+# the next run's drift crosses costs a red suite and a round.
+#
+# THE NUMBERS THEY WERE MEASURED AGAINST ARE NOT REPEATED HERE.
+# `scripts/fixtures/jev-cases.json` declares a band per group and records every
+# run behind it, and `scripts/campaign-jev-test.py --live` asserts each cut
+# strictly between the two declared bands it separates and every case inside
+# its own. A band restated in this comment would be the copy that drifts --
+# which is what these already were, twice over, while no check read them.
+VERB_FIRST_YES_OVER = 0.83
+VERB_FIRST_NO_UNDER = 0.79
 WORK_KIND_QUESTION = (
     "What kind of work does the sub-issue in `title` and `body` ask for?")
 # THE WORDS ARE `WORK_KINDS`, described as the `assuming-role` skill's own table
@@ -296,14 +298,12 @@ WORK_KIND_NO_MATCH = "none"
 WORK_KIND_CRITERIA[WORK_KIND_NO_MATCH] = "not a unit of work at all"
 # The floor on `confidence`, beside the no-match option and not instead of it:
 # the option set can fit and the answer still be a coin toss between two of its
-# members. Measured 2026-09-17 over thirteen sub-issues of this tracker, twelve
-# carrying a `kind:` label the owner set and one that is not a unit of work at
-# all: the answers this floor clears came back in 0.77-1.00 and named the
-# owner's label every time, and the two it suppresses came back in 0.27-0.41.
-# The floor sits in that gap and on neither band. A run with no wrong
-# answer in it cannot separate right from wrong, so what the floor is measured
-# against is confidence, and what is asserted beside it is that nothing it
-# clears is wrong.
+# members, which is what the fixture's `unsure` cases are.
+#
+# Measured the same way and recorded in the same one place, the fixture. A run
+# with no WRONG answer in it cannot separate right from wrong, so what the
+# floor is measured against is confidence; that nothing it clears is wrong is
+# asserted beside it, case by case.
 WORK_KIND_FLOOR = 0.60
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
@@ -1109,14 +1109,19 @@ def judgment_report(label, title, body, ask_kind):
     this module on every tool call for `bare_references` and must not pay for a
     dependency no guard uses."""
     questions = judgment_questions(ask_kind)
+    # THE GUARD COVERS THE CALL AND NOT ONLY THE LOAD. `ask` promises to answer
+    # rather than raise, and this is the second reader of that promise: a
+    # judgment is an aside to a reading already made, so a traceback from it
+    # must not cost `check` its verdict -- and `campaign-claim take` gates on
+    # that verdict, so it must not cost a worker its claim either.
     try:
         jev = load(Path(__file__).resolve().parent / "campaign-jev.py",
                    "campaign_jev")
+        reading = jev.ask("campaign-tracker.py check", f"{label} title+body",
+                          {"title": title, "body": body}, questions)
     except Exception as e:  # noqa: BLE001 -- a reading that did not happen
-        return [f"  judgments not asked for: campaign-jev.py would not load "
-                f"({e.__class__.__name__})"]
-    reading = jev.ask("campaign-tracker.py check", f"{label} title+body",
-                      {"title": title, "body": body}, questions)
+        return [f"  judgments not read: campaign-jev.py raised where it "
+                f"promises not to ({e.__class__.__name__})"]
     return judgment_lines(reading.answers, reading.logged, reading.model,
                           ask_kind)
 

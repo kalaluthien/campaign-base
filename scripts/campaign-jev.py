@@ -13,14 +13,19 @@ reading and moves no exit status on it. `spec/campaign/github/system.als`'s
 `advised` is that claim in the model, and `JV1b` is the scenario that says a
 failed, unconfident or ill-fitting answer advises nothing.
 
-UNKNOWN IS THE ANSWER FOR EVERY FAILURE. No key, an endpoint that would not
-answer, an HTTP error, a timeout, a body that is not JSON, a response naming
+UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
+is never sent and never cut down -- no key, a `~/.env` that is not text,
+`CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
+not answer, an HTTP error, a timeout, a body that is not JSON, a response naming
 another model, an answer missing for a question, an answer of another type, a
 raw value the thresholds leave in the gap -- each comes back `unknown` with a
-one-line reason, per question. Nothing here raises at a caller, because a
-judgment that crashed its reader would be worse than no judgment; the one
-exception is a question of an unsupported TYPE, which is the caller's bug and
-not the model's answer.
+one-line reason, per question. `ask` is the boundary that holds it: every named
+path above returns rather than raises, and `ask` catches whatever is left and
+answers `unknown` wearing its exception's class name. The ONE thing that raises
+is a question of an unsupported TYPE, which is the caller's bug and not the
+model's answer. Nothing else may, because a caller prints a verdict on the next
+line -- a traceback out of here turned a `check` whose shape held into a refused
+claim.
 
 THE THRESHOLDS ARE THE CALLER'S, and they are two numbers and not one:
 
@@ -81,6 +86,25 @@ KEY_ENV = "TYPESAFE_API_KEY"
 # slow endpoint costs the reader `unknown` and not a wait: measured calls run
 # 0.6-1.1s, and ten seconds is late rather than slow.
 TIMEOUT = 10.0
+# HOW MUCH STATE MAY BE SENT, in UTF-8 bytes of the serialized `state`. Bytes
+# and not tokens, because counting tokens needs a tokenizer this tree does not
+# carry and will not add for a guard.
+#
+# Measured in sdlc-alloy#458: a state of about 30k tokens answered, while a
+# 127 KB and a 235 KB file each came back HTTP 400 `max_tokens_exceeded`. The
+# state this tree sends is English prose carrying code, paths and punctuation,
+# which tokenizes nearer three bytes per token than the four of plain prose --
+# so the 30k tokens that answered is about 90 KB, which sits just under the
+# 127 KB that did not, and the two readings agree. 60 KB is two thirds of the
+# smallest size known to answer and under half the smallest known to fail; an
+# issue body's own ceiling is 2000 characters, so nothing this tree sends comes
+# near it and the budget is a guard rather than a limit anyone meets.
+#
+# A STATE OVER IT IS NOT SENT AND IS NOT CUT DOWN. Truncating here would answer
+# a question about a state nobody asked about, and the caller is the only one
+# that knows which part of its state carries the answer -- so slicing stays the
+# reader's and this returns `unknown` naming both numbers.
+STATE_BUDGET = 60_000
 UNKNOWN = "unknown"
 NOUL, CHOICE = "noul", "choice"
 
@@ -109,7 +133,11 @@ def read_key(env=None):
     path = Path(env.get("HOME", "~")).expanduser() / ".env"
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # NOT `OSError` ALONE: a `~/.env` that is not UTF-8 raises
+        # UnicodeDecodeError, which walked past this and out through `ask` into
+        # the caller's traceback -- a file nobody here wrote, turning a reading
+        # that should answer `unknown` into a crash.
         return "", (f"no `{KEY_ENV}` in the environment and {path} did not read "
                     f"({e.__class__.__name__})")
     for line in text.splitlines():
@@ -125,9 +153,21 @@ def read_key(env=None):
 
 
 def endpoint(env=None):
-    """The URL to POST to: `CAMPAIGN_JEV_URL` when set, else the live one."""
+    """(the URL to POST to, "") -- `CAMPAIGN_JEV_URL` when set, else the live
+    one -- or ("", why) when it is set to nothing.
+
+    A SET-BUT-EMPTY VALUE IS NOT AN UNSET ONE. `CAMPAIGN_JEV_URL=` is how a
+    caller says "do not call out", and falling through to `DEFAULT_URL` on it
+    sent the live endpoint a request the environment had just forbidden. Unset
+    still means the live one, because that is the ordinary case."""
     env = os.environ if env is None else env
-    return env.get(URL_ENV) or DEFAULT_URL
+    if URL_ENV not in env:
+        return DEFAULT_URL, ""
+    url = env[URL_ENV].strip()
+    if not url:
+        return "", (f"`{URL_ENV}` is set to nothing, which names no endpoint; "
+                    f"unset it to reach {DEFAULT_URL}")
+    return url, ""
 
 
 def branch(spec, raw):
@@ -234,14 +274,30 @@ def post(body, key, url, timeout):
     """(the decoded response, "") or (None, why). Every network and decode
     failure is a sentence, never an exception: the caller's next line is a
     verdict it must still be able to print."""
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode("utf-8"),
-        headers={"Authorization": "Bearer " + key,
-                 "Content-Type": "application/json"})
     try:
+        # BUILDING THE REQUEST IS INSIDE THE TRY. `Request(...)` parses the URL
+        # and raises ValueError on one with no scheme, which is a
+        # misconfiguration -- exactly what this function exists to turn into a
+        # sentence -- and it escaped while it sat one line above the `try`.
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"),
+            headers={"Authorization": "Bearer " + key,
+                     "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as fh:
             text = fh.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
+        # THE BUDGET MAY BE WRONG, so the endpoint's own word for "too large"
+        # is read rather than reported as a bare 400: a reader that saw only
+        # the number would go looking at its questions.
+        try:
+            detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:  # noqa: BLE001 -- a body that would not read says nothing
+            detail = ""
+        if e.code == 400 and "max_tokens_exceeded" in detail:
+            return None, (f"the endpoint answered HTTP 400 "
+                          f"max_tokens_exceeded: the state was too large for "
+                          f"the model, so the {STATE_BUDGET}-byte budget here "
+                          f"is set too high")
         return None, f"the endpoint answered HTTP {e.code}"
     except Exception as e:  # noqa: BLE001 -- a timeout, a DNS failure, a closed port
         return None, f"the endpoint did not answer ({e.__class__.__name__})"
@@ -267,51 +323,76 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT):
 
     `questions` maps an id to a spec: `type`, `instructions`, `criteria`, and
     the thresholds `branch` reads. The id never reaches the model, so the
-    instructions carry the whole meaning."""
+    instructions carry the whole meaning.
+
+    THIS IS THE BOUNDARY THE MODULE'S PROMISE RESTS ON. An unsupported question
+    TYPE raises, and it is the only thing that does: every named failure below
+    answers `unknown`, and anything unnamed is caught at the bottom and answers
+    `unknown` too, wearing its exception's class name. A caller of this prints a
+    verdict on the next line, and a traceback out of here turned a `check` whose
+    shape held into a claim refused."""
     env = os.environ if env is None else env
     for qid, spec in questions.items():
         if spec["type"] not in (NOUL, CHOICE):
             raise ValueError(f"campaign-jev: question `{qid}` is a "
                              f"`{spec['type']}`; this module answers "
                              f"{NOUL} and {CHOICE}")
+    started = time.time()
+    try:
+        answers, model, why = _answer(state, questions, env, timeout)
+    except Exception as e:  # noqa: BLE001 -- the boundary; the promise is here
+        why = (f"the call raised where nothing is meant to "
+               f"({e.__class__.__name__}), so nothing was read")
+        answers, model = unknown_all(questions, why), ""
+    latency = time.time() - started
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
-           "reader": reader, "read": label, "asked": MODEL}
-    key, why = read_key(env)
-    started = time.time()
-    if why:
-        answers, model, out = unknown_all(questions, why), "", None
-    else:
-        out, why = post(request_body(state, questions), key,
-                        endpoint(env), timeout)
-        if why:
-            answers, model = unknown_all(questions, why), ""
-        elif not isinstance(out, dict):
-            answers, model, why = unknown_all(
-                questions, "the response is not an object"), "", "not an object"
-        elif out.get("model") != MODEL:
-            model = str(out.get("model"))
-            why = (f"`{model}` answered where `{MODEL}` is pinned; a band "
-                   f"measured under one version says nothing about another")
-            answers = unknown_all(questions, why)
-        else:
-            model = out["model"]
-            given = out.get("answers")
-            given = given if isinstance(given, dict) else {}
-            answers = {}
-            for qid, spec in questions.items():
-                raw = given.get(qid)
-                raw = raw if isinstance(raw, dict) else None
-                word, note = branch(spec, raw)
-                answers[qid] = Answer(word, raw, note)
-    latency = time.time() - started
-    row.update({"answered": model, "latency": round(latency, 3),
-                "answers": {qid: {"branch": a.word, "raw": a.raw,
-                                  "why": a.why}
-                            for qid, a in answers.items()}})
+           "reader": reader, "read": label, "asked": MODEL,
+           "answered": model, "latency": round(latency, 3),
+           "answers": {qid: {"branch": a.word, "raw": a.raw, "why": a.why}
+                       for qid, a in answers.items()}}
     if why:
         row["why"] = why
     return Reading(answers, model, latency, log_call(row, env, cwd))
+
+
+def _answer(state, questions, env, timeout):
+    """(the answers, the model that answered, why the whole call failed or "").
+    Every path here is one `ask` names; `ask` owns the ones it does not."""
+    # THE BUDGET IS READ FIRST, before the key and before the endpoint: an
+    # oversize state is the caller's own bug and needs neither to be known.
+    size = len(json.dumps(state).encode("utf-8"))
+    if size > STATE_BUDGET:
+        why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
+               f"budget, so it was not sent; slicing it is the reader's, and "
+               f"this never truncates a state to fit")
+        return unknown_all(questions, why), "", why
+    key, why = read_key(env)
+    if why:
+        return unknown_all(questions, why), "", why
+    url, why = endpoint(env)
+    if why:
+        return unknown_all(questions, why), "", why
+    out, why = post(request_body(state, questions), key, url, timeout)
+    if why:
+        return unknown_all(questions, why), "", why
+    if not isinstance(out, dict):
+        why = "the response is not an object"
+        return unknown_all(questions, why), "", why
+    if out.get("model") != MODEL:
+        model = str(out.get("model"))
+        why = (f"`{model}` answered where `{MODEL}` is pinned; a band "
+               f"measured under one version says nothing about another")
+        return unknown_all(questions, why), model, why
+    given = out.get("answers")
+    given = given if isinstance(given, dict) else {}
+    answers = {}
+    for qid, spec in questions.items():
+        raw = given.get(qid)
+        raw = raw if isinstance(raw, dict) else None
+        word, note = branch(spec, raw)
+        answers[qid] = Answer(word, raw, note)
+    return answers, out["model"], ""
 
 
 def main(argv):

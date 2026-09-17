@@ -799,6 +799,9 @@ def main():
         # THE SHELL HALF: what `check` exits with, and what it prints beside the
         # verdict. A bare exit code is satisfied by every other cause that
         # shares it, so both cases assert the reading too.
+        jev_home = Path(tmp) / "jevhome"
+        jev_home.mkdir()
+
         def shim(body, title="Do the thing", labels=(), parent=True, jev=None):
             src = ('#!/usr/bin/env python3\nimport json, sys\n'
                    f'print(json.dumps({{"title": {title!r}, "body": {body!r}, '
@@ -816,7 +819,16 @@ def main():
                        # and must keep reading the same way, which `unknown`
                        # is -- one line printed, no exit status moved.
                        CAMPAIGN_JEV_URL=jev or JEV_CLOSED,
-                       CAMPAIGN_JEV_LOG=str(Path(tmp) / "jev.log"))
+                       CAMPAIGN_JEV_LOG=str(Path(tmp) / "jev.log"),
+                       # A KEY AND A HOME OF ITS OWN. `ask` answers `unknown`
+                       # BEFORE it posts when there is no key, so a shim that
+                       # named only the endpoint was green on a machine with
+                       # `~/.env` and red on CI, which has none: five cases
+                       # below never reached the stub at all. The key is a
+                       # constant the stub ignores, and HOME is an empty
+                       # directory so the `~/.env` fallback can find neither
+                       # this machine's key nor anybody else's.
+                       TYPESAFE_API_KEY="stub-key", HOME=str(jev_home))
             return env
 
         r = tracker("check", "5", "--plan", env=shim(good_sub))

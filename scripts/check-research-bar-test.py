@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
-"""Prove check-research-bar.py asks one state per condition of a research NOTE, asks nothing else, and never refuses.
+"""Prove check-research-bar.py asks one call a research NOTE, a question per condition, asks nothing else, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every
 question with one P(contradicts), and the reader runs from a fixture directory
@@ -102,12 +102,19 @@ def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None,
     return r, (json.loads(got.read_text()) if got.exists() else None)
 
 
+def composed(name):
+    return ENTRY["question"]["instructions"].replace(
+        "{condition}", ENTRY["conditions"][name])
+
+
 def asks_each_condition(t):
     r, _ = run(t)
-    states = sorted((b["state"]["condition"], b["state"]["note"]) for b in SEEN)
-    want = sorted((c, NOTE) for c in ENTRY["conditions"].values())
-    return (r.returncode == 0 and states == want and r.stdout == ""
-            and len(SEEN) == len(ENTRY["conditions"])), (states, r.stdout, r.stderr)
+    asked = {q: v["instructions"] for b in SEEN for q, v in b["questions"].items()}
+    want = {name: composed(name) for name in ENTRY["conditions"]}
+    return (r.returncode == 0 and len(SEEN) == 1 and r.stdout == ""
+            and SEEN[0]["state"] == {"note": NOTE} and asked == want
+            and [x["read"] for x in LOGGED] == ["tracker#458 NOTE"]), \
+        (len(SEEN), asked, r.stdout, r.stderr, LOGGED)
 
 
 def other_kind_asks_nothing(t):
@@ -122,9 +129,9 @@ def other_comment_asks_nothing(t):
 
 def entry_reaches_model(t):
     run(t)
-    q = SEEN[0]["questions"]["c"] if SEEN else {}
+    q = SEEN[0]["questions"].get("baseline", {}) if SEEN else {}
     return (q.get("criteria") == ENTRY["question"]["criteria"]
-            and q.get("instructions") == ENTRY["question"]["instructions"]
+            and q.get("instructions") == composed("baseline")
             and "yes_over" not in q), q
 
 
@@ -160,7 +167,7 @@ def other_kind_logs_nothing(t):
 
 
 CASES = {
-    "a research NOTE asks one state per condition, the note whole, printing nothing": asks_each_condition,
+    "a research NOTE asks one call, the note whole, a question per condition, printing nothing": asks_each_condition,
     "a NOTE on another work kind asks nothing": other_kind_asks_nothing,
     "a comment of another kind asks nothing": other_comment_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
@@ -173,9 +180,12 @@ CASES = {
 
 MUTATIONS = [
     ("the condition's name sent for its text",
-     'state = {"condition": entry["conditions"][name], "note": note}',
-     'state = {"condition": name, "note": note}',
-     "a research NOTE asks one state per condition, the note whole, printing nothing"),
+     '"{condition}", entry["conditions"][name]))', '"{condition}", name))',
+     "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
+    ("one call a condition again",
+     '    reading = jev.ask(READER, f"{subject} NOTE", {"note": note},\n                      questions(entry), env=env)\n    return reading.answers',
+     '    out = {}\n    for name, q in questions(entry).items():\n        out.update(jev.ask(READER, f"{subject} NOTE", {"note": note},\n                           {name: q}, env=env).answers)\n    return out',
+     "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the work kind not read", 'if kind != "research":', "if False:",
      "a NOTE on another work kind asks nothing"),
     ("the comment kind not read", 'if not note.lstrip().startswith("NOTE "):', "if False:",
@@ -213,8 +223,13 @@ def live(record):
     today = datetime.date.today().isoformat()
     misses = 0
     for row in rows:
-        reading = jev.ask(m.READER, row["id"], row["state"], m.questions(ENTRY))
-        a = reading.answers["c"]
+        # A CASE IS ONE CONDITION, and production asks all five in one call over
+        # the note; the question of that one condition is what this case pins.
+        name = next(n for n, text in ENTRY["conditions"].items()
+                    if text == row["state"]["condition"])
+        reading = jev.ask(m.READER, row["id"], {"note": row["state"]["note"]},
+                          {name: m.questions(ENTRY)[name]})
+        a = reading.answers[name]
         p = ((a.raw or {}).get("probabilities") or {}).get(t["option"])
         raw = None if p is None else round(p, 2)
         word = ("unknown" if raw is None else "yes" if raw >= t["yes_over"]

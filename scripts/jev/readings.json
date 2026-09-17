@@ -130,7 +130,7 @@
     "condition",
     "note"
    ],
-   "condition": "one value of `conditions`, one state per condition",
+   "condition": "one value of `conditions`: a case pins one; production sends none in the state, since each condition is its own question of the one call a NOTE, its text in the instructions",
    "note": "a NOTE comment posted to a kind:research issue, as the guard read it before the post"
   },
   "conditions": {
@@ -146,18 +146,18 @@
   "question": {
    "type": "choice",
    "per": "condition",
-   "instructions": "Does `note` meet `condition`?",
+   "instructions": "Does `note` meet this condition: {condition}?",
    "criteria": {
     "supports": {
-     "what": "the note makes a claim and does what `condition` asks for it, in its own text",
+     "what": "the note makes a claim and does what the condition asks for it, in its own text",
      "example": "condition 'runs a baseline'; note 'Jev flags 3 of 46, token overlap flags 39 of 46 on the same cases'"
     },
     "contradicts": {
-     "what": "the note makes a claim `condition` applies to and does not do what `condition` asks: a number with no method, a verdict with no baseline, positives with no negative",
+     "what": "the note makes a claim the condition applies to and does not do what the condition asks: a number with no method, a verdict with no baseline, positives with no negative",
      "example": "condition 'runs a baseline'; note 'Jev separates the names at AUC 0.94, so adopt it' and no other rule's number"
     },
     "says_nothing": {
-     "what": "the note makes no claim `condition` applies to: an assignment, a plan, a design choice, a list of options",
+     "what": "the note makes no claim the condition applies to: an assignment, a plan, a design choice, a list of options",
      "example": "condition 'runs a baseline'; note 'step 2 is assigned to worker-33 on claim sdlc-alloy/458-jev-sdlc'"
     }
    }

@@ -14,8 +14,8 @@ and runs BEFORE the post, so a REVIEW it then refuses was read too.
 
 WHAT IT READS: the REVIEW on stdin, cut into findings as the measurement cut
 them (sdlc-alloy#458 NOTE issuecomment-5715409487): an item line after the
-first -- a bullet, a numbered item, a table row, a bold `F1`/`D1`/`R1` lead --
-of at least `MIN_CHARS`, and not a verification note. The reviewer's own word
+first -- a bullet, a numbered item, a table row; a bold `**F1**` lead reads
+as a `*` bullet, as it did when measured -- of at least `MIN_CHARS`, and not a verification note. The reviewer's own word
 is read first -- a label in the finding's first 60 characters, else the
 section heading it sits under, a plain line such as `Defects:` (a bold
 `**Defects**` reads as an item, as it did when measured) -- and then MASKED to
@@ -39,7 +39,10 @@ known to be wrong, as seen at jev-1.13.0 over three runs on 2026-09-17: over
 333 labelled findings of 55 pull requests it agreed with the reviewer's word
 188-190 times, where a keyword rule agreed 206; on 32 findings hand-labelled
 by reviewing.md's written definition it agreed 20-21, the reviewer's own word
-21 and the keyword rule 14. The reviewer's word is weak truth -- "a test half
+21 and the keyword rule 14. Those counts take P(defect) at 0.5; at the entry's
+own thresholds, as `--live` scores the corpus, 10-11 of the 32 read `unknown`
+and 14-16 meet their truth, so `--live` without `--record` prints about 18
+off. The reviewer's word is weak truth -- "a test half
 that cannot fail" called a refinement, a false docstring a defect -- which is
 why the log keeps it beside the answer rather than scoring against it.
 
@@ -60,7 +63,7 @@ READER = "check-finding-sort.py"
 MIN_CHARS = 25
 MAX_FINDINGS = 40
 
-ITEM = re.compile(r"^\s*(?:\d+[.)]|[-*]|\|\s*(?:\*\*)?([FDR]?\d+)(?:\*\*)?\s*\||\*\*([FDR]\d+)\b)\s*(.*)$")
+ITEM = re.compile(r"^\s*(?:\d+[.)]|[-*]|\|\s*(?:\*\*)?([FDR]?\d+)(?:\*\*)?\s*\|)\s*(.*)$")
 SEPARATOR = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
 SAYS_DEFECT = re.compile(r"(?i)\b(defects?|behaviou?ral|blocking)\b|^\W*D\s*[,:|]|^\W*D\d+\b")
 SAYS_REFINEMENT = re.compile(r"(?i)\b(refinements?|nit|wording)\b|^\W*R\s*[,:|]|^\W*R\d+\b")
@@ -68,7 +71,7 @@ SAYS_NONE = re.compile(r"(?i)\b(no|not a|none|non-?)\s*(behaviou?ral\s*)?(defect
 SECTION_DEFECT = re.compile(r"(?i)^\W*(defects?|behaviou?ral( findings)?|blocking)\b")
 SECTION_REFINEMENT = re.compile(r"(?i)^\W*(refinements?|nits?|wording)\b")
 SECTION_OTHER = re.compile(r"(?i)^\W*(verified|what holds|holds|checks?|ran|tests|clean|notes?|findings)\b")
-LEAD = re.compile(r"(?i)^\W*(?:[DR](?:\s*[,:]|\d+\b)|\*\*[FDR]\d+\*\*)\s*")
+LEAD = re.compile(r"(?i)^\W*[DR](?:\s*[,:]|\d+\b)\s*")
 LABEL = re.compile(r"(?i)\[?\b(non-?blocking|defects?|refinements?|behaviou?ral|blocking|nits?|wording)\b\]?|\b[DR]\d+\b")
 SEVERITY = re.compile(r"(?i)(\[label\]\W{0,3})\s*(low|medium|high)\b\W*")
 NOT_A_FINDING = re.compile(r"(?i)^\W*not \[label\]|^\W*(resolved|closed|verified)\b|\b(none found|none\.|: none\b|reworded as asked|is applied)")
@@ -89,8 +92,8 @@ def findings(review):
             elif SECTION_OTHER.match(line) or line.startswith(("#", "**")):
                 section = None
             continue
-        text = m.group(3).strip()
-        head = (m.group(2) or m.group(1) or "") + " " + text[:60]
+        text = m.group(2).strip()
+        head = (m.group(1) or "") + " " + text[:60]
         if SAYS_NONE.search(head):
             word = "none"
         elif SAYS_DEFECT.search(head) and not SAYS_REFINEMENT.search(head):

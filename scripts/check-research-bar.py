@@ -75,13 +75,15 @@ def load_sibling(name):
 
 def work_kind(issue, repo):
     """(the issue's work kind as `campaign-tracker.py kind` prints it, why it
-    could not be read or ''). `none` is a kind read; exit 2 is a failed read."""
+    could not be read or ''). Exit 1 is a kind read only when it printed `none`:
+    a tracker that raised exits 1 too, with nothing on stdout."""
     args = [sys.executable, str(HERE / "campaign-tracker.py"), "kind", issue]
     p = subprocess.run(args + ([repo] if repo else []), capture_output=True,
                        text=True, timeout=KIND_TIMEOUT)
-    if p.returncode not in (0, 1):
-        return "", (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
-    return p.stdout.strip(), ""
+    kind = p.stdout.strip()
+    if p.returncode == 0 or (p.returncode == 1 and kind == "none"):
+        return kind, ""
+    return "", (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
 
 
 def questions(entry):

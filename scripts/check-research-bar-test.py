@@ -148,6 +148,12 @@ def failed_kind_read_logs_skip(t):
             and LOGGED[0]["skipped"].startswith("the kind read failed")), LOGGED
 
 
+def crashed_tracker_logs_skip(t):
+    r, _ = run(t, kind="", kind_exit=1)
+    return (r.returncode == 0 and not SEEN and len(LOGGED) == 1
+            and LOGGED[0]["skipped"].startswith("the kind read failed")), LOGGED
+
+
 def other_kind_logs_nothing(t):
     r, _ = run(t, kind="none", kind_exit=1)
     return r.returncode == 0 and not SEEN and not LOGGED, LOGGED
@@ -161,6 +167,7 @@ CASES = {
     "the repository reaches the kind reader": repo_reaches_tracker,
     "a reader that could not read exits 0, says nothing and logs a skip": failure_exits_zero,
     "a failed kind read logs one skip row": failed_kind_read_logs_skip,
+    "a tracker that raised, exit 1 and no word, logs one skip row": crashed_tracker_logs_skip,
     "an issue with no kind logs nothing": other_kind_logs_nothing,
 }
 
@@ -182,8 +189,11 @@ MUTATIONS = [
      "except ZeroDivisionError as e:",
      "a reader that could not read exits 0, says nothing and logs a skip"),
     ("a failed kind read taken for a kind",
-     "    if p.returncode not in (0, 1):", "    if False:",
+     '    if p.returncode == 0 or (p.returncode == 1 and kind == "none"):', "    if True:",
      "a failed kind read logs one skip row"),
+    ("any exit 1 taken for a kind",
+     '(p.returncode == 1 and kind == "none")', "p.returncode == 1",
+     "a tracker that raised, exit 1 and no word, logs one skip row"),
     ("a skip logged for a kind that is not research",
      '        if kind != "research":\n            return 0',
      '        if kind != "research":\n            jev.skip(READER, subject, "x", env)\n            return 0',

@@ -1834,12 +1834,13 @@ def main():
               and all(x["reader"] == "check-finding-sort.py" for x in rows),
               (out(r)[:300], rows))
         # A NOTE ON A PULL REQUEST IS NO RESEARCH NOTE: the stub would call
-        # issue 7 research, so a hand-off by first word alone logs within 3 s.
+        # issue 7 research, so a hand-off by first word alone logs within
+        # 3 s; 10 s of polls leaves room for two interpreters under load.
         pr_note_log = Path(d) / "pr-note.log"
         r = ask(f.trees["demo/7-x"], tool="Bash",
                 env=dict(env, CAMPAIGN_JEV_LOG=str(pr_note_log)),
                 command="gh pr comment 7 -b 'NOTE demo-worker-1: 3 runs'")
-        rows = logged(pr_note_log, 1, 20)
+        rows = logged(pr_note_log, 1, 50)
         check("a NOTE on a pull request starts no reading", rows == [],
               (out(r)[:300], rows))
 

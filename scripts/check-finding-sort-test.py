@@ -3,7 +3,7 @@
 """Prove check-finding-sort.py asks one masked state per finding of a REVIEW, labels it with the reviewer's word, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every
-question with one P(contradicts), and the reader runs from a fixture directory
+question with one P(defect), and the reader runs from a fixture directory
 holding the real scripts/campaign-jev.py and this reading's registry entry. Each case is then
 broken by a mutation of the reader's text and must go red by its own assertion.
 

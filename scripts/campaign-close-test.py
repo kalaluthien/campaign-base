@@ -590,7 +590,7 @@ def case_leave_self(m):
             and f"session     holds -- rc-worker-2 on {PANE}, of rc (#{N})" in out
             and f"detach      holds -- pid 4242 started, which is not the leave "
                 f"done: it sends /exit to {PANE} once this turn ends" in out
-            and f"{PANE} still open {m.WAIT_POLLS * m.WAIT_EVERY}s later was "
+            and f"{PANE} still open {2 * m.WAIT_POLLS * m.WAIT_EVERY}s later was "
                 f"refused, and the last line of {w['spawned'][0][1]} says which "
                 f"step" in out), out
 

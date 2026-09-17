@@ -69,6 +69,8 @@ class Pane:
             return {}, None
         status = self.statuses[min(self.reads, len(self.statuses)) - 1]
         self.now = status
+        if status is None:
+            return None, "herdr agent list exited 1"
         return {"sid-p": dict(PLANNER, status=status)}, None
 
     def count(self, m):
@@ -131,7 +133,9 @@ def case_any_other_event_pushes_nothing(m):
 
 def hooked(m, sessions, sid):
     spawned = []
-    m_names = type("N", (), {"herdr_sessions": staticmethod(lambda: (sessions, None)),
+    m_names = type("N", (), {"herdr_sessions": staticmethod(
+                                 lambda: (sessions, None if sessions is not None
+                                          else "herdr agent list exited 1")),
                              "role_word": staticmethod(NAMES.role_word),
                              "campaign_of": staticmethod(NAMES.campaign_of)})
     got = m.hook({"hook_event_name": "SessionEnd", "reason": "other",
@@ -165,7 +169,9 @@ def sent_by(m, sessions, tmp):
         @staticmethod
         def transcript_path(sid):
             return None, "no transcript in this case"
-    names = type("N", (), {"herdr_sessions": staticmethod(lambda: (sessions, None)),
+    names = type("N", (), {"herdr_sessions": staticmethod(
+                               lambda: (sessions, None if sessions is not None
+                                        else "herdr agent list exited 1")),
                            "role_word": staticmethod(NAMES.role_word),
                            "campaign_of": staticmethod(NAMES.campaign_of)})
     m.send("ended", "demo-worker-3", "w1:p3", "reason other", names, Hb,
@@ -195,13 +201,13 @@ def case_waits_for_idle_before_sending(m):
     p = Pane(["working", "working", "idle"], [typed])
     got = p.deliver(m)
     return (got[0] == "delivered" and p.status_at_send == ["idle"]
-            and p.sleeps == 2), (got, p.status_at_send, p.sleeps)
+            and p.sleeps == 3), (got, p.status_at_send, p.sleeps)
 
 
 def case_done_is_ready_too(m):
     p = Pane(["done"], [typed])
     got = p.deliver(m)
-    return got[0] == "delivered" and p.sleeps == 0, (got, p.sleeps)
+    return got[0] == "delivered" and p.sleeps == 1, (got, p.sleeps)
 
 
 def case_text_inside_a_tool_result_has_not_landed(m):
@@ -244,6 +250,33 @@ def case_never_ready_is_undelivered_at_the_ceiling(m):
             and "target read working" in got[1]), (got, p.sleeps)
 
 
+def case_the_window_ends_on_a_count_not_a_sleep(m):
+    """The text lands during the window's last sleep: the count after it sees
+    the gain, so nothing is sent twice."""
+    p = Pane(["idle"], [None])
+    window = []
+
+    def sleep(_):
+        window.append(1)
+        if len(window) == m.LANDED_POLLS:
+            p.lines.append(typed(TEXT))
+    got = m.deliver("sid-p", TEXT, p.sessions, p.count(m), p.prompt, sleep)
+    return got[0] == "delivered" and len(p.sent) == 1, (got, len(p.sent))
+
+
+def case_a_listing_not_read_is_one_more_poll(m):
+    p = Pane([None, None, "idle"], [typed])
+    got = p.deliver(m)
+    return got[0] == "delivered" and p.status_at_send == ["idle"], (got, p.status_at_send)
+
+
+def case_a_listing_never_read_is_undelivered_and_said(m):
+    p = Pane([None], [])
+    got = p.deliver(m)
+    return (got[0] == "undelivered" and not p.sent
+            and "herdr agent list not read: herdr agent list exited 1" in got[1]), got
+
+
 def case_a_target_that_left_is_gone(m):
     p = Pane(["working"], [], gone_after=2)
     got = p.deliver(m)
@@ -255,6 +288,15 @@ def case_an_unread_transcript_is_sent_once_and_said(m):
     got = p.deliver(m, count=lambda sid: (None, "0 transcript(s) named sid-p.jsonl"))
     return (got[0] == "unread" and len(p.sent) == 1
             and "0 transcript(s)" in got[1]), (got, len(p.sent))
+
+
+def case_only_a_typed_main_thread_record_counts(m):
+    meta = json.dumps({"type": "user", "isMeta": True, "message": {"content": TEXT}})
+    side = json.dumps({"type": "user", "isSidechain": True, "message": {"content": TEXT}})
+    said = json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": TEXT}]}})
+    got = m.landed(["not json", "[1]", meta, side, said, tool_result(TEXT), typed(TEXT)],
+                   TEXT, texts)
+    return got == 1, got
 
 
 # ------------------------------------------------------------------ the text
@@ -312,7 +354,87 @@ def case_no_planner_is_a_logged_line_and_no_send(m):
             and "2 session(s)" in lines[0]), (asked, lines)
 
 
+def case_the_log_is_the_campaigns_runtime(m):
+    tmp = Path(tempfile.mkdtemp(prefix="cpush-"))
+    try:
+        (tmp / "camp" / "runtime").mkdir(parents=True)
+        fake = tmp / "campaign-directory.py"
+        fake.write_text(f"print({str(tmp / 'camp')!r})\n")
+        real, m.DIRECTORY_SCRIPT = m.DIRECTORY_SCRIPT, fake
+        try:
+            got = m.log_path("demo")
+        finally:
+            m.DIRECTORY_SCRIPT = real
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return got == (tmp / "camp" / "runtime" / "push.log", "campaign-directory.py"), got
+
+
+def case_no_campaign_directory_logs_under_tmpdir_and_says_so(m):
+    tmp = Path(tempfile.mkdtemp(prefix="cpush-"))
+    try:
+        fake = tmp / "campaign-directory.py"
+        fake.write_text("import sys\nprint('none')\nsys.exit(1)\n")
+        real, m.DIRECTORY_SCRIPT = m.DIRECTORY_SCRIPT, fake
+        try:
+            path, where = m.log_path("demo")
+        finally:
+            m.DIRECTORY_SCRIPT = real
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (path.name == "campaign-push-demo.log" and "$TMPDIR" in where
+            and "'none'" in where), (path, where)
+
+
+def case_a_listing_not_read_is_a_logged_line_and_no_send(m):
+    tmp = Path(tempfile.mkdtemp(prefix="cpush-")) / "push.log"
+    try:
+        asked = sent_by(m, None, tmp)
+        lines = tmp.read_text().splitlines() if tmp.exists() else []
+    finally:
+        shutil.rmtree(tmp.parent, ignore_errors=True)
+    return (not asked and len(lines) == 1 and ": undelivered; herdr agent list "
+            "not read" in lines[0]), (asked, lines)
+
+
 # ------------------------------------------------------- the hook's own shape
+
+
+def case_a_listing_not_read_starts_no_sender(m):
+    got, spawned = hooked(m, None, "sid-w")
+    return not got[0] and not spawned and "not read" in got[1], (got, spawned)
+
+
+def case_no_herdr_env_sends_nothing(m):
+    """The guard every driving herdr command here carries. `herdr` is never
+    reached: PATH is empty for the call, so a send that went past the guard
+    reads `FileNotFoundError` and not the guard's sentence."""
+    keep = dict(os.environ)
+    try:
+        os.environ.pop("HERDR_ENV", None)
+        os.environ["PATH"] = ""
+        got = m.herdr_prompt("w1:p1", TEXT)
+    finally:
+        os.environ.clear()
+        os.environ.update(keep)
+    return got == (False, "HERDR_ENV is not 1"), got
+
+
+def case_cli_a_dropped_event_imports_and_lists_nothing(m):
+    """Most events are dropped: the copy has no sibling to import, so an early
+    return that went missing would leave a crash line."""
+    tmp = tempfile.mkdtemp(prefix="cpush-")
+    try:
+        r = subprocess.run([sys.executable, m.__file__], capture_output=True,
+                           input=json.dumps({"hook_event_name": "Notification",
+                                             "notification_type": "idle_prompt"}),
+                           text=True, timeout=60, env=dict(os.environ, TMPDIR=tmp))
+        crashed = Path(tmp, "campaign-push-crash.log").exists()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (r.returncode == 0 and r.stdout == "" and r.stderr == ""
+            and not crashed), (r.returncode, r.stdout, r.stderr, crashed)
+
 
 
 def case_cli_a_crash_is_silent_exit_zero_and_a_logged_line(m):
@@ -386,6 +508,20 @@ MUTATIONS = [
     ("the second send", "ATTEMPTS = 2", "ATTEMPTS = 1", "case_the_second_send_can_land"),
     ("a refused send is not a send", "if sent:\n                    break", "if True:\n                    break",
      "case_a_refused_send_is_the_same_wait"),
+    ("the window's last count", "            sleep(WAIT_EVERY)\n            after, err = count(sid)",
+     "            after, err = count(sid)\n            sleep(WAIT_EVERY)",
+     "case_the_window_ends_on_a_count_not_a_sleep"),
+    ("why the wait ran out", 'why = (f"herdr agent list not read: {err}" if sessions is None',
+     'why = (f"target read {status}" if sessions is None', "case_a_listing_never_read_is_undelivered_and_said"),
+    ("a harness note is not a prompt", 'or r.get("isMeta") or r.get("isSidechain")):', "):",
+     "case_only_a_typed_main_thread_record_counts"),
+    ("a user record only", 'or r.get("type") != "user"', "", "case_only_a_typed_main_thread_record_counts"),
+    ("the campaign's own log", 'if word.startswith("/") and', "if False and", "case_the_log_is_the_campaigns_runtime"),
+    ("where the fallback came from", 'f"$TMPDIR, campaign-directory.py said {word!r}")', 'f"$TMPDIR")',
+     "case_no_campaign_directory_logs_under_tmpdir_and_says_so"),
+    ("the HERDR_ENV guard", 'if os.environ.get("HERDR_ENV") != "1":', "if False:", "case_no_herdr_env_sends_nothing"),
+    ("a dropped event returns early", "if event_of(payload)[0] is None:   #", "if False:   #",
+     "case_cli_a_dropped_event_imports_and_lists_nothing"),
     ("the wait's ceiling", "if polls >= READY_POLLS:", "if False:", "case_never_ready_is_undelivered_at_the_ceiling"),
     ("a target that left", "if sessions is not None and row is None:", "if False:", "case_a_target_that_left_is_gone"),
     ("an unread transcript", "if before is None:", "if False:", "case_an_unread_transcript_is_sent_once_and_said"),
@@ -415,7 +551,11 @@ def load(source):
     as a command runs the mutant and not the script."""
     d = Path(tempfile.mkdtemp(prefix="cpush-mut-"))
     COPIES.append(d)
-    copy = d / SCRIPT.name
+    # as deep as the script sits, since it resolves the base from its own path:
+    # flat under /tmp it has too few parents and the import itself crashes
+    # (pr#482's first CI run), which no case would have caught on macOS.
+    (d / ".claude" / "skills" / "assuming-role" / "scripts").mkdir(parents=True)
+    copy = d / ".claude" / "skills" / "assuming-role" / "scripts" / SCRIPT.name
     copy.write_text("CACHE = {}\n" + source if "CACHE" in source else source)
     copy.chmod(0o755)
     return harness.load(copy, "campaign_push")

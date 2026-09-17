@@ -157,8 +157,9 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   `/exit` IS SENT ALL THE SAME and the line says so: a turn
                   cut short loses its last lines, while a finished worker
                   left listed is seen by nobody once no watch runs. Another
-                  pane's leave does not wait: its caller read it done, and
-                  a worker's `/exit` queues behind a running tool call.
+                  pane's leave does not wait, as before this step existed:
+                  its caller read it done, and whether it should is the
+                  watch's question (rule-check#349's DECISION, option 1).
   7-9.            The leave, `worker` steps 3-5, in the foreground for
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
@@ -1247,7 +1248,7 @@ def leave(args, say=holds):
         raise Refused("detach", f"could not start the leave: {e}")
     say("detach", f"pid {pid} started, which is not the leave done: it sends "
                   f"{EXIT_TEXT} to {pane} once this turn ends, so end it now; "
-                  f"{pane} still open {WAIT_POLLS * WAIT_EVERY}s later was "
+                  f"{pane} still open {2 * WAIT_POLLS * WAIT_EVERY}s later was "
                   f"refused, and the last line of {log} says which step")
 
 

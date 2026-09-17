@@ -19,7 +19,8 @@ TWO HALVES, ONE FILE.
               NO STDOUT, NEVER NON-ZERO, no exception escapes (one that would is
               a line in `$TMPDIR/campaign-push-crash.log`): `SessionEnd`
               hooks share one short timeout, so the hook does one listing
-              (26 ms here) and nothing that waits.
+              (26 ms here, under `campaign-name-session.py`'s own timeout)
+              and nothing else that waits.
   the sender  `--send`, in a session of its own so it outlives the pane that
               started it. Per planner: deliver, read back, log one line.
 
@@ -40,8 +41,11 @@ DELIVERY, per target:
              so the count is of this push alone. A tool result is not typed
              text, which is the drop this reads for.
   3. send    `herdr agent prompt <pane> <text>`.
-  4. after   count again, at most LANDED_POLLS times, until it is more than
-             `before`. No gain: back to 1, ATTEMPTS times in all.
+  4. after   count again every WAIT_EVERY seconds, at most LANDED_POLLS
+             times, until it is more than `before`. No gain: back to 1,
+             ATTEMPTS times in all. A text that lands later than that window
+             is sent again, so a planner may read one push twice; `before`
+             is re-counted, and the log then says `delivered`.
 
 THE TEXT lands as a user turn in a planner's pane, so it says it is
 machine-made, asks only for a look, and carries no instruction and no fact
@@ -199,12 +203,12 @@ def deliver(sid, text, read_sessions, count, prompt, sleep=time.sleep):
                                        f"{WAIT_EVERY}s; last: {why}")
             sleep(WAIT_EVERY)
         for _ in range(LANDED_POLLS):
+            sleep(WAIT_EVERY)
             after, err = count(sid)
             if after is not None and after > before:
                 return "delivered", (f"user records carrying it {before} -> "
                                      f"{after}, send {attempt}, after {polls} "
                                      f"waiting polls")
-            sleep(WAIT_EVERY)
         why = (f"send {attempt} to {row['pane']} gained no user record in "
                f"{LANDED_POLLS * WAIT_EVERY}s (still {before})")
     return "undelivered", why

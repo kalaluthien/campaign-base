@@ -330,7 +330,7 @@ fi
 # campaign-push.py is on `Notification` and `SessionEnd` with no matcher
 # (rule-check#481): it reads the payload's own `notification_type` and `reason`,
 # and drops every event it does not push before it imports or lists anything.
-# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/driving-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit .claude/skills/assuming-role/scripts/campaign-push.py:Notification,SessionEnd
+# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/using-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit .claude/skills/assuming-role/scripts/campaign-push.py:Notification,SessionEnd
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this

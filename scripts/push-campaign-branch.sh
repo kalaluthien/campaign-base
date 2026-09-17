@@ -65,6 +65,37 @@ if git push --quiet origin "$branch" 2>"$err"; then
 		# `git commit`'s output waited for every Jev call.
 		sha=$(git rev-parse HEAD) || exit 0
 		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
+
+		# THE PULL REQUEST GOES UP AT THE FIRST COMMIT, not when the
+		# work is ready (AGENTS.md § Execution mode): the branch is
+		# already pushed by the line above, so a late pull request only
+		# keeps published work out of sight, and an open one is where a
+		# review writes its findings. Nothing here opens one -- the
+		# title and the body are the session's to write -- so this
+		# ANNOUNCES the line and refuses nothing.
+		#
+		# ONLY AT THE FIRST COMMIT, or a branch whose session chose not
+		# to open one yet would be told again at every commit and the
+		# line would stop being read. `origin/main` is what the count
+		# is against; with no such ref there is no count and nothing is
+		# said, rather than a guess.
+		ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null) || ahead=
+		[ "${ahead:-0}" = 1 ] || exit 0
+		# A `gh` THAT WILL NOT RUN IS SAID, NOT ASSUMED. An unread
+		# question is not "a pull request already names this branch":
+		# announcing a second time costs a session one glance, and
+		# staying silent costs the work its visibility.
+		if open=$(gh pr list --head "$branch" --state open --json number \
+				--jq '.[].number' 2>&1); then
+			[ -z "$open" ] || exit 0
+			echo "push-campaign-branch: this is $branch's first commit and no open pull request names it."
+			echo "  AGENTS.md § Execution mode: open it now, not when the work is ready."
+			echo "  gh pr create --base main --head $branch --title <verb-first> --body <Closes ...>"
+		else
+			echo "push-campaign-branch: could not tell whether a pull request names $branch." >&2
+			echo "$open" | sed 's/^/  /' >&2
+			echo "  Open one at this first commit if none does." >&2
+		fi
 		;;
 	esac
 else

@@ -523,7 +523,9 @@ hook refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
-work out of sight. An open one is where a review writes its findings, and it is
+work out of sight — which is why `push-campaign-branch.sh` prints the
+`gh pr create` line at that first commit when no open pull request names the
+head. It announces and refuses nothing, and a `gh` it could not run is said. An open one is where a review writes its findings, and it is
 what survives the session that opened it.
 
 ## The campaign issue body

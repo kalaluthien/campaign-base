@@ -609,6 +609,36 @@ ISSUES = {
 }
 
 
+# ONE PULL REQUEST THREAD PER SUBJECT, as `ISSUES` is one issue per subject:
+# the thread's join asks what came AFTER the REPORT it judged.
+THREADS = {
+    ("kalaluthien/campaign-base", 700): {
+        "state": "OPEN", "comments": [
+            {"created_at": "2026-09-17T01:00:00Z",
+             "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
+                     "second copy is the one that drifts"},
+            {"created_at": "2026-09-17T02:00:00Z", "body": "NOTE w-1: pushed"}]},
+    ("kalaluthien/campaign-base", 701): {
+        "state": "MERGED", "comments": [
+            {"created_at": "2026-09-17T02:00:00Z", "body": "NOTE w-1: merged"}]},
+}
+
+
+def thread_row(call, number, findings, **kw):
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "C-report-disposes-finding",
+           "subject": f"kalaluthien/campaign-base#{number} thread",
+           "read": f"kalaluthien/campaign-base#{number} thread",
+           "repo": "kalaluthien/campaign-base", "pull_request": number,
+           "state": {"findings": findings, "report": "REPORT w-1: fixed",
+                     "review": "REVIEW r-1: ...", "thread": "..."},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": None, "raw": {}, "why": "", "flag": None}
+    row.update(kw)
+    return row
+
+
 def log_row(call, reading, title, number, **kw):
     row = {"at": "2026-09-17T00:00:00+00:00", "call": call, "reading": reading,
            "subject": f"kalaluthien/campaign-base#{number}",
@@ -638,9 +668,11 @@ def joined(m, rows):
     os.environ["CAMPAIGN_JEV_LOG"] = str(log)
     try:
         args = types.SimpleNamespace(
-            fetch=lambda repo, number: ISSUES.get((repo, number)))
+            fetch=lambda repo, number: ISSUES.get((repo, number)),
+            fetch_thread=lambda repo, number: THREADS.get((repo, number)))
         m.cmd_corpus_join(args)
-        out = {n: m.read_corpus(n) for n in ("verb-first", "work-kind")}
+        out = {n: m.read_corpus(n) for n in
+               ("verb-first", "work-kind", "C-report-disposes-finding")}
     finally:
         m.CORPUS = was
         if old is None:
@@ -688,6 +720,33 @@ def join_keeps_what_it_cannot_label(m):
     return (not cases["verb-first"] and lines == 2), (cases["verb-first"], lines)
 
 
+def join_reads_a_later_review_on_the_thread(m):
+    """C-report-disposes-finding's join: a finding a LATER REVIEW raises again
+    is one the REPORT did not dispose. The strong half of the two."""
+    cases, _lines = joined(m, [thread_row("tttt", 700, {
+        "F1": "the ceiling is stated twice and the second copy drifts",
+        "F2": "the usage line still calls the flag --dry"})])
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    return (got.get("truth") == {"F1": "undisposed", "F2": "disposed"}
+            and got.get("label", {}).get("from") == "join:thread-refinding"
+            and "raised again: F1" in got.get("label", {}).get("evidence", "")),\
+        got
+
+
+def join_waits_for_the_merge_on_an_open_thread(m):
+    """The WEAK half waits: with no later REVIEW, only a MERGED pull request
+    labels the disposed class. An open one is a thread nobody has looked at
+    again, which is not agreement."""
+    open_pr, _l = joined(m, [thread_row("uuuu", 700, {"F9": "nobody re-raised"},
+                                        at="2026-09-17T09:00:00+00:00")])
+    merged, _l2 = joined(m, [thread_row("vvvv", 701, {"F9": "nobody re-raised"})])
+    got = (merged["C-report-disposes-finding"] or [{}])[0]
+    return (not open_pr["C-report-disposes-finding"]
+            and got.get("truth") == {"F9": "disposed"}
+            and "merged with no REVIEW" in got.get("label", {}).get("evidence", "")),\
+        (open_pr["C-report-disposes-finding"], got)
+
+
 def join_writes_one_case_for_one_row(m):
     """Run twice, and the second run writes nothing: a case is keyed by the
     call and the reading, so a join that ran again would otherwise double every
@@ -703,7 +762,8 @@ def join_writes_one_case_for_one_row(m):
     os.environ["CAMPAIGN_JEV_LOG"] = str(ROOT / "join.log")
     try:
         m.cmd_corpus_join(types.SimpleNamespace(
-            fetch=lambda repo, number: ISSUES.get((repo, number))))
+            fetch=lambda repo, number: ISSUES.get((repo, number)),
+            fetch_thread=lambda repo, number: THREADS.get((repo, number))))
         out = m.read_corpus("verb-first")
     finally:
         m.CORPUS = was
@@ -754,8 +814,102 @@ def a_case_held_to_no_band_is_listed(m):
             and "no-match case" in unplaced[0]), unplaced
 
 
+CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
+CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
 CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed
+
+
+# ------------------------------------------- one thread, one call, per finding
+# A READING WHOSE `question.per` NAMES A STATE FIELD is asked once per key of
+# that field, IN THE SAME CALL: every question over one pull request thread goes
+# in the one call (DECISION 5716060001), and the answers come back as one
+# `Verdict` carrying {key: raw} and no word.
+THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "findings": {"F1": "a", "F2": "b"},
+                "review": "REVIEW r-1: two findings", "thread": "comment w-1: ..."}
+
+
+def thread_answers(**kw):
+    """The stub's reply, keyed the way `judge` fans a per-item reading out."""
+    def picked(p):
+        return {"type": "choice", "choice": "supports", "confidence": 0.9,
+                "probabilities": {"supports": p, "contradicts": 1 - p,
+                                  "says_nothing": 0.0}}
+    answers = {"C-report-disposes-finding#F1": picked(kw.get("f1", 0.95)),
+               "C-report-disposes-finding#F2": picked(kw.get("f2", 0.10)),
+               "C-review-not-the-author": picked(0.9)}
+    NEXT["status"], NEXT["body"] = 200, {"model": MODEL, "answers": answers}
+    SEEN["count"] = 0
+
+
+def a_per_item_reading_is_one_call(m):
+    """Two findings and the other reading of the group: three questions, ONE
+    request, and each question's instructions name its own item, since the id
+    never reaches the model."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    judged = m.judge("pull-request-thread", THREAD_STATE, read="a thread",
+                     env=env(), timeout=5, log=False)
+    sent = json.loads(SEEN["body"])["questions"]
+    v = judged.verdicts["C-report-disposes-finding"]
+    named = {qid: "findings.F1" in q["instructions"]
+             for qid, q in sent.items() if qid.endswith("#F1")}
+    return (SEEN["count"] == 1 and len(sent) == 3 and v.word is None
+            and sorted(v.raw) == ["F1", "F2"] and all(named.values())
+            and judged.verdicts["C-review-not-the-author"].word == "supports"),\
+        (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
+
+
+def a_cleared_finding_is_never_sent(m):
+    """H5: what the prefilter settles is never sent. The settled word may be a
+    {item: word} dict, and only the items it names are cleared."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    judged = m.judge("pull-request-thread", THREAD_STATE, read="a thread",
+                     settled={"C-report-disposes-finding": {"F1": "disposed"}},
+                     env=env(), timeout=5, log=False)
+    sent = sorted(json.loads(SEEN["body"])["questions"])
+    return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author"]
+            and sorted(judged.verdicts["C-report-disposes-finding"].raw)
+            == ["F2"]), sent
+
+
+def a_flag_may_be_computed_from_the_answers(m):
+    """A reader cannot compute a flag from answers it has not got back yet, so
+    `flag` may be a callable. The log row carries what code computed and which
+    answer moved it."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    m.judge("pull-request-thread", THREAD_STATE, read="a thread", env=env(),
+            timeout=5, flag=lambda name, raw: {"code": len(raw or {})})
+    rows = [json.loads(ln) for ln in LOG.read_text().splitlines()]
+    by = {r["reading"]: r for r in rows}
+    return (by["C-report-disposes-finding"]["flag"] == {"code": 2}
+            and by["C-report-disposes-finding"]["branch"] is None), rows
+
+
+def a_per_item_question_must_name_its_item(m):
+    """Without the marker the same question would be asked once per item and
+    answered once per item, identically -- the id never reaches the model."""
+    reg = m.load_registry()
+    entry = reg["C-report-disposes-finding"]
+    entry["question"] = dict(entry["question"],
+                             instructions="How does `report` relate?")
+    try:
+        m.judge("pull-request-thread", THREAD_STATE, reg=reg, env=env(CLOSED),
+                timeout=1)
+    except ValueError as e:
+        return "{item}" in str(e), str(e)
+    return False, "it asked the same question once per item"
+
+
+CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
+CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
+CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
+CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item
 
 
 def a_key_names_its_repository(m):
@@ -1185,6 +1339,34 @@ CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    # --- one thread, one call, per finding ---
+    ("the per-item reading asked once for the whole state",
+     '        if not per:\n            if name not in settled:',
+     '        if True:\n            if name not in settled:',
+     "every question over one thread goes in one call, one per finding"),
+    ("the item's name never written into the question",
+     '        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))',
+     "        pass",
+     "every question over one thread goes in one call, one per finding"),
+    ("the marker never required",
+     '        if ITEM_MARK not in entry["question"]["instructions"]:',
+     "        if False:", "a per-item question must name its item"),
+    ("a cleared finding sent all the same",
+     "            if item not in cleared:", "            if True:",
+     "a finding the prefilter cleared is never sent"),
+    ("a computed flag handed the wrong answers",
+     '"flag": flag(name, raw) if callable(flag) else flag}',
+     '"flag": flag(name, {}) if callable(flag) else flag}',
+     "a flag the reader computes from the answers reaches the log row"),
+    # --- the thread join ---
+    ("the later REVIEW never read",
+     '    body = "\\n".join(later)',
+     '    body = ""',
+     "the thread join reads a later REVIEW that raised the finding again"),
+    ("an open thread read as agreement",
+     '        if str(thread.get("state", "")).upper() != "MERGED":',
+     "        if False:",
+     "the thread join waits for the merge where nothing was re-raised"),
     # --- the store of answers ---
     ("the store never read",
      "    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None",

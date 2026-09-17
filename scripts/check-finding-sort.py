@@ -78,7 +78,15 @@ NOT_A_FINDING = re.compile(r"(?i)^\W*not \[label\]|^\W*(resolved|closed|verified
 
 
 def findings(review):
-    """[(the reviewer's word, the finding masked)] in order, as measured."""
+    """[(the reviewer's word, the finding masked, the reviewer's own id for it
+    or "")] in order, as measured.
+
+    THE ID IS THE REVIEW'S OWN -- `F3`, `D2`, `4` -- where the REVIEW numbers
+    its findings in a table, and empty where it does not. This reading does not
+    use it; `check-merge-review.py`'s does, to ask whether the REPORT disposed
+    of THAT finding and to let its prefilter look the id up in the REPORT's own
+    rows. It is returned here rather than cut a second time there, because two
+    readers of how a REVIEW splits into findings would drift."""
     out, section = [], None
     for line in review.split("\n")[1:]:
         if not line.strip() or SEPARATOR.match(line):
@@ -105,7 +113,7 @@ def findings(review):
         masked = SEVERITY.sub(r"\1 ", LABEL.sub("[label]", LEAD.sub("", text)))
         if len(text) < MIN_CHARS or NOT_A_FINDING.search(masked):
             continue
-        out.append((word, masked))
+        out.append((word, masked, (m.group(1) or "").strip()))
     return out[:MAX_FINDINGS]
 
 
@@ -129,7 +137,7 @@ def questions(entry):
 def ask_all(entry, cut, subject, jev, env=None):
     """[Answer] for every finding, asked at once."""
     def one(item):
-        n, (word, masked) = item
+        n, (word, masked, _ident) = item
         reading = jev.ask(READER, f"{subject} f{n} {word}", {"finding": masked},
                           questions(entry), env=env)
         return reading.answers["c"]

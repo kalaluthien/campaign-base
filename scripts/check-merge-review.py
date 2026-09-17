@@ -44,10 +44,12 @@ A5, A8 and M2b witness; M2 there is the tightest case of its currency half. A
 reader is not a fact that vocabulary can hold -- nothing in it has a sha or a
 check run -- so the model states the rule and this states the reading.
 
-CONDITION 2 IS NOT HERE. One `gh` account signs every session's writes, so who
-wrote a REVIEW is not a fact this can read; AGENTS.md says as much and this
-narrows to the half GitHub can answer. A REVIEW naming the head is the whole
-verdict.
+CONDITION 2 DECIDES NOTHING HERE. One `gh` account signs every session's writes,
+so who wrote a REVIEW is not a fact this can read, and the VERDICT narrows to
+the half GitHub can answer: a REVIEW naming the head is the whole of it. What
+condition 2 has instead is a reading at `shadow`, over the thread already
+fetched -- see "the pull request thread, at shadow" below -- which logs an
+answer, prints nothing and moves neither the word nor the exit status.
 
 WHAT NAMES A SHA
 
@@ -238,8 +240,12 @@ def bodies_of(repo, pr):
         for row in rows:
             if not isinstance(row, dict):
                 return None, f"{path} holds a {type(row).__name__}, not a {where}"
+            # THE ID TRAVELS WITH THE BODY. The gate does not read it, but a
+            # join does -- every join is "the later fact on that number" -- and
+            # fetching the same two pages twice to get it would be the second
+            # reader this file exists to avoid.
             found.append((where, (row.get("user") or {}).get("login") or "?",
-                          row.get("body") or ""))
+                          row.get("body") or "", row.get("id")))
     return found, None
 
 
@@ -285,6 +291,176 @@ def answer(word, line, extra=()):
     return status
 
 
+# --------------------------------------------- the pull request thread, at shadow
+# TWO READINGS OVER THE ONE THREAD THIS FILE ALREADY FETCHED, asked in ONE call
+# through scripts/campaign-jev.py: `C-report-disposes-finding` and
+# `C-review-not-the-author`. scripts/jev/readings.json holds both -- the
+# questions, the state slice, the prefilter, the cuts and the tier -- and this
+# reads them and writes none of them.
+#
+# WHY HERE: `gate` is the one place in this tree that reads a pull request's
+# whole thread, both channels and paginated in full, and it reads it anyway. A
+# reading wired anywhere else would fetch those two pages a second time.
+#
+# THE TIER IS `shadow`: every call is logged by campaign-jev.py, NOTHING is
+# printed, no verdict moves and no exit status moves. `gate`'s word is what it
+# always was.
+#
+# WHAT IT COSTS A KEYLESS CI RUN: nothing but the state it builds. `_answer`
+# reads the byte budget, then the store, then the KEY -- and CI has none, so it
+# returns `unknown` for every question before any socket is opened and the
+# 10-second timeout is never reached. The rows still land in CI's own
+# `runtime/jev.log`, which that runner throws away; a machine with a key is
+# where the corpus grows.
+#
+# WHERE THIS READING IS KNOWN TO BE WRONG is its entry's `bands.known_wrong`,
+# not repeated here: every negative the survey measured is a made one, and the
+# splitter, not the question, is the weak joint.
+THREAD_GROUP = "pull-request-thread"
+JEV = HERE / "campaign-jev.py"
+SORT = HERE / "check-finding-sort.py"
+# The REPORT's own per-finding lines, and the words that make one a disposition.
+# Ported from rule-check#460 step 2's `cases.py`, which is git-ignored scratch:
+# the strict variant, the one that was measured, reading only disposition rows.
+DISPOSITION_WORDS = (
+    "fixed", "fix", "declined", "deferred", "accepted", "accept", "kept",
+    "keep", "no change", "carried", "carry", "skipped", "not planned",
+    "reworded", "added", "deleted", "applied", "superseded", "noted", "open",
+    "done", "removed", "dropped", "restored", "wrapped", "rewrapped", "pinned",
+    "corrected", "conceded", "not fixed",
+)
+TABLE_HEAD = re.compile(r"^(#|finding|round|condition|check|\s*$)", re.I)
+BULLET = re.compile(r"^[-*]\s+\S")
+
+
+def disposition_lines(report):
+    """The REPORT's per-finding lines: its markdown table data rows, else its
+    top-level bullets."""
+    lines = (report or "").splitlines()
+    rows = []
+    for k, line in enumerate(lines):
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if len(cells) < 2 or set(cells[0]) <= set("-: "):
+            continue
+        if TABLE_HEAD.match(cells[0]) and k < 6:
+            continue                    # a header row spelled with no separator
+        rows.append(s)
+    if len(rows) >= 2:
+        return rows
+    return [line.strip() for line in lines
+            if BULLET.match(line.strip()) and len(line.strip()) > 30]
+
+
+def prefilter_clear(report, finding_id):
+    """Code's own answer: the REPORT names this finding's id on a disposition
+    row, and that row carries a disposition word.
+
+    THE LOOSE VARIANT -- any line of the REPORT -- CLEARS A REAL NEGATIVE, so it
+    is not used: on the survey's `C-A281` the REPORT's opening sentence says
+    "F1 and F2 applied" while F2's own row is the one the flip deleted."""
+    for s in disposition_lines(report):
+        head = s.strip("|").split("|")[0] if s.startswith("|") else s
+        if not re.search(rf"(?<!\w){re.escape(finding_id)}(?!\w)", head[:80]):
+            continue
+        if any(w in s.lower() for w in DISPOSITION_WORDS):
+            return True
+    return False
+
+
+def one_round(found, pattern):
+    """(the REVIEW body, the REPORT answering it, the id of each) -- THE SLICE,
+    and it is stated here and in the entry's `state.slice` because a thread has
+    no size ceiling and the state does.
+
+    The round is the LAST comment opening REVIEW and the FIRST comment opening
+    REPORT after it, in the order the two channels were read. Nothing else is
+    sent: an earlier round's REPORT disposes an earlier round's findings, and a
+    REVIEW with no REPORT after it yet has no disposition to judge."""
+    review = report = None
+    for pos, (_where, _author, body, cid) in enumerate(found):
+        if comment_kind(body, pattern) == "REVIEW":
+            review, report = (pos, body, cid), None
+        elif review and report is None and comment_kind(body, pattern) == "REPORT":
+            report = (pos, body, cid)
+    return review, report
+
+
+def thread_state(found, pattern, sort):
+    """(the state, the join key's comment ids). One line a comment for the
+    thread, the round's two bodies whole, and the REVIEW's findings by id."""
+    review, report = one_round(found, pattern)
+    thread = [f"{where} {author}: {(body or '').lstrip().splitlines()[0][:200]}"
+              for where, author, body, _cid in found
+              if (body or "").strip()]
+    findings = {}
+    if review and report:
+        # KEYED BY THE REVIEW'S OWN ID where it numbers its findings, since
+        # that is the string its REPORT's rows name and the prefilter looks up;
+        # by position where it does not, which is what the survey's stratum B
+        # was and where its prefilter cleared nothing.
+        for n, (_word, masked, ident) in enumerate(sort.findings(review[1]), 1):
+            findings[ident or str(n)] = masked
+    state = {"review": review[1] if review else "",
+             "thread": "\n".join(thread),
+             "report": report[1] if report else "",
+             "findings": findings}
+    return state, {"review_comment": review[2] if review else None,
+                   "report_comment": report[2] if report else None}
+
+
+def flag_of(reading, raw):
+    """What CODE computed from the answers, and which answer moved it: the
+    survey's `1 - P(supports)`, taken as a max over the findings the prefilter
+    did not clear. The model decides no gate."""
+    if reading != "C-report-disposes-finding" or not isinstance(raw, dict):
+        return None
+    scored = {}
+    for item, answer in raw.items():
+        probs = (answer or {}).get("probabilities")
+        if isinstance(probs, dict) and isinstance(probs.get("supports"),
+                                                  (int, float)):
+            scored[item] = round(1 - probs["supports"], 4)
+    if not scored:
+        return None
+    worst = max(scored, key=scored.get)
+    return {"code": scored[worst], "moved_by": worst, "per_item": scored}
+
+
+def read_thread(repo, pr, found, pattern):
+    """The two readings, asked once over the one thread. Returns nothing, prints
+    nothing, and never raises: a judgment is an aside to a verdict `gate` has
+    already made, so a traceback here must not cost a merge its gate."""
+    jev, why = load(JEV, "campaign_jev")
+    if why:
+        return
+    try:
+        sort, sort_why = load(SORT, "check_finding_sort")
+        if sort_why:
+            jev.skip("check-merge-review.py", f"{repo}#{pr} thread",
+                     f"the finding splitter would not load: {sort_why}")
+            return
+        state, ids = thread_state(found, pattern, sort)
+        # THE PREFILTER COMES FIRST AND WHAT IT SETTLES IS NEVER SENT.
+        cleared = {item: "disposed"
+                   for item in state["findings"]
+                   if prefilter_clear(state["report"], item)}
+        jev.judge(THREAD_GROUP, state, read=f"{repo}#{pr} thread",
+                  reader="check-merge-review.py",
+                  settled={"C-report-disposes-finding": cleared},
+                  key={"repo": repo, "pull_request": pr,
+                       **{k: v for k, v in ids.items() if v is not None}},
+                  flag=flag_of)
+    except Exception as e:                      # noqa: BLE001 -- never the gate's
+        try:
+            jev.skip("check-merge-review.py", f"{repo}#{pr} thread",
+                     f"the reading raised {e.__class__.__name__}")
+        except Exception:                       # noqa: BLE001 -- nothing to log to
+            pass
+
+
 def gate(repo, pr, pattern, want_head):
     """Is there a REVIEW at the sha this run is about?"""
     head, head_note, why = subject_head(repo, pr, want_head)
@@ -298,8 +474,9 @@ def gate(repo, pr, pattern, want_head):
                       [head_note,
                        "Comments that went unread are not comments that are "
                        "not there."])
+    read_thread(repo, pr, found, pattern)
     reviews, read, other = [], [], []
-    for where, author, body in found:
+    for where, author, body, _id in found:
         kind = comment_kind(body, pattern)
         if kind != "REVIEW":
             other.append(f"{where} by {author}: {kind or 'no kind on its first line'}")

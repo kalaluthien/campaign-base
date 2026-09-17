@@ -757,11 +757,23 @@ def wording(entry):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-def question_of(entry):
+# WHERE THE ITEM'S NAME GOES in a question asked per item. The id never reaches
+# the model, so a fan-out whose instructions did not name the item would ask one
+# question n times and get one answer n times.
+ITEM_MARK = "{item}"
+
+
+def question_of(entry, item=None):
     """The spec `ask` and `branch` read: the question as sent, plus the cuts,
-    which are this tree's reading of the answer and are never sent."""
+    which are this tree's reading of the answer and are never sent.
+
+    `item` is the key of a reading asked per item, written into the instructions
+    where `{item}` stands -- by replacement and not by `format`, so a question
+    holding a brace of its own is not a formatting error."""
     spec = dict(entry["question"])
     spec.update(entry.get("thresholds") or {})
+    if item is not None:
+        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))
     return spec
 
 
@@ -861,6 +873,11 @@ def does(entry, word, raw):
                          f"{', '.join(TIERS)}")
     if word == UNKNOWN or tier == SHADOW:
         return NOTHING
+    # A READING ASKED PER ITEM HAS NO WORD HERE, and what its answers add up to
+    # is its entry's `combine`, which is the reader's code. So this asks nothing
+    # of it beyond `show`: there is no single value to hold against an act cut.
+    if word is None:
+        return SHOW if tier == ADVISE else NOTHING
     if tier == ADVISE:
         return SHOW
     # AN `uncertain` NEVER ACTS. It is an answer that landed between the two
@@ -892,12 +909,23 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     `settled` is what CODE decided -- the prefilter's word -- as
     {reading: word}. Those readings are never asked, and their rows carry the
     word and the model that never saw them, so the log counts what code saved.
+    For a reading asked PER ITEM the word may instead be a {item: word} dict,
+    and only the items it names are settled: a prefilter that clears six of a
+    review's eight findings leaves two to ask, in the same one call.
+
+    A READING WHOSE `question.per` NAMES A STATE FIELD IS ASKED ONCE PER KEY OF
+    THAT FIELD, all in this same call, under the question ids `<reading>#<key>`.
+    Its `Verdict` carries {key: raw} and NO word: what those answers add up to
+    is the entry's `combine`, which is code's and the reader's, never this
+    module's -- so `does` asks nothing of the reader for it either.
 
     `key` is the join key AS FIELDS -- `repo`, `issue`, and `comment` or
     `pull_request` where there is one -- because every join is "the later fact
     on that number" and a number inside a label is not a field anything can
     read. `flag` is what the reader computed from the answers,
-    {"code": ..., "moved_by": ...}: the flag and which answer moved it.
+    {"code": ..., "moved_by": ...}: the flag and which answer moved it. It may
+    be a CALLABLE `(reading, raw) -> flag`, because a reader cannot compute a
+    flag from answers it has not got back yet.
 
     ONE LOG ROW PER READING, so a row is a case-to-be on its own: the call id
     ties the rows of one call back together."""
@@ -926,7 +954,33 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         if name not in entries:
             raise ValueError(f"campaign-jev: `{name}` is settled but is no "
                              f"reading of group `{group}`")
-    asked = {n: question_of(e) for n, e in entries.items() if n not in settled}
+    asked, fanned = {}, {}
+    for name, entry in entries.items():
+        per = (entry.get("question") or {}).get("per")
+        given = settled.get(name)
+        if not per:
+            if name not in settled:
+                asked[name] = question_of(entry)
+            continue
+        items = state.get(per)
+        if not isinstance(items, dict):
+            raise ValueError(
+                f"campaign-jev: `{name}` is asked per `{per}`, so the state's "
+                f"`{per}` must be an object of one item per question; it is a "
+                f"{type(items).__name__}")
+        if given is not None and not isinstance(given, dict):
+            continue                     # one word settles the whole reading
+        if ITEM_MARK not in entry["question"]["instructions"]:
+            raise ValueError(
+                f"campaign-jev: `{name}` is asked per `{per}` through `judge`, "
+                f"so its instructions must name the item with `{ITEM_MARK}`; "
+                f"the question id never reaches the model, and without it the "
+                f"same question would be asked once per item")
+        fanned[name] = per
+        cleared = given or {}
+        for item in items:
+            if item not in cleared:
+                asked[f"{name}#{item}"] = question_of(entry, item)
     if asked:
         reading = ask(reader or "campaign-jev.judge", read, state, asked,
                       env=env, cwd=cwd, timeout=timeout, log=False, cache=cache)
@@ -937,14 +991,28 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         timespec="seconds")
     verdicts, notes = {}, []
     for name, entry in sorted(entries.items()):
-        if name in settled:
+        if name in fanned:
+            # ONE VERDICT PER READING STILL, carrying the per-item answers and
+            # no word: combining them is the entry's `combine`, which code does.
+            raw, whys = {}, []
+            for item in state[fanned[name]]:
+                answer = reading.answers.get(f"{name}#{item}")
+                if answer is None:
+                    continue
+                raw[item] = answer.raw
+                if answer.why:
+                    whys.append(f"{item}: {answer.why}")
+            word, why = None, "; ".join(whys)
+            verdicts[name] = Verdict(word, raw, why, entry["tier"],
+                                     does(entry, word, raw))
+        elif name in settled:
             word, raw, why = settled[name], None, ""
+            verdicts[name] = Verdict(word, raw, why, entry["tier"], NOTHING)
         else:
             answer = reading.answers[name]
             word, raw, why = answer.word, answer.raw, answer.why
-        verdicts[name] = Verdict(word, raw, why, entry["tier"],
-                                 does(entry, word, raw) if name not in settled
-                                 else NOTHING)
+            verdicts[name] = Verdict(word, raw, why, entry["tier"],
+                                     does(entry, word, raw))
         row = {"at": at, "call": call, "reader": reader or "campaign-jev.judge",
                "read": read, "subject": read, "reading": name,
                "wording": wording(entry), "state": state,
@@ -952,7 +1020,8 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                "does": verdicts[name].does, "asked": MODEL,
                "answered": reading.model, "latency": round(reading.latency, 3),
                "state_hash": digest(state), "cached": reading.cached,
-               "branch": word, "raw": raw, "why": why, "flag": flag}
+               "branch": word, "raw": raw, "why": why,
+               "flag": flag(name, raw) if callable(flag) else flag}
         row.update({k: v for k, v in (key or {}).items() if v is not None})
         notes.append(log_call(row, env, cwd) if log else "not logged")
     logged = (notes[0] if len(set(notes)) == 1 and notes
@@ -1022,8 +1091,83 @@ def join_issue_kind_label(row, issue):
                      f"{row.get('issue')}", ""
 
 
+def fetch_thread(repo, number, timeout=30):
+    """One pull request's thread and its state, or None. THE ONE FETCH for a
+    pull request, as `fetch_issue` is for an issue, so an offline suite stubs
+    one function per subject and every join is exercised against it."""
+    rows, state = [], ""
+    try:
+        out = subprocess.run(
+            ["gh", "api", "--paginate",
+             f"repos/{repo}/issues/{number}/comments"],
+            capture_output=True, text=True, timeout=timeout)
+        head = subprocess.run(
+            ["gh", "pr", "view", str(number), "-R", repo, "--json", "state"],
+            capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0 or head.returncode != 0:
+        return None
+    try:
+        rows = json.loads(out.stdout)
+        state = (json.loads(head.stdout) or {}).get("state") or ""
+    except ValueError:
+        return None
+    if not isinstance(rows, list):
+        return None
+    return {"comments": rows, "state": state}
+
+
+def re_raised(finding, body):
+    """Is this finding raised again in that later REVIEW? Its id named as an
+    item, or half its words carried -- rule-check#460 set C's own rule, so the
+    label a case gets here is the label the survey's numbers were measured
+    against."""
+    return overlap(body, finding) >= 0.5
+
+
+def join_thread_refinding(row, thread):
+    """C-report-disposes-finding: did a LATER REVIEW raise the finding again?
+
+    THE TWO HALVES ARE NOT EQUALLY STRONG, as `join_issue_title_kept`'s are not.
+    A finding raised again after this REPORT is a finding the REPORT did not
+    dispose, and that half is strong. A pull request that MERGED with no later
+    REVIEW is the weak half -- nobody looked again -- and it is what labels the
+    disposed class, which is why it waits for the merge rather than reading an
+    open thread as agreement."""
+    if thread is None:
+        return None, "", "the thread did not read"
+    findings = (row.get("state") or {}).get("findings") or {}
+    if not findings:
+        return None, "", "the row carries no finding to label"
+    at = row.get("at") or ""
+    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("created_at") or "") > at
+             and (c.get("body") or "").lstrip().startswith("REVIEW ")]
+    if not later:
+        if str(thread.get("state", "")).upper() != "MERGED":
+            return None, "", ("no REVIEW after this REPORT yet, and the pull "
+                              "request has not merged")
+        return ({k: "disposed" for k in findings},
+                f"{row.get('repo')} pr#{row.get('pull_request')} merged with no "
+                f"REVIEW after this REPORT", "")
+    body = "\n".join(later)
+    truth = {k: ("undisposed" if re_raised(text, body) else "disposed")
+             for k, text in findings.items()}
+    again = sorted(k for k, v in truth.items() if v == "undisposed")
+    return (truth,
+            f"{len(later)} REVIEW(s) after this REPORT on "
+            f"{row.get('repo')} pr#{row.get('pull_request')}; "
+            + (f"raised again: {', '.join(again)}" if again
+               else "none of these findings raised again"), "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
-         "issue-kind-label": join_issue_kind_label}
+         "issue-kind-label": join_issue_kind_label,
+         "thread-refinding": join_thread_refinding}
+# WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
+# join key as FIELDS, so the subject is the field it names and never a guess.
+SUBJECTS = {"issue": "fetch", "pull_request": "fetch_thread"}
 
 
 # ------------------------------------------------------------------ the corpus
@@ -1096,14 +1240,18 @@ def cmd_corpus_join(args):
         ref = f"{row.get('call')}:{name}"
         if ref in known.get(name, set()):
             continue
-        entry, repo, number = reg[name], row.get("repo"), row.get("issue")
-        if not repo or not number:
-            waiting.append((row, "the row carries no repo and issue fields"))
+        entry, repo = reg[name], row.get("repo")
+        subject = next((s for s in SUBJECTS if row.get(s)), None)
+        if not repo or subject is None:
+            waiting.append((row, f"the row carries no repo and "
+                                 f"{' or '.join(SUBJECTS)} field"))
             continue
-        if (repo, number) not in fetched:
-            fetched[(repo, number)] = args.fetch(repo, number)
-        truth, evidence, why = JOINS[entry["join"]](row,
-                                                    fetched[(repo, number)])
+        number = row[subject]
+        if (subject, repo, number) not in fetched:
+            fetched[(subject, repo, number)] = getattr(
+                args, SUBJECTS[subject])(repo, number)
+        truth, evidence, why = JOINS[entry["join"]](
+            row, fetched[(subject, repo, number)])
         if truth is None:
             waiting.append((row, why))
             continue
@@ -1469,7 +1617,8 @@ def main(argv):
     p.set_defaults(run=cmd_report)
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])
-    p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue)
+    p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
+                   fetch_thread=fetch_thread)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

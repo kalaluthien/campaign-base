@@ -671,7 +671,11 @@ topic branch and resolve there, because the machine-wide no-main-commits guard
 blocks the resolution commit the other direction needs.
 **Condition 2 has no automatic reader**: one `gh` account signs every session's
 merges, so it is held by whoever writes the review saying honestly that it did not
-write the code.
+write the code. `check-merge-review.py` reads it at `shadow` — the
+`C-review-not-the-author` reading of `scripts/jev/readings.json`, over the
+thread the gate already fetched — which logs an answer and decides nothing:
+it has no cut, no join and no measurement, and moves neither the word nor the
+exit status.
 
 **The push that retires a review does not start the next one, so whoever pushed
 it launches it and then asks for the merge**, because **a silent wait is

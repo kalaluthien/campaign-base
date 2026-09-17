@@ -217,11 +217,13 @@ def main():
           and len(prompts(calls)) == 1
           and prompts(calls)[0][3] == "/rename machinery-worker-3",
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+    # THE LEADING `agent list` IS THE `<n>` CHECK's, read once for the whole
+    # call before anything is applied; the second is this pane's status.
     check("...and the pane was read BEFORE the prompt as well as after",
-          [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"],
-                                     ["agent", "read"], ["agent", "prompt"],
-                                     ["agent", "read"]]
-          and calls[0][2:] == ["w1:p1", "machinery-worker-3"],
+          [c[:2] for c in calls] == [["agent", "list"], ["agent", "rename"],
+                                     ["agent", "list"], ["agent", "read"],
+                                     ["agent", "prompt"], ["agent", "read"]]
+          and calls[1][2:] == ["w1:p1", "machinery-worker-3"],
           f"calls {calls}")
 
     # THE ECHO ALREADY ON THE SCREEN. Renaming a pane to the name it already
@@ -353,7 +355,8 @@ def main():
     check("a blocked pane gets the herdr name and no prompt, exit 2",
           r.returncode == 2 and "NOT sent" in r.stdout and "blocked" in r.stdout
           and not prompts(calls)
-          and [c[:2] for c in calls] == [["agent", "rename"], ["agent", "list"]],
+          and [c[:2] for c in calls] == [["agent", "list"], ["agent", "rename"],
+                                         ["agent", "list"]],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
 
     r, calls = run(["w1:p1", "machinery-worker-3"], agents=idle, rename_fails=True)
@@ -417,6 +420,89 @@ def main():
           and [c[2] for c in calls if c[:2] == ["agent", "read"]]
               == ["w1:p1", "w1:p1", "w1:p2", "w1:p2"],
           f"exit {r.returncode} out {r.stdout!r} calls {calls}")
+
+    # `<n>` IS ONE COUNTER (rule-check#461 rank 4). AGENTS.md § The session
+    # name says `<n>` is assigned in the order sessions appear, so two do not
+    # both pick `-1`; nothing read it until now, and two sessions named in the
+    # same minute took one number. THE NAMED FAILING CASE: a number a listed
+    # session of this campaign already wears.
+    wears3 = [{"pane_id": "w1:p9", "agent_session": {"value": "s9"},
+               "name": "machinery-worker-3", "agent_status": "idle"},
+              {"pane_id": "w1:p1", "agent_session": {"value": "s1"},
+               "name": "<unnamed>", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=wears3)
+    check("an `<n>` a listed session of the campaign wears is refused, with "
+          "nothing applied",
+          r.returncode == 1 and not prompts(calls)
+          and not [c for c in calls if c[:2] == ["agent", "rename"]]
+          and "already wears -3" in r.stderr,
+          f"exit {r.returncode} err {r.stderr[:300]} calls {calls}")
+
+    # THE SUGGESTION IS THE HIGHEST LISTED NUMBER PLUS ONE, over BOTH roles:
+    # one counter, so a planner's number is spent for a worker too.
+    wears37 = wears3 + [{"pane_id": "w1:pA", "agent_session": {"value": "sA"},
+                         "name": "machinery-planner-7", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=wears37)
+    check("...and the next free number is the highest listed plus one, across "
+          "both roles",
+          r.returncode == 1 and "machinery-worker-8" in r.stderr,
+          f"exit {r.returncode} err {r.stderr[:300]}")
+
+    # A PANE NEVER COLLIDES WITH ITSELF: every session sets its name at start,
+    # so re-running the same call must not start refusing, or a retry after a
+    # half-applied rename is blocked by the half that applied.
+    mine = [{"pane_id": "w1:p1", "agent_session": {"value": "s1"},
+             "name": "machinery-worker-3", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=mine)
+    check("a pane renamed to the name it already wears is admitted",
+          r.returncode == 0 and len(prompts(calls)) == 1,
+          f"exit {r.returncode} err {r.stderr[:300]} out {r.stdout!r}")
+
+    # ANOTHER CAMPAIGN'S NUMBER IS NOT SPENT: the counter is per campaign, and
+    # several of them run on this machine at once.
+    other = [{"pane_id": "w1:p9", "agent_session": {"value": "s9"},
+              "name": "otherslug-worker-3", "agent_status": "idle"},
+             {"pane_id": "w1:p1", "agent_session": {"value": "s1"},
+              "name": "<unnamed>", "agent_status": "idle"}]
+    r, calls = run(["w1:p1", "machinery-worker-3"], agents=other)
+    check("an `<n>` only another campaign's session wears is admitted",
+          r.returncode == 0 and len(prompts(calls)) == 1,
+          f"exit {r.returncode} err {r.stderr[:300]} out {r.stdout!r}")
+
+    # TWO PAIRS OF ONE CALL, which the listing cannot yet show either name for:
+    # the check reads the names it is applying as well as the ones it read.
+    r, calls = run(["w1:p1", "machinery-worker-3", "w1:p2", "machinery-worker-3"],
+                   agents=both)
+    check("two panes of one call may not take one `<n>`",
+          r.returncode == 1 and [c[:2] for c in calls] == [["agent", "list"]]
+          and "already wears -3" in r.stderr,
+          f"exit {r.returncode} err {r.stderr[:300]} calls {calls}")
+
+    # AN UNREADABLE LISTING IS A READING NOT MADE, so it is said and the rename
+    # goes on: herdr being unreadable must not become a way to block a rename.
+    r, calls = run(["w1:p1", "machinery-worker-3"], list_fails=True)
+    check("an unreadable listing leaves `<n>` unchecked, says so, and applies",
+          r.returncode == 0 and "unchecked" in r.stdout
+          and len(prompts(calls)) == 1,
+          f"exit {r.returncode} out {r.stdout!r}")
+
+    # THE TWO READERS, over a recorded listing rather than through the CLI.
+    m0 = harness.load(SCRIPT, "cns0")
+    listing = {"s9": {"name": "machinery-worker-3", "pane": "w1:p9"},
+               "sA": {"name": "machinery-planner-7", "pane": "w1:pA"},
+               "sB": {"name": "otherslug-worker-4", "pane": "w1:pB"},
+               "sC": {"name": "<unnamed>", "pane": "w1:pC"}}
+    check("spent_numbers reads one campaign's numbers and skips every other row",
+          m0.spent_numbers(listing, "machinery")
+          == {3: "machinery-worker-3", 7: "machinery-planner-7"},
+          repr(m0.spent_numbers(listing, "machinery")))
+    check("...and a pane in keep_out frees its own number",
+          m0.spent_numbers(listing, "machinery", ("w1:p9",))
+          == {7: "machinery-planner-7"},
+          repr(m0.spent_numbers(listing, "machinery", ("w1:p9",))))
+    got = [m0.number_of(n) for n in ("rule-check-worker-53", "some-session", None)]
+    check("number_of reads the trailing number, and None off any other name",
+          got == [53, None, None], repr(got))
 
     # THE ROLE WORD AND THE LISTING, read here for the guard, the brief hook
     # and campaign-claim.py alike (rule-check#370 row 3).

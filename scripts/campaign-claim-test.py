@@ -260,6 +260,60 @@ def shims(d, gh=GH, herdr=None, prompt_exit=0):
     return b
 
 
+# A CHORE'S GH (#475): the campaign issue IS the unit of work, so its body is
+# the charter AND the brief and it hangs from nothing. Four sections, which is
+# one more than a chore requires: `campaign-tracker check` is learning the
+# chore's shape in another sub-issue right now, and a body well-shaped as a
+# campaign AND as a chore passes that gate whichever kind it reads it as, so
+# these cases turn on `campaign-claim` and not on that reading. The create-ref
+# is LOGGED, because what is under test is WHICH repository the ref was cut on
+# and no exit status says that. `HOLDER` is the one repository already holding
+# `probe/9999-sweep`, which is how the same NAME on two repositories is staged.
+CHORE_GH = """#!/bin/sh
+body='## Intent\\n- x\\n\\n## Scope\\n- x\\n\\n## Definition of done\\n- x\\n\\n## Repos\\nREPOSLIST'
+case "$*" in
+  *"--json state"*) echo 'OPEN '; exit 0 ;;
+  # A chore hangs from nothing: it IS the campaign issue.
+  *"--json parent"*) echo ''; exit 0 ;;
+  *"--json labels"*) echo '[NAMES]'; exit 0 ;;
+  *"--json title,body,labels,parent"*) printf '{"title":"Do the thing","body":"%s","labels":[OBJS],"parent":null}\\n' "$body"; exit 0 ;;
+  *"issue view"*) printf '%b\\n' "$body"; exit 0 ;;
+  *repos/HOLDER/git/matching-refs*) echo '["refs/heads/probe/9999-sweep"]'; exit 0 ;;
+  *matching-refs*) echo '[]'; exit 0 ;;
+  *"issues/9999"*) echo '[NAMES,"bound:'"$(hostname -s)"'"]'; exit 0 ;;
+  *commits/main*) echo 1111111111111111111111111111111111111111; exit 0 ;;
+  *"pr list"*) echo '[]'; exit 0 ;;
+  *git/refs*) echo "$*" >> CUTLOG; exit 0 ;;
+esac
+echo "gh shim: refusing $*" >&2
+exit 1
+"""
+
+# A repository no case names, so the `HOLDER` arm matches nothing unless a case
+# asks for it. An empty pattern would match every listing instead.
+NO_HOLDER = "nobody/nothing"
+
+
+def chore_shims(d, where, repos, chore=True, holder=NO_HOLDER):
+    """A PATH directory whose `gh` answers for a chore: `repos` is the body's
+    `## Repos` list, `chore` says whether the label is on it, and `holder` is
+    the one repository that already holds `probe/9999-sweep`."""
+    names = ['"campaign"'] + (['"chore"'] if chore else []) + ['"campaign:probe"']
+    return shims(Path(d) / where,
+                 gh=CHORE_GH.replace("REPOSLIST", repos)
+                 .replace("HOLDER", holder)
+                 .replace("NAMES", ",".join(names))
+                 .replace("OBJS", ",".join(f'{{"name":{n}}}' for n in names))
+                 .replace("CUTLOG", str(Path(d) / where / "cut")))
+
+
+def chore_cut(d, where):
+    """Every create-ref the shim at `where` was asked to make. An absent log is
+    NO call, which is the answer a refusal owes."""
+    log = Path(d) / where / "cut"
+    return log.read_text() if log.exists() else ""
+
+
 def transcript(d, sid, records=()):
     """A HOME holding session `sid`'s transcript -- one prompt, then
     `records` -- and the env naming both, so `release` reads it and the herdr
@@ -376,6 +430,35 @@ def pure_cases(m):
     check("only `here` admits a ref cut", m.binding_verdict("here") is None)
     for word in ("elsewhere", "unbound", "exit 2: gh: not found", ""):
         check(f"the binding refuses on {word!r}", bool(m.binding_verdict(word)))
+
+    # --- where a chore's ref is cut (#475) ---
+    # A chore is the campaign issue claimed as itself and has no `## Lands in`
+    # to read, so `--repo` answers and `## Repos` plus the base admits. Pure,
+    # so every branch is here and none of them spends a request.
+    base = m.DEFAULT_REPO
+    repo, note = m.chore_repo([], None, base)
+    check("a chore of a campaign listing `- none` cuts on the base",
+          repo == base and "base" in note, f"{repo} {note}")
+    repo, note = m.chore_repo(["o/one"], None, base)
+    check("...and the one repository `## Repos` lists needs no --repo",
+          repo == "o/one", f"{repo} {note}")
+    # NOT A PICK. Two entries are equals, and a claim is the one write here that
+    # mints a name, so guessing cuts a real ref on a repository nobody named.
+    repo, refusal = m.chore_repo(["o/one", "o/two"], None, base)
+    check("several entries and no --repo is a refusal that names them",
+          repo is None and "o/one" in refusal and "o/two" in refusal
+          and "--repo" in refusal, f"{repo} {refusal}")
+    # THE BASE IS ADMITTED THOUGH NO LIST HOLDS IT (R14d), and it is the one
+    # destination the `## Repos` check cannot reach.
+    repo, note = m.chore_repo(["o/one", "o/two"], base, base)
+    check("--repo naming the base is admitted, which `## Repos` never lists",
+          repo == base, f"{repo} {note}")
+    repo, note = m.chore_repo(["o/one", "o/two"], "O/Two", base)
+    check("--repo naming a listed repository is admitted, whatever its case",
+          repo == "o/two", f"{repo} {note}")
+    repo, refusal = m.chore_repo(["o/one"], "outside/scope", base)
+    check("--repo naming a repository outside `## Repos` is refused",
+          repo is None and "scope change" in refusal, f"{repo} {refusal}")
 
     # --- the herdr half ---
     rows, why = m.parse_agents(listing(agent("s1", "machinery-worker-1", "/x")))
@@ -1091,6 +1174,97 @@ exit 1
         check("...and cuts no ref, so the refusal is before the write",
               "cut from" not in out and "claimed campaign" not in out)
 
+        # ------ #475: A CHORE IS THE CAMPAIGN ISSUE, CLAIMED AS ITSELF ------
+        def chore_shim(where, repos, chore=True, holder=NO_HOLDER):
+            return chore_shims(d, where, repos, chore, holder)
+
+        def cut(where):
+            return chore_cut(d, where)
+
+        alone = chore_shim("chore-alone", "- none")
+        r = claim(["take", "9999", "9999", "sweep"], alone)
+        out = r.stdout + r.stderr
+        check("a chore is claimed as itself, its own number both times",
+              r.returncode == 0 and "claimed probe/9999-sweep" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        # ASSERTED ON THE CREATE-REF, not on the note: the note says where the
+        # reading landed and the log says where the ref went, and a chore that
+        # printed one while cutting on the other is the defect worth catching.
+        check("...and a chore listing `- none` cuts on the base",
+              "repos/kalaluthien/campaign-base/git/refs" in cut("chore-alone"),
+              cut("chore-alone") or "no create-ref at all")
+
+        # A CHARTER IS NOBODY'S UNIT OF WORK. Before #475 this was refused only
+        # by accident, by the `## Lands in` a campaign issue does not carry --
+        # so the refusal named the wrong repair.
+        charter = chore_shim("charter", "- none", chore=False)
+        r = claim(["take", "9999", "9999", "sweep"], charter)
+        out = r.stdout + r.stderr
+        check("a campaign issue without `chore` may not be claimed as itself",
+              r.returncode == 1 and "does not carry `chore`" in out
+              and "not a unit of work" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        # ASSERTED ON THE WHOLE SENTENCE: "sub-issue" alone is a word half the
+        # ordinary notes carry, so a case keyed on it passes with the repair
+        # unsaid.
+        check("...and it says to file a sub-issue instead",
+              "File the work as a sub-issue" in out, out[:400])
+        check("...and cuts no ref, so the refusal is before the write",
+              cut("charter") == "" and "cut from" not in out,
+              cut("charter") or out[:300])
+        # ...and it is not the `## Lands in` refusal the accident printed.
+        check("...and it is not a refusal about a missing `## Lands in`",
+              "Lands in" not in out, out[:400])
+
+        # SEVERAL ENTRIES ARE EQUALS, so the list cannot answer and the refusal
+        # asks rather than picks: a claim cut on a repository nobody named is a
+        # real ref that the next `take` then walks into.
+        several = chore_shim("chore-several", "- other/elsewhere\\n- more/stuff")
+        r = claim(["take", "9999", "9999", "sweep"], several)
+        out = r.stdout + r.stderr
+        check("a chore whose `## Repos` lists several refuses without --repo",
+              r.returncode == 1 and "not derivable" in out
+              and "other/elsewhere" in out and "more/stuff" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        check("...and no ref is cut while which one is unanswered",
+              cut("chore-several") == "", cut("chore-several"))
+        # ...and `--repo` is the repair it asks for, admitted because the list
+        # holds it.
+        r = claim(["take", "9999", "9999", "sweep", "--repo", "more/stuff"],
+                  several)
+        out = r.stdout + r.stderr
+        check("...and --repo naming a listed repository cuts the ref there",
+              r.returncode == 0
+              and "repos/more/stuff/git/refs" in cut("chore-several"),
+              f"exit {r.returncode}: {cut('chore-several') or out[:400]}")
+
+        # ONE NAME, ONE REPOSITORY. `all_refs` maps a branch name to the FIRST
+        # repository it was found on, so a chore holding one name on two of them
+        # leaves the second invisible to `release`, to `live`, and to the close
+        # that reads `live`. The one moment anything can keep that map injective
+        # is before the create, and the refusal is about the NAME and not the
+        # repository -- which the second take here is what says.
+        collide = chore_shim("chore-collide", "- other/elsewhere\\n- more/stuff",
+                             holder="other/elsewhere")
+        r = claim(["take", "9999", "9999", "sweep", "--repo", "more/stuff"],
+                  collide)
+        out = r.stdout + r.stderr
+        check("a chore's ref name already on another of its repositories is "
+              "refused", r.returncode == 1
+              and "already exists on other/elsewhere" in out
+              and "told apart by NAME" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        check("...and no ref is cut, so nothing invisible was made",
+              cut("chore-collide") == "", cut("chore-collide"))
+        r = claim(["take", "9999", "9999", "fix", "--repo", "more/stuff"],
+                  collide)
+        out = r.stdout + r.stderr
+        check("...and another topic on the same repository cuts, so it is the "
+              "NAME that was refused", r.returncode == 0
+              and "repos/more/stuff/git/refs" in cut("chore-collide")
+              and "probe/9999-fix" in cut("chore-collide"),
+              f"exit {r.returncode}: {cut('chore-collide') or out[:400]}")
+
 
 def release_cases(m):
     with tempfile.TemporaryDirectory() as d:
@@ -1310,6 +1484,38 @@ exit 1
         check("...and --branch is still the way through, since it names one "
               "directly",
               "--branch" in out, out[:300])
+
+    # ------ #475: RELEASING A CHORE, WHICH HAS NO `## Lands in` ------
+    # `release` read that section for every issue, so a chore -- the campaign
+    # issue itself -- was refused on the one path its close takes. The label is
+    # what tells the two apart, and both cases stop at the herdr reading, which
+    # is deliberate: what is under test is the resolution BEFORE it, and the
+    # line it prints is what says the resolution happened.
+    with tempfile.TemporaryDirectory() as d:
+        held = chore_shims(d, "chore-release", "- none",
+                           holder="kalaluthien/campaign-base")
+        r = claim(["release", "9999", "9999"], held)
+        out = r.stdout + r.stderr
+        # ASSERTED ON THE REFUSAL'S WORDING, not on the words `Lands in`: the
+        # chore's own note says it names none, so a case keyed on the phrase
+        # fails against the very behaviour it is here to pin.
+        check("a chore's release is not refused for a missing `## Lands in`",
+              "no `## Lands in` heading" not in out and "carries `chore`" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        check("...and it resolves the ref to the repository it was found on",
+              "releasing probe/9999-sweep on kalaluthien/campaign-base" in out,
+              f"exit {r.returncode}: {out[:400]}")
+        # ...and a campaign issue that is NOT a chore keeps today's refusal: the
+        # label is the whole difference, so the case beside it is what says the
+        # new path is not simply every `release <N> <N>`.
+        charter = chore_shims(d, "charter-release", "- none", chore=False,
+                              holder="kalaluthien/campaign-base")
+        r = claim(["release", "9999", "9999"], charter)
+        out = r.stdout + r.stderr
+        check("a campaign issue without `chore` still refuses for `## Lands in`",
+              r.returncode == 1 and "no `## Lands in` heading" in out,
+              f"exit {r.returncode}: {out[:400]}")
+
 
 def local_sweep_cases(m):
     """Row 6: the local branch the released ref leaves behind.

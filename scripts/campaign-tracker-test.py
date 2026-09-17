@@ -17,6 +17,7 @@ closes it.
 
 Usage: scripts/campaign-tracker-test.py
 """
+import collections
 import contextlib
 import http.server
 import importlib
@@ -80,10 +81,14 @@ with contextlib.closing(socket.socket()) as _s:
 
 
 def jev_answer(noul=0.95, choice=None, confidence=0.95):
-    """What the stub answers next, in the shape the real endpoint uses."""
-    answers = {"verb_first": {"type": "noul", "noul": noul}}
+    """What the stub answers next, in the shape the real endpoint uses.
+
+    THE QUESTION IDS ARE THE REGISTRY'S NAMES, since `campaign-jev.judge` asks
+    by name: a stub answering under any other key is a response with no answer
+    for the question, which is `unknown`."""
+    answers = {"verb-first": {"type": "noul", "noul": noul}}
     if choice is not None:
-        answers["work_kind"] = {"type": "choice", "choice": choice,
+        answers["work-kind"] = {"type": "choice", "choice": choice,
                                 "confidence": confidence}
     JEV_NEXT["body"] = {"model": "jev-1.13.0", "answers": answers}
     return JEV_URL
@@ -1179,6 +1184,41 @@ def main():
         r = tracker("check", "5", "--plan", env=shim(good_sub))
         check("...and says nothing about a body with no bare reference",
               r.returncode == 0 and "bare reference" not in r.stdout)
+
+    # A READING RENAMED OUT OF THE GROUP IS `unknown`, NEVER A TRACEBACK.
+    # `judgment_lines` reaches for the two names, and an index outside
+    # `judgment_report`'s guard would have been a KeyError out of `check` --
+    # which `campaign-claim take` gates on, so a registry edit would have cost
+    # a worker its claim (the REVIEW at a73fc57, note 4).
+    verdict = collections.namedtuple("Verdict", "word raw why tier does")
+    judged = collections.namedtuple("Judged",
+                                    "verdicts model latency call logged")
+
+    def fake_jev(verdicts):
+        mod = types.SimpleNamespace()
+        mod.judge = lambda *a, **k: judged(verdicts, "jev-1.13.0", 0.1, "c",
+                                           "logged to nowhere")
+        return lambda *a, **k: mod
+
+    was = m.load
+    try:
+        m.load = fake_jev({"renamed": verdict("yes", None, "", "advise",
+                                              "show")})
+        lines = m.judgment_report("o/r", 5, "t", "b", None)
+        check("a reading renamed out of the group is unknown, not a traceback",
+              len(lines) == 1 and lines[0].startswith("  judgments not read")
+              and "verb-first" in lines[0] and "work-kind" in lines[0]
+              and "renamed" in lines[0], lines)
+        m.load = fake_jev({m.VERB_FIRST: verdict("yes", None, "", "advise",
+                                                 "show"),
+                           m.WORK_KIND: verdict("research", None, "", "advise",
+                                                "show")})
+        lines = m.judgment_report("o/r", 5, "t", "b", None)
+        check("...and the group answering both names reads normally",
+              not any("judgments not read" in ln for ln in lines)
+              and any("verb-first  yes" in ln for ln in lines), lines)
+    finally:
+        m.load = was
 
     return harness.report()
 

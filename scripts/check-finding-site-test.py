@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: JV1_ARepliedConfidentFittingJudgmentAdvises, JV1b_AFailedLowOrNoMatchAnswerNeverAdvises
+# witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
 """Prove check-finding-site.py asks each finding of a REVIEW against its site at the reviewed sha, skips what it cannot place, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every

@@ -178,30 +178,36 @@ var sig Standing in Campaign {}
    is: the owner may lift it at any step. */
 var sig Backlog in Issue {}
 
-/* A JUDGMENT ADVISES AND NEVER REFUSES. `scripts/campaign-jev.py` asks a model
-   one typed question about an issue's text and hands its caller a branch;
-   `campaign-tracker.py check` is the first caller and prints the branch beside
-   its own reading. Three bits decide whether that branch is advice at all: the
+/* A JUDGMENT STANDS IN FOR AN AGENT'S READ, OR THE ISSUE GOES TO AN AGENT.
+   `scripts/campaign-jev.py` asks a model one typed question about an issue's
+   text and hands its caller a branch; `campaign-tracker.py check` is the first
+   caller. FOUR bits decide whether that branch may replace the reading an
+   agent would have made: the reading's tier is `act` (ACTING -- at `shadow` it
+   only logs and at `advise` it only prints, so neither replaces anything), the
    call REPLIED (a key, an endpoint that answered, the pinned model, an answer
    for this question), the reply was CONFIDENT enough for its thresholds, and it
-   FITS the question rather than naming the no-match option. Everything else is
-   `unknown`, which advises nothing.
+   FITS the question rather than naming the no-match option. Anything else is
+   `unknown`, and the issue is handed up to an agent.
 
    `Replied` and not `Answered`: orchestration/system.als already has an
-   `Answered`, over Agent, and a module that opens both would see two.
+   `Answered`, over Agent, and a module that opens both would see two. `StandIn`
+   and `HandUp` and not `Decide` or `Escalate` for the same reason: `Decide` is
+   the planner's DECISION in orchestration/system.als, which opens this module,
+   and `Escalat*` there names a BLOCKED going to a planner.
 
-   NO RULE HERE READS `advised`, and that is the claim: a judgment gates no
-   event, so no close, claim, merge or write depends on one. Typed output
-   guarantees the shape and not the truth, and a reading a caller could quietly
-   start gating on is the one no scenario would catch.
+   THE RULE IS READ, which is what `advised` never was: `judgmentDiscipline`
+   below gates `StandIn` on all four bits and `HandUp` on their absence, and
+   `checks.als` runs that over traces with a `_Bites` that drops the tier bit
+   and goes SAT. The retired `advised` was negated by its own scenario, so it
+   could only fail when its one line was edited.
 
-   ONE JUDGMENT, THREE BITS, as `FileRead` in session/system.als: the rule
+   ONE JUDGMENT, FOUR BITS, as `FileRead` in session/system.als: the rule
    judges one answer alone, so one atom with its bits free is every case, and a
    `one sig` needs no scope in any command that opens this module. */
 one sig Judgment {}
-sig Replied, Confident, Fits in Judgment {}
+sig Replied, Confident, Fits, Acting in Judgment {}
 
-pred advised[j: Judgment] { j in Replied & Confident & Fits }
+pred standsIn[j: Judgment] { j in Acting & Replied & Confident & Fits }
 
 fact WellFormed {
   all c: Campaign | c.campaignIssue.repo = Base
@@ -267,7 +273,8 @@ fun indexOf[c: Campaign]: set Issue { c.subIssues }
 
 abstract sig Event {}
 one sig Stutter, FileCampaignIssue, AddMember, RemoveMember,
-        OpenPullRequest, MergePullRequest, CloseIssue, WriteBody, Claim, Release extends Event {}
+        OpenPullRequest, MergePullRequest, CloseIssue, WriteBody, Claim, Release,
+        StandIn, HandUp extends Event {}
 
 one sig Now {
   var event:    one Event,
@@ -287,7 +294,7 @@ one sig Now {
 
 fun githubEvents: set Event {
   FileCampaignIssue + AddMember + RemoveMember + OpenPullRequest + MergePullRequest + CloseIssue + WriteBody
-  + Claim + Release
+  + Claim + Release + StandIn + HandUp
 }
 
 pred githubFrame {
@@ -414,6 +421,38 @@ pred release[i: Issue] {
   Now.event = Release and Now.issue = i
 }
 
+/* THE TWO WAYS AN ISSUE GETS READ. `StandIn` is the judgment replacing the
+   reading an agent would have made; `HandUp` is the same issue going to an
+   agent instead. Neither changes a GitHub fact -- a reading is not a write --
+   so both frame, and what they record is WHICH issue was read that way.
+
+   NEITHER IS GUARDED HERE, and that is the point. `judgmentDiscipline` below
+   is the rule, stated once and read by `checks.als` over traces; written into
+   the preds instead, the rule would hold by construction and its check would
+   be the shape `advised`/JV1b was -- true in every world the model admits, so
+   no scenario could exhibit its absence. */
+pred standIn[i: Issue] {
+  i in Open
+  githubFrame
+  Now.event = StandIn and Now.issue = i
+}
+
+pred handUp[i: Issue] {
+  i in Open
+  githubFrame
+  Now.event = HandUp and Now.issue = i
+}
+
+/* A judgment stands in only at tier `act` and only when the call replied,
+   cleared its threshold and fits; otherwise the issue is handed up to an
+   agent. `scripts/campaign-jev.py`'s `does` is the code side: `nothing` at
+   `shadow` and for every `unknown`, `show` at `advise`, and only at `act` the
+   reversible thing its entry names. */
+pred judgmentDiscipline {
+  always (Now.event = StandIn implies standsIn[Judgment])
+  always (Now.event = HandUp implies not standsIn[Judgment])
+}
+
 pred stutter {
   githubFrame
   Now.event = Stutter and no Now.issue
@@ -436,7 +475,7 @@ pred githubStep {
   or (some c: Campaign | fileCampaignIssue[c] or writeBody[c])
   or (some c: Campaign, i: Issue | addMember[c,i] or removeMember[c,i])
   or (some i: Issue | openPullRequest[i] or mergePullRequest[i] or closeIssue[i]
-                      or claim[i] or release[i])
+                      or claim[i] or release[i] or standIn[i] or handUp[i])
   or (Now.event not in Stutter + githubEvents and githubFrame)
 }
 

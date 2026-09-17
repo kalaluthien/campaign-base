@@ -626,6 +626,19 @@ def confidence(entry, raw):
     return None if not isinstance(value, (int, float)) else value
 
 
+def band_value(entry, raw):
+    """The number a BAND is over, which is not `confidence`'s: a `noul`'s own
+    value, and a `choice`'s confidence. The two differ for a `noul` -- 0.04 is
+    a decided `no`, so `confidence` folds it to 0.96 -- and a drift reader that
+    used the folded number compared every `no` against the `yes` band and
+    called the whole corpus drifted."""
+    if not isinstance(raw, dict):
+        return None
+    key = NOUL if entry["question"]["type"] == NOUL else "confidence"
+    value = raw.get(key)
+    return value if isinstance(value, (int, float)) else None
+
+
 def does(entry, word, raw):
     """What the tier asks of the reader for this answer. A CALCULATION: no
     request, no clock, no file, so every branch has a case that spends
@@ -1077,7 +1090,7 @@ def drift_line(entry, cases):
             if s.get("model") != model or s.get("wording") != wording(entry):
                 continue
             band = declared.get(c.get("truth")) or declared.get(c.get("band"))
-            value = confidence(entry, s.get("raw"))
+            value = band_value(entry, s.get("raw"))
             if band and value is not None and not (band[0] <= value <= band[1]):
                 out.append(f"{c['id']} {value:.2f} outside {band}")
     return ", ".join(out) if out else "none"

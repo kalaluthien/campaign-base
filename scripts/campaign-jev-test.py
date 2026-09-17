@@ -757,6 +757,76 @@ def a_blocked_reading_may_only_route(m):
     return ok and not also, (why, why2)
 
 
+def every_case_fits_its_entry(m):
+    """A case of a REGISTERED reading is re-askable: its state carries exactly
+    the fields the entry names, and its truth is a word the reading answers.
+
+    THE UNREGISTERED CASES ARE NOT JUDGED HERE and are not thereby unchecked:
+    rule-check#460's step 2 corpus lands before its readings do, one state per
+    pull request, so `report` counts them by reading until each entry
+    arrives."""
+    reg = entries(m)
+    bad = []
+    for name, entry in reg.items():
+        want = set(entry["state"]["fields"])
+        # WHICH WORDS A READING ANSWERS IS THE CUT'S, NOT THE TYPE'S. A
+        # `choice` cut on ONE option answers yes, no or unknown about that
+        # option, exactly as a `noul` does -- so the option cut is read first,
+        # and only a `choice` cut on the winner answers an option word.
+        if (entry.get("thresholds") or {}).get("option"):
+            words = {"yes", "no", "none"}
+        elif entry["question"]["type"] == m.CHOICE:
+            words = set(entry["question"]["criteria"]) | {"none"}
+        else:
+            words = {"yes", "no", "none"}
+        for c in m.read_corpus(name):
+            if c.get("reading") != name:
+                bad.append(f"{c.get('id')}: reading `{c.get('reading')}`")
+            got = set(c.get("state") or {})
+            if got != want:
+                bad.append(f"{c.get('id')}: state {sorted(got)}, entry names "
+                           f"{sorted(want)}")
+            truth = c.get("truth")
+            if isinstance(truth, str) and truth not in words:
+                bad.append(f"{c.get('id')}: truth `{truth}` is no word of "
+                           f"{sorted(words)}")
+    return not bad, bad
+
+
+def every_case_is_well_formed(m):
+    """Every case of every corpus file, registered or not: a case with no id,
+    no reading or no label source is one no reader can count."""
+    bad = []
+    for path in sorted((HERE / "jev" / "corpus").glob("*.jsonl")):
+        if path.stem.endswith(".changes"):
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            c = json.loads(line)
+            for field in ("id", "reading", "state", "truth", "label", "source",
+                          "role"):
+                if field not in c:
+                    bad.append(f"{path.name}:{i + 1} no `{field}`")
+            if (c.get("label") or {}).get("from") is None:
+                bad.append(f"{path.name}:{i + 1} no label source")
+            if c.get("role") not in ("case", "flip", "no-match"):
+                bad.append(f"{path.name}:{i + 1} role `{c.get('role')}`")
+            # A NUMBER WITHOUT ITS REPOSITORY NAMES NOTHING, in a case as in a
+            # log row: a member repository's numbers collide with this
+            # tracker's.
+            src = c.get("source") or {}
+            if any(k in src and src[k] is not None
+                   for k in ("issue", "pull_request", "comment_id")) \
+                    and not src.get("repo"):
+                bad.append(f"{path.name}:{i + 1} a number with no `repo`")
+    return not bad, bad[:20]
+
+
+CASES["every case of a registered reading fits its entry"] = every_case_fits_its_entry
+CASES["every case of every corpus file is well formed"] = every_case_is_well_formed
+
+
 def a_bad_entry_never_loads(m):
     """The bounds are read AT LOAD, so a registry file carrying a bad entry
     refuses on the way in rather than on the one call that would have acted."""
@@ -916,14 +986,9 @@ def band_key(entry, case):
     return case["truth"] if entry["question"]["type"] == "noul" else case.get("band")
 
 
-def measured(entry, raw):
-    """The number the band is over: a `noul`'s own value, a `choice`'s
-    confidence. NOT `campaign-jev.confidence`, which folds a `noul` to its
-    distance from the coin toss -- a band is over the value the model
-    returned."""
-    if raw is None:
-        return None
-    return raw.get("noul") if entry["question"]["type"] == "noul" else raw.get("confidence")
+# The number the band is over is `campaign-jev.band_value`'s, asked and never
+# restated: a suite that kept its own copy would measure a band the module does
+# not read.
 
 
 def live(record, wording_hash=None):
@@ -970,7 +1035,7 @@ def live(record, wording_hash=None):
                         c.get("state") or {}, q, log=False)
             model = r.model or model
             a = r.answers[name]
-            value = measured(entry, a.raw)
+            value = jev.band_value(entry, a.raw)
             print(f"  {c['id']:<28} {a.word:<12} "
                   f"{'--' if value is None else format(value, '.2f')}  "
                   f"truth {c['truth']}")
@@ -1065,7 +1130,7 @@ def live(record, wording_hash=None):
             for c in cases:
                 key = band_key(entry, c)
                 for s in c.get("seen") or []:
-                    value = measured(entry, s.get("raw"))
+                    value = jev.band_value(entry, s.get("raw"))
                     if (key and value is not None
                             and s.get("wording") == wording
                             and s.get("model") == jev.MODEL):

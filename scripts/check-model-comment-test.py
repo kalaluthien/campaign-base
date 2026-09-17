@@ -73,7 +73,9 @@ URL = f"http://127.0.0.1:{SERVER.server_address[1]}/v1/systemone"
 
 # THE FIXTURE CARRIES ONE OF EVERY SHAPE THE READER DECIDES BY, and the words
 # are chosen so the two code rules bite: `holds`'s second sentence shares only
-# the keyword `some` with its body, and `guard`'s comment is a section header.
+# the keyword `some` with its body, `guard`'s comment is a section header,
+# `steered`'s is a section header WITH A CLAIM UNDER IT, and `noted`'s shares
+# only the one-letter bound variable `a`.
 SPEC = """module fixture
 sig Agent {
   peer: lone Agent
@@ -83,6 +85,11 @@ sig Agent {
 pred holds[a: Agent] { some a.peer }
 /* ---------------- the guard ---------------- */
 pred guard[a: Agent] { no a.peer }
+/* ---------------- the section ----------------
+   A steered agent keeps its peer. */
+pred steered[a: Agent] { a.peer in Agent }
+-- The owner keeps a copy, and nobody else reads it.
+pred noted[a: Agent] { a in Agent }
 pred quiet[a: Agent] { a in Agent }
 -- Every Agent is an Agent, said twice over.
 fact everyAgent { all a: Agent | a in Agent }
@@ -155,7 +162,8 @@ def asked():
 def cut_definitions(t):
     got = {name: (comment, body) for _, name, comment, body, _, _
            in t.m.definitions({"spec/fixture/system.als": SPEC}, s1(t))}
-    return (sorted(got) == ["everyAgent", "guard", "holds", "quiet"]
+    return (sorted(got) == ["everyAgent", "guard", "holds", "noted", "quiet",
+                            "steered"]
             and got["holds"][0].startswith("An agent holds")
             and got["holds"][0].endswith("some person alone.")
             and got["everyAgent"][0] == "Every Agent is an Agent, said twice over."
@@ -189,6 +197,30 @@ def section_header_settled(t):
                                             s1(t)) if n == "guard")
     found, dropped = t.m.claims(comment, body, ENTRY["prefilter"], s1(t))
     return found == [] and [w for _, w in dropped] == ["a section-header comment"], (
+        found, dropped)
+
+
+def header_keeps_the_claim_under_it(t):
+    """A header carries no terminal stop, so it is never a sentence of its own:
+    read over the sentences it takes the claim below it with it."""
+    comment, body = next((c, b) for _, n, c, b, _, _
+                         in t.m.definitions({"spec/fixture/system.als": SPEC},
+                                            s1(t)) if n == "steered")
+    found, dropped = t.m.claims(comment, body, ENTRY["prefilter"], s1(t))
+    return (found == ["A steered agent keeps its peer."]
+            and [w for _, w in dropped] == ["a section-header comment"]), (
+        found, dropped)
+
+
+def one_letter_name_is_not_an_identifier(t):
+    """The article `a` against a bound `a` is not a sentence naming something
+    in the body, and the entry's pattern is what settles it."""
+    comment, body = next((c, b) for _, n, c, b, _, _
+                         in t.m.definitions({"spec/fixture/system.als": SPEC},
+                                            s1(t)) if n == "noted")
+    found, dropped = t.m.claims(comment, body, ENTRY["prefilter"], s1(t))
+    return (found == []
+            and [w for _, w in dropped] == ["names no identifier of the body"]), (
         found, dropped)
 
 
@@ -306,6 +338,8 @@ CASES = {
     "the body carries none of its own comment": body_has_no_comment,
     "claims: a sentence kept, one naming only a keyword settled": claims_cut_and_settled,
     "a section-header comment is settled and nothing is asked of it": section_header_settled,
+    "a header over a claim settles the header alone": header_keeps_the_claim_under_it,
+    "a sentence sharing only a one-letter bound name is settled": one_letter_name_is_not_an_identifier,
     "a staged body edit asks that definition alone": definition_touched,
     "a staged comment edit asks the definition under it": comment_touched,
     "a named fact is a definition here": a_fact_is_a_definition,
@@ -338,11 +372,18 @@ MUTATIONS = [
      'keywords = set(prefilter["keywords"])', "keywords = set()",
      "claims: a sentence kept, one naming only a keyword settled"),
     ("the identifier rule not read",
-     "elif not names & (set(word.findall(sentence)) - keywords):", "elif False:",
+     "if not names & (set(word.findall(sentence)) - keywords):", "if False:",
      "claims: a sentence kept, one naming only a keyword settled"),
     ("a section header read as a claim",
-     "if header.search(sentence):", "if False:",
+     "if header.search(line):", "if False:",
      "a section-header comment is settled and nothing is asked of it"),
+    ("the header read over the sentences rather than off the lines",
+     'for line in comment.split("\\n"):', "for line in [comment]:",
+     "a header over a claim settles the header alone"),
+    ("the identifier pattern not read from the entry",
+     'word = re.compile(prefilter["identifiers"])',
+     'word = re.compile(r"\\b[A-Za-z_]\\w*\\b")',
+     "a sentence sharing only a one-letter bound name is settled"),
     ("an untouched definition asked",
      "if not s1.overlaps(hunks.get(path, []), first, last):",
      "if True:",
@@ -358,6 +399,13 @@ MUTATIONS = [
      "s1.questions(entry, found), env=env)",
      "s1.questions(entry, found[:1]), env=env)",
      "one call a definition, every claim of it in that call"),
+    ("the answers never reported",
+     "s1.report(ask_all(entry, states, jev, s1, env), entry, out)", "pass",
+     "a contradicted claim is printed with its value, exit 0"),
+    ("the tier read as advise whatever the entry says",
+     "s1.report(ask_all(entry, states, jev, s1, env), entry, out)",
+     's1.report(ask_all(entry, states, jev, s1, env), dict(entry, tier="advise"), out)',
+     "at tier shadow the counts are printed and no claim"),
     ("a settled sentence left unlogged",
      "jev.skip(READER, f\"{path} `{name}`: {sentence}\", why, env=env)", "pass",
      "a sentence code settled is written as a skip row naming the rule"),

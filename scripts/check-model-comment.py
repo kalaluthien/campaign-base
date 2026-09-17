@@ -36,8 +36,7 @@ is judged is what the commit holds:
   claims      one sentence of that comment block, split by S1's `SENTENCE`
   asked       every definition a staged hunk overlaps, its comment included:
               one call a definition, one question a claim, all in one call
-  skipped     a section-header comment (`/* ---- name ---- */`), and a sentence
-              naming no identifier of the body; each is written as a skip row
+  skipped     what the entry's `prefilter` settles, each written as a skip row
               naming which rule removed it, so a count of what this reading
               covered can see what code settled
 
@@ -70,9 +69,11 @@ S1 = "check-cited-claims.py"
 DECL = re.compile(r"^\s*(?:private\s+)?(pred|fun|assert|fact)\s+(\w+)")
 SPEC = re.compile(r"spec/.+\.als")
 # The comment's own delimiters, off the text before it is cut into sentences: a
-# sentence that opens `/* Q13.` is the marker and the claim run together, and
-# `*/` at the end is a claim's last word to nobody.
-MARKER = re.compile(r"^[ \t]*(?:/\*+|--+|//+)[ \t]?|\*/[ \t]*$", re.M)
+# sentence that opens `/* Q13.` is the marker and the claim run together, `*/`
+# at the end is a claim's last word to nobody, and a block comment's `*` down
+# the left margin is a delimiter that SENTENCE will not split after, so two
+# sentences left carrying it become one claim.
+MARKER = re.compile(r"^[ \t]*(?:/\*+|--+|//+|\*(?!/))[ \t]?|\*/[ \t]*$", re.M)
 
 
 def definitions(texts, s1):
@@ -96,28 +97,36 @@ def definitions(texts, s1):
 
 
 def claims(comment, body, prefilter, s1):
-    """(the sentences to ask, [(sentence, why it was skipped)]).
+    """(the sentences to ask, [(line or sentence, why it was skipped)]).
 
     THE TWO CODE RULES OF THE ENTRY, in the order they are cheapest: a
     section-header comment is not a claim about anything, and a sentence naming
     no identifier of the body has nothing here to be true or false of.
 
-    AN ALLOY KEYWORD IS NOT AN IDENTIFIER OF THE BODY, and dropping the entry's
-    `keywords` from both sides is what makes the second rule mean its own name:
-    `all`, `no`, `one`, `in` and `set` are ordinary English too, so a sentence
-    sharing only those with the body names nothing in it."""
+    A HEADER IS A LINE AND NOT A SENTENCE, and taking it off the comment before
+    the sentences are cut is what keeps the rule to its own name: a header ends
+    with no `.`, so `SENTENCE` never splits it from the claim written under it,
+    and read over the sentences it settled that claim too.
+
+    AN ALLOY KEYWORD IS NOT AN IDENTIFIER OF THE BODY, nor is a one- or
+    two-letter word, and dropping both from either side is what makes the
+    second rule mean its own name: `all`, `no` and `set` are ordinary English,
+    and the article `a` matches a bound `a` in every body that has one."""
     header = re.compile(prefilter["section_header"])
     word = re.compile(prefilter["identifiers"])
     keywords = set(prefilter["keywords"])
     names = set(word.findall(body)) - keywords
-    asked, skipped = [], []
-    for sentence in s1.SENTENCE.split(" ".join(comment.split())):
+    asked, skipped, kept = [], [], []
+    for line in comment.split("\n"):
+        if header.search(line):
+            skipped.append((line.strip(), "a section-header comment"))
+        else:
+            kept.append(line)
+    for sentence in s1.SENTENCE.split(" ".join(" ".join(kept).split())):
         sentence = sentence.strip()
         if not sentence:
             continue
-        if header.search(sentence):
-            skipped.append((sentence, "a section-header comment"))
-        elif not names & (set(word.findall(sentence)) - keywords):
+        if not names & (set(word.findall(sentence)) - keywords):
             skipped.append((sentence, "names no identifier of the body"))
         else:
             asked.append(sentence)

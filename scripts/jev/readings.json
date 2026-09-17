@@ -777,9 +777,9 @@
    "body": "that definition's declaration and the block it opens, as the index holds it, its OWN comments blanked -- so the claim is never inside its own evidence, which is what separates this from `docstring-claims`, where `pred.text` carries the comment on purpose"
   },
   "prefilter": {
-   "what": "a staged hunk overlapping a pred, fun, assert or fact under spec/ -- its comment block included; any other commit asks nothing. Two sentences are settled here and written as skip rows naming which rule took them: one matching `section_header`, which titles a run of definitions and claims nothing about any one of them, and one sharing no `identifiers` word with the body, which has nothing here to be true or false of.",
+   "what": "a staged hunk overlapping a pred, fun, assert or fact under spec/ -- its comment block included; any other commit asks nothing. Two things are settled here and written as skip rows naming which rule took them: a comment LINE matching `section_header`, which titles a run of definitions and claims nothing about any one of them, taken off before the sentences are cut because a header ends with no stop and would otherwise carry the claim under it away; and a sentence sharing no `identifiers` word with the body, which has nothing here to be true or false of. `identifiers` is three letters or more on purpose: the article `a` matches a bound `a` in every body that has one.",
    "section_header": "-{3,}",
-   "identifiers": "\\b[A-Za-z_]\\w*\\b",
+   "identifiers": "\\b[A-Za-z_]\\w{2,}\\b",
    "keywords": ["Int", "abstract", "after", "all", "always", "and", "as", "assert", "before", "but", "check", "disj", "else", "enum", "exactly", "expect", "extends", "fact", "for", "fun", "historically", "iden", "if", "iff", "implies", "in", "int", "let", "lone", "meta", "module", "no", "none", "not", "once", "one", "open", "or", "pred", "private", "releases", "run", "seq", "set", "sig", "since", "some", "steps", "sum", "then", "this", "triggered", "univ", "until", "var"]
   },
   "question": {

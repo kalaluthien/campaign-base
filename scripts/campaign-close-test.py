@@ -595,7 +595,7 @@ def case_leave_self(m):
             and f"session     holds -- rc-worker-2 on {PANE}, of rc (#{N})" in out
             and f"detach      holds -- pid 4242 started, which is not the leave "
                 f"done: it sends /exit to {PANE} once this turn ends" in out
-            and f"{PANE} still open {m.WAIT_POLLS * m.WAIT_EVERY}s later was "
+            and f"{PANE} still open {2 * m.WAIT_POLLS * m.WAIT_EVERY}s later was "
                 f"refused, and the last line of {w['spawned'][0][1]} says which "
                 f"step" in out), out
 
@@ -610,15 +610,46 @@ def case_leave_handover(m):
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
 
 
+# The leaver's own turn, as the detached run's wait reads it poll by poll.
+TURN_OVER = {**LEAVER, "S2": dict(LEAVER["S2"], status="idle")}
+
+
 def case_leave_detached(m):
     """The caller held every gate; here each would refuse, and none is read."""
     w = leaves(slug=None, env={}, current=None,
-               polls=[(LEAVER, None), (LEFT, None)])
+               polls=[(TURN_OVER, None), (LEAVER, None), (LEFT, None)])
     code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
     return (code == 0 and not w["spawned"]
-            and [ln.split()[0] for ln in out.splitlines()] == ["exit", "gone", "tab"]
+            and [ln.split()[0] for ln in out.splitlines()] == ["idle", "exit", "gone", "tab"]
             and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_leave_detached_waits_for_its_turn(m):
+    """rule-check#481 NOTE 5718813306: `/exit` into a streaming turn cut it.
+    Two polls read the leaver working, the third idle, and only then `/exit`."""
+    w = leaves(polls=[(LEAVER, None), (LEAVER, None), (TURN_OVER, None),
+                      (TURN_OVER, None), (LEFT, None)])
+    code, out, asked, sleeps = drive(m, HANDOVER + ["--detached"], w)
+    lines = out.splitlines()
+    return (code == 0 and lines[0].split()[0] == "idle"
+            and f"poll 3: {PANE} reads idle" in lines[0]
+            and lines[1].split()[0] == "exit"
+            and sleeps == [m.WAIT_EVERY] * 3
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
+
+
+def case_leave_detached_ceiling(m):
+    """A turn that never ends: at the ceiling `/exit` goes all the same, and
+    the line says it may cut the turn."""
+    w = leaves(polls=[(LEAVER, None)] * m.WAIT_POLLS + [(LEFT, None)])
+    code, out, asked, sleeps = drive(m, HANDOVER + ["--detached"], w)
+    lines = out.splitlines()
+    return (code == 0 and lines[0].split()[0] == "idle"
+            and f"poll {m.WAIT_POLLS}: {PANE} is still listed" in lines[0]
+            and "the ceiling: /exit is sent all the same" in lines[0]
+            and len(sleeps) == m.WAIT_POLLS - 1
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
 
 
 def case_leave_tab_shared(m):
@@ -755,9 +786,10 @@ def settlement_empty(state):
 
 
 def chore(state="CLOSED", labels=("chore",), **over):
-    """A chore's worker leaving: `whole`'s directory and gates, the leave's
-    two polls, no sub-issue, and the campaign issue's own claim ref landed."""
-    over.setdefault("polls", [(LEAVER, None), (LEFT, None)])
+    """A chore's worker leaving: `whole`'s directory and gates, the detached
+    run's reading of its own turn as over, the leave's two polls, no
+    sub-issue, and the campaign issue's own claim ref landed."""
+    over.setdefault("polls", [(TURN_OVER, None), (LEAVER, None), (LEFT, None)])
     over.setdefault("live", live(vacant=[(CHORE_CLAIM, "landed as #99")]))
     return whole(state=state, labels=labels, settlement=settlement_empty(state),
                  **over)
@@ -778,7 +810,7 @@ def case_leave_chore_cleans_up(m):
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]
             and f"#{N} is a CLOSED chore, and the `chore` label "
                 "pre-authorises the clean-up" in out
-            and steps(out)[:4] == ["exit", "gone", "tab", "chore"]
+            and steps(out)[:5] == ["idle", "exit", "gone", "tab", "chore"]
             and "bound" in steps(out) and "installed" in steps(out)), out
 
 
@@ -789,7 +821,7 @@ def case_leave_ordinary_chains_nothing(m):
     code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
     return (code == 0 and w["dir"].exists() and not releases(asked)
             and not [a for a in asked if a[0] == sys.executable]
-            and steps(out) == ["exit", "gone", "tab"]), out
+            and steps(out) == ["idle", "exit", "gone", "tab"]), out
 
 
 def case_leave_chore_open(m):
@@ -1257,6 +1289,10 @@ CASES = {
         case_leave_handover,
     "leave: the detached run exits its pane, waits, and closes the tab":
         case_leave_detached,
+    "leave: the detached run waits for its own turn to end before /exit":
+        case_leave_detached_waits_for_its_turn,
+    "leave: at the wait's ceiling /exit is sent all the same, and said":
+        case_leave_detached_ceiling,
     "leave: a tab holding a second pane is refused, and not closed":
         case_leave_tab_shared,
     "leave: the spawned run leads a session of its own and writes the log":
@@ -1854,9 +1890,20 @@ MUTATIONS = [
     ("leave: another pane is not detached", "    if pane != own:\n        step_leave",
      "    if False:\n        step_leave",
      "leave: another pane, the handover, is left in the foreground"),
-    ("leave: the detached run reads no gate", "    if args.detached:\n        step_leave",
-     "    if False:\n        step_leave",
+    ("leave: the detached run reads no gate", "    if args.detached:\n        step_idle",
+     "    if False:\n        step_idle",
      "leave: the detached run exits its pane, waits, and closes the tab"),
+    ("leave: the detached run waits for idle", "    idle, note = wait_gone(pane, idle=True)",
+     "    idle, note = wait_gone(pane, idle=False)",
+     "leave: the detached run waits for its own turn to end before /exit"),
+    ("leave: done is idle too", 'IDLE = ("idle", "done")', 'IDLE = ("done",)',
+     "leave: the detached run waits for its own turn to end before /exit"),
+    ("leave: the ceiling is said", "the ceiling: \"\n        f\"{EXIT_TEXT} is sent all the same",
+     "\"\n        f\"{EXIT_TEXT} is sent",
+     "leave: at the wait's ceiling /exit is sent all the same, and said"),
+    ("leave: another pane's leave does not wait", "    if pane != own:\n        step_leave(pane, say)",
+     "    if pane != own:\n        step_idle(pane, say)\n        step_leave(pane, say)",
+     "leave: another pane, the handover, is left in the foreground"),
     ("leave: the pane defaults to its own", "pane = args.pane or own", "pane = args.pane",
      "leave: its own pane is left by a detached run of the same scope"),
     ("leave: the herdr guard is read", "    slug = slug_of(n)\n    gate_herdr(say)\n",

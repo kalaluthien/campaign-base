@@ -241,13 +241,24 @@ def main():
     # much as on an interrupt -- the explicit `rm` went when `wait` replaced
     # the second temp file. Deleting the trap line leaves every other case
     # green and leaks one file per commit, for the life of the machine.
-    for name, kw in (("a pull request already names it", {"prs": "9"}),
-                     ("no pull request names it", {}),
-                     ("gh would not run", {"gh_fails": True}),
-                     ("gh never answered", {"tries": 3, "gh_sleep": 2, "grace": 3})):
-        _r, _calls, _survived, left = run(commits=1, **kw)
-        check(f"no temp file is left behind when {name}", left == [],
-              f"left {left}")
+    # EACH CARRIES ITS PATH'S OWN MARKER, because an absence confirms whatever
+    # was already true: with only `left == []` all four stayed green when the
+    # fixture was misdirected so the function never ran at all. The marker says
+    # the path was taken; the empty directory then says what it left.
+    for name, kw, mark in (
+            ("a pull request already names it", {"prs": "9"},
+             lambda r: "gh pr create" not in r.stdout and "names it" not in r.stdout),
+            ("no pull request names it", {},
+             lambda r: "gh pr create" in r.stdout),
+            ("gh would not run", {"gh_fails": True},
+             lambda r: "could not tell whether a pull request" in r.stderr),
+            ("gh never answered", {"tries": 3, "gh_sleep": 2, "grace": 3},
+             lambda r: "did not answer" in r.stderr)):
+        r2, calls2, _survived, left = run(commits=1, **kw)
+        check(f"no temp file is left behind when {name}",
+              r2.returncode == 0 and calls2 and mark(r2) and left == [],
+              f"exit {r2.returncode} out {r2.stdout!r} err {r2.stderr!r} "
+              f"calls {calls2} left {left}")
 
     # mktemp CAN FAIL ON THE SECOND CALL, disk full mid-run, and a silent
     # return there is the same class of miss as the first-commit count was.

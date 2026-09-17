@@ -331,14 +331,19 @@ def claim_subcommands(root):
 # showed -- so the second pattern admits exactly `.claude/skills/<skill>/
 # scripts/fixtures/`, the skill's own scripts directory and no other
 # `scripts/fixtures/` a skill may hold under assets/ or references/.
-RECORDED = ("scripts/fixtures/", r"^\.claude/skills/[^/]+/scripts/fixtures/")
+# `scripts/jev/corpus/` is the third: each case's state is a comment or a
+# document as it was written, and a NOTE that named its raw output under
+# `runtime/` is the record of that NOTE (sdlc-alloy#458).
+RECORDED = ("scripts/fixtures/", "scripts/jev/corpus/",
+            r"^\.claude/skills/[^/]+/scripts/fixtures/")
 
 
 def is_recorded(path):
     """Whether `path` is a recorded corpus R3 stands down over: under the
-    root's scripts/fixtures/, or under a skill's own."""
-    root, skill = RECORDED
-    return path.startswith(root) or re.match(skill, path) is not None
+    root's scripts/fixtures/ or scripts/jev/corpus/, or under a skill's own
+    scripts/fixtures/."""
+    *roots, skill = RECORDED
+    return path.startswith(tuple(roots)) or re.match(skill, path) is not None
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 
@@ -738,7 +743,7 @@ def main():
               f"fixture names a path on purpose that is not there")
     if recorded:
         print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
-              f"{RECORDED[0]} or a skill's own (RECORDED): a corpus of calls that were really made "
+              f"{RECORDED[0]}, {RECORDED[1]} or a skill's own (RECORDED): a corpus of calls that were really made "
               f"is evidence, and a retired name in one records when it was "
               f"typed")
     unread = sum(1 for f in findings if f.startswith("R0\t"))

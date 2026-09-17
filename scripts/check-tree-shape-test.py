@@ -252,6 +252,11 @@ CASES = [
     ("R3 ...over any file in that directory, not one name",
      {"scripts/fixtures/older.jsonl":
       '{"command": "cat runtime/handover/7.md", "tool": "Bash"}\n'}, None),
+    ("R3 stands down over a Jev reading's corpus, whose states quote comments",
+     {"scripts/jev/corpus/research-bar.jsonl":
+      '{"state": {"note": "Raw: sdlc-alloy/runtime/458-jev-round3/doc/"}}\n'}, None),
+    ("R3 ...but not over the registry beside it",
+     {"scripts/jev/readings.json": '{"a": "runtime/holder"}\n'}, "R3b"),
     ("R3 ...but the exemption is the PATH and not the suffix",
      {"scripts/x.jsonl": '{"path": "runtime/holder"}\n'}, "R3b"),
     ("R4 still runs over a recorded path",

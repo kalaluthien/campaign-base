@@ -1034,6 +1034,111 @@ CASES["the thread join reads a later REVIEW on the review channel"] = join_reads
 CASES["fetch_thread asks the script that owns the thread read"] = fetch_thread_asks_the_thread_s_owner
 
 
+# ------------------------------------------------------ the commit-time subject
+# A COMMIT-TIME READING IS JUDGED BEFORE ITS OWN COMMIT EXISTS: the reader runs
+# at `pre-commit` over the index, so the sha it can name is the one it is
+# committing ONTO. These build a throwaway clone with its own `origin/main`, so
+# `fetch_commits` is read against real git and spends no network call.
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+           "PATH": os.environ.get("PATH", ""), "HOME": str(HOME),
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+CLONE = {}
+
+
+def a_clone():
+    """One throwaway clone, built once: `origin/main` carries three commits,
+    two of them on the file the join reads, and a fourth sits on a branch that
+    has never merged. Returns (the path, the shas by name)."""
+    if CLONE:
+        return CLONE["path"], CLONE["shas"]
+    path = ROOT / "clone"
+    path.mkdir()
+
+    def git(*a):
+        return subprocess.run(["git", "-C", str(path), *a], check=True,
+                              capture_output=True, text=True, env=GIT_ENV)
+
+    def commit(name, text, message):
+        (path / name).parent.mkdir(parents=True, exist_ok=True)
+        (path / name).write_text(text)
+        git("add", name)
+        git("commit", "-q", "-m", message)
+        return git("rev-parse", "HEAD").stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("remote", "add", "origin", "https://github.com/o/r.git")
+    shas = {"first": commit("spec/x.als", "pred a {}\n", "one"),
+            "other": commit("spec/y.als", "pred b {}\n", "two"),
+            "again": commit("spec/x.als", "pred a { no b }\n", "three")}
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    git("checkout", "-q", "-b", "side")
+    shas["unmerged"] = commit("spec/x.als", "pred a { some b }\n", "four")
+    git("checkout", "-q", "main")
+    CLONE.update(path=path, shas=shas)
+    return path, shas
+
+
+def fetch_commits_reads_one_file_s_later_commits(m):
+    """The fetch is read at a SHA AND A PATH, because the later fact is what
+    happened to that one file: the commits after the sha that touched it,
+    oldest first, and the file as `origin/main` holds it now. The window is
+    every commit after the sha, which is the clock a `no` is counted on."""
+    path, shas = a_clone()
+    got = m.fetch_commits("o/r", shas["first"], "spec/x.als", cwd=path)
+    other = m.fetch_commits("o/r", shas["first"], "spec/y.als", cwd=path)
+    return (got is not None and other is not None
+            and [c["sha"] for c in got["commits"]] == [shas["again"]]
+            and got["now"] == "pred a { no b }\n" and got["window"] == 2
+            and [c["sha"] for c in other["commits"]] == [shas["other"]]), \
+        (got, other)
+
+
+def fetch_commits_refuses_a_sha_that_has_not_reached_main(m):
+    """`<sha>..origin/main` over an unmerged claim is every commit main took
+    since the fork, not one of which is a later fact about this reading's own
+    change. Such a sha reads as None and the join COUNTS it, rather than
+    labelling the reading with somebody else's commit."""
+    path, shas = a_clone()
+    unmerged = m.fetch_commits("o/r", shas["unmerged"], "spec/x.als", cwd=path)
+    elsewhere = m.fetch_commits("o/other", shas["first"], "spec/x.als",
+                                cwd=path)
+    return unmerged is None and elsewhere is None, (unmerged, elsewhere)
+
+
+def the_subject_names_the_fetch_and_what_it_is_given(m):
+    """A row carries its join key as fields, so the subject is the field it
+    names. A commit-time row names TWO -- the sha and the path -- and a row
+    carrying a sha with no path is named as that, not parked under the one
+    word every other shape gets."""
+    bad = []
+    for row, want in (
+            ({"repo": "o/r", "issue": 9}, ("issue", "fetch", ("o/r", 9))),
+            ({"repo": "o/r", "pull_request": 9},
+             ("pull_request", "fetch_thread", ("o/r", 9))),
+            ({"repo": "o/r", "commit": "abc", "path": "spec/x.als"},
+             ("commit", "fetch_commits", ("o/r", "abc", "spec/x.als")))):
+        subject, how, given = m.subject_of(row)
+        if (subject, how, ("o/r",) + given) != want:
+            bad.append((row, (subject, how, given), want))
+    for row, fragment in (({"commit": "abc", "path": "p"}, "repo"),
+                          ({"repo": "o/r", "commit": "abc"}, "path"),
+                          ({"repo": "o/r"}, "repo")):
+        try:                 # a row that lacks a field is NAMED, never raised on
+            subject, why, given = m.subject_of(row)
+        except Exception as e:  # noqa: BLE001 -- the failure this asserts
+            bad.append((row, f"{e.__class__.__name__}: {e}", fragment))
+            continue
+        if subject is not None or fragment not in why:
+            bad.append((row, (subject, why, given), fragment))
+    return not bad, bad
+
+
+CASES["fetch_commits reads one file's later commits and the file now"] = fetch_commits_reads_one_file_s_later_commits
+CASES["fetch_commits refuses a sha that has not reached origin/main"] = fetch_commits_refuses_a_sha_that_has_not_reached_main
+CASES["a row's subject names the fetch and what it is given"] = the_subject_names_the_fetch_and_what_it_is_given
+
+
 def join_writes_one_case_for_one_row(m):
     """Run twice, and the second run writes nothing: a case is keyed by the
     call and the reading, so a join that ran again would otherwise double every
@@ -1252,6 +1357,25 @@ def a_key_names_its_repository(m):
     return not bad, bad
 
 
+def a_commit_key_names_its_repository_and_its_path(m):
+    """A commit-time reading judges ONE FILE'S text at a sha it is committing
+    onto, so its key is the sha AND the path. A sha with no repository names
+    no checkout to read it in, and a sha with no path names no later fact: the
+    join would have to guess its way around a whole commit's diff."""
+    bad = []
+    for key, fragment in (({"commit": "abc", "path": "spec/x.als"}, "repo"),
+                          ({"repo": "o/r", "commit": "abc"}, "path")):
+        try:
+            m.judge("issue-shape", {"title": "t", "body": "b"}, key=key,
+                    env=env(url=CLOSED), timeout=1)
+        except ValueError as e:
+            if fragment not in str(e):
+                bad.append((key, str(e)))
+            continue
+        bad.append((key, f"took a commit key with no `{fragment}`"))
+    return not bad, bad
+
+
 def waiting(m, rows, now=None, reg=None):
     """The two forms of the waiting line over one temp log and an empty
     corpus, so the log's rows are the only thing that moves between calls."""
@@ -1373,6 +1497,7 @@ CASES["the join reads the kind label the owner set"] = join_reads_the_kind_label
 CASES["a row the join cannot label stays in the log and is counted"] = join_keeps_what_it_cannot_label
 CASES["joining twice writes one case"] = join_writes_one_case_for_one_row
 CASES["a join key names its repository beside every number"] = a_key_names_its_repository
+CASES["a commit key names its repository and its path"] = a_commit_key_names_its_repository_and_its_path
 
 
 def refused(m, entry, fragment, name="a-reading"):
@@ -2335,6 +2460,26 @@ MUTATIONS = [
      '        if str(thread.get("state", "")).upper() != "MERGED":',
      "        if False:",
      "the thread join waits for the merge where nothing was re-raised"),
+    # --- the commit-time subject ---
+    ("the whole commit read where one file was judged",
+     '                  f"{sha}..origin/main", "--", path)',
+     '                  f"{sha}..origin/main")',
+     "fetch_commits reads one file's later commits and the file now"),
+    ("a sha read wherever it has not reached main",
+     '        if git("merge-base", "--is-ancestor", sha,\n'
+     '               "origin/main").returncode != 0:',
+     "        if False:",
+     "fetch_commits refuses a sha that has not reached origin/main"),
+    ("a sha read in whichever checkout the call was made from",
+     "    return root if repo_of(out.stdout) == repo else None",
+     "    return root",
+     "fetch_commits refuses a sha that has not reached origin/main"),
+    ("a subject taken with a field of its key missing",
+     "    if missing:", "    if False:",
+     "a row's subject names the fetch and what it is given"),
+    ("a commit key taken with no repository and no path",
+     '    if "commit" in key:', "    if False:",
+     "a commit key names its repository and its path"),
     # --- the store of answers ---
     ("the store never read",
      "    stored, word = (cache_read(cache_key(state, questions), env, cwd) if cache\n"
@@ -2530,11 +2675,11 @@ MUTATIONS = [
      '            "state": row.get("state") or {}, "truth": truth,',
      "the join writes the reading's own slice of the state"),
     ("a subject that will not read counted as waiting",
-     "        if fetched[(subject, repo, number)] is None:",
+     "        if fetched[at] is None:",
      "        if False:",
      "a row whose subject will not read is skipped, counted and named"),
     ("the subject fetched once per row instead of once per subject",
-     "        if (subject, repo, number) not in fetched:",
+     "        if at not in fetched:",
      "        if True:",
      "a row whose subject will not read is skipped, counted and named"),
     ("an unplaced case skipped in silence",

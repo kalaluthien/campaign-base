@@ -1182,7 +1182,12 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     `key` is the join key AS FIELDS -- `repo`, `issue`, and `comment` or
     `pull_request` where there is one -- because every join is "the later fact
     on that number" and a number inside a label is not a field anything can
-    read. `flag` is what the reader computed from the answers,
+    read. A COMMIT-TIME READER'S KEY IS `repo`, `commit` AND `path`: it judges
+    one file's text at `pre-commit`, before its own commit exists, so the sha
+    it can name is the one it is committing onto and the later fact is what
+    happened to that file after it.
+
+    `flag` is what the reader computed from the answers,
     {"code": ..., "moved_by": ...}: the flag and which answer moved it. It may
     be a CALLABLE `(reading, raw) -> flag`, because a reader cannot compute a
     flag from answers it has not got back yet.
@@ -1209,6 +1214,20 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
             f"campaign-jev: the join key names {', '.join(numbered)} with no "
             f"`repo`; a number alone names no issue when a member "
             f"repository's numbers collide with this tracker's")
+    # A COMMIT-TIME READING IS KEYED BY THE SHA AND THE PATH, and by both. The
+    # reader runs at `pre-commit` over the index, so the sha it can name is the
+    # one it is committing ONTO and the path is the file it judged; the later
+    # fact is what happened to THAT FILE after THAT COMMIT. A sha with no
+    # repository names no checkout to read it in, and a sha with no path leaves
+    # the join guessing its way around a whole commit's diff.
+    if "commit" in key:
+        for field in ("repo", "path"):
+            if not key.get(field):
+                raise ValueError(
+                    f"campaign-jev: the join key names `commit` with no "
+                    f"`{field}`; a commit-time reading judges one file's text "
+                    f"at the sha it is committing onto, so its key is the "
+                    f"repository, the sha and the path, and all three")
     settled = dict(settled or {})
     for name in settled:
         if name not in entries:
@@ -1479,13 +1498,129 @@ def join_thread_refinding(row, thread):
                else "none of these findings raised again"), "")
 
 
+def repo_of(url):
+    """`owner/name` out of a git remote URL, or "". Both spellings git writes:
+    `https://github.com/owner/name.git` and `git@github.com:owner/name.git`."""
+    found = re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?/*$", (url or "").strip())
+    return found.group(1) if found else ""
+
+
+def clone_of(repo, cwd=None):
+    """This machine's checkout of `repo`, or None.
+
+    THE BASE IS THE ONE CHECKOUT A JOIN CAN COUNT ON. A member repository's
+    clone lives under a campaign directory -- git-ignored scratch a close
+    sweeps -- so a join that read one would answer differently depending on
+    which campaigns happen to be open on the day it ran. A sha in any other
+    repository reads as None and the join COUNTS it as a subject that would not
+    read, which is the same treatment a deleted issue gets and never a guess."""
+    root = base_root(cwd)
+    if root is None:
+        return None
+    try:
+        out = subprocess.run(["git", "-C", str(root), "remote", "get-url",
+                              "origin"], capture_output=True, text=True,
+                             timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return root if repo_of(out.stdout) == repo else None
+
+
+def fetch_commits(repo, sha, path, timeout=60, cwd=None):
+    """What happened to one file after one commit, or None.
+
+    {commits: [{sha, paths}] touching `path` after `sha`, oldest first;
+     now: the file as `origin/main` holds it, or None where it is gone;
+     window: how many commits `sha..origin/main` holds at all}
+
+    THE ONE FETCH for a commit-time reading, as `fetch_issue` is for an issue
+    and `fetch_thread` for a pull request, so an offline suite stubs one
+    function per subject. It asks GITHUB NOTHING: the later fact here is the
+    history, and git holds that whole and for free.
+
+    IT IS READ AT A SHA AND A PATH, never a sha alone, because the later fact
+    is what happened to ONE FILE and the file as `origin/main` holds it now is
+    half of it. `window` is the other clock: how much history has passed at
+    all, so a join can tell "nobody has touched it yet" from "nobody touched it
+    in the twenty commits since".
+
+    A SHA THAT HAS NOT REACHED `origin/main` READS AS None. `<sha>..origin/main`
+    over an unmerged claim is every commit main took since the fork, not one of
+    which is a later fact about this reading's own change; a join over it would
+    label the reading with somebody else's commit.
+
+    IT READS THE LOCAL `origin/main` AND FETCHES NOTHING. A clone behind the
+    remote sees fewer later commits and a shorter window, which costs a label
+    and can never write a wrong one: every missing later fact leaves the row
+    waiting in the log, where the next run picks it up."""
+    root = clone_of(repo, cwd)
+    if root is None:
+        return None
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root), *args],
+                              capture_output=True, text=True, timeout=timeout)
+
+    try:
+        if git("merge-base", "--is-ancestor", sha,
+               "origin/main").returncode != 0:
+            return None
+        window = git("rev-list", "--count", f"{sha}..origin/main")
+        log = git("log", "--reverse", "--format=%H", "--name-only",
+                  f"{sha}..origin/main", "--", path)
+        now = git("show", f"origin/main:{path}")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if window.returncode != 0 or log.returncode != 0:
+        return None
+    commits, at = [], None
+    for line in log.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if re.fullmatch(r"[0-9a-f]{40}", line):
+            at = {"sha": line, "paths": []}
+            commits.append(at)
+        elif at is not None:
+            at["paths"].append(line)
+    return {"commits": commits, "window": int(window.stdout.strip() or 0),
+            "now": now.stdout if now.returncode == 0 else None}
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
          "filing-parent-slug": join_filing_parent_slug}
-# WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
-# join key as FIELDS, so the subject is the field it names and never a guess.
-SUBJECTS = {"issue": "fetch", "pull_request": "fetch_thread"}
+# WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
+# fields it is given after the repository). A row carries its join key as
+# FIELDS, so the subject is the field it names and never a guess. A commit-time
+# row names TWO, because no sha alone names a file.
+SUBJECTS = {"issue": ("fetch", ("issue",)),
+            "pull_request": ("fetch_thread", ("pull_request",)),
+            "commit": ("fetch_commits", ("commit", "path"))}
+
+
+def subject_of(row):
+    """(the subject field, the fetch's name, what it is given after the repo)
+    for one row -- or (None, why not, ()).
+
+    THE SECOND HALF IS WHY A ROW NAMES WHAT IT LACKS. Every shape used to park
+    under one sentence about `repo` and a number, which said nothing to a row
+    carrying a sha and no path; the reason travels beside the verdict here so
+    `corpus join` prints the one that fits."""
+    repo = row.get("repo")
+    subject = next((s for s in SUBJECTS if row.get(s)), None)
+    if not repo or subject is None:
+        return None, (f"the row carries no repo and "
+                      f"{' or '.join(SUBJECTS)} field"), ()
+    how, fields = SUBJECTS[subject]
+    missing = [f for f in fields if not row.get(f)]
+    if missing:
+        return None, (f"the row's `{subject}` key carries no "
+                      f"{', '.join(f'`{f}`' for f in missing)}"), ()
+    return subject, how, tuple(row[f] for f in fields)
 
 
 # ------------------------------------------------------------------ the corpus
@@ -1571,15 +1706,13 @@ def cmd_corpus_join(args):
         if ref in known.get(name, set()):
             continue
         entry, repo = reg[name], row.get("repo")
-        subject = next((s for s in SUBJECTS if row.get(s)), None)
-        if not repo or subject is None:
-            waiting.append((row, f"the row carries no repo and "
-                                 f"{' or '.join(SUBJECTS)} field"))
+        subject, how, given = subject_of(row)
+        if subject is None:
+            waiting.append((row, how))
             continue
-        number = row[subject]
-        if (subject, repo, number) not in fetched:
-            fetched[(subject, repo, number)] = getattr(
-                args, SUBJECTS[subject])(repo, number)
+        at = (subject, repo) + given
+        if at not in fetched:
+            fetched[at] = getattr(args, how)(repo, *given)
         # A SUBJECT THAT WILL NOT READ AT ALL IS SKIPPED, COUNTED AND NAMED,
         # and it does not fail the run. It is not "not labelled yet" either:
         # the shared log holds hundreds of rows whose subject is a suite's
@@ -1587,12 +1720,12 @@ def cmd_corpus_join(args):
         # waiting asks a reader to go and fix a number that cannot move. Each
         # fetch is made ONCE per subject, so a repository that is gone costs
         # one `gh` call however many rows name it.
-        if fetched[(subject, repo, number)] is None:
-            unfetched.setdefault(f"{repo}#{number}", 0)
-            unfetched[f"{repo}#{number}"] += 1
+        if fetched[at] is None:
+            named = f"{repo}#{'/'.join(str(g) for g in given)}"
+            unfetched.setdefault(named, 0)
+            unfetched[named] += 1
             continue
-        truth, evidence, why = JOINS[entry["join"]](
-            row, fetched[(subject, repo, number)])
+        truth, evidence, why = JOINS[entry["join"]](row, fetched[at])
         if truth is None:
             waiting.append((row, why))
             continue
@@ -2210,7 +2343,7 @@ def main(argv):
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])
     p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
-                   fetch_thread=fetch_thread)
+                   fetch_thread=fetch_thread, fetch_commits=fetch_commits)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

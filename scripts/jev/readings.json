@@ -1,83 +1,153 @@
 {
- "why": "THE ONE HOME OF A QUESTION. Every reading Jev makes for this tree is declared here as data -- what is asked, what the words mean, which state fields it is asked over, what code settles first, the cuts its answer is read against, and the tier at which it lands. `scripts/campaign-jev.py` is the one caller and this is the one place a question is written; a suite refuses a question written anywhere else. An entry holds STRUCTURE ONLY: no advice, no lesson, no prose about how to ask well -- that is the `asking-jev` skill's references, and what is true of one reading alone lives beside its cases in corpus/<reading>.*.",
- "fields": {
-  "owner": "the script and subcommand whose reading this is",
-  "tier": "shadow logs only, advise prints, act does a reversible thing; moved only by a DECISION",
-  "group": "one group is one state and ONE call: every question of the group goes in it, used or not",
-  "state": "the fields a reader must pass; the caller refuses a missing or an extra one",
-  "prefilter": "what code settles first; the reader passes settled=<word> and the log counts it",
-  "question": "type, instructions and criteria, as the model is sent them",
-  "thresholds": "the cuts the caller branches on; absent is legal at shadow alone",
-  "act": "required at tier act: what it does, how it is undone, act_over, ask_over",
-  "join": "the function that labels a logged call later, campaign-jev.py corpus join",
-  "bands": "the model, the date, the computed wording hash, and the band each word was measured into"
- },
- "readings": {
-  "verb-first": {
-   "owner": "scripts/campaign-tracker.py check",
-   "tier": "advise",
-   "group": "issue-shape",
-   "state": {
-    "fields": ["title", "body"],
-    "why": "the body is not free -- the same title scored 0.57 alone and 0.70 beside its body (rule-check#455) -- and the body is what work-kind, the other reading of this group, is answered from"
+ "docstring-claims": {
+  "owner": "scripts/check-docstring-claims.py --staged",
+  "tier": "shadow",
+  "group": "docstring-claim",
+  "state": {
+   "fields": [
+    "paragraph",
+    "pred"
+   ],
+   "paragraph": "one blank-line-delimited paragraph of a Python docstring under a scripts/ directory, as written",
+   "pred": {
+    "name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
+    "text": [
+     "comment",
+     "declaration",
+     "callees",
+     "fields"
+    ]
    },
-   "prefilter": {"what": "none yet: no pattern separates a verb-first title from a noun-first one"},
-   "question": {
-    "type": "noul",
-    "instructions": "Does the issue title in `title` open with an imperative verb naming a mission to carry out?",
-    "criteria": {
-     "true": {
-      "what": "The title opens with an imperative verb telling somebody to carry out a mission: an order given, not a description of one.",
-      "examples": [
-       "Cache the weather feed for ten minutes",
-       "Retire the two queues nothing reads"
-      ]
-     },
-     "false": {
-      "what": "The title opens with anything else -- a noun naming a thing or a component, a statement about how something behaves, or a question.",
-      "examples": [
-       "The nightly job runs twice on the first of the month",
-       "merge waits on a review that never arrives",
-       "Why is the staging cache colder than production's?"
-      ]
-     }
-    }
-   },
-   "thresholds": {"yes_over": 0.70, "no_under": 0.55},
-   "join": "issue-title-kept",
-   "bands": {
-    "model": "jev-1.13.0",
-    "measured": "",
-    "wording": "",
-    "declared": {}
+   "claims": {
+    "sentences_holding": "`<pred.name>`",
+    "split_at": [
+     "; "
+    ],
+    "definition_at": [
+     ": ",
+     ", which is to say "
+    ]
    }
   },
-  "work-kind": {
-   "owner": "scripts/campaign-tracker.py check",
-   "tier": "advise",
-   "group": "issue-shape",
-   "state": {
-    "fields": ["title", "body"],
-    "why": "what kind of work a sub-issue asks for cannot be read off its title"
-   },
-   "prefilter": {"what": "the `kind:<k>` label, where the issue carries one: the owner's word, and the reader passes it as `settled`"},
-   "question": {
-    "type": "choice",
-    "instructions": "What kind of work does the sub-issue in `title` and `body` ask for?",
-    "criteria": {
-     "research": "answer an open question, or measure or audit something that already runs",
-     "development": "build something new under a specification, or find out whether an approach can work at all",
-     "maintenance": "keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it",
-     "none": "not a unit of work at all"
+  "prefilter": {
+   "what": "a staged change to a spec/ pred, fun or assert, or to a docstring paragraph citing one; any other commit asks nothing"
+  },
+  "question": {
+   "type": "choice",
+   "per": "claim",
+   "instructions": "Is `claim` about `pred.name` true of the Alloy definition in `pred.text`?",
+   "criteria": {
+    "supports": {
+     "what": "the definition makes `claim` true",
+     "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"
+    },
+    "contradicts": {
+     "what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
+     "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"
+    },
+    "says_nothing": {
+     "what": "the definition neither makes `claim` true nor false",
+     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"
     }
-   },
-   "thresholds": {"floor": 0.6, "no_match": "none"},
-   "join": "issue-kind-label",
-   "bands": {
-    "model": "jev-1.13.0",
-    "measured": "2026-09-17",
-    "wording": "9ed8bf08ffac",
-    "declared": {"confident": [0.68, 1.0], "unsure": [0.0, 0.5]}
+   }
+  },
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {}
+ },
+ "verb-first": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "advise",
+  "group": "issue-shape",
+  "state": {
+   "fields": [
+    "title",
+    "body"
+   ],
+   "why": "the body is not free -- the same title scored 0.57 alone and 0.70 beside its body (rule-check#455) -- and the body is what work-kind, the other reading of this group, is answered from"
+  },
+  "prefilter": {
+   "what": "none yet: no pattern separates a verb-first title from a noun-first one"
+  },
+  "question": {
+   "type": "noul",
+   "instructions": "Does the issue title in `title` open with an imperative verb naming a mission to carry out?",
+   "criteria": {
+    "true": {
+     "what": "The title opens with an imperative verb telling somebody to carry out a mission: an order given, not a description of one.",
+     "examples": [
+      "Cache the weather feed for ten minutes",
+      "Retire the two queues nothing reads"
+     ]
+    },
+    "false": {
+     "what": "The title opens with anything else -- a noun naming a thing or a component, a statement about how something behaves, or a question.",
+     "examples": [
+      "The nightly job runs twice on the first of the month",
+      "merge waits on a review that never arrives",
+      "Why is the staging cache colder than production's?"
+     ]
+    }
+   }
+  },
+  "thresholds": {
+   "yes_over": 0.7,
+   "no_under": 0.55
+  },
+  "join": "issue-title-kept",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "",
+   "wording": "",
+   "declared": {}
+  }
+ },
+ "work-kind": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "advise",
+  "group": "issue-shape",
+  "state": {
+   "fields": [
+    "title",
+    "body"
+   ],
+   "why": "what kind of work a sub-issue asks for cannot be read off its title"
+  },
+  "prefilter": {
+   "what": "the `kind:<k>` label, where the issue carries one: the owner's word, and the reader passes it as `settled`"
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "What kind of work does the sub-issue in `title` and `body` ask for?",
+   "criteria": {
+    "research": "answer an open question, or measure or audit something that already runs",
+    "development": "build something new under a specification, or find out whether an approach can work at all",
+    "maintenance": "keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it",
+    "none": "not a unit of work at all"
+   }
+  },
+  "thresholds": {
+   "floor": 0.6,
+   "no_match": "none"
+  },
+  "join": "issue-kind-label",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-17",
+   "wording": "9ed8bf08ffac",
+   "declared": {
+    "confident": [
+     0.68,
+     1.0
+    ],
+    "unsure": [
+     0.0,
+     0.5
+    ]
    }
   }
  }

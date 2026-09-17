@@ -67,11 +67,11 @@ scripts/install-hooks.sh
 
 It installs the `pre-commit` that chains the machine-wide no-commits-on-`main`
 guard with this repository's own guards (the `# runs:` line the installer
-writes is the one list), the `post-commit` that pushes a campaign branch on
-its first commit, and the harness claim guard in `~/.claude/settings.json`. It
+writes is the one list), the `post-commit` and `post-merge` that push a campaign branch on
+its first commit and on a merge, and the harness claim guard in `~/.claude/settings.json`. It
 refuses rather than overwrites a hook it did not write, with one exception it
 announces: the shims `acquire-repo.sh` leaves in a clone -- its pre-commit, in
-either of two shapes, and its post-commit -- which it adopts because the hooks
+either of two shapes, and its two push hooks -- which it adopts because the hooks
 it writes run the same guard, the same claim gate and the same push.
 
 A delegate clone gets its hooks from `acquire-repo.sh`. Where the repository

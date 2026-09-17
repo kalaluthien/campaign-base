@@ -424,7 +424,7 @@ docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository
 and reads none of this one's settings. **A member repository ships no installer,
-so its clone gets the commit gate and the post-commit push from
+so its clone gets the commit gate and the post-commit and post-merge push from
 `acquire-repo.sh`** instead, by absolute path into this base; before that it got the no-main-commits guard alone and
 every shell write there landed unjudged.
 
@@ -464,7 +464,7 @@ whose docstring says what is long and what is exempt: find the lines with
 **Weigh the setup against the work**: the delegate's price is paid per launch, so
 for the base it is the mode of last resort. All modes share the mechanics —
 the branch is claimed by `campaign-claim take` after the issue exists, because the
-number is minted there; the `post-commit` hook pushes; it lands by a pull request.
+number is minted there; the `post-commit` and `post-merge` hooks push; it lands by a pull request.
 **Write atomic commits with a search-optimized message and land them without
 waiting to be asked**, since work is not finished until it is merged and pushed.
 **A hook is never bypassed**, and `scripts/check-campaign-claim.py` refuses the

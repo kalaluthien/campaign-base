@@ -176,7 +176,7 @@
     <dl>
       <dt>Next step</dt><dd>commit on the claim branch in the checkout it names, then open the pull request at once, its body closing the sub-issue by full name, <code>Closes kalaluthien/campaign-base#&lt;issue&gt;</code></dd>
       <dt>Who</dt><dd>the worker</dd>
-      <dt>Settled by</dt><dd>the <code>pre-commit</code> hook's <code>scripts/check-commit-claim.py</code>, which refuses a commit on campaign work whose branch is not a claim; the <code>post-commit</code> hook's <code>scripts/push-campaign-branch.sh</code>, which pushes and says what happened</dd>
+      <dt>Settled by</dt><dd>the <code>pre-commit</code> hook's <code>scripts/check-commit-claim.py</code>, which refuses a commit on campaign work whose branch is not a claim; the <code>post-commit</code> and <code>post-merge</code> hooks' <code>scripts/push-campaign-branch.sh</code>, which pushes and says what happened</dd>
     </dl>
     <p>The push has already published the branch, so a late pull request only hides published work. The open pull request is where the review writes its findings, and it outlives the session that opened it.</p>
     <details>

@@ -54,6 +54,11 @@ THE THRESHOLDS ARE THE CALLER'S, and they are two numbers and not one:
           option alone missed a no-match answered at low confidence, and a floor
           alone let a confident wrong option through. `confidence` measures how
           concentrated the distribution is, not whether the option set fits.
+  option  a `choice` naming one `option` is instead cut on that option's own
+          probability, by `yes_over` and `no_under` as a `noul` is: `yes` the
+          option holds, `no` it does not, the gap `unknown`. For a reading that
+          flags one option -- a claim `contradicts` its evidence -- where the
+          winner and its confidence would hide a strong second.
 
 Every threshold is set from cases of the tree's own history, one of which fits
 no option, and asserted as a BAND: the same request comes back a few hundredths
@@ -224,14 +229,20 @@ def branch(spec, raw):
         return UNKNOWN, (f"the response answered a `{raw.get('type')}` where a "
                          f"`{kind}` was asked")
     if kind == NOUL:
-        value = raw.get(NOUL)
+        value, what = raw.get(NOUL), "noul"
+    elif "option" in spec:
+        probabilities = raw.get("probabilities")
+        value = (probabilities.get(spec["option"])
+                 if isinstance(probabilities, dict) else None)
+        what = f"P({spec['option']})"
+    if kind == NOUL or "option" in spec:
         if not isinstance(value, (int, float)):
-            return UNKNOWN, f"the answer carries no `{NOUL}` value"
+            return UNKNOWN, f"the answer carries no {what} value"
         if value >= spec["yes_over"]:
             return "yes", ""
         if value <= spec["no_under"]:
             return "no", ""
-        return UNKNOWN, (f"noul {value:.2f} sits in the gap between "
+        return UNKNOWN, (f"{what} {value:.2f} sits in the gap between "
                          f"{spec['no_under']:.2f} and {spec['yes_over']:.2f}, "
                          f"where yes and no are both live")
     option, confidence = raw.get(CHOICE), raw.get("confidence")

@@ -11,8 +11,9 @@ The herdr stub answers `agent list`, `agent prompt` and `pane read`, logs
 every prompt, and refuses everything else -- so a case passes only if the
 reading came from the transcript and GitHub, and of the pane only its input
 box, which `pane read` shows as Claude Code draws it. The gh stub answers the
-sub-issue's parent, the campaign's slug and `## Repos`, its claim refs and
-the events feed, where the pane's last sub-issue's ref went at T1. "The
+sub-issue's parent and state, the campaign's labels (slug and binding) and
+`## Repos`, its claim refs and the events feed, where the pane's last
+sub-issue's ref went at T1; a `hostname` stub names this machine `here`. "The
 assignment was sent" is asserted on what herdr was ASKED, never on an exit
 status. How the transcript and the feed are read -- order, forgery, a prefix,
 a tag -- is campaign-heartbeat-test.py's, since those readers are the
@@ -56,12 +57,12 @@ FRESH = [said(T0, "hello")]
 RULE = "\u2500" * 40
 # Claude Code's input box as `herdr pane read --source detection` shows it,
 # the top rule carrying the session's name as a live pane's did 2026-09-13.
-SCREEN = ("\u273b Baked for 20s\n\n" + RULE[:30] + " machinery-worker-2 \u2500\n"
+SCREEN = ("\u273b Baked for 20s\n\n" + RULE[:30] + " rc-worker-2 \u2500\n"
           "\u276f%s\n" + RULE + "\n  -- INSERT -- \u23f5\u23f5 auto mode on\n")
 
 
-def agent(sid, name, pane, status="idle"):
-    return {"agent_session": {"value": sid}, "name": name, "cwd": "/tmp",
+def agent(sid, name, pane, status="idle", cwd="/tmp"):
+    return {"agent_session": {"value": sid}, "name": name, "cwd": cwd,
             "pane_id": pane, "agent_status": status}
 
 
@@ -88,11 +89,13 @@ exit 1
 GH = r'''#!%s
 import json, sys
 a, T = sys.argv[1:], "repos/kalaluthien/campaign-base"
-standing = %r
+standing, state, labels = %r, %r, %r
+if a[:2] == ["issue", "view"] and "state,stateReason" in a:
+    print(state); sys.exit(0)
 if a[:2] == ["issue", "view"] and "parent" in a:
     print("7"); sys.exit(0)
 if a[:2] == ["api", T + "/issues/7"]:
-    print('["campaign", "campaign:rc"]'); sys.exit(0)
+    print(json.dumps(labels)); sys.exit(0)
 if a[:3] == ["issue", "view", "7"]:
     print("## Repos\n\n- none\n"); sys.exit(0)
 if a[:2] == ["api", T + "/git/matching-refs/heads/rc/"]:
@@ -107,14 +110,18 @@ sys.stderr.write("gh shim: refusing %%s\n" %% a); sys.exit(1)
 '''
 
 
+BOUND_HERE = ["campaign", "campaign:rc", "bound:here"]
+
+
 def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False,
-          screen=SCREEN % ""):
+          screen=SCREEN % "", state="OPEN ", labels=BOUND_HERE):
     """A PATH holding only the stubs, and a HOME whose transcript for `sid`
     holds `records` (no file at all when None). PATH is this directory ALONE,
     so a call that escaped the stubs would run nothing rather than silently
     reaching the real herdr and driving somebody's pane. `standing` leaves
     a ref of rc#9 on the remote; `screen` is what `pane read` shows, an empty
-    input box by default."""
+    input box by default; `state` is the sub-issue's `state stateReason` and
+    `labels` the campaign issue's."""
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True, exist_ok=True)
@@ -122,8 +129,10 @@ def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False,
     (b / "herdr").write_text(
         HERDR % (str(d / "prompts.log"), listing, prompt_exit, screen))
     (b / "herdr").chmod(0o755)
-    (b / "gh").write_text(GH % (sys.executable, standing, T1))
+    (b / "gh").write_text(GH % (sys.executable, standing, state, labels, T1))
     (b / "gh").chmod(0o755)
+    (b / "hostname").write_text("#!/bin/sh\necho here\n")
+    (b / "hostname").chmod(0o755)
     for tool in ("sh", "cat", "printf", "python3", "git"):
         found = shutil.which(tool)
         if found and not (b / tool).exists():
@@ -156,13 +165,13 @@ def assign(args, path_dir):
 
 
 def pure_cases(m):
-    rows = {"S1": {"name": "machinery-worker-1", "status": "idle",
+    rows = {"S1": {"name": "rc-worker-1", "status": "idle",
                    "cwd": "/tmp", "pane": "w1:p1"},
-            "S2": {"name": "machinery-worker-2", "status": "working",
+            "S2": {"name": "rc-worker-2", "status": "working",
                    "cwd": "/tmp", "pane": "w1:p2"}}
     row, note = m.row_for(rows, "w1:p2")
     check("row_for finds the row by pane, not by position",
-          row is not None and row["name"] == "machinery-worker-2", note)
+          row is not None and row["name"] == "rc-worker-2", note)
     check("...and carries its session id, which names the transcript",
           row is not None and row["sid"] == "S2", repr(row))
     row, note = m.row_for(rows, "w9:p9")
@@ -224,8 +233,8 @@ def pure_cases(m):
 
 
 def end_to_end_cases():
-    rows = [agent("S1", "machinery-worker-1", "w1:p1"),
-            agent("S2", "machinery-worker-2", "w1:p2")]
+    rows = [agent("S1", "rc-worker-1", "w1:p1"),
+            agent("S2", "rc-worker-2", "w1:p2")]
 
     with tempfile.TemporaryDirectory() as d:
         # ALLOW: idle, compacted since its last sub-issue's ref went. On the
@@ -346,8 +355,8 @@ def end_to_end_cases():
 
         # REFUSE: not idle, with a transcript that would have admitted it.
         busy = shims(Path(d) / "busy",
-                     [agent("S1", "machinery-worker-1", "w1:p1"),
-                      agent("S2", "machinery-worker-2", "w1:p2",
+                     [agent("S1", "rc-worker-1", "w1:p1"),
+                      agent("S2", "rc-worker-2", "w1:p2",
                             status="working")], COMPACTED)
         r = assign(["w1:p2", "198"], busy)
         out = r.stdout + r.stderr
@@ -414,11 +423,115 @@ def end_to_end_cases():
               f"exit {r.returncode}: {out[:300]}")
 
 
+def clone_behind(d, behind):
+    """A clone of a two-commit `main`, its own `main` `behind` commits back
+    (0 or 1). Built with plumbing, so no commit hook of this machine runs;
+    `origin/main` stays at the tip until the script's own fetch reads it."""
+    d = Path(d)
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    git = lambda *a, **kw: subprocess.run(["git", *a], capture_output=True,
+                                          text=True, env=env, check=True,
+                                          **kw).stdout.strip()
+    up, pane = d / "up", d / "pane"
+    git("init", "-q", "-b", "main", str(up))
+    tree = git("-C", str(up), "write-tree")
+    c1 = git("-C", str(up), "commit-tree", tree, "-m", "one")
+    c2 = git("-C", str(up), "commit-tree", tree, "-p", c1, "-m", "two")
+    git("-C", str(up), "update-ref", "refs/heads/main", c2)
+    git("clone", "-q", str(up), str(pane))
+    git("-C", str(pane), "reset", "-q", "--hard", c2 if behind == 0 else c1)
+    return pane
+
+
+def launch_cases():
+    """THE LAUNCH READINGS (rule-check#461, `sessionLaunch`): an open
+    sub-issue, of a campaign bound to this machine, prompted into a session
+    named for that campaign, whose checkout is not behind `origin/main`. One
+    refusal and one allow each; the allow for the first three is the ordinary
+    assignment above, asserted here on what it said it read."""
+    rows = [agent("S2", "rc-worker-2", "w1:p2")]
+    with tempfile.TemporaryDirectory() as d:
+        ok = shims(Path(d) / "ok", rows, COMPACTED)
+        r = assign(["w1:p2", "198"], ok)
+        out = r.stdout + r.stderr
+        check("an open sub-issue of a campaign bound here, into a pane named "
+              "for it, is assigned, saying each reading",
+              r.returncode == 0 and "#198 is OPEN" in out
+              and "bound here" in out and "rc-worker-2 is of `rc`" in out
+              and len(prompts(ok)) == 1, f"exit {r.returncode}: {out[:500]}")
+        check("...and a pane checkout that is no git work tree is said and "
+              "skipped", "not a git work tree" in out, out[:600])
+
+        closed = shims(Path(d) / "closed", rows, COMPACTED,
+                       state="CLOSED COMPLETED")
+        r = assign(["w1:p2", "198", "--force"], closed)
+        out = r.stdout + r.stderr
+        check("a closed sub-issue is refused, --force or not",
+              r.returncode == 1 and "#198 is CLOSED as COMPLETED" in out
+              and prompts(closed) == [], f"exit {r.returncode}: {out[:300]}")
+
+        away = shims(Path(d) / "away", rows, COMPACTED,
+                     labels=["campaign", "campaign:rc", "bound:other"])
+        r = assign(["w1:p2", "198", "--force"], away)
+        out = r.stdout + r.stderr
+        check("a campaign bound to another machine is refused, --force or not",
+              r.returncode == 1 and "bound elsewhere" in out
+              and prompts(away) == [], f"exit {r.returncode}: {out[:300]}")
+
+        other = shims(Path(d) / "otherc",
+                      [agent("S2", "zz-worker-2", "w1:p2")], COMPACTED)
+        r = assign(["w1:p2", "198", "--force"], other)
+        out = r.stdout + r.stderr
+        check("a pane named for another campaign is refused, naming both",
+              r.returncode == 1 and "`zz`" in out and "`rc`" in out
+              and prompts(other) == [], f"exit {r.returncode}: {out[:300]}")
+        noname = shims(Path(d) / "noname",
+                       [agent("S2", "scratch", "w1:p2")], COMPACTED)
+        r = assign(["w1:p2", "198", "--force"], noname)
+        check("...and so is a pane whose name says no campaign",
+              r.returncode == 1 and prompts(noname) == [],
+              f"exit {r.returncode}: {(r.stdout + r.stderr)[:300]}")
+
+        behind = clone_behind(Path(d) / "gb", 1)
+        late = shims(Path(d) / "late",
+                     [agent("S2", "rc-worker-2", "w1:p2", cwd=str(behind))],
+                     COMPACTED)
+        r = assign(["w1:p2", "198", "--force"], late)
+        out = r.stdout + r.stderr
+        check("a pane checkout on main and behind origin/main is refused, "
+              "--force or not, naming the count and the checkout",
+              r.returncode == 1 and "1 commit(s) behind origin/main" in out
+              and str(behind) in out and prompts(late) == [],
+              f"exit {r.returncode}: {out[:400]}")
+        level = clone_behind(Path(d) / "gl", 0)
+        even = shims(Path(d) / "even",
+                     [agent("S2", "rc-worker-2", "w1:p2", cwd=str(level))],
+                     COMPACTED)
+        r = assign(["w1:p2", "198"], even)
+        out = r.stdout + r.stderr
+        check("...and one level with origin/main is assigned, saying so",
+              r.returncode == 0 and "0 commit(s) behind origin/main" in out
+              and len(prompts(even)) == 1, f"exit {r.returncode}: {out[:400]}")
+        subprocess.run(["git", "-C", str(behind), "checkout", "-q", "-b",
+                        "rc/198-x"], check=True)
+        topic = shims(Path(d) / "topic",
+                      [agent("S2", "rc-worker-2", "w1:p2", cwd=str(behind))],
+                      COMPACTED)
+        r = assign(["w1:p2", "198"], topic)
+        out = r.stdout + r.stderr
+        check("...while a checkout on any other branch is said and skipped, "
+              "since a claim behind main is normal",
+              r.returncode == 0 and "on rc/198-x, not main" in out
+              and len(prompts(topic)) == 1, f"exit {r.returncode}: {out[:400]}")
+
+
 def main():
     m = harness.load(ASSIGN, "campaign_assign")
 
     pure_cases(m)
     end_to_end_cases()
+    launch_cases()
     return harness.report()
 
 

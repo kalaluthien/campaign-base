@@ -807,8 +807,15 @@ class Watch:
 # THE CORPUS GROWS ONLY IF SOMEBODY IS TOLD IT HAS STOPPED. A Jev reading's log
 # rows become cases when `campaign-jev.py corpus join` runs, and nobody
 # remembers to run it, so the one line naming what is waiting -- rows unjoined
-# and the age of the oldest, cases unlabelled, readings short of the evidence
-# row -- rides on every tick beside the other drifts.
+# and whether the oldest has aged, cases unlabelled, readings short of the
+# evidence row -- rides on every tick beside the other drifts.
+#
+# IT IS ASKED IN ITS `--steady` FORM, which carries no count. A changed line is
+# an EVENT in every campaign's watch, and the exact form's count moved on every
+# call -- two log rows per `campaign-tracker check` -- so it re-fired every
+# planner on this machine every few minutes with nothing for any of them to do
+# (DECISION 5718621461). The exact counts are `report --waiting` for whoever
+# asks.
 #
 # IT NEVER FAILS THE HEARTBEAT. The heartbeat is what a planner reads to know
 # the campaign is alive; a reader of a corpus must not be able to take that
@@ -816,7 +823,7 @@ class Watch:
 def jev_waiting():
     try:
         out = run(str(BASE / "scripts" / "campaign-jev.py"), "report",
-                  "--waiting", timeout=20)
+                  "--waiting", "--steady", timeout=20)
         first = (out.stdout.splitlines() or [""])[0].strip()
     except Exception:  # noqa: BLE001 -- a reader of the corpus, never a gate
         return set()

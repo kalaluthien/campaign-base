@@ -1810,8 +1810,11 @@ def main():
               and all("check-research-bar.py" in x for x in lines),
               (out(r)[:300], lines[:2]))
 
-        # R3: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,
-        # one call per finding, labelled with the reviewer's own word.
+        # R3, R4: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,
+        # one call per finding labelled with the reviewer's own word, AND TO
+        # check-finding-site.py, which reads the named file at the named sha IN
+        # THE POST'S CHECKOUT: the sha is the fixture tree's own, which the
+        # directory this suite runs from does not hold.
         def logged(path, want, polls):
             for _ in range(polls):
                 got = path.read_text().splitlines() if path.exists() else []
@@ -1819,19 +1822,31 @@ def main():
                     break
                 time.sleep(0.2)
             return [json.loads(x) for x in got]
+        tree = f.trees["demo/7-x"]
+        head = subprocess.run(["git", "-C", str(tree), "rev-parse", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+        named = next(p for p in subprocess.run(
+            ["git", "-C", str(tree), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True, text=True).stdout.split() if p.endswith(".py"))
         review_log = Path(d) / "review.log"
-        r = ask(f.trees["demo/7-x"], tool="Bash",
+        r = ask(tree, tool="Bash",
                 env=dict(env, CAMPAIGN_JEV_LOG=str(review_log)),
-                command="gh pr comment 7 -b 'REVIEW demo-worker-1: at abcdef1\n\n"
-                        "1. defect, a.py:3 -- the parser drops the last line of "
+                command=f"gh pr comment 7 -b 'REVIEW demo-worker-1: at {head}\n\n"
+                        f"1. defect, {named}:1 -- the parser drops the last line of "
                         "every file it reads\n2. refinement, the docstring names "
                         "a flag the code no longer has'")
-        rows = logged(review_log, 2, 100)
+        rows = logged(review_log, 4, 100)
         check("a REVIEW on a pull request logs one finding-sort call per "
               "finding, labelled with the reviewer's word",
-              sorted(x["read"] for x in rows)
-              == ["tracker#7 REVIEW f1 defect", "tracker#7 REVIEW f2 refinement"]
-              and all(x["reader"] == "check-finding-sort.py" for x in rows),
+              sorted(x["read"] for x in rows if x["reader"] == "check-finding-sort.py")
+              == ["tracker#7 REVIEW f1 defect", "tracker#7 REVIEW f2 refinement"],
+              (out(r)[:300], rows))
+        check("a REVIEW on a pull request logs a finding-site call at the site "
+              "read in the post's checkout, and a skip for a finding naming none",
+              sorted((x["read"], x.get("skipped")) for x in rows
+                     if x["reader"] == "check-finding-site.py")
+              == [("tracker#7 REVIEW f1 " + named + ":1", None),
+                  ("tracker#7 REVIEW f2", "the finding names no path:line")],
               (out(r)[:300], rows))
         # A NOTE ON A PULL REQUEST IS NO RESEARCH NOTE: the stub would call
         # issue 7 research, so a hand-off by first word alone logs within
@@ -3994,7 +4009,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 616
+    EXPECTED = 617
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

@@ -123,5 +123,33 @@
   "join": null,
   "bands": {},
   "lessons": []
+ },
+ "finding-site": {
+  "owner": "scripts/check-finding-site.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "finding-site",
+  "state": {
+   "fields": ["finding", "slice"],
+   "finding": "one finding of a REVIEW comment as check-finding-sort.py's findings() cuts it, the reviewer's own word masked to [label]",
+   "slice": "the file at the reviewed sha, 40 lines each side of the first path:line the finding names, each line numbered"
+  },
+  "prefilter": {"what": "a comment opening REVIEW, posted with gh pr comment, whose first line names a sha the checkout holds; a finding with no path:line that resolves there asks nothing and logs a skip"},
+  "question": {
+   "type": "choice",
+   "per": "finding",
+   "instructions": "Does the code in `slice` make the claim `finding` makes about it true?",
+   "criteria": {
+    "supports": {"what": "the code in the slice is as the finding describes it: the problem it names is there",
+                 "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i > limit: break' in a loop that should include limit"},
+    "contradicts": {"what": "the code in the slice is not as the finding describes it: the problem it names is absent, or the code already does what it asks",
+                    "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i >= limit + 1: break' with a test that the last item is kept"},
+    "says_nothing": {"what": "the slice does not show the code the finding is about",
+                     "example": "finding 'parse.py:12 -- the usage line names --dry'; slice lines 1-40 hold only imports and a class with no usage text"}
+   }
+  },
+  "thresholds": {"option": "contradicts", "yes_over": 0.5, "no_under": 0.2},
+  "join": null,
+  "bands": {},
+  "lessons": []
  }
 }

@@ -777,7 +777,11 @@ def cmd_corpus_join(args):
             "label": {"from": f"join:{entry['join']}",
                       "at": datetime.date.today().isoformat(),
                       "evidence": evidence},
-            "source": {"kind": "log", "ref": ref},
+            # THE PREFILTER'S WORD TRAVELS WITH THE CASE, so `report` can say
+            # what share of the work code did: a case Jev never saw is still a
+            # case, and counting it as one Jev got right would flatter it.
+            "source": {"kind": "log", "ref": ref, "settled": row.get("settled"),
+                       "flag": row.get("flag")},
             "role": "case",
             "seen": ([{"model": row.get("answered") or "", "at": row.get("at"),
                        "wording": row.get("wording"), "word": row.get("branch"),

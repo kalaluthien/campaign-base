@@ -331,14 +331,23 @@ def claim_subcommands(root):
 # showed -- so the second pattern admits exactly `.claude/skills/<skill>/
 # scripts/fixtures/`, the skill's own scripts directory and no other
 # `scripts/fixtures/` a skill may hold under assets/ or references/.
-RECORDED = ("scripts/fixtures/", r"^\.claude/skills/[^/]+/scripts/fixtures/")
+#
+# `scripts/jev/corpus/` IS THE SAME KIND OF RECORD one directory over
+# (rule-check#455): each line carries an issue body as it was WRITTEN, so it
+# spells whatever that body spelled -- `scripts/campaign-settlement` before the
+# extension rule, `runtime/holder` before the file was retired. A case edited to
+# please R3 is a case of a state nobody ever sent, which is the one thing a
+# regression corpus may not be.
+RECORDED = ("scripts/fixtures/", r"^\.claude/skills/[^/]+/scripts/fixtures/",
+            "scripts/jev/corpus/")
 
 
 def is_recorded(path):
     """Whether `path` is a recorded corpus R3 stands down over: under the
-    root's scripts/fixtures/, or under a skill's own."""
-    root, skill = RECORDED
-    return path.startswith(root) or re.match(skill, path) is not None
+    root's scripts/fixtures/, under a skill's own, or the Jev corpus."""
+    root, skill, jev = RECORDED
+    return (path.startswith(root) or path.startswith(jev)
+            or re.match(skill, path) is not None)
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 
@@ -738,7 +747,7 @@ def main():
               f"fixture names a path on purpose that is not there")
     if recorded:
         print(f"  R3 stood down for {len(recorded)} recorded path(s) under "
-              f"{RECORDED[0]} or a skill's own (RECORDED): a corpus of calls that were really made "
+              f"{RECORDED[0]}, {RECORDED[2]} or a skill's own (RECORDED): a corpus of calls that were really made "
               f"is evidence, and a retired name in one records when it was "
               f"typed")
     unread = sum(1 for f in findings if f.startswith("R0\t"))

@@ -17,20 +17,27 @@ then broken in turn by a mutation of the script's own text and must go red by
 its own assertion, because a case that cannot fail is a case that proves
 nothing.
 
-`--live` is the other half and is opt-in: it runs
-`scripts/fixtures/jev-cases.json` -- cases of this tracker's own history, one of
-which is not a unit of work at all -- against the real endpoint, asking
-`campaign-tracker.py`'s OWN questions through `judgment_questions` rather than
-rebuilding them, so what is measured is what production sends. It asserts a
-BAND per group and never a float, since the same request comes back a few
-hundredths apart: every case must land in its group's DECLARED band, and each
-of `campaign-tracker.py`'s thresholds must sit strictly between the two
-declared bands it separates. That is what makes a threshold measured rather
-than chosen. `--record` widens the declared bands to hold an excursion and
-writes them, the observed bands, the date and the answering model back into the
-fixture.
+It also reads the COMMITTED REGISTRY, `scripts/jev/readings.json`: every entry
+carries what a reader branches on, a reading with no thresholds is at `shadow`
+alone, one at `act` declares what it does and how it is undone and stays inside
+the four bounds on an act, a declared wording is its question's hash, and no
+Jev question is written anywhere else in this tree.
 
-Usage: scripts/campaign-jev-test.py [--live [--record]]
+`--live` is the other half and is opt-in: it runs
+`scripts/jev/corpus/<reading>.jsonl` -- cases of this tracker's own history,
+one of which fits no option and one of which is a flip -- against the real
+endpoint, asking the REGISTRY'S OWN question rather than a copy built here, so
+what is measured is what production sends. It asserts a BAND per band key and
+never a float, since the same request comes back a few hundredths apart: every
+case must land in its DECLARED band, and each cut must sit strictly between the
+two declared bands it separates. That is what makes a threshold measured rather
+than chosen. `--record` widens the declared bands to hold an excursion, writes
+them with the wording hash and the date into the entry, and appends one `seen`
+row per case. `--wording <hash>` asks a retired wording from
+`scripts/jev/wordings.json` instead, which is how a criteria change gets its
+before-and-after numbers.
+
+Usage: scripts/campaign-jev-test.py [--live [--record] [--wording <hash>]]
 """
 import contextlib
 import datetime
@@ -50,7 +57,8 @@ check = harness.check
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-jev.py"
 SOURCE = SCRIPT.read_text()
-FIXTURE = HERE / "fixtures" / "jev-cases.json"
+REGISTRY = HERE / "jev" / "readings.json"
+WORDINGS = HERE / "jev" / "wordings.json"
 MODEL = "jev-1.13.0"
 
 ROOT = Path(tempfile.mkdtemp(prefix="campaign-jev-"))
@@ -565,154 +573,156 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
-def live(record):
-    """The fixture against the real endpoint.
+def band_key(entry, case):
+    """Which band a case belongs to: a `noul`'s is its truth, a `choice`'s is
+    how decided the answer should be. A case that fits no option belongs to
+    neither -- it is the no-match evidence and is reported on its own."""
+    if case.get("role") == "no-match" or case.get("truth") == "none":
+        return None
+    return case["truth"] if entry["question"]["type"] == "noul" else case.get("band")
 
-    THE FIXTURE DECLARES THE BANDS AND THIS ASSERTS THEM. Every case must land
-    inside its group's declared band, and each of `campaign-tracker.py`'s
-    thresholds must sit STRICTLY between the two declared bands it separates.
-    A recorded band no assertion reads is a number that drifts in silence,
-    which is what these were before: the declared band is the contract, the
-    observed one is the last run and says nothing on its own.
 
-    `--record` widens the declared bands to hold this run. Widening past a
-    threshold turns the assertion below red, which is the drift alarm: nothing
-    here quietly moves a cut to fit new data."""
+def measured(entry, raw):
+    """The number the band is over: a `noul`'s own value, a `choice`'s
+    confidence. NOT `campaign-jev.confidence`, which folds a `noul` to its
+    distance from the coin toss -- a band is over the value the model
+    returned."""
+    if raw is None:
+        return None
+    return raw.get("noul") if entry["question"]["type"] == "noul" else raw.get("confidence")
+
+
+def live(record, wording_hash=None):
+    """THE CORPUS AGAINST THE REAL ENDPOINT, asked with the REGISTRY'S OWN
+    question -- never a copy built here, which drifted within one round the
+    last time this suite kept one.
+
+    THE ENTRY DECLARES THE BANDS AND THIS ASSERTS THEM. Every case must land
+    inside its band, and each cut must sit STRICTLY between the two declared
+    bands it separates. That is what makes a threshold measured rather than
+    chosen. `--record` widens the declared bands to hold this run, writes the
+    wording hash and the date into the entry, and appends one `seen` row per
+    case -- appends, because a band is read from the run history and a run that
+    overwrote the one before it would erase the evidence of drift.
+
+    `--wording <hash>` asks a RETIRED wording from `scripts/jev/wordings.json`
+    instead, which is how a criteria change gets its before-and-after numbers
+    and how a reading comes to have been seen under two wordings."""
     jev = load(SOURCE)
-    tracker = harness.load(HERE / "campaign-tracker.py", "campaign_tracker")
-    cases = json.loads(FIXTURE.read_text())
-    groups = cases["groups"]
+    reg = jev.load_registry()
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     model = ""
-
-    # ---------------------------------------------------------- verb-first
-    seen = {"yes": [], "no": []}
-    outside = []
-    declared = groups["verb-first"].get("declared") or {}
-    # THE QUESTIONS ARE PRODUCTION'S OWN, asked from `judgment_questions` and
-    # never rebuilt here. A hand-built copy drifted within one round: `check`
-    # gained `criteria` for the `noul` and this measured the question without
-    # it, which would have declared a band for a call nobody makes.
-    asked = tracker.judgment_questions(True)
-    q = {"verb_first": asked["verb_first"]}
-    for c in groups["verb-first"]["cases"]:
-        # THE STATE IS PRODUCTION'S, title and body together and untruncated:
-        # the body moves the title's answer, so a band measured on the title
-        # alone, or on a body cut mid-word, is a band for a call never made.
-        r = jev.ask("campaign-jev-test.py --live", c["id"],
-                    {"title": c["title"], "body": c["body"]}, q)
-        model = r.model or model
-        raw = r.answers["verb_first"].raw
-        if raw is None:
-            check(f"live verb-first {c['id']} answered", False, r.answers)
-            continue
-        seen[c["truth"]].append(raw["noul"])
-        if not record and not inside(raw["noul"], declared.get(c["truth"])):
-            outside.append((c["id"], raw["noul"], c["truth"],
-                            declared.get(c["truth"])))
-        print(f"  {c['id']:<8} noul {raw['noul']:.2f}  truth {c['truth']}")
-    check("live: every verb-first case answered",
-          len(seen["yes"]) + len(seen["no"])
-          == len(groups["verb-first"]["cases"]),
-          (len(seen["yes"]), len(seen["no"])))
-    print(f"  verb-first seen: yes {band(seen['yes'])}  no {band(seen['no'])}"
-          f"  declared {declared}")
-
-    # ----------------------------------------------------------- work-kind
-    conf = {"confident": [], "unsure": []}
-    kout, wrong, nomatch, floor_only = [], [], [], []
-    kdeclared = groups["work-kind"].get("declared") or {}
-    q = {"work_kind": asked["work_kind"]}
-    for c in groups["work-kind"]["cases"]:
-        r = jev.ask("campaign-jev-test.py --live", c["id"],
-                    {"title": c["title"], "body": c["body"]}, q)
-        model = r.model or model
-        got = r.answers["work_kind"]
-        raw = got.raw
-        if raw is None:
-            check(f"live work-kind {c['id']} answered", False, r.answers)
-            continue
-        print(f"  {c['id']:<10} {raw['choice']:<12} conf {raw['confidence']:.2f}"
-              f"  truth {c['truth']}  -> {got.word}")
-        if c["truth"] == "unknown":
-            nomatch.append((c["id"], raw["choice"], raw["confidence"], got.word))
-            continue
-        conf[c["band"]].append(raw["confidence"])
-        if not record and not inside(raw["confidence"], kdeclared.get(c["band"])):
-            kout.append((c["id"], raw["confidence"], c["band"],
-                         kdeclared.get(c["band"])))
-        if c["band"] == "confident" and raw["choice"] != c["truth"]:
-            wrong.append((c["id"], raw["choice"], raw["confidence"], c["truth"]))
-        if c["band"] == "unsure":
-            floor_only.append((c["id"], raw["choice"], got.word))
-    print(f"  work-kind seen: confident {band(conf['confident'])}  "
-          f"unsure {band(conf['unsure'])}  declared {kdeclared}")
-
-    # ------------------------------------------------------- the assertions
-    # EACH DECLARED BAND HAS ONE EDGE THAT CARRIES THE CLAIM, the one facing
-    # its threshold, and the fixture declares the other at the extreme: a `no`
-    # answered lower, or a `confident` answered higher, moves away from the cut
-    # and says nothing it is about. Asserting both edges cost a false alarm
-    # the first time an `unsure` case answered 0.14 against a 0.15 declared.
-    check("live: every verb-first case landed in its declared band",
-          not outside, outside)
-    check("live: every work-kind case landed in its declared band",
-          not kout, kout)
-    # THE THRESHOLDS AGAINST THE DECLARED BANDS, not against this run: a cut
-    # measured against the run that just happened moves with it.
-    check("live: the no-verb cut sits above the whole declared `no` band",
-          bool(declared.get("no"))
-          and declared["no"][1] < tracker.VERB_FIRST_NO_UNDER,
-          (declared.get("no"), tracker.VERB_FIRST_NO_UNDER))
-    check("live: the verb-first cut sits below the whole declared `yes` band",
-          bool(declared.get("yes"))
-          and tracker.VERB_FIRST_YES_OVER < declared["yes"][0],
-          (tracker.VERB_FIRST_YES_OVER, declared.get("yes")))
-    check("live: the two verb-first cuts do not cross",
-          tracker.VERB_FIRST_NO_UNDER <= tracker.VERB_FIRST_YES_OVER,
-          (tracker.VERB_FIRST_NO_UNDER, tracker.VERB_FIRST_YES_OVER))
-    check("live: the floor sits above the whole declared `unsure` band",
-          bool(kdeclared.get("unsure"))
-          and kdeclared["unsure"][1] < tracker.WORK_KIND_FLOOR,
-          (kdeclared.get("unsure"), tracker.WORK_KIND_FLOOR))
-    check("live: the floor sits below the whole declared `confident` band",
-          bool(kdeclared.get("confident"))
-          and tracker.WORK_KIND_FLOOR < kdeclared["confident"][0],
-          (tracker.WORK_KIND_FLOOR, kdeclared.get("confident")))
-    check("live: every confident kind names the label the owner set",
-          not wrong, wrong)
-    # THE TWO WAYS A `choice` COMES BACK UNKNOWN, TOLD APART. Both branches
-    # print the same word, so a case that asserted only the word would pass
-    # with either one dead.
-    check("live: the case fitting no option is unknown BY the no-match option",
-          bool(nomatch) and all(o == tracker.WORK_KIND_NO_MATCH and w == "unknown"
-                                for _i, o, _c, w in nomatch), nomatch)
-    check("live: an unsure case is unknown by the FLOOR, naming a real option",
-          bool(floor_only)
-          and all(o != tracker.WORK_KIND_NO_MATCH and o in tracker.WORK_KINDS
-                  and w == "unknown" for _i, o, w in floor_only), floor_only)
+    for name, entry in sorted(reg.items()):
+        cases = jev.read_corpus(name)
+        check(f"live: {name} has cases", bool(cases), len(cases))
+        spec = jev.question_of(entry)
+        wording = jev.wording(entry)
+        if wording_hash:
+            retired = json.loads(WORDINGS.read_text())["wordings"]
+            if wording_hash not in retired:
+                check(f"live: wording {wording_hash} is on file", False,
+                      sorted(retired))
+                continue
+            spec = dict(retired[wording_hash]["question"])
+            spec.update(entry.get("thresholds") or {})
+            wording = wording_hash
+            if retired[wording_hash]["reading"] != name:
+                continue
+        q = {name: spec}
+        declared = (entry.get("bands") or {}).get("declared") or {}
+        seen, outside, wrong, nomatch, flips = {}, [], [], [], []
+        for c in cases:
+            r = jev.ask("campaign-jev-test.py --live", c["id"],
+                        c.get("state") or {}, q, log=False)
+            model = r.model or model
+            a = r.answers[name]
+            value = measured(entry, a.raw)
+            print(f"  {c['id']:<28} {a.word:<12} "
+                  f"{'--' if value is None else format(value, '.2f')}  "
+                  f"truth {c['truth']}")
+            if record:
+                c.setdefault("seen", []).append(
+                    {"model": r.model, "wording": wording, "at": at,
+                     "word": a.word, "raw": a.raw})
+            key = band_key(entry, c)
+            if c.get("role") == "no-match":
+                nomatch.append((c["id"], a.word, value))
+                continue
+            if c.get("role") == "flip":
+                flips.append((c["id"], a.word, c["truth"]))
+            if value is None:
+                check(f"live {name} {c['id']} answered", False, (a.word, a.why))
+                continue
+            if key:
+                seen.setdefault(key, []).append(value)
+                if not record and not inside(value, declared.get(key)):
+                    outside.append((c["id"], value, key, declared.get(key)))
+            if entry["question"]["type"] == "choice" and key == "confident" \
+                    and a.raw.get("choice") != c["truth"]:
+                wrong.append((c["id"], a.raw.get("choice"), c["truth"]))
+        if record:
+            jev.write_corpus(name, cases)
+        print(f"  {name} seen: "
+              + "  ".join(f"{k} {band(v)}" for k, v in sorted(seen.items()))
+              + f"  declared {declared}")
+        check(f"live: every {name} case landed in its declared band",
+              not outside, outside)
+        check(f"live: every confident {name} answer names the truth",
+              not wrong, wrong)
+        # THE FLIP IS THE CASE THAT SAYS THE READING READS THE STATE, not the
+        # shape of the corpus: the judged thing was changed and the answer has
+        # to move with it.
+        check(f"live: every {name} flip case answers its flipped truth",
+              bool(flips) and all(w == t for _i, w, t in flips), flips)
+        check(f"live: the {name} case fitting no option is not answered",
+              bool(nomatch) and all(w == "unknown" for _i, w, _v in nomatch),
+              nomatch)
+        cuts = entry.get("thresholds") or {}
+        if not record and cuts and declared:
+            if entry["question"]["type"] == "noul":
+                check(f"live: {name}'s no cut sits above the whole declared "
+                      f"`no` band",
+                      bool(declared.get("no"))
+                      and declared["no"][1] < cuts["no_under"],
+                      (declared.get("no"), cuts.get("no_under")))
+                check(f"live: {name}'s yes cut sits below the whole declared "
+                      f"`yes` band",
+                      bool(declared.get("yes"))
+                      and cuts["yes_over"] < declared["yes"][0],
+                      (cuts.get("yes_over"), declared.get("yes")))
+                check(f"live: {name}'s two cuts do not cross",
+                      cuts["no_under"] <= cuts["yes_over"],
+                      (cuts.get("no_under"), cuts.get("yes_over")))
+            else:
+                check(f"live: {name}'s floor sits above the whole declared "
+                      f"`unsure` band",
+                      bool(declared.get("unsure"))
+                      and declared["unsure"][1] < cuts["floor"],
+                      (declared.get("unsure"), cuts.get("floor")))
+                check(f"live: {name}'s floor sits below the whole declared "
+                      f"`confident` band",
+                      bool(declared.get("confident"))
+                      and cuts["floor"] < declared["confident"][0],
+                      (cuts.get("floor"), declared.get("confident")))
+        if record and not wording_hash:
+            reg[name]["bands"]["declared"] = {
+                k: widened(declared.get(k), band(v)) for k, v in seen.items()}
+            reg[name]["bands"]["measured"] = datetime.date.today().isoformat()
+            reg[name]["bands"]["wording"] = wording
+            reg[name]["bands"]["model"] = model or reg[name]["bands"]["model"]
     check("live: the pinned model is the one that answered",
           model == jev.MODEL, model)
-
-    if record:
-        groups["verb-first"]["declared"] = {
-            k: widened(declared.get(k), band(seen[k])) for k in ("yes", "no")}
-        groups["verb-first"]["observed"] = {k: band(seen[k])
-                                            for k in ("yes", "no")}
-        groups["work-kind"]["declared"] = {
-            k: widened(kdeclared.get(k), band(conf[k]))
-            for k in ("confident", "unsure")}
-        groups["work-kind"]["observed"] = {k: band(conf[k])
-                                           for k in ("confident", "unsure")}
-        groups["work-kind"]["observed"]["no-match"] = nomatch
-        cases["measured"] = datetime.date.today().isoformat()
-        cases["model"] = model
-        FIXTURE.write_text(json.dumps(cases, indent=1, ensure_ascii=False) + "\n")
-        print(f"recorded into {FIXTURE}")
+    if record and not wording_hash:
+        data = json.loads(REGISTRY.read_text())
+        data["readings"] = reg
+        REGISTRY.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n")
+        print(f"recorded into {REGISTRY} and the corpus")
 
 
 def main(argv):
     if "--live" in argv:
-        live("--record" in argv)
+        at = argv.index("--wording") if "--wording" in argv else None
+        live("--record" in argv, argv[at + 1] if at is not None else None)
         return harness.report()
     pure_branches(load(SOURCE))
     harness.mutate(SOURCE, load, CASES, MUTATIONS)

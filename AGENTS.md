@@ -344,7 +344,13 @@ ceiling; a body is bullets or tables under the body ceiling; the sections are
 `## Intent`, `## Scope`, `## Definition of done`, `## Plan`, `## Repos` and
 `## Lands in`, and a kind **omits** one, never renames it. `campaign-tracker check <N>` is the one
 reader: `bind` calls it and prints what it said, `campaign-claim take` calls it
-with `--plan` and refuses on it. Both templates are in
+with `--plan` and refuses on it. What structure cannot decide -- whether the
+title is verb-first, and which `kind:` an unlabelled sub-issue is -- **`check`
+itself** asks Jev through **`scripts/campaign-jev.py`, the one caller of that
+model here**; so does `take`, which runs `check`, while `bind` reads the shape
+by its own hands and prints no judgment. Those answers warn and suggest: none
+refuses, none moves an exit status, and a call that failed in any way comes
+back `unknown` rather than a guess. Both templates are in
 `.claude/skills/opening-campaign/assets/`.
 
 **A `backlog` sub-issue is not worked until the owner says so**, and only the

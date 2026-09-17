@@ -18,14 +18,17 @@ closes it.
 Usage: scripts/campaign-tracker-test.py
 """
 import contextlib
+import http.server
 import importlib
 import io
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import types
 from pathlib import Path
 
@@ -43,6 +46,47 @@ def load():
 def tracker(*args, env=None):
     return subprocess.run([sys.executable, str(TRACKER), *args],
                           capture_output=True, text=True, env=env)
+
+
+# THE JUDGMENT HALF IS OFFLINE AND DETERMINISTIC, always. `check` asks Jev on
+# every run, and this machine has a key in `~/.env` that `campaign-jev.py` finds
+# without a shell exporting it -- so a suite that named no endpoint would reach
+# the real model, be green here and red in CI, and change its own answers
+# between runs. Every case below points `CAMPAIGN_JEV_URL` at this stub or at a
+# port nothing listens on, and the log at a file under the case's temp tree.
+JEV_NEXT = {"body": {}}
+
+
+class _JevStub(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        data = json.dumps(JEV_NEXT["body"]).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+_JEV = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _JevStub)
+threading.Thread(target=_JEV.serve_forever, daemon=True).start()
+JEV_URL = f"http://127.0.0.1:{_JEV.server_address[1]}/systemone"
+with contextlib.closing(socket.socket()) as _s:
+    _s.bind(("127.0.0.1", 0))
+    JEV_CLOSED = f"http://127.0.0.1:{_s.getsockname()[1]}/systemone"
+
+
+def jev_answer(noul=0.95, choice=None, confidence=0.95):
+    """What the stub answers next, in the shape the real endpoint uses."""
+    answers = {"verb_first": {"type": "noul", "noul": noul}}
+    if choice is not None:
+        answers["work_kind"] = {"type": "choice", "choice": choice,
+                                "confidence": confidence}
+    JEV_NEXT["body"] = {"model": "jev-1.13.0", "answers": answers}
+    return JEV_URL
 
 
 # The `gh` a settlement case answers from. One fixture file, keyed by the shape
@@ -755,7 +799,10 @@ def main():
         # THE SHELL HALF: what `check` exits with, and what it prints beside the
         # verdict. A bare exit code is satisfied by every other cause that
         # shares it, so both cases assert the reading too.
-        def shim(body, title="Do the thing", labels=(), parent=True):
+        jev_home = Path(tmp) / "jevhome"
+        jev_home.mkdir()
+
+        def shim(body, title="Do the thing", labels=(), parent=True, jev=None):
             src = ('#!/usr/bin/env python3\nimport json, sys\n'
                    f'print(json.dumps({{"title": {title!r}, "body": {body!r}, '
                    f'"labels": [{{"name": n}} for n in {list(labels)!r}], '
@@ -766,7 +813,22 @@ def main():
             d.mkdir(exist_ok=True)
             (d / "gh").write_text(src)
             (d / "gh").chmod(0o755)
-            env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}")
+            env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}",
+                       # A PORT NOTHING LISTENS ON unless the case named an
+                       # answer: every existing case here predates the judgment
+                       # and must keep reading the same way, which `unknown`
+                       # is -- one line printed, no exit status moved.
+                       CAMPAIGN_JEV_URL=jev or JEV_CLOSED,
+                       CAMPAIGN_JEV_LOG=str(Path(tmp) / "jev.log"),
+                       # A KEY AND A HOME OF ITS OWN. `ask` answers `unknown`
+                       # BEFORE it posts when there is no key, so a shim that
+                       # named only the endpoint was green on a machine with
+                       # `~/.env` and red on CI, which has none: five cases
+                       # below never reached the stub at all. The key is a
+                       # constant the stub ignores, and HOME is an empty
+                       # directory so the `~/.env` fallback can find neither
+                       # this machine's key nor anybody else's.
+                       TYPESAFE_API_KEY="stub-key", HOME=str(jev_home))
             return env
 
         r = tracker("check", "5", "--plan", env=shim(good_sub))
@@ -796,7 +858,8 @@ def main():
         (d / "gh").write_text("#!/bin/sh\nexit 1\n")
         (d / "gh").chmod(0o755)
         r = tracker("check", "5", env=dict(os.environ,
-                                           PATH=f"{d}:{os.environ['PATH']}"))
+                                           PATH=f"{d}:{os.environ['PATH']}",
+                                           CAMPAIGN_JEV_URL=JEV_CLOSED))
         check("an unreadable issue exits 2, not 1",
               r.returncode == 2 and "could not read" in r.stderr
               and "is not an issue with no shape" in r.stderr)
@@ -834,6 +897,48 @@ def main():
         check("a campaign issue is not warned about a missing `kind:` label",
               r.returncode == 0 and "WARNING no `kind:" not in r.stdout
               and "kind   " not in r.stdout)
+
+        # THE TWO JUDGMENTS, THROUGH THE SHELL. Four answers, four lines, and
+        # ONE exit status across all of them: a judgment advises and never
+        # refuses, so every case here asserts the reading AND the 0.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, jev=jev_answer(noul=0.05)))
+        check("a title Jev reads as not verb-first is warned about, not refused",
+              r.returncode == 0 and "does not open with an imperative verb"
+              in r.stdout and "RESULT   the shape holds" in r.stdout)
+        check("...and the warning says which of the two can refuse",
+              "advises and never refuses" in r.stdout)
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, jev=jev_answer(noul=0.95)))
+        check("a title Jev reads as verb-first is printed and warned about by "
+              "nothing", r.returncode == 0 and "verb-first  yes" in r.stdout
+              and "imperative verb" not in r.stdout)
+        # THE SUGGESTION IS ASKED FOR ONLY WHERE NO LABEL ANSWERS IT: this
+        # sub-issue carries none, and the one below carries `kind:maintenance`.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, jev=jev_answer(noul=0.95,
+                                                      choice="research")))
+        check("a sub-issue with no `kind:` label gets a suggestion, not a label",
+              r.returncode == 0 and "SUGGESTION" in r.stdout
+              and "`kind:research`" in r.stdout
+              and "only the owner of the issue sets one" in r.stdout)
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, labels=("kind:maintenance",),
+                             jev=jev_answer(noul=0.95, choice="research")))
+        check("...and a sub-issue that carries one is asked no kind question",
+              r.returncode == 0 and "SUGGESTION" not in r.stdout
+              and "kind   maintenance" in r.stdout)
+        # THE DEFAULT SHIM POINTS AT A CLOSED PORT, which is every other case
+        # above: the call fails, both readings come back `unknown` with the
+        # reason, and the exit status is the shape's alone.
+        r = tracker("check", "5", "--plan", env=shim(good_sub))
+        check("a Jev call that failed prints unknown and why, and refuses "
+              "nothing", r.returncode == 0
+              and "verb-first  unknown: the endpoint did not answer" in r.stdout
+              and "kind suggestion unknown: the endpoint did not answer"
+              in r.stdout and "RESULT   the shape holds" in r.stdout)
+        check("...and says whether the call was logged, as the guard does",
+              "judged by" in r.stdout and "logged to" in r.stdout)
 
         # `bind` REPORTS THE SHAPE AND NEVER GATES ON IT, which is the whole
         # reason `check` is its own verb: `bind` is the ONLY repair for the

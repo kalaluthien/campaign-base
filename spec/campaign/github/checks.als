@@ -147,9 +147,23 @@ pred S22a_ControlTheClaimHappensWithTheHoldOff {
   backlogDiscipline and eventually (Now.event = Claim and Now.issue not in Backlog)
 }
 
+/* JV1. A JUDGMENT ADVISES ONLY WHEN IT REPLIED, WAS CONFIDENT AND FIT
+   (system.als's `advised`), and only then: JV1b is UNSAT because a failed call,
+   an answer under its threshold and the no-match option each come back
+   `unknown`, and dropping any one of `advised`'s three conditions makes it
+   SAT. */
+pred JV1_ARepliedConfidentFittingJudgmentAdvises { some j: Judgment | advised[j] }
+pred JV1b_AFailedLowOrNoMatchAnswerNeverAdvises {
+  some j: Judgment | advised[j] and (j not in Replied or j not in Confident or j not in Fits)
+}
+
 /* ---------------- commands ---------------- */
 
-run S1_HappyPath                for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
+-- a judgment advises only when it replied, was confident and fit
+run JV1_ARepliedConfidentFittingJudgmentAdvises for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
+run JV1b_AFailedLowOrNoMatchAnswerNeverAdvises    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+
+run S1_HappyPath             for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
 run S2_SubIssueDropped           for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
 run S5_FollowUpAfterSettled     for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 2 Repo, 14 steps expect 1
 run S6_RepoJoinsMidFlight       for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 14 steps expect 1

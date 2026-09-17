@@ -178,6 +178,31 @@ var sig Standing in Campaign {}
    is: the owner may lift it at any step. */
 var sig Backlog in Issue {}
 
+/* A JUDGMENT ADVISES AND NEVER REFUSES. `scripts/campaign-jev.py` asks a model
+   one typed question about an issue's text and hands its caller a branch;
+   `campaign-tracker.py check` is the first caller and prints the branch beside
+   its own reading. Three bits decide whether that branch is advice at all: the
+   call REPLIED (a key, an endpoint that answered, the pinned model, an answer
+   for this question), the reply was CONFIDENT enough for its thresholds, and it
+   FITS the question rather than naming the no-match option. Everything else is
+   `unknown`, which advises nothing.
+
+   `Replied` and not `Answered`: orchestration/system.als already has an
+   `Answered`, over Agent, and a module that opens both would see two.
+
+   NO RULE HERE READS `advised`, and that is the claim: a judgment gates no
+   event, so no close, claim, merge or write depends on one. Typed output
+   guarantees the shape and not the truth, and a reading a caller could quietly
+   start gating on is the one no scenario would catch.
+
+   ONE JUDGMENT, THREE BITS, as `FileRead` in session/system.als: the rule
+   judges one answer alone, so one atom with its bits free is every case, and a
+   `one sig` needs no scope in any command that opens this module. */
+one sig Judgment {}
+sig Replied, Confident, Fits in Judgment {}
+
+pred advised[j: Judgment] { j in Replied & Confident & Fits }
+
 fact WellFormed {
   all c: Campaign | c.campaignIssue.repo = Base
   all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue

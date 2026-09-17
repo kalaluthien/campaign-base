@@ -106,10 +106,18 @@ check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
             owns and this asks:
             its title length, its body length, and the sections its kind
             requires. The kind is decided by structure alone -- the `campaign`
-            label and the parent link, the two facts GitHub itself holds --
-            because the reading it replaces classified by BODY TEXT, so an
-            issue that happened to contain `## Repos` was a campaign to one
-            reader and not to another.
+            and `chore` labels and the parent link, the three facts GitHub
+            itself holds -- because the reading it replaces classified by BODY
+            TEXT, so an issue that happened to contain `## Repos` was a campaign
+            to one reader and not to another.
+
+            THE CHORE IS A CAMPAIGN ISSUE THAT IS ITS OWN ONE UNIT OF WORK. It
+            carries `campaign` AND `chore`, omits `## Scope`, `## Plan` and
+            `## Lands in`, and `--plan` adds nothing to it: there is no
+            sub-issue to plan. Two label states refuse here -- `chore` with
+            `standing`, since a chore's close is pre-authorised where
+            `standing` is the person's word that a campaign stays open, and
+            `chore` without `campaign`, where the label names nothing.
 
             IT IS ITS OWN VERB AND NOT PART OF `bind`. `bind` is the only
             repair for the two-`bound:`-label state, and a `bind` that refused
@@ -326,7 +334,10 @@ def classify(issues):
 
     Every issue carries both properties, so each row is decided by what that
     issue itself says -- never by its absence from somewhere else. The kind is
-    `kind_of`'s, and a sub-issue is in none of the three."""
+    `kind_of`'s, and a sub-issue is in none of the three. A CHORE IS A CAMPAIGN
+    ISSUE HERE, which is why the chore label is not read into the split: it is
+    one of the open campaigns a request is routed against, and `rows` prints
+    the label beside its number."""
     kinds = [(i, kind_of(CAMPAIGN_LABEL in label_names(i), bool(i.get("parent"))))
              for i in issues]
     return tuple([i for i, k in kinds if k == want]
@@ -387,8 +398,14 @@ def slugs_in(campaign_issues):
 def rows(title, items, note=""):
     print(f"\n{title} ({len(items)})" + (f" -- {note}" if note else ""))
     for i in sorted(items, key=lambda x: x["number"]):
-        hold = f"  [{STANDING_LABEL}]" if is_standing(label_names(i)) else ""
-        print(f"  #{i['number']:<5} {i['title'][:88]}{hold}")
+        names = label_names(i)
+        hold = f"  [{STANDING_LABEL}]" if is_standing(names) else ""
+        # THE CHORE PRINTS LIKE THE HOLD, and for the same reason: a session
+        # routing an arriving request reads these rows, and a chore takes no
+        # sub-issue, so what covers the request is not what the row would
+        # otherwise say it is.
+        chore = f"  [{CHORE_LABEL}]" if CHORE_LABEL in names else ""
+        print(f"  #{i['number']:<5} {i['title'][:88]}{hold}{chore}")
 
 
 def cmd_campaign_issues(args):
@@ -797,8 +814,8 @@ def cmd_bind(args):
         print(f"the shape was NOT read ({why}); the label above is set "
               f"regardless, which is what this command is for")
         return 0
-    kind = kind_of(CAMPAIGN_LABEL in names, parented)
-    findings = shape_findings(kind, title, body, want_plan=False)
+    kind = kind_of(CAMPAIGN_LABEL in names, parented, CHORE_LABEL in names)
+    findings = shape_findings(kind, title, body, want_plan=False, names=names)
     if findings:
         print(f"shape ({kind}), reported and not enforced here -- "
               f"`campaign-tracker check {args.campaign_issue}` for the full "
@@ -830,6 +847,11 @@ BODY_CEILING = 2000
 # on 2026-09-10; closed issues keep the titles they were filed with.
 TITLE_CEILING = 40
 BACKLOG_LABEL = "backlog"
+# A CHORE: a campaign issue carrying this label is its own one unit of work --
+# no sub-issue, claimed as itself (AGENTS.md § Routing an arriving request;
+# `WellFormed` in spec/campaign/github/system.als). One spelling, imported by
+# `campaign-claim.py`, `campaign-close.py` and `campaign-open.py`.
+CHORE_LABEL = "chore"
 
 # THE SECTION VOCABULARY, stated once, here -- the NAMES, that is, but the two
 # a script reads the entries of, which are campaign-repos.py's; the two
@@ -837,10 +859,18 @@ BACKLOG_LABEL = "backlog"
 # AGENTS.md say a ceiling exists rather than repeating its number. A kind OMITS
 # a section; it never renames one, which is what `## Requirements` beside a
 # sub-issue's `Definition of done` was doing -- two names for one purpose.
-# `## Plan` is conditional on the moment and so is not in either tuple; see
+# `## Plan` is conditional on the moment and so is not in any tuple; see
 # `required_sections`.
+#
+# A CHORE OMITS THREE OF THEM. `## Scope` is the section routing reads to ask
+# whether an arriving request belongs to an open campaign, and a chore is one
+# unit of work that admits nothing further, so carrying one would invite a
+# sub-issue it cannot take; `## Plan` and `## Lands in` are a sub-issue's, and
+# a chore has none -- which repository its claim is cut in is `## Repos` and
+# `--repo`.
 CAMPAIGN_SECTIONS = ("Intent", "Scope", "Definition of done",
                      REPOS.REPOS_HEADING)
+CHORE_SECTIONS = ("Intent", "Definition of done", REPOS.REPOS_HEADING)
 LANDS_SECTION = REPOS.LANDS_HEADING
 SUB_ISSUE_SECTIONS = ("Intent", "Definition of done", LANDS_SECTION)
 PLAN_SECTION = "Plan"
@@ -917,19 +947,35 @@ ISSUE_KINDS = load(Path(__file__).resolve().parent.parent / ".claude" / "skills"
                    / "assuming-role" / "scripts" / "campaign-roles.py",
                    "campaign_roles").ISSUE_KINDS
 CAMPAIGN, SUB_ISSUE, STRAY, THIRD_KIND = ISSUE_KINDS
+# THE CHORE'S WORD IS THIS FILE'S AND NOT THAT LEAF'S. `own_campaign_gh` keys a
+# licence by the kind a `gh` write lands on, and a chore is a campaign issue to
+# every one of those readers -- it carries the label, it is nobody's sub-issue,
+# and the guard reaches it through the same carve-out. What tells the two apart
+# is the SHAPE, which is this file's alone, so the word joins ISSUE_KINDS here:
+# `campaign-close.py` builds its `read #N: <kind> (...)` pattern out of this
+# module's tuple, and a word missing from it would leave a chore's `check` line
+# unparsed. The spelling is the label's, so a rename moves both at once.
+CHORE = CHORE_LABEL
+ISSUE_KINDS += (CHORE,)
 
 
-def kind_of(labelled, parented):
-    """The issue's kind from the two structural facts, and nothing else.
+def kind_of(labelled, parented, chore=False):
+    """The issue's kind from the structural facts, and nothing else.
 
     Four outcomes, not three: `stray` -- labelled AND parented -- is the row
     `classify` above already names, and it is a defect reported rather than a
     kind, because no reader can say whether it is a campaign somebody filed
-    under a parent or a sub-issue somebody labelled."""
+    under a parent or a sub-issue somebody labelled.
+
+    `chore` is the fifth, and it is a narrowing of the campaign issue rather
+    than a kind beside it: only a labelled, parentless issue can be one. It
+    defaults off, so a caller that reads no labels -- the survey's `classify`,
+    the guard's sub-issue carve-out -- keeps reading a chore as the campaign
+    issue it is."""
     if labelled and parented:
         return STRAY
     if labelled:
-        return CAMPAIGN
+        return CHORE if chore else CAMPAIGN
     if parented:
         return SUB_ISSUE
     return THIRD_KIND
@@ -940,6 +986,8 @@ def required_sections(kind, want_plan):
     no shape."""
     if kind == CAMPAIGN:
         return CAMPAIGN_SECTIONS
+    if kind == CHORE:
+        return CHORE_SECTIONS
     if kind == SUB_ISSUE:
         return SUB_ISSUE_SECTIONS + ((PLAN_SECTION,) if want_plan else ())
     return ()
@@ -953,11 +1001,13 @@ def shape_findings(kind, title, body, want_plan, names=()):
     missing a section needs two edits, and a checker that names one sends its
     reader back for the other.
 
-    `names` is the issue's LABEL list, and the only thing read off it is the
+    `names` is the issue's LABEL list, and two things are read off it. The
     `kind:` label a sub-issue carries: an unreadable one -- two labels, or a
     word outside `WORK_KINDS` -- is a finding, while a MISSING one is the
     warning `cmd_check` prints, because every sub-issue filed before the rule
-    has none and `campaign-claim take` gates on these findings. Optional and
+    has none and `campaign-claim take` gates on these findings. And the two
+    label states a `chore` may not be in, which are findings and not warnings
+    because `take` is where a chore is claimed. Optional and
     empty by default, so a caller that has no labels to hand asks for no reading
     of them rather than being told the label is absent."""
     out = []
@@ -993,6 +1043,21 @@ def shape_findings(kind, title, body, want_plan, names=()):
         if why:
             out.append(f"the `{WORK_KIND_LABEL_PREFIX}<k>` label does not read: "
                        f"{why}")
+    # THE CHORE'S TWO LABEL STATES, read off `names` and not off the kind --
+    # the second of them is exactly the case where the kind is something else.
+    # A stray returned above and is untouched by either: what a chore label
+    # means on an issue that is both a campaign and a sub-issue is the question
+    # nobody can answer, and one finding names the one repair.
+    if CHORE_LABEL in names:
+        if is_standing(names):
+            out.append(f"it carries `{CHORE_LABEL}` AND `{STANDING_LABEL}`: a "
+                       f"chore's close is pre-authorised by the work it is, "
+                       f"and `{STANDING_LABEL}` is the person's word that a "
+                       f"campaign stays open. Remove one")
+        if CAMPAIGN_LABEL not in names:
+            out.append(f"it carries `{CHORE_LABEL}` without `{CAMPAIGN_LABEL}`: "
+                       f"a chore IS a campaign issue, worked as itself, so off "
+                       f"one the label names nothing")
     return out
 
 
@@ -1125,7 +1190,7 @@ def cmd_check(args):
               f"  An issue that did not read is not an issue with no shape.",
               file=sys.stderr)
         return 2
-    kind = kind_of(CAMPAIGN_LABEL in names, parented)
+    kind = kind_of(CAMPAIGN_LABEL in names, parented, CHORE_LABEL in names)
     found = REPOS.headings(body)
     # WHAT WAS READ, ALWAYS, and before the verdict. A bare pass is the shape
     # that gets trusted for months while checking nothing.

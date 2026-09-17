@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: S2_SubIssueDropped, S8_CloseWithOpenSubIssue
+# witnesses: S2_SubIssueDropped, S8_CloseWithOpenSubIssue, S23_ChoreLands
 """Prove campaign-tracker reads the whole thing, and says when it could not.
 
 All four subcommands replace a `gh` line that once lived in prose, and all four
@@ -635,15 +635,56 @@ def main():
           m.kind_of(True, True) == m.STRAY)
     check("neither is the third kind, which every reader leaves alone",
           m.kind_of(False, False) == m.THIRD_KIND)
+    # THE CHORE NARROWS THE CAMPAIGN ISSUE; it is not a fifth row beside the
+    # four above. Only a labelled, parentless issue can be one, and the three
+    # cases that carry the label anywhere else are here to say so.
+    check("the `chore` label narrows a campaign issue to a chore",
+          m.kind_of(True, False, True) == m.CHORE)
+    check("labelled, parented and `chore` is still the stray",
+          m.kind_of(True, True, True) == m.STRAY)
+    check("a parent with the `chore` label is still a sub-issue",
+          m.kind_of(False, True, True) == m.SUB_ISSUE)
+    check("neither, with the `chore` label, is still the third kind",
+          m.kind_of(False, False, True) == m.THIRD_KIND)
+    # THE DEFAULT IS WHAT EVERY CALLER THAT READS NO LABELS GETS -- `classify`
+    # here, the guard's sub-issue carve-out -- and to all of them a chore is
+    # the campaign issue it is.
+    check("a caller that passes no chore reading still reads a campaign issue",
+          m.kind_of(True, False) == m.CAMPAIGN)
+    # campaign-close.py BUILDS ITS `read #N: <kind> (...)` PATTERN out of this
+    # tuple, so a word `check` prints and the tuple does not hold would leave a
+    # chore's line unparsed at the close, which reads like a check that failed.
+    check("every word `kind_of` returns is in ISSUE_KINDS",
+          {m.kind_of(bool(l), bool(p), bool(c))
+           for l in (0, 1) for p in (0, 1) for c in (0, 1)} <= set(m.ISSUE_KINDS))
 
-    good_sub = ("## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n"
+    good_sub =("## Intent\n- x\n\n## Definition of done\n- x\n\n## Plan\n- x\n"
                 "\n## Lands in\n- none\n")
     good_campaign = ("## Intent\n- x\n\n## Scope\nIn:\n- x\n\n## Definition of done\n"
                      "- x\n\n## Repos\n- none\n")
     check("a well-shaped sub-issue has no finding, plan required",
           m.shape_findings(m.SUB_ISSUE, "Do the thing", good_sub, True) == [])
+    good_chore = ("## Intent\n- x\n\n## Definition of done\n- x\n\n"
+                  "## Repos\n- none\n")
     check("a well-shaped campaign issue has no finding",
           m.shape_findings(m.CAMPAIGN, "Do the thing", good_campaign, False) == [])
+    check("a well-shaped chore has no finding",
+          m.shape_findings(m.CHORE, "Do the thing", good_chore, False,
+                           names=["campaign", "chore"]) == [])
+    # `--plan` ADDS NOTHING TO A CHORE, which has no sub-issue to plan. Read at
+    # both moments, because a case reading only one passes with the flag wired
+    # to every kind.
+    check("...and `--plan` asks a chore for nothing further",
+          m.shape_findings(m.CHORE, "Do the thing", good_chore, True,
+                           names=["campaign", "chore"]) == [])
+    # A CHORE OMITS THREE SECTIONS, and the omission is asserted on the LIST and
+    # not on a body that happens to hold none of them: `## Scope` is what
+    # routing reads to ask which campaign covers a request, and a chore covers
+    # nothing further than itself.
+    check("a chore is asked for no `## Scope`, `## Plan` or `## Lands in`",
+          all(w not in m.required_sections(m.CHORE, plan)
+              for plan in (False, True)
+              for w in ("Scope", m.PLAN_SECTION, m.LANDS_SECTION)))
     # THE THIRD KIND HAS NO SHAPE, so a body that would fail every section test
     # passes here. It is the row a body-text classifier could not express.
     check("the third kind is not judged on sections at all",
@@ -697,6 +738,18 @@ def main():
             ("Repos", good_campaign.replace("\n## Repos\n- none\n", "\n"))):
         found = m.shape_findings(m.CAMPAIGN, "t", body, False)
         check(f"a campaign issue with no `## {want}` is refused by that name",
+              any(f"no `## {want}` section" in f for f in found))
+    # ONE MISSING SECTION AT A TIME AGAIN, on the shorter list: `## Repos` is
+    # the one a chore shares with the campaign issue, and a claim reads it to
+    # know which repository the ref is cut in.
+    for want, body in (
+            ("Intent", good_chore.replace("## Intent\n- x\n\n", "")),
+            ("Definition of done",
+             good_chore.replace("## Definition of done\n- x\n\n", "")),
+            ("Repos", good_chore.replace("\n## Repos\n- none\n", "\n"))):
+        found = m.shape_findings(m.CHORE, "t", body, True,
+                                 names=["campaign", "chore"])
+        check(f"a chore with no `## {want}` is refused by that name",
               any(f"no `## {want}` section" in f for f in found))
     # ONE HEADING READER (rule-check#370 row 20). A `## Repos` inside a
     # comment, or with two spaces, is no heading to `read_repos`, and `check`
@@ -795,8 +848,35 @@ def main():
     check("...and a campaign issue is not refused for two of them either",
           m.shape_findings(m.CAMPAIGN, "t", good_campaign, False,
                            names=["kind:research", "kind:maintenance"]) == [])
-    # THE KEYWORD IS OPTIONAL, so every positional caller here -- `bind`'s report
-    # among them -- keeps reading the same shape it did before.
+    # THE CHORE'S TWO LABEL STATES ARE FINDINGS AND NOT WARNINGS, because
+    # `campaign-claim take` runs this reading and a chore is claimed on the
+    # campaign issue itself: a warning would let it be claimed in either state.
+    found = m.shape_findings(m.CHORE, "t", good_chore, False,
+                             names=["campaign", "chore", "standing"])
+    check("`chore` beside `standing` is a finding naming both",
+          len(found) == 1 and "`chore`" in found[0] and "`standing`" in found[0])
+    check("...and a campaign issue that is no chore may stand",
+          m.shape_findings(m.CAMPAIGN, "t", good_campaign, False,
+                           names=["campaign", "standing"]) == [])
+    # THE LABEL MEANS NOTHING OFF A CAMPAIGN ISSUE, so the refusal is read off
+    # the labels and not off the kind -- these two kinds are exactly where the
+    # kind is something else.
+    found = m.shape_findings(m.THIRD_KIND, "t", "prose", False, names=["chore"])
+    check("`chore` with no `campaign` label is a finding on the third kind",
+          len(found) == 1 and "without `campaign`" in found[0])
+    found = m.shape_findings(m.SUB_ISSUE, "t", good_sub, True,
+                             names=["chore", "kind:maintenance"])
+    check("...and on a sub-issue, which carries a parent instead",
+          len(found) == 1 and "without `campaign`" in found[0])
+    # A STRAY IS STILL ONE FINDING AND NOT A PILE. What a `chore` label means on
+    # an issue that is both a campaign and a sub-issue is exactly what nobody
+    # can say, and the repair is still the one edit.
+    check("a stray carrying `chore` and `standing` is reported as a stray alone",
+          len(m.shape_findings(m.STRAY, "t", "", False,
+                               names=["campaign", "chore", "standing"])) == 1)
+    # THE KEYWORD IS OPTIONAL, so a caller with no label list to hand keeps
+    # reading the same shape it did before, and asks for no reading of labels
+    # rather than being told they are absent.
     check("shape_findings called positionally reads no labels at all",
           m.shape_findings(m.SUB_ISSUE, "t", good_sub, True) == [])
 
@@ -902,6 +982,29 @@ def main():
         check("a campaign issue is not warned about a missing `kind:` label",
               r.returncode == 0 and "WARNING no `kind:" not in r.stdout
               and "kind   " not in r.stdout)
+        # A CHORE READS LIKE A CAMPAIGN ISSUE ON THE WORK KIND and unlike one on
+        # the sections: it carries no `kind:` label by design, so neither the
+        # warning nor the Jev question is its, and `--plan` still leaves its
+        # three sections alone. Asserted through the shell because the kind
+        # word is what `campaign-close.py` parses off this line.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_chore, labels=("campaign", "chore"),
+                             parent=False,
+                             jev=jev_answer(noul=0.95, choice="research")))
+        check("check reads a chore as its own kind and asks no work kind of it",
+              r.returncode == 0
+              and "chore (label `campaign`: yes, parent: no)" in r.stdout
+              and "sections required: Intent, Definition of done, Repos" in r.stdout
+              and "WARNING no `kind:" not in r.stdout
+              and "SUGGESTION" not in r.stdout
+              and "RESULT   the shape holds" in r.stdout)
+        # THE TWO LABEL STATES THROUGH THE SHELL: findings, so `campaign-claim
+        # take`, which runs this and gates on the exit, refuses the claim.
+        r = tracker("check", "5", env=shim(good_chore, parent=False,
+                                           labels=("campaign", "chore", "standing")))
+        check("a standing chore exits 1 with the finding on stderr",
+              r.returncode == 1 and "REFUSING" in r.stderr
+              and "`chore` AND `standing`" in r.stderr)
 
         # THE TWO JUDGMENTS, THROUGH THE SHELL. Four answers, four lines, and
         # ONE exit status across all of them: a judgment advises and never
@@ -1021,13 +1124,22 @@ def main():
 
     held = {"number": 272, "title": "keep me", "labels": [{"name": "standing"}]}
     free = {"number": 1, "title": "close me", "labels": [{"name": "campaign"}]}
-    out = printed(m.rows, "open campaign issues", [held, free])
+    task = {"number": 300, "title": "do the one thing",
+            "labels": [{"name": "campaign"}, {"name": "chore"}]}
+    out = printed(m.rows, "open campaign issues", [held, free, task])
     check("the survey prints the hold beside the row that carries it",
           "#272" in out and "[standing]" in out.split("#272")[1].split("\n")[0])
     # THE CONTROL. Printed on every row, the marker says nothing; this is the
     # case that separates "read the label" from "printed the word".
     check("...and not beside the row that does not",
           "[standing]" not in out.split("#1")[1].split("\n")[0])
+    # THE CHORE IS PRINTED ON THE ROW A REQUEST IS ROUTED AGAINST. It is an open
+    # campaign like any other in this listing, and the one thing it will not
+    # take is the sub-issue that routing would otherwise file under it.
+    check("the survey prints `chore` beside the row that carries it",
+          "#300" in out and "[chore]" in out.split("#300")[1].split("\n")[0])
+    check("...and not beside the campaign issue that is none",
+          "[chore]" not in out.split("#1")[1].split("\n")[0])
 
     # ------------------------------------------------ the `<slug>#N` reference form
     check("a bare number is a reference nothing qualifies",

@@ -54,6 +54,19 @@ trap 'rm -f "$err"' EXIT INT TERM
 # is to be told, not to have the remote rewritten.
 if git push --quiet origin "$branch" 2>"$err"; then
 	echo "push-campaign-branch: pushed $branch"
+	# THE DIFF SCREEN reads the pushed commit's files, in the background and
+	# unwaited, since it asks a model once a file; why here is its docstring's.
+	# A GitHub remote only: its later fact is a REVIEW on a pull request there,
+	# and a fixture's local remote is not one.
+	case $(git remote get-url origin 2>/dev/null) in
+	*github.com[:/]*)
+		# ONE COMMAND IN THE BACKGROUND, not an `a && b &` list: a list is
+		# a subshell holding this hook's stdout open, so a caller capturing
+		# `git commit`'s output waited for every Jev call.
+		sha=$(git rev-parse HEAD) || exit 0
+		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
+		;;
+	esac
 else
 	echo "push-campaign-branch: could NOT push $branch -- the commit is local only." >&2
 	sed 's/^/  /' "$err" >&2

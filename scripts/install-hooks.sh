@@ -35,8 +35,8 @@
 # gets written to .git/hooks/). One exception, adopted and announced: a
 # pre-commit acquire-repo.sh wrote, because the hook written here runs the same
 # guard and the same claim gate, so nothing `is_guard_shim` reads out of the
-# slot is lost -- and the post-commit it writes beside it, whose push script
-# the post-commit here runs too (`is_push_shim`). That is weaker than a strict superset, which this header claimed
+# slot is lost -- and the post-commit and post-merge it writes beside it, whose
+# push script the two here run too (`is_push_shim`). That is weaker than a strict superset, which this header claimed
 # for one revision while the block above `is_guard_shim` retracted it -- the
 # same file asserting and withdrawing one sentence. What is and is not
 # established is stated there, once. Two writers of one slot, the second
@@ -161,9 +161,9 @@ is_guard_shim() {
 		grep -qE '^"[^"]*/\.claude/git-hooks/no-main-commits" "\$@" \|\| exit 1$' "$1"
 }
 
-# The post-commit acquire-repo.sh writes beside that shim, read by the same
-# three things: the shebang, the marker on line 2, and the push CALL as a whole
-# line. The post-commit written here runs the same push script, so replacing it
+# The post-commit and post-merge acquire-repo.sh writes beside that shim, read
+# by the same three things: the shebang, the marker on line 2, and the push CALL
+# as a whole line. The two written here run the same push script, so replacing it
 # loses nothing read out of it.
 is_push_shim() {
 	[ "$(sed -n 1p "$1")" = "#!/usr/bin/env sh" ] &&

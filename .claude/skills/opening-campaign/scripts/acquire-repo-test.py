@@ -404,22 +404,23 @@ def main():
               r.returncode == 0 and str(GATE) in body,
               f"exit {r.returncode}; {(r.stdout + r.stderr)[-240:]}")
 
-    # A POST-COMMIT THIS SCRIPT DID NOT WRITE is somebody's decision, refused as
-    # a foreign pre-commit is -- and before either hook is written.
-    with tempfile.TemporaryDirectory() as d:
+    # A PUSH HOOK THIS SCRIPT DID NOT WRITE is somebody's decision, refused as
+    # a foreign pre-commit is -- and before any hook is written.
+    for slot in ("post-commit", "post-merge"):
+      with tempfile.TemporaryDirectory() as d:
         base, camp = a_base_with_campaign(d)
         home = a_home(d)
         slug, clone = a_member_repo(d, camp)
-        foreign = "#!/usr/bin/env sh\n# our team's post-commit\nexit 0\n"
-        (clone / ".git" / "hooks" / "post-commit").write_text(foreign)
+        foreign = f"#!/usr/bin/env sh\n# our team's {slot}\nexit 0\n"
+        (clone / ".git" / "hooks" / slot).write_text(foreign)
         r = run_acquire(slug, clone, home)
         out = r.stdout + r.stderr
-        check("a foreign post-commit is refused, and left as it was",
+        check(f"a foreign {slot} is refused, and left as it was",
               r.returncode != 0
-              and "refusing to overwrite an existing post-commit hook" in out
-              and text_of(clone / ".git" / "hooks" / "post-commit") == foreign,
+              and f"refusing to overwrite an existing {slot} hook" in out
+              and text_of(clone / ".git" / "hooks" / slot) == foreign,
               f"exit {r.returncode}; {out[-240:]}")
-        check("...before the pre-commit is written, so neither hook is half-installed",
+        check("...before the pre-commit is written, so no hook is half-installed",
               not (clone / ".git" / "hooks" / "pre-commit").exists(), out[-240:])
 
     # ...and the near misses, one per conjunct of `is_guard_shim`. A row of

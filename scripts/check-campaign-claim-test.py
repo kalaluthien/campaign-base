@@ -1763,6 +1763,25 @@ def main():
         check("ALLOW beside the foreign-campaign refusal: a read is not a write",
               r.returncode == 0, out(r)[:400])
 
+    # A CHORE'S CAMPAIGN ISSUE IS WHAT ITS WORKER CLAIMS (AGENTS.md § Chores),
+    # so the verbs the carve-out above refuses are covered by the claim, the
+    # way any sub-issue's are -- no branch of the guard names a chore, and
+    # this is the case that says none is needed. The block above is its
+    # control: the same verbs, the same worker, no claim on #1, refused.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/1-x",))
+        worker = herdr_stub(d, {"sid-1": "demo-worker-4"})
+        stranger = herdr_stub(d, {"sid-1": "other-worker-1"})
+        for verb in ("close", "edit", "comment"):
+            cmd = f"gh issue {verb} 1" + {"edit": " --body x", "comment":
+                  " --body 'NOTE demo-worker-4: x'"}.get(verb, "")
+            r = ask(f.base, tool="Bash", command=cmd, env=worker)
+            check(f"a chore's worker, holding a claim on its campaign issue, "
+                  f"may `{verb}` it", r.returncode == 0, out(r)[:400])
+        r = ask(f.base, tool="Bash", command="gh issue close 1", env=stranger)
+        check("...and a worker of another campaign may not stand on that claim",
+              r.returncode == 2, out(r)[:400])
+
     # A ROOT HOLDING BOTH CAMPAIGNS' CLAIMS. The case above has only a foreign
     # claim under the root, and the gh half filtered once for the whole root --
     # so it refused only when EVERY claim was foreign, and a worker with any
@@ -4108,7 +4127,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 644
+    EXPECTED = 648
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

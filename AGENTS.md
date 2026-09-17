@@ -44,15 +44,20 @@ the body of each campaign issue that could plausibly cover the request — the t
 not carry the Scope. Match on Scope, never on `## Repos`, and treat testing or
 fixing a campaign's own deliverable as covered by it.
 
-**Two, only if nothing covers it: is the request finished when this session
-ends?** A campaign outlives the sitting.
+**Two, only if nothing covers it: does it change a repository a claim gates,
+and does it need decomposing?** The commit gate refuses a commit off a claim in
+a base tree and in every install a `## Repos` names (§ The `## Repos` list), so
+"just make the change" exists only outside those. One unit of work — one review
+cycle in each repository it changes — is a chore; work that splits, or that
+follow-ups will keep arriving on, is a campaign.
 
 | what the two readings say | what this is |
 | --- | --- |
 | An open campaign's Scope covers it | **A sub-issue of that campaign.** Read the binding first (§ The binding), then § Sub-issues. Load `opening-campaign` only to *join* — this machine has no directory for the campaign yet. |
 | Two or more could cover it, or the fit is arguable | **A question for the person.** Name the candidates; do not guess. |
-| Nothing covers it, and it ends with this session | **Not campaign work.** Answer it, or make the change and land it. |
-| Nothing covers it, and it will outlive this session | **A new campaign.** Load `opening-campaign`. |
+| Nothing covers it, and it changes nothing a claim gates | **Not campaign work.** Answer it, or make the change where no gate reads it. |
+| Nothing covers it, and it is one unit of work | **A chore** (§ Chores): `scripts/campaign-open.py --chore`. |
+| Nothing covers it, and it splits or will keep growing | **A new campaign.** Load `opening-campaign`. |
 
 **Size is not one of the readings**, and asking it first is the mistake this
 ordering prevents. A one-line edit inside a Scope is that campaign's sub-issue.
@@ -306,9 +311,36 @@ pattern encodes it — in every language the tree is written in.
 
 **Open** — load `opening-campaign` when the request opens a campaign, or joins one
 this machine has no directory for. **Close** — `/close` (§ Routing an arriving
-request); only a person decides a close, and a `standing` label on the campaign
+request); only a person decides a close, a chore's apart (§ Chores), and a
+`standing` label on the campaign
 issue is that decision already made the other way: `campaign-close.py`'s
 `standing` gate refuses while it is on and only a person takes it off.
+
+## Chores
+
+**A chore is a campaign issue carrying the `chore` label, with no sub-issue,
+claimed and worked as itself.** It keeps every gate a campaign has — the
+binding, the `## Repos` scope check, `reach` and the `installed` gate, the three
+merge conditions — because it IS a campaign; the model is `WellFormed`'s chore
+line in `spec/campaign/github/system.als`, the campaign issue as its own one
+member. What differs is read off the label by three scripts and stated in
+their docstrings, not here:
+
+| moment | what a chore does | reader |
+| --- | --- | --- |
+| open | one command files it with its labels, binds, scaffolds, acquires, names the session `<slug>-worker-1` and cuts the claim; the body is `.claude/skills/opening-campaign/assets/chore.md`, three sections | `scripts/campaign-open.py --chore` |
+| shape | `## Intent`, `## Definition of done`, `## Repos`; no `kind:`; `chore` beside `standing`, or off a campaign issue, is refused | `campaign-tracker.py check` |
+| claim | `campaign-claim take <N> <N> <topic>`, one ref in each repository it changes, each under its own topic since the name is how `release` and `live` find its repository, picked by `--repo` among `## Repos` and the base; a campaign issue without `chore` is nobody's to claim | `campaign-claim.py take` |
+| land | each pull request but the last says `Part of kalaluthien/campaign-base#<N>`, the last `Closes`, so the merge that meets the Definition of done closes the issue | GitHub |
+| leave | `campaign-close.py leave <N>` on a CLOSED chore goes on to the campaign scope's gates, then the release and the delete | `campaign-close.py leave` |
+
+**That leave is the one close a person does not start**, the owner's ruling
+(rule-check#475, DECISION 5718434752): their word was the Definition of done
+the merge met, what is left is scratch, and every gate still runs and a
+refusing one stops it. `standing` is a person keeping a campaign open, so the
+two labels never meet. **A chore has no planner and takes no sub-issue**: work
+that needs either is a campaign, and its claim is fast-forwarded onto a pushed
+branch it adopts, which never lands under its old name.
 
 ## Sub-issues
 
@@ -340,7 +372,8 @@ every body written before the rule carries them.
 **One shape per kind, decided by structure and read by one script.** An issue is
 a campaign issue by its `campaign` label, a sub-issue by its parent, both at once
 by neither — a defect, reported — and the third kind by neither, which every
-reader leaves alone. The third kind is exempt from the SECTIONS, not from the
+reader leaves alone. A campaign issue carrying `chore` is a chore (§ Chores),
+with a shorter section list. The third kind is exempt from the SECTIONS, not from the
 ceilings: a title is a title. A title is a verb-first mission under the title
 ceiling; a body is bullets or tables under the body ceiling; the sections are
 `## Intent`, `## Scope`, `## Definition of done`, `## Plan`, `## Repos` and

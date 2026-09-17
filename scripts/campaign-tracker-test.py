@@ -26,6 +26,7 @@ import json
 import os
 import re
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -812,6 +813,12 @@ def main():
                    f'print(json.dumps({{"title": {title!r}, "body": {body!r}, '
                    f'"labels": [{{"name": n}} for n in {list(labels)!r}], '
                    f'"parent": {({"number": 1} if parent else None)!r}}}))\n')
+            # THE STORED ANSWERS ARE CLEARED PER CASE. campaign-jev.py keeps
+            # raw probabilities beside its log, keyed by the state, the wording
+            # and the model -- so four cases here, which ask about the same
+            # title and body and differ only in what the stub answers, would
+            # each replay the first one's answer and measure the store.
+            shutil.rmtree(Path(tmp) / "jev-cache", ignore_errors=True)
             d = Path(tmp) / f"shim{abs(hash(src))}"
             # KEYED BY THE SOURCE, so asking twice for the same fixture is the
             # same directory rewritten rather than a collision.
@@ -918,6 +925,41 @@ def main():
         check("a title Jev reads as verb-first is printed and warned about by "
               "nothing", r.returncode == 0 and "verb-first  yes" in r.stdout
               and "imperative verb" not in r.stdout)
+        # THE PREFILTER COMES FIRST AND WHAT IT SETTLES IS NEVER SENT. An
+        # empty title is `check`'s own refusal, and a `noul` has no no-match
+        # option to answer one with -- the corpus's `verb-first-no-title` case
+        # came back a confident `no` at 0.04 about a title nobody wrote
+        # (DECISION 5715993782). The stub is a WORKING one here, so a call that
+        # was made would be visible as a `yes`.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, title="   ", jev=jev_answer(noul=0.95)))
+        check("an empty title settles verb-first in code and asks nothing",
+              "verb-first  `no`, settled by code" in r.stdout
+              and "verb-first  yes" not in r.stdout, r.stdout)
+        check("...and `check` refuses the empty title in its own findings",
+              "the title is empty" in r.stdout
+              and "RESULT   the shape holds" not in r.stdout, r.stdout)
+
+        # BETWEEN THE TWO MEASURED EDGES THE WORD IS `uncertain`, PRINTED AND
+        # WARNING NOTHING (DECISION 5715993782). 0.35 sits in verb-first's band
+        # (0.20, 0.50) and 0.51 in work-kind's (0.50, 0.52): neither reading has
+        # earned its word, and neither is an `unknown` -- the call happened.
+        # Both numbers are the registry's edges of the day, so a case here
+        # moves when a measured band moves them.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, jev=jev_answer(noul=0.35,
+                                                      choice="research",
+                                                      confidence=0.51)))
+        check("a reading between its two edges prints `uncertain` and warns "
+              "nothing", r.returncode == 0
+              and "verb-first  uncertain:" in r.stdout
+              and "kind suggestion uncertain:" in r.stdout
+              and "imperative verb" not in r.stdout
+              and "SUGGESTION" not in r.stdout
+              and "RESULT   the shape holds" in r.stdout, r.stdout)
+        check("...and an `uncertain` is not reported as an `unknown`",
+              "verb-first  unknown" not in r.stdout, r.stdout)
+
         # THE SUGGESTION IS ASKED FOR ONLY WHERE NO LABEL ANSWERS IT: this
         # sub-issue carries none, and the one below carries `kind:maintenance`.
         r = tracker("check", "5", "--plan",

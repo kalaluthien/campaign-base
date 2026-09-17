@@ -26,6 +26,7 @@ import json
 import os
 import re
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -812,6 +813,12 @@ def main():
                    f'print(json.dumps({{"title": {title!r}, "body": {body!r}, '
                    f'"labels": [{{"name": n}} for n in {list(labels)!r}], '
                    f'"parent": {({"number": 1} if parent else None)!r}}}))\n')
+            # THE STORED ANSWERS ARE CLEARED PER CASE. campaign-jev.py keeps
+            # raw probabilities beside its log, keyed by the state, the wording
+            # and the model -- so four cases here, which ask about the same
+            # title and body and differ only in what the stub answers, would
+            # each replay the first one's answer and measure the store.
+            shutil.rmtree(Path(tmp) / "jev-cache", ignore_errors=True)
             d = Path(tmp) / f"shim{abs(hash(src))}"
             # KEYED BY THE SOURCE, so asking twice for the same fixture is the
             # same directory rewritten rather than a collision.

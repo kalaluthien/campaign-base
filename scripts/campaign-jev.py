@@ -82,6 +82,16 @@ ONE CALL PER STATE. Every independent question over the same state goes in one
 `ask`: forty cost the latency of one and cannot see each other's answers. A
 second call is for an answer that must fetch evidence or build the next options.
 
+AND THE SAME STATE IS ASKED ONCE. The raw probabilities of every answer are
+stored beside the log, keyed by a hash of the STATE, a hash of the QUESTIONS AS
+SENT and the pinned MODEL, so a moved cut, band or combiner replays and asks
+nothing; a hit makes no request and needs no key. `cache=False` is the noise
+switch, set by `relive` and by the suite's `--live` half and by nothing else,
+because a band is what the same state answers ACROSS runs. `report` prints calls
+a state per reading, over the calls SENT -- a hit is logged as a hit and is not
+one. The store is scratch: gone, unreadable or corrupt, it costs a call and
+never an answer (DECISION 5716060001).
+
 EVERY CALL IS LOGGED, one JSON line to `<base>/runtime/jev.log` -- git-ignored
 scratch -- naming the reader, a SHORT label for what it read (never the state,
 which carries issue bodies), the model that answered, the latency, and per
@@ -170,7 +180,8 @@ CHOICE_EDGES = ("floor", "certain_over")
 Answer = namedtuple("Answer", "word raw why")
 # One call: the answers by question id, the model that answered (empty when
 # none did), the latency in seconds, and the sentence about the log line.
-Reading = namedtuple("Reading", "answers model latency logged")
+Reading = namedtuple("Reading", "answers model latency logged cached",
+                     defaults=(False,))
 
 
 def read_key(env=None):
@@ -357,6 +368,66 @@ def skip(reader, label, why, env=None, cwd=None):
     return log_call(row, os.environ if env is None else env, cwd)
 
 
+# ------------------------------------------------------------------ the store
+# RAW PROBABILITIES ARE KEPT AND REPLAYED, so a moved cut, band or combiner asks
+# nothing (DECISION 5716060001). The key is three things and all three matter: a
+# hash of the STATE, a hash of the QUESTIONS AS SENT -- the wording, which is
+# what `wording()` hashes for a registry entry -- and the pinned MODEL, because
+# a band measured under one version says nothing about the next.
+#
+# IT LIVES BESIDE THE LOG, in git-ignored runtime scratch, and holds the decoded
+# response whole. Nothing durable lives there: a store that is gone costs a
+# call and never an answer, so every path here returns rather than raises.
+CACHE_DIR = "jev-cache"
+
+
+def digest(obj):
+    """12 hex of one object's canonical JSON. The one hasher, so a key computed
+    on the way in and one computed on the way out cannot disagree."""
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False)
+                          .encode("utf-8")).hexdigest()[:12]
+
+
+def cache_key(state, questions):
+    """`<state>-<wording>-<model>`. The questions are hashed AS SENT, so the
+    thresholds -- which never reach the model -- never split the key either."""
+    sent = request_body(state, questions)["questions"]
+    return f"{digest(state)}-{digest(sent)}-{MODEL}"
+
+
+def cache_path(key, env=None, cwd=None):
+    """The file one key is stored in, or None when there is nowhere to store."""
+    log, _how = log_path(env, cwd)
+    return None if log is None else log.parent / CACHE_DIR / f"{key}.json"
+
+
+def cache_read(key, env=None, cwd=None):
+    """The stored response, or None. NEVER RAISES: a store that will not read
+    is a call to make, not a reading to lose."""
+    path = cache_path(key, env, cwd)
+    if path is None:
+        return None
+    try:
+        out = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return out if isinstance(out, dict) else None
+
+
+def cache_write(key, out, env=None, cwd=None):
+    """Store one decoded response. NEVER RAISES, and says nothing: a store that
+    could not be written costs the next reader a call it would have made."""
+    path = cache_path(key, env, cwd)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, sort_keys=True, ensure_ascii=False),
+                        encoding="utf-8")
+    except (OSError, TypeError, ValueError):
+        return
+
+
 def request_body(state, questions):
     """The POST body: the pinned model, the state, and every question in ONE
     call. The thresholds stay here -- they are this tree's reading of the
@@ -417,7 +488,7 @@ def unknown_all(questions, why):
 
 
 def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
-        log=True):
+        log=True, cache=True):
     """One call, one `Reading`: a branch per question, and the log line's fate.
 
     `reader` names who asked -- a script and its subcommand -- and `label` what
@@ -440,7 +511,13 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     rather than one per call, so that a join can read a row on its own. Two
     writers of the same line would drift, so there is still exactly one
     function that writes one -- `log_call` -- and this only declines to call
-    it."""
+    it.
+
+    `cache=False` IS THE NOISE SWITCH, and it is explicit rather than guessed
+    at: a run that measures how far the same state moves between runs must send
+    every one of them, so `relive` and the suite's `--live` half set it and
+    nothing else does. A hit is logged as a hit and is NOT a call: `report`'s
+    calls-a-state ratio is over the calls that were actually sent."""
     env = os.environ if env is None else env
     for qid, spec in questions.items():
         if spec["type"] not in (NOUL, CHOICE):
@@ -448,8 +525,10 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
                              f"`{spec['type']}`; this module answers "
                              f"{NOUL} and {CHOICE}")
     started = time.time()
+    hit = False
     try:
-        answers, model, why = _answer(state, questions, env, timeout)
+        answers, model, why, hit = _answer(state, questions, env, timeout,
+                                           cache, cwd)
     except Exception as e:  # noqa: BLE001 -- the boundary; the promise is here
         why = (f"the call raised where nothing is meant to "
                f"({e.__class__.__name__}), so nothing was read")
@@ -459,17 +538,23 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
            "answered": model, "latency": round(latency, 3),
+           # THE STATE'S HASH AND NOT THE STATE. The label carries no state on
+           # purpose -- an issue body in a scratch log is a copy nobody swept --
+           # and `report` needs only to tell one state from another to count
+           # calls a state.
+           "state_hash": digest(state), "cached": hit,
            "answers": {qid: {"branch": a.word, "raw": a.raw, "why": a.why}
                        for qid, a in answers.items()}}
     if why:
         row["why"] = why
     return Reading(answers, model, latency,
                    log_call(row, env, cwd) if log else "not logged here: the "
-                   "row is `judge`'s, one per reading")
+                   "row is `judge`'s, one per reading", hit)
 
 
-def _answer(state, questions, env, timeout):
-    """(the answers, the model that answered, why the whole call failed or "").
+def _answer(state, questions, env, timeout, cache=True, cwd=None):
+    """(the answers, the model that answered, why the whole call failed or "",
+    whether a stored answer was replayed).
     Every path here is one `ask` names; `ask` owns the ones it does not."""
     # THE BUDGET IS READ FIRST, before the key and before the endpoint: an
     # oversize state is the caller's own bug and needs neither to be known.
@@ -478,19 +563,39 @@ def _answer(state, questions, env, timeout):
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
+    # THE STORE IS READ BEFORE THE KEY AND BEFORE THE ENDPOINT. A hit is an
+    # answer this state, this wording and this model already gave, so a reader
+    # with no key at all still gets it -- and a cut moved since costs nothing,
+    # because the raw probabilities are what was stored and `branch` runs here.
+    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None
+    if stored is not None:
+        return read_answers(stored, questions) + (True,)
     key, why = read_key(env)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     url, why = endpoint(env)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     out, why = post(request_body(state, questions), key, url, timeout)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     if not isinstance(out, dict):
         why = "the response is not an object"
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
+    answers, model, why = read_answers(out, questions)
+    # ONLY AN ANSWER FROM THE PINNED MODEL IS STORED. One from another version
+    # is `unknown` here and would be `unknown` on every replay, so storing it
+    # would cache a failure.
+    if cache and not why:
+        cache_write(cache_key(state, questions), out, env, cwd)
+    return answers, model, why, False
+
+
+def read_answers(out, questions):
+    """(the answers, the model that answered, why) for one decoded response,
+    from the endpoint or from the store. ONE READER, so a replayed answer takes
+    exactly the branches a fresh one takes."""
     if out.get("model") != MODEL:
         model = str(out.get("model"))
         why = (f"`{model}` answered where `{MODEL}` is pinned; a band "
@@ -775,7 +880,7 @@ def does(entry, word, raw):
 
 
 def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
-          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True):
+          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True, cache=True):
     """One group, one state, ONE call: a `Verdict` per reading of the group.
 
     `state` carries exactly the fields the group's entries name, and a MISSING
@@ -824,7 +929,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     asked = {n: question_of(e) for n, e in entries.items() if n not in settled}
     if asked:
         reading = ask(reader or "campaign-jev.judge", read, state, asked,
-                      env=env, cwd=cwd, timeout=timeout, log=False)
+                      env=env, cwd=cwd, timeout=timeout, log=False, cache=cache)
     else:
         reading = Reading({}, "", 0.0, "")
     call = uuid.uuid4().hex[:12]
@@ -846,6 +951,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                "settled": settled.get(name), "tier": entry["tier"],
                "does": verdicts[name].does, "asked": MODEL,
                "answered": reading.model, "latency": round(reading.latency, 3),
+               "state_hash": digest(state), "cached": reading.cached,
                "branch": word, "raw": raw, "why": why, "flag": flag}
         row.update({k: v for k, v in (key or {}).items() if v is not None})
         notes.append(log_call(row, env, cwd) if log else "not logged")
@@ -1146,11 +1252,56 @@ def waiting_line(reg=None):
             + (f" ({', '.join(sorted(short))})" if short else ""))
 
 
+def spend_lines(env=None, cwd=None):
+    """CALLS A STATE, per reading: the one number that says whether a reader is
+    asking the same state over and over (DECISION 5716060001). It is the ratio
+    the owner set at 1/5 to 1/20, so it is PRINTED rather than asked for.
+
+    A CACHE HIT IS NOT A CALL. It is logged so it is visible, and counted apart:
+    the ratio is over the calls that were actually sent, since that is what the
+    endpoint charges for. A row whose reading asked nothing -- a `skipped` row,
+    or one code settled -- is neither.
+
+    A row is grouped by the reading it names, and an `ask` row names none, so
+    those are grouped by their READER and said to be. Rows with no state to
+    group by at all -- every row written before the hash was logged -- are
+    counted and named rather than silently left out of the denominator."""
+    rows, how, torn = read_log(env=env, cwd=cwd)
+    spent, hits, states, blind = {}, {}, {}, 0
+    for row in rows:
+        if row.get("skipped") is not None or row.get("settled") is not None:
+            continue
+        who = row.get("reading") or f"(reader) {row.get('reader') or '?'}"
+        key = row.get("state_hash")
+        if key is None and isinstance(row.get("state"), dict):
+            key = digest(row["state"])
+        if key is None:
+            blind += 1
+            continue
+        if row.get("cached"):
+            hits[who] = hits.get(who, 0) + 1
+            continue
+        spent[who] = spent.get(who, 0) + 1
+        states.setdefault(who, set()).add(key)
+    out = [f"calls a state, over {len(rows)} row(s) of {how}"
+           + (f", {torn} unparsed" if torn else "")
+           + (f", {blind} with no state to group by" if blind else "")]
+    for who in sorted(set(spent) | set(hits)):
+        sent, distinct = spent.get(who, 0), len(states.get(who, ()))
+        out.append(f"  {who:<28} {sent} sent over {distinct} state(s)"
+                   + (f", {sent / distinct:.1f} a state" if distinct else "")
+                   + (f"; {hits[who]} replayed from the store" if who in hits
+                      else ""))
+    return out
+
+
 def cmd_report(args):
     reg = load_registry()
     print(waiting_line(reg))
     if args.waiting:
         return 0
+    for line in spend_lines():
+        print(line)
     names = [args.reading] if args.reading else sorted(reg)
     for name in names:
         entry = reg.get(name)
@@ -1248,8 +1399,11 @@ def relive(name, entry, cases, env=None, root=None):
         timespec="seconds")
     q = {name: question_of(entry)}
     for c in cases:
+        # THE STORE IS OFF HERE. A band is what the same state answers across
+        # runs, so a run that replayed a stored answer would measure the store
+        # and report a drift of zero (DECISION 5716060001).
         r = ask("campaign-jev.py report --live", c["id"], c.get("state") or {},
-                q, env=env, log=False)
+                q, env=env, log=False, cache=False)
         a = r.answers[name]
         c.setdefault("seen", []).append(
             {"model": r.model, "wording": wording(entry), "at": at,

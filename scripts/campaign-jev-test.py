@@ -49,6 +49,7 @@ import importlib
 import json
 import os
 import re
+import shutil
 import socket
 import sys
 import tempfile
@@ -154,10 +155,18 @@ def serving(status=200, body=None, **kw):
     SEEN["count"] = 0
 
 
+def clear_store():
+    """The stored answers beside the log, gone. Every case below asks about a
+    call that was MADE, so a case reading the answer a case before it stored
+    would be measuring the store and calling it the endpoint."""
+    shutil.rmtree(LOG.parent / "jev-cache", ignore_errors=True)
+
+
 def read(m, questions=None, **kw):
-    """One call against the stub, with the log truncated first so each case
-    reads its own line and never the run before it."""
+    """One call against the stub, with the log truncated and the store cleared
+    first so each case reads its own call and never the run before it."""
     LOG.write_text("")
+    clear_store()
     serving(**{k: v for k, v in kw.items()
                if k not in ("url", "key", "home", "state")})
     return m.ask("a suite", "a label", kw.get("state", STATE), questions or BOTH,
@@ -1018,6 +1027,150 @@ def a_bad_entry_never_loads(m):
     return False, "loaded a registry whose act moves `standing`"
 
 
+# ------------------------------------------------------- the store of answers
+# RAW PROBABILITIES REPLAYED, so a moved cut asks nothing. Every case here
+# counts the requests the stub SAW: a store that is read is a call not sent.
+
+
+def a_second_identical_ask_sends_nothing(m):
+    """The whole point. Same state, same wording, same pinned model: the second
+    ask replays and the endpoint sees one request, not two."""
+    first = read(m)                      # clears the store, then calls
+    serving()                            # resets SEEN["count"] to 0
+    second = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return (SEEN["count"] == 0 and second.cached is True
+            and not first.cached
+            and second.answers["verb_first"].raw
+            == first.answers["verb_first"].raw), (SEEN["count"], second.cached)
+
+
+def a_hit_is_logged_as_a_hit(m):
+    """It is visible, and it is not a call: `report`'s ratio is over what was
+    sent, so a hit that logged as an ordinary row would flatter the ratio."""
+    read(m)
+    LOG.write_text("")
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    row = json.loads(LOG.read_text().splitlines()[-1])
+    return row.get("cached") is True and row.get("state_hash"), row
+
+
+def moved(m, **kw):
+    """(requests the stub saw on the second ask) after one warm ask, with `kw`
+    changing one of the three things the key is made of."""
+    read(m)
+    serving()
+    state = kw.get("state", STATE)
+    questions = kw.get("questions", BOTH)
+    if kw.get("model"):
+        m.MODEL = kw["model"]
+    try:
+        r = m.ask("a suite", "a label", state, questions, env=env(), timeout=5)
+    finally:
+        m.MODEL = MODEL
+    return SEEN["count"], r
+
+
+def a_changed_state_misses(m):
+    count, _r = moved(m, state={"title": "Retire the queue", "body": "- b"})
+    return count == 1, count
+
+
+def a_changed_wording_misses(m):
+    reworded = {"verb_first": dict(NOUL_Q, instructions="Is it an order?"),
+                "work_kind": CHOICE_Q}
+    count, _r = moved(m, questions=reworded)
+    return count == 1, count
+
+
+def a_changed_model_misses(m):
+    """The pinned model is in the key, so a version bump replays nothing: a
+    band measured under one version says nothing about the next."""
+    count, _r = moved(m, model="jev-1.14.0")
+    return count == 1, count
+
+
+def a_moved_cut_replays(m):
+    """THE REASON THE RAW PROBABILITIES ARE WHAT IS STORED. The cuts never
+    reach the model, so moving one must not move the key: the stored answer is
+    replayed and `branch` runs over it again, here into the other word."""
+    read(m, noul=0.94)
+    serving()
+    moved_cut = {"verb_first": dict(NOUL_Q, yes_over=0.99, no_under=0.96),
+                 "work_kind": CHOICE_Q}
+    r = m.ask("a suite", "a label", STATE, moved_cut, env=env(), timeout=5)
+    return (SEEN["count"] == 0 and r.answers["verb_first"].word == "no"),\
+        (SEEN["count"], r.answers["verb_first"].word)
+
+
+def the_noise_switch_sends_every_time(m):
+    """`cache=False` is what a run measuring noise sets, and it is explicit:
+    a band is what the same state answers ACROSS runs, so a replayed answer
+    would report a drift of zero."""
+    read(m)
+    serving()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    # AND THROUGH `judge`, which is what a reader calls: a switch the group
+    # caller swallowed would leave every repeat run replaying.
+    for _ in range(2):
+        m.judge("issue-shape", STATE, read="a label", env=env(), timeout=5,
+                log=False, cache=False)
+    return SEEN["count"] == 4, SEEN["count"]
+
+
+def an_answer_from_another_model_is_never_stored(m):
+    """It is `unknown` here and would be `unknown` on every replay, so storing
+    it would cache a failure."""
+    read(m, model="jev-latest")
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return SEEN["count"] == 1 and not r.cached, (SEEN["count"], r.cached)
+
+
+def a_store_that_will_not_read_costs_a_call(m):
+    """NEVER RAISES: a store that is gone, unreadable or corrupt is a call to
+    make, not a reading to lose."""
+    read(m)
+    path = m.cache_path(m.cache_key(STATE, BOTH), env=env())
+    path.write_text("{not json")
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return (SEEN["count"] == 1
+            and r.answers["verb_first"].word == "yes"), (SEEN["count"], r)
+
+
+def the_ratio_counts_sent_calls_over_distinct_states(m):
+    """`report`'s calls-a-state, over a made log: three calls on two states,
+    one of them replayed, reads 2 sent over 2 states with 1 replayed."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "bbb", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": True},
+        {"reading": "verb-first", "state_hash": "ccc", "settled": "no"},
+        {"reading": "verb-first", "skipped": "the kind read failed"},
+        {"reader": "check-finding-sort.py", "state_hash": "ddd"},
+        {"reader": "an old row", "read": "before the hash was logged"},
+    ]))
+    lines = m.spend_lines(env=env())
+    head, verb = lines[0], [ln for ln in lines if "verb-first" in ln]
+    return (len(verb) == 1 and "2 sent over 2 state(s)" in verb[0]
+            and "1.0 a state" in verb[0] and "1 replayed" in verb[0]
+            and "1 with no state to group by" in head
+            and any("(reader) check-finding-sort.py" in ln for ln in lines)),\
+        lines
+
+
+CASES["a second identical ask replays and sends nothing"] = a_second_identical_ask_sends_nothing
+CASES["a replayed answer is logged as a hit, not as a call"] = a_hit_is_logged_as_a_hit
+CASES["a changed state misses the store"] = a_changed_state_misses
+CASES["a changed wording misses the store"] = a_changed_wording_misses
+CASES["a changed model misses the store"] = a_changed_model_misses
+CASES["a moved cut replays the stored answer and asks nothing"] = a_moved_cut_replays
+CASES["the noise switch sends every time"] = the_noise_switch_sends_every_time
+CASES["an answer from another model is never stored"] = an_answer_from_another_model_is_never_stored
+CASES["a store that will not read costs a call, not an answer"] = a_store_that_will_not_read_costs_a_call
+CASES["report counts calls sent over distinct states"] = the_ratio_counts_sent_calls_over_distinct_states
+
 CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
 CASES["an act never moves a label a person alone moves"] = act_never_moves_a_person_label
 CASES["an act is never a claim, release, merge, close, launch or retire"] = act_is_never_an_event_with_an_actor
@@ -1032,6 +1185,39 @@ CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    # --- the store of answers ---
+    ("the store never read",
+     "    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None",
+     "    stored = None",
+     "a second identical ask replays and sends nothing"),
+    ("the store never written",
+     "        cache_write(cache_key(state, questions), out, env, cwd)",
+     "        pass", "a second identical ask replays and sends nothing"),
+    ("the state left out of the key",
+     '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
+     '    return f"-{digest(sent)}-{MODEL}"',
+     "a changed state misses the store"),
+    ("the wording left out of the key",
+     '    sent = request_body(state, questions)["questions"]',
+     '    sent = "one wording for all"',
+     "a changed wording misses the store"),
+    ("the pinned model left out of the key",
+     '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
+     '    return f"{digest(state)}-{digest(sent)}"',
+     "a changed model misses the store"),
+    ("the noise switch ignored in `ask`",
+     "if cache else None", "if True else None",
+     "the noise switch sends every time"),
+    ("the noise switch swallowed by `judge`",
+     "timeout=timeout, log=False, cache=cache)",
+     "timeout=timeout, log=False, cache=True)",
+     "the noise switch sends every time"),
+    ("a hit counted as a call",
+     '        if row.get("cached"):\n'
+     '            hits[who] = hits.get(who, 0) + 1\n'
+     '            continue',
+     "        if False:\n            pass",
+     "report counts calls sent over distinct states"),
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
      "a choice under the floor is unknown"),
     ("the option's probability unread",
@@ -1275,8 +1461,11 @@ def live(record, wording_hash=None):
         declared = (entry.get("bands") or {}).get("declared") or {}
         seen, outside, wrong, nomatch, flips = {}, [], [], [], []
         for c in cases:
+            # THE STORE IS OFF HERE, as it is in `relive`: a band is what the
+            # same state answers across runs, and a replayed answer would
+            # report a drift of zero (DECISION 5716060001).
             r = jev.ask("campaign-jev-test.py --live", c["id"],
-                        c.get("state") or {}, q, log=False)
+                        c.get("state") or {}, q, log=False, cache=False)
             model = r.model or model
             a = r.answers[name]
             value = jev.band_value(entry, a.raw)

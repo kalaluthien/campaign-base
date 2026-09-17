@@ -784,7 +784,7 @@ def main():
         # The pane stamp every role and liveness reading keys on. Its readers
         # are all here, so a registration that missed an event would leave a
         # pane unstamped exactly when that event was its only chance.
-        LINK = ".claude/skills/driving-herdr/scripts/herdr-session-link.py"
+        LINK = ".claude/skills/using-herdr/scripts/herdr-session-link.py"
         for event in ("SessionStart", "UserPromptSubmit"):
             check(f"the session-link hook is registered on {event} by its "
                   f"whole path",

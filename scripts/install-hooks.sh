@@ -327,7 +327,7 @@ fi
 # names, which is the walk of a guarded folder the Bash rule refuses.
 # check-read-range.py is its own entry on `Read` alone (rule-check#443): steering
 # a read is no claim question, and a fault in it must not touch the guard.
-# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/driving-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
+# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/using-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this

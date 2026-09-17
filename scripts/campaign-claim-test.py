@@ -287,6 +287,10 @@ def claim(args, path_dir, extra_env=None):
     # changes between runs -- inside every claim case here. Port 1 listens for
     # nothing, which is `unknown`: one line printed, no exit status moved.
     env["CAMPAIGN_JEV_URL"] = "http://127.0.0.1:1/systemone"
+    # AND A LOG OF NO CONSEQUENCE. Unnamed, every call landed in the base's
+    # runtime/jev.log -- 58 rows a run of this suite, measured 2026-09-17 -- and
+    # `corpus join` labelled the fixture title against real issues.
+    env["CAMPAIGN_JEV_LOG"] = os.devnull
     env.update(extra_env or {})
     return subprocess.run([sys.executable, str(CLAIM), *args],
                           capture_output=True, text=True, env=env)

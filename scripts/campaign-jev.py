@@ -1848,8 +1848,8 @@ def sample_of(entry, cases):
     copy would sample a different set and then compare the two.
 
     FOUR KINDS ARE ALWAYS ASKED. A case whose recorded value sits within NEAR
-    of an edge or of a band's end, because that is the case a run can move a
-    threshold with; a case with no recorded value under this wording and model,
+    of an edge or of an INNER band end -- 0 and 1 are the scale's own ends and
+    no mark -- because that is the case a run can move a threshold with; a case with no recorded value under this wording and model,
     because nothing is known about it yet; a case whose ROLE is not `case` --
     the flip and the no-match -- because the live half asserts on each by name
     and a run that skipped one would assert nothing; and every case of a
@@ -1857,10 +1857,15 @@ def sample_of(entry, cases):
 
     THE REST IS A SEEDED SAMPLE. It returns the cases in the order given, so a
     caller prints them in corpus order and not in the order they were drawn."""
+    # 0 AND 1 ARE NOT MARKS. They are the scale's own ends, not a line a
+    # threshold can be moved across, and the `confident` band runs to 1.0 --
+    # so counting them pinned every case that answers 0.96 or more, which is
+    # most of a working reading's corpus, and the sample saved nothing.
     marks = [v for v in (entry.get("thresholds") or {}).values()
              if isinstance(v, (int, float))]
     for band in ((entry.get("bands") or {}).get("declared") or {}).values():
-        marks += [v for v in band if isinstance(v, (int, float))]
+        marks += [v for v in band
+                  if isinstance(v, (int, float)) and 0.0 < v < 1.0]
     want, model = wording(entry), (entry.get("bands") or {}).get("model")
     pinned, rest = {}, []
     for c in cases:

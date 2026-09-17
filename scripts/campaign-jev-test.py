@@ -1559,20 +1559,23 @@ def a_repeat_run_asks_a_sample_and_the_edges(m):
               # 0.75 sits near no mark, so what pins these two is the ROLE
               {"id": "a-flip", "role": "flip", "seen": seen(0.75)},
               {"id": "a-no-match", "role": "no-match", "seen": seen(0.75)},
-              {"id": "unseen", "role": "case", "seen": []}]
+              {"id": "unseen", "role": "case", "seen": []},
+              # 0.99 sits against the `confident` band's 1.0, which is the
+              # scale's own end and no mark, so it is NOT pinned
+              {"id": "at-the-ceiling", "role": "case", "seen": seen(0.99)}]
              + [{"id": f"settled-{i:02d}", "role": "case", "seen": seen(0.90)}
                 for i in range(20)])
     asked, pinned = m.sample_of(entry, cases)
     ids = [c["id"] for c in asked]
     again = [c["id"] for c in m.sample_of(entry, cases)[0]]
-    drawn = [i for i in ids if i.startswith("settled-")]
     return (set(pinned) == {"near-edge", "near-band-end", "a-flip",
                             "a-no-match", "unseen"}
             and all(i in ids for i in pinned)
             and pinned["a-flip"] == "role flip"
             and pinned["a-no-match"] == "role no-match"
             and pinned["near-edge"].startswith("within")
-            and len(drawn) == 5 and ids == again
+            and "at-the-ceiling" not in pinned
+            and len([i for i in ids if i not in pinned]) == 5 and ids == again
             and ids == [c["id"] for c in cases if c["id"] in set(ids)]),\
         (ids, pinned)
 
@@ -2034,6 +2037,10 @@ MUTATIONS = [
     ("the repeat sample drawn afresh every run",
      '    drawn = set(random.Random(SAMPLE_SEED).sample(sorted(rest), take)) if rest \\',
      "    drawn = set(random.Random().sample(sorted(rest), take)) if rest \\",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("the scale's own ends counted as a band's edge",
+     "                  if isinstance(v, (int, float)) and 0.0 < v < 1.0]",
+     "                  if isinstance(v, (int, float))]",
      "a repeat run asks a seeded sample and every case near an edge"),
     ("a case near an edge left to the sample",
      "        if close:", "        if False:",

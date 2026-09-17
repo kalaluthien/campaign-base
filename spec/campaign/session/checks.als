@@ -156,8 +156,11 @@ pred SR1b_ARangeADiffOrAShortFilePasses {
 /* ---------------- commands ---------------- */
 
 /* HG1. A GUIDE UNLIKE HERDR'S TEXT DIFFERS, AND MAY THEN BE REWRITTEN
-   (system.als's `differs`); HG1b is UNSAT because a herdr that could not be
-   read is `unknown` and licenses no rewrite, whatever the guide holds. */
+   (system.als's `differs`); HG1b is UNSAT by construction, `mayRewrite`
+   being `differs` and `unknown` being its complement on Readable, so it
+   records the rule and proves nothing about the script: the suite's two
+   `unknown` cases, a missing herdr and a `--skill` that fails or prints
+   nothing, are what hold it there. */
 pred HG1_AGuideUnlikeHerdrsTextDiffers { some g: Guide | differs[g] and mayRewrite[g] }
 pred HG1b_AnUnreadableHerdrLicensesNoRewrite { some g: Guide | unknown[g] and mayRewrite[g] }
 

@@ -112,8 +112,10 @@ herdr agent start <name> --kind claude --pane <pane_id> -- <claude args...>
   `agent_prompt_stalled` while the command in fact ran** (probed 2026-09-08
   with `/remote-control`: stalled at 5000 ms, the pane showing the dialog).
   Read the pane before concluding, and dismiss the dialog rather than
-  re-sending. The 0.9.0 guide states the general rule, that a stall does not
-  prove non-delivery; this is the case that produces it here.
+  re-sending. Re-probed on 0.9.0, 2026-09-17, with a bare `/model`: stalled
+  at 5000 ms with the picker on screen and the status still `idle`, so the
+  guide's `blocked` does not cover a slash command's own dialog. The guide's
+  rule that a stall does not prove non-delivery is this case.
 - **`/model <m>` and `/effort <e>` switch a running session in place, and
   each rewrites the user's default** -- `model` and `effortLevel` in
   `~/.claude/settings.json`, as the pane says (`saved as your default for new

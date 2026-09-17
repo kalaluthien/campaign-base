@@ -34,7 +34,7 @@ esac
 BROKEN = "#!/bin/sh\nexit 3\n"
 
 
-def run(guide, fake_body=FAKE, skill=NEW, argv=(), herdr=True):
+def run(guide, fake_body=FAKE, skill=NEW, argv=(), herdr=True, commits=False):
     root = Path(tempfile.mkdtemp(prefix="herdr-guide-"))
     try:
         (root / "skill/scripts").mkdir(parents=True)
@@ -42,6 +42,19 @@ def run(guide, fake_body=FAKE, skill=NEW, argv=(), herdr=True):
         shutil.copy(SCRIPT, root / "skill/scripts")
         if guide is not None:
             (root / "skill/references/guide.md").write_text(guide)
+        stamp = None
+        if commits:
+            # The guide is committed first and a sibling after it, so a `git
+            # log` that forgot to name the guide reports the sibling's commit.
+            refs = root / "skill/references"
+            harness.git(root, "init", "-q")
+            for name in ("guide.md", "facts.md"):
+                (refs / name).touch()
+                harness.git(root, "add", str(refs / name))
+                harness.git(root, "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", name)
+                if name == "guide.md":
+                    stamp = harness.git(root, "log", "-1", "--format=%h").stdout.strip()
         bin_dir = root / "bin"
         bin_dir.mkdir()
         if herdr:
@@ -53,7 +66,8 @@ def run(guide, fake_body=FAKE, skill=NEW, argv=(), herdr=True):
         r = subprocess.run([sys.executable, str(root / "skill/scripts" / SCRIPT.name), *argv],
                            capture_output=True, text=True, env={**os.environ, "PATH": path})
         g = root / "skill/references/guide.md"
-        return r.returncode, r.stdout + r.stderr, g.read_text() if g.exists() else None
+        said = r.stdout + r.stderr
+        return r.returncode, (said, stamp) if commits else said, g.read_text() if g.exists() else None
     finally:
         shutil.rmtree(root, True)
 
@@ -75,6 +89,12 @@ def main():
 
     code, said, after = run(None, argv=["write"])
     check("write creates a missing guide", code == 0 and after == NEW, said)
+
+    code, (said, stamp), _ = run(OLD, commits=True)
+    check("differs names the commit that last wrote the guide, not a sibling's",
+          bool(stamp) and f"last written {stamp} " in said, f"{stamp!r}: {said[:200]}")
+    code, said, _ = run(OLD)
+    check("a guide no commit holds says so", "last written uncommitted" in said, said[:200])
 
     code, said, _ = run(OLD, herdr=False)
     check("no herdr is unknown, 2, never differs", code == 2 and said.startswith("unknown:"), said)

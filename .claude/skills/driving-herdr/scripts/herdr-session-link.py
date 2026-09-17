@@ -22,7 +22,7 @@ repository -- campaign-role-brief.py resolves a session's role through it,
 check-campaign-claim.py its licence, campaign-claim.py its liveness -- so the
 writer sits beside them, and scripts/install-hooks.sh registers it machine-wide
 on both events, as it does campaign-role-brief.py. It is ours and not herdr's:
-the vendored SKILL.md above is upstream's and untouched, and herdr's own
+references/guide.md beside it is herdr's text and untouched, and herdr's own
 integration, ~/.claude/hooks/herdr-agent-state.sh, stays where herdr put it.
 """
 import json

@@ -20,8 +20,8 @@ reference and never this page.
 | delegate | a session another session launched into a pane and answers for |
 | agent name | the name herdr holds for a pane's agent; what `herdr` commands and the claim guard read |
 | harness name | the name the agent's own harness holds; what a message between sessions is addressed to. Neither name sets the other |
-| target | the pane or agent a command acts on; one not named falls to whichever pane the person has focused |
-| status | herdr's reading of an agent's screen, a word from a fixed set; the guide defines the set and facts says where a word misleads |
+| target | the pane or agent a command acts on; one not named may fall to the focused pane, which can be the person's or another client's |
+| status | herdr's word for an agent, from a fixed set; the guide defines the set and what each word is read from, and facts says where a word misleads |
 
 ## The references
 

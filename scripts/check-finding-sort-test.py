@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 # witnesses: JV1_ARepliedConfidentFittingJudgmentAdvises, JV1b_AFailedLowOrNoMatchAnswerNeverAdvises
-"""Prove check-research-bar.py asks one state per condition of a research NOTE, asks nothing else, and never refuses.
+"""Prove check-finding-sort.py asks one masked state per finding of a REVIEW, labels it with the reviewer's word, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every
 question with one P(contradicts), and the reader runs from a fixture directory
-holding the real scripts/campaign-jev.py, this reading's registry entry, and a
-stub campaign-tracker.py whose `kind` word the case sets. Each case is then
+holding the real scripts/campaign-jev.py and this reading's registry entry. Each case is then
 broken by a mutation of the reader's text and must go red by its own assertion.
 
-`--live` asks every line of scripts/jev/corpus/research-bar.jsonl against the
+`--live` asks every line of scripts/jev/corpus/finding-sort.jsonl against the
 real endpoint and fails a case whose word differs from the last one `seen`
 under the same question wording; `--record` appends the reading to `seen`.
 
-Usage: scripts/check-research-bar-test.py [--live [--record]]
+Usage: scripts/check-finding-sort-test.py [--live [--record]]
 """
 import datetime
 import hashlib
@@ -32,13 +31,18 @@ harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
 HERE = Path(__file__).resolve().parent
-SCRIPT = HERE / "check-research-bar.py"
+SCRIPT = HERE / "check-finding-sort.py"
 SOURCE = SCRIPT.read_text()
 ENTRIES = json.loads((HERE / "jev" / "readings.json").read_text())
-ENTRY = ENTRIES["research-bar"]
-CORPUS = HERE / "jev" / "corpus" / "research-bar.jsonl"
-ROOT = Path(tempfile.mkdtemp(prefix="research-bar-"))
-NOTE = "NOTE demo-worker-1: measured 3 runs, 40 of 47 flagged by overlap\n\nbody\n"
+ENTRY = ENTRIES["finding-sort"]
+CORPUS = HERE / "jev" / "corpus" / "finding-sort.jsonl"
+ROOT = Path(tempfile.mkdtemp(prefix="finding-sort-"))
+REVIEW = ("REVIEW demo-worker-1: at abcdef1, two findings\n\n"
+          "1. defect, `a.py:3` -- the parser drops the last line of every file it reads\n"
+          "2. refinement, low -- the docstring names a flag the code no longer has\n\n"
+          "Refinements:\n"
+          "- `b.py:9` the usage line spells the option two different ways\n"
+          "- resolved: the earlier wording note is closed in 1234567\n")
 
 NEXT = {"p": 0.9}
 SEEN = []
@@ -51,8 +55,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
         SEEN.append(body)
         p = NEXT["p"]
         answers = {q: {"type": "choice", "choice": "supports", "confidence": 0.5,
-                       "probabilities": {"contradicts": p, "supports": 1 - p,
-                                         "says_nothing": 0.0}}
+                       "probabilities": {"defect": p, "refinement": 1 - p,
+                                         "unclear": 0.0}}
                    for q in body["questions"]}
         data = json.dumps({"model": "jev-1.13.0", "answers": answers}).encode()
         self.send_response(200)
@@ -70,54 +74,62 @@ URL = f"http://127.0.0.1:{SERVER.server_address[1]}/v1/systemone"
 
 
 def load(source):
-    m = types.ModuleType("researchbar")
+    m = types.ModuleType("findingsort")
     m.__file__ = str(SCRIPT)
     exec(compile(source, str(SCRIPT), "exec"), m.__dict__)
     return types.SimpleNamespace(source=source, m=m)
 
 
-def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None,
-        kind_exit=0):
-    """(the finished process, the argv the stub tracker was given)."""
+def run(t, review=REVIEW, argv=("468",), registry=True):
+    """The finished process; `SEEN` holds the states asked, `LOGGED` the log."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
-    (d / "check-research-bar.py").write_text(t.source)
+    (d / "check-finding-sort.py").write_text(t.source)
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
-    (d / "campaign-tracker.py").write_text(
-        "import json, sys\n"
-        f"open({str(d / 'tracker-argv.json')!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
-        f"print({kind!r})\n"
-        f"sys.exit({kind_exit})\n")
     if registry:
-        (d / "jev" / "readings.json").write_text(json.dumps({"research-bar": ENTRY}))
+        (d / "jev" / "readings.json").write_text(json.dumps({"finding-sort": ENTRY}))
     SEEN.clear()
-    env = dict(os.environ, CAMPAIGN_JEV_URL=url or URL, TYPESAFE_API_KEY="stub",
+    env = dict(os.environ, CAMPAIGN_JEV_URL=URL, TYPESAFE_API_KEY="stub",
                CAMPAIGN_JEV_LOG=str(d / "jev.log"), HOME=str(d))
-    r = subprocess.run([sys.executable, str(d / "check-research-bar.py"), *argv],
-                       input=note, capture_output=True, text=True, env=env)
-    got = d / "tracker-argv.json"
+    r = subprocess.run([sys.executable, str(d / "check-finding-sort.py"), *argv],
+                       input=review, capture_output=True, text=True, env=env)
     log = d / "jev.log"
     LOGGED[:] = ([json.loads(x) for x in log.read_text().splitlines() if x]
                  if log.exists() else [])
-    return r, (json.loads(got.read_text()) if got.exists() else None)
+    return r
 
 
-def asks_each_condition(t):
-    r, _ = run(t)
-    states = sorted((b["state"]["condition"], b["state"]["note"]) for b in SEEN)
-    want = sorted((c, NOTE) for c in ENTRY["conditions"].values())
-    return (r.returncode == 0 and states == want and r.stdout == ""
-            and len(SEEN) == len(ENTRY["conditions"])), (states, r.stdout, r.stderr)
+def asks_each_finding(t):
+    r = run(t)
+    got = sorted(b["state"]["finding"] for b in SEEN)
+    want = sorted(["[label], `a.py:3` -- the parser drops the last line of every file it reads",
+                   "[label],  the docstring names a flag the code no longer has",
+                   "`b.py:9` the usage line spells the option two different ways"])
+    return (r.returncode == 0 and r.stdout == "" and got == want), (got, r.stderr[-300:])
 
 
-def other_kind_asks_nothing(t):
-    r, _ = run(t, kind="development")
-    return r.returncode == 0 and not SEEN, (len(SEEN), r.stderr)
+def masks_the_word(t):
+    run(t)
+    text = json.dumps([b["state"] for b in SEEN])
+    return (bool(SEEN) and "defect" not in text and "refinement" not in text
+            and "low" not in text), text
+
+
+def labels_the_word(t):
+    run(t, argv=("468", "o/r"))
+    got = sorted(x["read"] for x in LOGGED)
+    return got == ["o/r#468 REVIEW f1 defect", "o/r#468 REVIEW f2 refinement",
+                   "o/r#468 REVIEW f3 refinement"], got
 
 
 def other_comment_asks_nothing(t):
-    r, _ = run(t, note="REPORT demo-worker-1: at abcdef1\n")
-    return r.returncode == 0 and not SEEN, (len(SEEN), r.stderr)
+    r = run(t, review=REVIEW.replace("REVIEW ", "REPORT ", 1))
+    return r.returncode == 0 and not SEEN and not LOGGED, (len(SEEN), LOGGED)
+
+
+def clean_review_asks_nothing(t):
+    r = run(t, review="REVIEW demo-worker-1: at abcdef1, clean\n\nFindings: none.\n")
+    return r.returncode == 0 and not SEEN and not LOGGED, (len(SEEN), LOGGED)
 
 
 def entry_reaches_model(t):
@@ -128,66 +140,40 @@ def entry_reaches_model(t):
             and "yes_over" not in q), q
 
 
-def repo_reaches_tracker(t):
-    r, argv = run(t, argv=("7", "o/r"))
-    return r.returncode == 0 and argv == ["kind", "7", "o/r"], argv
-
-
-def failure_exits_zero(t):
-    r, _ = run(t, registry=False)
-    return (r.returncode == 0 and not SEEN and r.stdout == ""
-            and r.stderr == ""
-            and [x.get("skipped") for x in LOGGED] == ["the reading raised FileNotFoundError"]
-            ), (r.returncode, r.stderr[-300:], LOGGED)
-
-
-def failed_kind_read_logs_skip(t):
-    r, _ = run(t, kind="", kind_exit=2)
-    return (r.returncode == 0 and not SEEN and len(LOGGED) == 1
-            and LOGGED[0]["read"] == "tracker#458 NOTE"
-            and LOGGED[0]["skipped"].startswith("the kind read failed")), LOGGED
-
-
-def other_kind_logs_nothing(t):
-    r, _ = run(t, kind="none", kind_exit=1)
-    return r.returncode == 0 and not SEEN and not LOGGED, LOGGED
+def failure_logs_skip(t):
+    r = run(t, registry=False)
+    return (r.returncode == 0 and not SEEN and r.stdout == "" and r.stderr == ""
+            and [x.get("skipped") for x in LOGGED]
+            == ["the reading raised FileNotFoundError"]), (r.stderr[-300:], LOGGED)
 
 
 CASES = {
-    "a research NOTE asks one state per condition, the note whole, printing nothing": asks_each_condition,
-    "a NOTE on another work kind asks nothing": other_kind_asks_nothing,
+    "a REVIEW asks one state per finding, verification notes left out, printing nothing": asks_each_finding,
+    "the reviewer's word and severity never reach the model": masks_the_word,
+    "each call is labelled with the reviewer's word, by item or by section": labels_the_word,
     "a comment of another kind asks nothing": other_comment_asks_nothing,
+    "a REVIEW with no finding asks nothing": clean_review_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
-    "the repository reaches the kind reader": repo_reaches_tracker,
-    "a reader that could not read exits 0, says nothing and logs a skip": failure_exits_zero,
-    "a failed kind read logs one skip row": failed_kind_read_logs_skip,
-    "an issue with no kind logs nothing": other_kind_logs_nothing,
+    "a reading that raised exits 0, says nothing and logs a skip": failure_logs_skip,
 }
 
 MUTATIONS = [
-    ("the condition's name sent for its text",
-     'state = {"condition": entry["conditions"][name], "note": note}',
-     'state = {"condition": name, "note": note}',
-     "a research NOTE asks one state per condition, the note whole, printing nothing"),
-    ("the work kind not read", 'if kind != "research":', "if False:",
-     "a NOTE on another work kind asks nothing"),
-    ("the comment kind not read", 'if not note.lstrip().startswith("NOTE "):', "if False:",
+    ("verification notes kept", "if len(text) < MIN_CHARS or NOT_A_FINDING.search(masked):",
+     "if len(text) < MIN_CHARS:",
+     "a REVIEW asks one state per finding, verification notes left out, printing nothing"),
+    ("the word not masked", 'masked = SEVERITY.sub(r"\\1 ", LABEL.sub("[label]", LEAD.sub("", text)))',
+     "masked = text", "the reviewer's word and severity never reach the model"),
+    ("the section heading unread", 'word = section or "none"', 'word = "none"',
+     "each call is labelled with the reviewer's word, by item or by section"),
+    ("the comment kind not read", 'if not review.lstrip().startswith("REVIEW "):', "if False:",
      "a comment of another kind asks nothing"),
+    ("an empty cut asked", "        if not cut:\n            return 0", "        if False:\n            return 0",
+     "a REVIEW with no finding asks nothing"),
     ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the repository dropped", "args + ([repo] if repo else [])", "args",
-     "the repository reaches the kind reader"),
-    ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
-     "a reader that could not read exits 0, says nothing and logs a skip"),
-    ("a failed kind read taken for a kind",
-     "    if p.returncode not in (0, 1):", "    if False:",
-     "a failed kind read logs one skip row"),
-    ("a skip logged for a kind that is not research",
-     '        if kind != "research":\n            return 0',
-     '        if kind != "research":\n            jev.skip(READER, subject, "x", env)\n            return 0',
-     "an issue with no kind logs nothing"),
+    ("the skip not logged", 'READER, subject, f"the reading raised {e.__class__.__name__}", env)',
+     'READER, subject, "x", {"CAMPAIGN_JEV_LOG": "/nonexistent/x/y"})',
+     "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
 
@@ -218,7 +204,7 @@ def live(record):
                   word == before[-1]["word"], f"{word} at {raw}")
         row["seen"].append({"model": reading.model, "wording": wording,
                             "raw": raw, "word": word, "at": today})
-    print(f"research-bar: {misses} of {len(rows)} case(s) off their truth")
+    print(f"finding-sort: {misses} of {len(rows)} case(s) off their truth")
     if record:
         CORPUS.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
                                   for r in rows))

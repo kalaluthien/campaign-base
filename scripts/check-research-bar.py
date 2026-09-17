@@ -13,8 +13,9 @@ in the background and does not wait, so a post is never slowed by the model.
 The guard runs BEFORE the post, so a comment it then refuses for its claim was
 read too, and a later join finds no such comment. The log line carries the
 label `<repo>#<issue> NOTE <condition>` (`tracker#<issue>` with no repo) and
-the time, not the note: a join matches on the issue and the time, and a failed
-kind read logs nothing.
+the time, not the note: a join matches on the issue and the time. A kind read
+that failed, or a reading that raised, logs a `skipped` row naming why, so a
+count of what the reading covered sees what it missed.
 
 WHAT IT READS: the NOTE on stdin, and the issue's work kind from
 `campaign-tracker.py kind`, the one reader of that label.
@@ -23,8 +24,10 @@ WHAT IT READS: the NOTE on stdin, and the issue's work kind from
              per entry of the entry's `conditions`, one `choice` each, all at
              once; a note reads as the highest P(contradicts) over them, which
              is what the corpus and a reader of the log take
-  skipped    anything else -- another comment kind, another work kind, a kind
-             the tracker could not read -- asks nothing
+  passed     another comment kind or another work kind asks nothing and logs
+             nothing
+  skipped    a kind the tracker could not read, or a reading that raised,
+             asks nothing and logs one `skipped` row
 
 THE TIER is `shadow`: every call is logged by the caller and nothing is
 printed, since the guard does not read this process's output. A tier above
@@ -71,11 +74,14 @@ def load_sibling(name):
 
 
 def work_kind(issue, repo):
-    """The issue's work kind as `campaign-tracker.py kind` prints it, or ''."""
+    """(the issue's work kind as `campaign-tracker.py kind` prints it, why it
+    could not be read or ''). `none` is a kind read; exit 2 is a failed read."""
     args = [sys.executable, str(HERE / "campaign-tracker.py"), "kind", issue]
     p = subprocess.run(args + ([repo] if repo else []), capture_output=True,
                        text=True, timeout=KIND_TIMEOUT)
-    return p.stdout.strip()
+    if p.returncode not in (0, 1):
+        return "", (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
+    return p.stdout.strip(), ""
 
 
 def questions(entry):
@@ -101,19 +107,33 @@ def main(argv, stdin=sys.stdin, env=None):
         print("Usage: scripts/check-research-bar.py <issue> [<repo>] < note",
               file=sys.stderr)
         return 2
+    issue, repo = argv[0], (argv[1] if len(argv) > 1 else "")
+    subject = f"{repo or 'tracker'}#{issue} NOTE"
     try:
         note = stdin.read()
         if not note.lstrip().startswith("NOTE "):
             return 0
-        issue, repo = argv[0], (argv[1] if len(argv) > 1 else "")
-        if work_kind(issue, repo) != "research":
+        jev = load_sibling("campaign-jev.py")
+        kind, why = work_kind(issue, repo)
+        if why:
+            jev.skip(READER, subject, f"the kind read failed: {why}", env)
+            return 0
+        if kind != "research":
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        ask_all(entry, note, f"{repo or 'tracker'}#{issue}",
-                load_sibling("campaign-jev.py"), env)
-    except Exception:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
-        pass
+        ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev, env)
+    except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
+        skipped(subject, e, env)
     return 0
+
+
+def skipped(subject, e, env):
+    """The skip row for a reading that raised, written if the log can be."""
+    try:
+        load_sibling("campaign-jev.py").skip(
+            READER, subject, f"the reading raised {e.__class__.__name__}", env)
+    except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
+        pass
 
 
 if __name__ == "__main__":

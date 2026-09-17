@@ -57,6 +57,10 @@ WHAT IT CHECKS
       `scripts/fixtures/` is data, not a script. A `README.md` laid beside the
       scripts is refused for the same reason and on purpose: what sits in a
       `scripts/` is a script, and prose about them goes where prose goes.
+      A name says a role too: CI runs every `*-test.*` in a `scripts/` as a
+      suite, so a script whose name ends in `-test` beside its own
+      `<name>-test.<ext>` suite is refused -- CI ran the reader
+      `check-done-test.py` as a suite and failed on its usage exit (pr#480).
 
   R8  an entity is exactly `system.als` + `checks.als`, plus any `*.html`.
       An entity is a directory under spec/ directly holding an `.als` or an
@@ -653,6 +657,11 @@ def layout(paths, note):
         if not p.endswith((".py", ".sh")):
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
+        stem = p.rsplit(".", 1)[0]
+        if stem.endswith("-test") and any(q.startswith(stem + "-test.") for q in paths):
+            note("R6", p, "named like a suite yet beside its own suite: CI runs "
+                          "every `*-test.*` in a scripts/ as a suite, so rename "
+                          "it to end in something other than `-test`")
 
 
 def entities(staged, note):

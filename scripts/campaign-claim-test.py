@@ -1505,6 +1505,23 @@ exit 1
         check("...and it resolves the ref to the repository it was found on",
               "releasing probe/9999-sweep on kalaluthien/campaign-base" in out,
               f"exit {r.returncode}: {out[:400]}")
+        # `--repo` CONFIRMS THE REPOSITORY THE REF WAS FOUND ON, the one new
+        # branch pr#478's first round left untested: another repository is
+        # refused before anything is released, and the same one in another case
+        # is the same repository.
+        r = claim(["release", "9999", "9999", "--repo", "other/elsewhere"], held)
+        out = r.stdout + r.stderr
+        check("a chore's release refuses a --repo the ref was not found on",
+              r.returncode == 1 and "The ref decides" in out
+              and "releasing probe/9999-sweep" not in out,
+              f"exit {r.returncode}: {out[:400]}")
+        r = claim(["release", "9999", "9999", "--repo",
+                   "Kalaluthien/Campaign-Base"], held)
+        out = r.stdout + r.stderr
+        check("...and admits the one it was found on, whatever its case",
+              "The ref decides" not in out
+              and "releasing probe/9999-sweep on kalaluthien/campaign-base" in out,
+              f"exit {r.returncode}: {out[:400]}")
         # ...and a campaign issue that is NOT a chore keeps today's refusal: the
         # label is the whole difference, so the case beside it is what says the
         # new path is not simply every `release <N> <N>`.

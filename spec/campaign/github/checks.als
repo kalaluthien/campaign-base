@@ -135,11 +135,6 @@ pred S21_StandingBlocksTheClose {
       and Now.issue = c.campaignIssue and c in Standing)
 }
 
-/* THE PERSON'S HOLD ON A SUB-ISSUE, and the claim it refuses. S22 asks for the
-   trace `backlogDiscipline` must not have: a claim cut on a sub-issue in
-   `Backlog`; it goes SAT the instant the discipline stops reading the label.
-   S22a is the control: the same claim with the hold off is still
-   reachable, so the UNSAT is the discipline's and not the model's. */
 /* S23. A CHORE LANDS: the campaign issue is filed as its own one member,
    claimed, and closed by its own merged pull request, under the close
    discipline and still a member at the close -- a trace that left by
@@ -161,6 +156,11 @@ pred S23b_AChoreHasNoSubIssue {
   some c: Campaign | eventually (c.campaignIssue in c.memberIssues and #c.memberIssues = 2)
 }
 
+/* THE PERSON'S HOLD ON A SUB-ISSUE, and the claim it refuses. S22 asks for the
+   trace `backlogDiscipline` must not have: a claim cut on a sub-issue in
+   `Backlog`; it goes SAT the instant the discipline stops reading the label.
+   S22a is the control: the same claim with the hold off is still
+   reachable, so the UNSAT is the discipline's and not the model's. */
 pred S22_BacklogBlocksTheClaim {
   backlogDiscipline and eventually (Now.event = Claim and Now.issue in Backlog)
 }

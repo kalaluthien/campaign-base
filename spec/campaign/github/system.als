@@ -319,7 +319,14 @@ pred githubFrame {
 
 /* A chore is filed AS one: `campaign-open.py --chore` puts the label on at the
    create, so the campaign issue may enter its own membership here and at no
-   later event -- `addMember` still refuses every campaign issue. */
+   later event -- `addMember` still refuses every campaign issue.
+
+   IT ENTERS `subIssues` WITH IT, so `IndexExact` stays one statement over
+   every campaign: the model's index of a chore is the chore. The tracker's is
+   empty -- GitHub links no issue under itself, and `campaign-tracker index`
+   prints none -- which is the reading `settlement` calls closable, and
+   `closable` here agrees by not reading the campaign issue. Nothing else reads
+   `subIssues`. */
 pred fileCampaignIssue[c: Campaign] {
   c not in Filed
   no c.memberIssues and no c.subIssues and no c.reposInBody

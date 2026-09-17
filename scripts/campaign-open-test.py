@@ -280,6 +280,25 @@ def main() -> int:
               rc == 0 and "gates nothing" in out and ran.count("gh issue create") == 1,
               f"exit {rc}: {err[:200]}")
 
+    # A CREATE THAT FAILS AFTER THE SLUG LABEL WAS MINTED takes the label back,
+    # or the resume line it prints refuses at step 1 as a spent slug (pr#478).
+    with tempfile.TemporaryDirectory() as d:
+        ran = Ran([("gh issue create", (1, "", "boom"))] + answers(d))
+        rc, out, err = open_chore(m, ran, FakeTracker(), a_chore(d))
+        check("a failed issue create deletes the slug label this run minted",
+              rc == 1 and ran.count(f"gh label delete campaign:{SLUG}") == 1
+              and "runs as printed" in err and "--issue" not in err,
+              f"exit {rc}: {err[:300]} | {ran.seen}")
+        check("...and no longer lists the label as done",
+              f"`campaign:{SLUG}` label exists" not in err, err[:300])
+    with tempfile.TemporaryDirectory() as d:
+        ran = Ran([("gh issue create", (1, "", "boom")),
+                   ("gh label delete", (1, "", "nope"))] + answers(d))
+        rc, out, err = open_chore(m, ran, FakeTracker(), a_chore(d))
+        check("...and a delete that fails says the resume line will refuse, "
+              "with the command", rc == 1 and "could NOT be deleted" in err
+              and f"gh label delete campaign:{SLUG}" in err, err[:400])
+
     # ------------------------------------------------------- the happy path --
     with tempfile.TemporaryDirectory() as d:
         ran = Ran(answers(d))

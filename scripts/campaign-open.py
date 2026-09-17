@@ -281,6 +281,23 @@ def step_survey():
 # ----------------------------------------------------------------- 3. create
 
 
+def unmint(slug, state):
+    """Take back the slug label THIS RUN minted, when the create after it
+    failed. Left standing, the label reads as a spent slug, so the resume line
+    a refusal prints would refuse at step 1 and the caller would have to find
+    and delete it by hand (pr#478, REVIEW finding 5). A label no issue ever
+    wore is not a spent slug. Returns the sentence for the refusal."""
+    label = f"{TRACKER.SLUG_LABEL_PREFIX}{slug}"
+    r = run("gh", "label", "delete", label, "-R", BASE_REPO, "--yes")
+    if r.returncode == 0:
+        state.done.pop()
+        return (f"`{label}`, minted by this run, was deleted again, so the "
+                f"resume line runs as printed.")
+    return (f"`{label}`, minted by this run, could NOT be deleted "
+            f"({said(r)}): the resume line refuses at step 1 until "
+            f"`gh label delete {label} -R {BASE_REPO} --yes` has run.")
+
+
 def step_create(slug, title, body_file, state):
     """The labels then the issue, in that order and never the other.
 
@@ -315,7 +332,8 @@ def step_create(slug, title, body_file, state):
               f"{BASE_REPO}, which is the ordinary state and gates nothing")
     else:
         raise Stop("create", f"`gh label create {TRACKER.CHORE_LABEL}` exited "
-                             f"{r.returncode}: {said(r)}")
+                             f"{r.returncode}: {said(r)}\n  "
+                             f"{unmint(slug, state)}")
 
     r = run("gh", "issue", "create", "-R", BASE_REPO,
             "--label", TRACKER.CAMPAIGN_LABEL,
@@ -324,7 +342,7 @@ def step_create(slug, title, body_file, state):
             "--title", title, "--body-file", body_file)
     if r.returncode != 0:
         raise Stop("create", f"`gh issue create` exited {r.returncode}: "
-                             f"{said(r)}")
+                             f"{said(r)}\n  {unmint(slug, state)}")
     url = next((w for w in r.stdout.split() if "/issues/" in w), "")
     number = url.rsplit("/", 1)[-1]
     if not number.isdigit():

@@ -1486,7 +1486,10 @@ def front_door(args):
             raise Refused("target", f"campaign-tracker check {n} answered for "
                                     f"#{m.group(1)}")
         kind, parent = m.group(2), m.group(3)
-        if kind == TRACKER_MODULE.CAMPAIGN:
+        # A CHORE IS A CAMPAIGN AT A CLOSE: the same scope and the same gates.
+        # Without its word here a person's `/close <N>` refused the one issue
+        # whose pre-authorised clean-up had just stopped at a gate (pr#478).
+        if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):
             scope, argv = "campaign", ["campaign", n]
         elif kind == TRACKER_MODULE.SUB_ISSUE:
             scope, argv = "sub-issue", ["sub-issue", parent.lstrip("#"), n]

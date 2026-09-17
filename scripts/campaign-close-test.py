@@ -1155,6 +1155,13 @@ def whole_padded(m):
     return code == 3 and "read as scope campaign -- #10 is a campaign issue" in out, out
 
 
+def case_front_chore(m):
+    w = whole(check=check_line("chore", n=N))
+    code, out, asked, _ = drive(m, [N], w)
+    return (code == 3 and "read as scope campaign -- #10 is a chore, "
+            "by campaign-tracker check" in out and "re-run with --close" in out), out
+
+
 def case_front_campaign(m):
     w = whole(check=check_line("campaign issue", n=N))
     code, out, asked, _ = drive(m, [N], w)
@@ -1438,6 +1445,7 @@ CASES = {
     "release: the compaction is said once, beside the first release":
         case_compact_said_once,
     "front: a campaign issue number reads as scope campaign": case_front_campaign,
+    "front: a chore's number reads as scope campaign too": case_front_chore,
     "front: a sub-issue number reads as scope sub-issue of its parent":
         case_front_sub_issue,
     "front: a sub-issue without --not-planned halts for the disposition":
@@ -1745,8 +1753,13 @@ MUTATIONS = [
     ("release reads live again", "step_release_all(n, read_live(n, slug),",
      "step_release_all(n, reading,",
      "campaign: the release reads live again after the writes"),
-    ("front: campaign kind", "if kind == TRACKER_MODULE.CAMPAIGN:", "if False:",
+    ("front: campaign kind",
+     "if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):", "if False:",
      "front: a campaign issue number reads as scope campaign"),
+    ("front: a chore is a campaign at a close",
+     "if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):",
+     "if kind == TRACKER_MODULE.CAMPAIGN:",
+     "front: a chore's number reads as scope campaign too"),
     ("front: sub-issue kind", "elif kind == TRACKER_MODULE.SUB_ISSUE:",
      "elif False:",
      "front: a sub-issue number reads as scope sub-issue of its parent"),

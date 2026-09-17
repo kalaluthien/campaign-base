@@ -688,6 +688,51 @@ def main():
         r = ask(f.base, tool="Bash", command="gh issue create --title x")
         check("...and the issue-create allow names the exemption",
               "minted there" in r.stdout, out(r)[:200])
+        # A SUB-ISSUE FILED WITHOUT ITS LINK (rule-check#461 rank 4). The
+        # template's `## Lands in` marks a body as a sub-issue's; filed with no
+        # `--parent` it is in no campaign's index, and filed on another
+        # repository it is off this tracker altogether.
+        tracker = "https://github.com/kalaluthien/campaign-base/issues/272"
+        templated = "## Intent\n\n- x\n\n## Lands in\n\n- the base\n"
+        (f.base / "sub.md").write_text(templated)
+        for cmd in (f"gh issue create --title t --body '{templated}'",
+                    "gh issue create --title t --body-file sub.md",
+                    f"gh issue create --title t -F {f.base / 'sub.md'}",
+                    f"gh issue create --title t --body-file - <<'EOF'\n{templated}EOF",
+                    f"gh issue create -R kalaluthien/campaign-base --title t "
+                    f"--body '{templated}'"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:48]}...`, a templated body with no --parent, is "
+                  f"refused naming the flag",
+                  r.returncode == 2 and "`## Lands in`" in r.stderr
+                  and "--parent" in r.stderr, out(r)[:300])
+        for cmd in (f"gh issue create --title t --parent 272 --body '{templated}'",
+                    f"gh issue create --title t --parent={tracker} -F sub.md",
+                    "gh issue create --title t --body 'a third-kind note'",
+                    f"gh issue create --repo=github.com/kalaluthien/campaign-base "
+                    f"--parent 272 --title t --body '{templated}'"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:48]}...` is allowed: linked, or not a sub-issue",
+                  r.returncode == 0, out(r)[:300])
+        for cmd, named in (("gh issue create -R o/r --title t --body x", "o/r"),
+                           (f"gh issue create --repo other/tracker --parent 272 "
+                            f"--title t --body '{templated}'", "other/tracker"),
+                           ("gh issue create -Ro/r --title t", "o/r")):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:40]}...` files off this tracker and is refused, "
+                  f"naming {named}",
+                  r.returncode == 2 and named in r.stderr
+                  and "kalaluthien/campaign-base" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue create --title t --body \"$(cat sub.md)\"")
+        check("a body the shell composes is allowed, saying it was not read",
+              r.returncode == 0 and "composed by the shell" in r.stdout,
+              out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue create --title t -F gone.md")
+        check("a body file that cannot be read is allowed, naming the path: "
+              "gh reads the same one and files nothing",
+              r.returncode == 0 and "gone.md" in r.stdout
+              and "files nothing" in r.stdout, out(r)[:300])
         r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
         check("a gh command shlex cannot split is refused, naming why",
               r.returncode == 2 and "would not split" in r.stderr
@@ -3914,7 +3959,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 613
+    EXPECTED = 627
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

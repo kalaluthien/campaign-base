@@ -108,8 +108,11 @@ FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
 needs a claim on `<n>`, found in the base's worktrees or an install's. A `gh pr`
 write naming a MEMBER repository needs a claim checked out in a checkout of
-that repository, never the base's (#389). `gh issue create` is exempt, the
-number being minted there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
+that repository, never the base's (#389). `gh issue create` is exempt from the claim, the
+number being minted there, and read for its shape instead (rule-check#461):
+refused when `-R` names a repository other than the tracker, or its body
+carries `## Lands in` with no `--parent`; `create_findings` says what it does
+not read. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
 WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
@@ -2673,6 +2676,12 @@ def comment_body(tokens, heredocs, cwd=None):
             return _judgeable(text)
     else:
         return None, None, None
+    return body_text(tokens, heredocs, cwd)
+
+
+def body_text(tokens, heredocs, cwd=None):
+    """`comment_body`'s three-tuple for the body a `--body`, a `--body-file` or
+    a heredoc on `--body-file -` gives this segment, whatever it posts."""
     text = flag_value(tokens, BODY_VALUED)
     if text is SKIPPED:
         return None, None, SKIPPED_NOTE
@@ -2688,8 +2697,8 @@ def comment_body(tokens, heredocs, cwd=None):
             return resolved.read_text(encoding="utf-8"), None, None
         except OSError as e:
             return None, (f"`{path}` -> {resolved} could not be read "
-                          f"({e.__class__.__name__}), so the comment's shape "
-                          f"was not read either"), None
+                          f"({e.__class__.__name__}), so the body was not "
+                          f"read either"), None
     if heredocs:
         return heredocs[0], None, None
     # A `gh pr review --approve` with no body posts a review and no comment; a
@@ -2708,6 +2717,63 @@ def _judgeable(text):
                             f"({text[:60]!r}), so this guard never sees the "
                             f"text and did not judge it")
     return text, None, None
+
+
+# A SUB-ISSUE IS FILED LINKED AND ON THIS TRACKER (rule-check#461 rank 4). The
+# template's `## Lands in` is what marks a body as a sub-issue's; the third kind
+# carries none and stays free to file unlinked.
+LANDS_IN = re.compile(r"^##[ \t]+Lands in[ \t]*$", re.M)
+REPO_FLAGS = ("-R", "--repo")
+
+
+def create_findings(tokens, heredocs, cwd=None):
+    """(what is wrong with this `gh issue create`, what was read) for one
+    segment. Refused: `-R`/`--repo` naming a repository other than the
+    tracker, and a body carrying `## Lands in` with no `--parent`. The body is
+    read as `comment_body` reads one; NOT READ, and so allowed: a body the shell
+    composes, `--editor`, `--web`, `--template`, the prompt, and a repository
+    chosen by `GH_REPO` or by the cwd's remote rather than by the flag."""
+    found, read = [], []
+    repo = None
+    for j, t in enumerate(tokens):
+        if t in REPO_FLAGS and j + 1 < len(tokens):
+            repo = tokens[j + 1]
+        elif t.startswith("--repo="):
+            repo = t[len("--repo="):]
+        elif t.startswith("-R") and not t.startswith("--") and len(t) > 2:
+            repo = t[2:]
+    if repo is not None:
+        m = repos_reader()
+        if m is None:
+            found.append(f"it names `-R {repo}`, and campaign-repos.py would not "
+                         f"load ({REPOS_UNREADABLE}) to say which repository "
+                         f"the tracker is")
+        else:
+            name = re.sub(r"^(https?://)?github\.com/", "", repo).removesuffix(".git")
+            if name.lower() != m.BASE_REPO.lower():
+                found.append(f"it names `-R {repo}`, and a sub-issue is filed on "
+                             f"{m.BASE_REPO} whatever repository its code lands in")
+            else:
+                read.append(f"`-R {repo}` is the tracker")
+    if any(t == "--parent" or t.startswith("--parent=") for t in tokens):
+        read.append("it carries --parent")
+        return found, read
+    text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd)
+    if why_unreadable:
+        # ALLOWED, unlike a comment's: `gh` opens the same path from the same
+        # cwd, so a file this could not read files no issue at all.
+        read.append(f"{why_unreadable}; gh reads the same path and files nothing")
+    elif why_unjudged:
+        read.append(why_unjudged)
+    elif text is None:
+        read.append("it has no --body or --body-file, so no body was read")
+    elif LANDS_IN.search(text):
+        found.append("its body carries `## Lands in`, a sub-issue's, and it has "
+                     "no --parent, so no campaign's index would list it")
+    else:
+        read.append("its body carries no `## Lands in`, so it is not a "
+                    "sub-issue and may file unlinked")
+    return found, read
 
 
 def comment_findings(text):
@@ -3066,6 +3132,23 @@ def bash_call(command, cwd: Path, session_id=""):
             # A form not listed, a heredoc, xargs: read as a write of unknown
             # kind, because nothing downstream reads a gh write.
             stray.append(" ".join(seg)[:60])
+    creates = [(rest, heredocs) for tokens, heredocs, _o, _s in pairs
+               for word, rest in [head(tokens)]
+               if word == "gh" and gh_words(rest)[:2] == ["issue", "create"]]
+    root, how = session_root(cwd) if creates else (None, None)
+    if root is not None and (root / BASE_MARKER).is_file():
+        found = []
+        for rest, heredocs in creates:
+            wrong, read = create_findings(rest, heredocs, cwd)
+            found += wrong
+            NOTES.extend(f"gh issue create: {r}." for r in read)
+        if found:
+            return refuse(["gh issue create: a sub-issue filed off the index.",
+                           *[f"  {f}" for f in found],
+                           "File it as AGENTS.md § Sub-issues writes it, on "
+                           "the tracker with `--parent <campaign issue URL>`; "
+                           "an issue that is no sub-issue carries no "
+                           "`## Lands in`."])
     writes = [rest for rest, is_write, _ in gh if is_write]
     if not writes and not stray:
         return allow([f"{what}." for _, _, what in gh] + list(unenforced)

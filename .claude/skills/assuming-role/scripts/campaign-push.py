@@ -57,7 +57,8 @@ taken. With no campaign directory on this machine it is
              undelivered   no gain after ATTEMPTS sends, or never ready
              gone          the target left herdr's list while this waited
              unread        the target's transcript could not be read, so the
-                           text was sent once and nothing was confirmed
+                           text was sent once and nothing was confirmed (seen
+                           live on a planner that had had no turn yet)
              no-planner    herdr lists no planner of the slug
 
 Usage: campaign-push.py                  the hook: one JSON payload on stdin
@@ -272,8 +273,9 @@ def herdr_prompt(pane, text):
                            capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as e:
         return False, e.__class__.__name__
-    said = (r.stderr or r.stdout).strip()[:80]
-    return r.returncode == 0, said or f"exit {r.returncode}"
+    if r.returncode == 0:
+        return True, "exit 0"
+    return False, (r.stderr or r.stdout).strip()[:80] or f"exit {r.returncode}"
 
 
 def hook(payload, names, spawn):

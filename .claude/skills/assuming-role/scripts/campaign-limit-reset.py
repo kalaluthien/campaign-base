@@ -55,7 +55,7 @@ costs the whole window. Two things the status cannot separate: the seconds
 of the aborting turn in which the banner is painted, and THE READER'S OWN
 PANE, which is working for as long as the reader runs -- so a pane equal to
 `HERDR_PANE_ID` skips the liveness reading and its banner stands. That
-variable is the id the pane had at launch; the herdr skill says a pane moved
+variable is the id the pane had at launch; herdr's guide says a pane moved
 to another workspace gets a new id, and whether the old one stays in its
 environment is unmeasured here -- if it does, such a pane's own read falls
 through to the liveness reading. The cheap key is still the right one here:

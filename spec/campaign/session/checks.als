@@ -155,6 +155,18 @@ pred SR1b_ARangeADiffOrAShortFilePasses {
 
 /* ---------------- commands ---------------- */
 
+/* HG1. A GUIDE UNLIKE HERDR'S TEXT DIFFERS, AND MAY THEN BE REWRITTEN
+   (system.als's `differs`); HG1b is UNSAT by construction, `mayRewrite`
+   being `differs` and `unknown` being its complement on Readable, so it
+   records the rule and proves nothing about the script: the suite's two
+   `unknown` cases, a missing herdr and a `--skill` that fails or prints
+   nothing, are what hold it there. */
+pred HG1_AGuideUnlikeHerdrsTextDiffers { some g: Guide | differs[g] and mayRewrite[g] }
+pred HG1b_AnUnreadableHerdrLicensesNoRewrite { some g: Guide | unknown[g] and mayRewrite[g] }
+
+run HG1_AGuideUnlikeHerdrsTextDiffers       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 1
+run HG1b_AnUnreadableHerdrLicensesNoRewrite for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 0
+
 -- a whole read of a long file is steered, and nothing else is
 run SR1_WholeReadOfALongFileIsSteered  for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 1
 run SR1b_ARangeADiffOrAShortFilePasses for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Machine, 1 Repo, 1 Branch, 1 CampaignDir, 4 steps expect 0

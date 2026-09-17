@@ -5,7 +5,7 @@ only the invariants. The launcher is the planner and the delegate is a
 worker (`AGENTS.md` § The binding). Everything here is a probed fact about herdr 0.8.2 and the
 Claude CLI on this machine, and every item is a failure that raises no error.
 Probed herdr facts beyond this procedure are
-`.claude/skills/herdr/references/facts.md`.
+`.claude/skills/driving-herdr/references/facts.md`.
 
 ## The launch line
 
@@ -61,7 +61,7 @@ strong spends it on turns that carry out a plan already clear.
 | fixes and investigation | Sonnet worker |
 
 Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`
-(`.claude/skills/herdr/references/facts.md`); the level is never a sentence in
+(`.claude/skills/driving-herdr/references/facts.md`); the level is never a sentence in
 the prompt. A session already running is moved with
 `.claude/skills/assuming-role/scripts/campaign-model.py`, not relaunched.
 

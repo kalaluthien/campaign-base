@@ -303,6 +303,17 @@ def log_call(row, env=None, cwd=None):
     return f"logged to {how}"
 
 
+def skip(reader, label, why, env=None, cwd=None):
+    """Log a reading that asked nothing because it could not read its input --
+    a kind read that failed, a registry that would not load -- so a count of
+    what a shadow reading covered can see the calls it missed. Same line shape
+    as `ask`'s, `skipped` in place of `answers`; returns what `log_call` says."""
+    row = {"at": datetime.datetime.now(datetime.timezone.utc)
+                         .isoformat(timespec="seconds"),
+           "reader": reader, "read": label, "asked": MODEL, "skipped": why}
+    return log_call(row, os.environ if env is None else env, cwd)
+
+
 def request_body(state, questions):
     """The POST body: the pinned model, the state, and every question in ONE
     call. The thresholds stay here -- they are this tree's reading of the

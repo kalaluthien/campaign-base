@@ -1810,6 +1810,40 @@ def main():
               and all("check-research-bar.py" in x for x in lines),
               (out(r)[:300], lines[:2]))
 
+        # R3: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,
+        # one call per finding, labelled with the reviewer's own word.
+        def logged(path, want, polls):
+            for _ in range(polls):
+                got = path.read_text().splitlines() if path.exists() else []
+                if len(got) >= want:
+                    break
+                time.sleep(0.2)
+            return [json.loads(x) for x in got]
+        review_log = Path(d) / "review.log"
+        r = ask(f.trees["demo/7-x"], tool="Bash",
+                env=dict(env, CAMPAIGN_JEV_LOG=str(review_log)),
+                command="gh pr comment 7 -b 'REVIEW demo-worker-1: at abcdef1\n\n"
+                        "1. defect, a.py:3 -- the parser drops the last line of "
+                        "every file it reads\n2. refinement, the docstring names "
+                        "a flag the code no longer has'")
+        rows = logged(review_log, 2, 100)
+        check("a REVIEW on a pull request logs one finding-sort call per "
+              "finding, labelled with the reviewer's word",
+              sorted(x["read"] for x in rows)
+              == ["tracker#7 REVIEW f1 defect", "tracker#7 REVIEW f2 refinement"]
+              and all(x["reader"] == "check-finding-sort.py" for x in rows),
+              (out(r)[:300], rows))
+        # A NOTE ON A PULL REQUEST IS NO RESEARCH NOTE: the stub would call
+        # issue 7 research, so a hand-off by first word alone logs within
+        # 3 s; 10 s of polls leaves room for two interpreters under load.
+        pr_note_log = Path(d) / "pr-note.log"
+        r = ask(f.trees["demo/7-x"], tool="Bash",
+                env=dict(env, CAMPAIGN_JEV_LOG=str(pr_note_log)),
+                command="gh pr comment 7 -b 'NOTE demo-worker-1: 3 runs'")
+        rows = logged(pr_note_log, 1, 50)
+        check("a NOTE on a pull request starts no reading", rows == [],
+              (out(r)[:300], rows))
+
     # ---------------------------------------------------------------- #389
     # AN INSTALL'S WORKTREES HOLD CLAIMS, AND ONLY A CHECKOUT OF A MEMBER
     # REPOSITORY LICENSES ITS PULL REQUEST. The recorded false allow,
@@ -3960,7 +3994,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 614
+    EXPECTED = 616
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

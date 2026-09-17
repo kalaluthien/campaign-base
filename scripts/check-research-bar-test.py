@@ -42,6 +42,7 @@ NOTE = "NOTE demo-worker-1: measured 3 runs, 40 of 47 flagged by overlap\n\nbody
 
 NEXT = {"p": 0.9}
 SEEN = []
+LOGGED = []
 
 
 class Stub(http.server.BaseHTTPRequestHandler):
@@ -75,7 +76,8 @@ def load(source):
     return types.SimpleNamespace(source=source, m=m)
 
 
-def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None):
+def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None,
+        kind_exit=0):
     """(the finished process, the argv the stub tracker was given)."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
@@ -84,7 +86,8 @@ def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None):
     (d / "campaign-tracker.py").write_text(
         "import json, sys\n"
         f"open({str(d / 'tracker-argv.json')!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
-        f"print({kind!r})\n")
+        f"print({kind!r})\n"
+        f"sys.exit({kind_exit})\n")
     if registry:
         (d / "jev" / "readings.json").write_text(json.dumps({"research-bar": ENTRY}))
     SEEN.clear()
@@ -93,6 +96,9 @@ def run(t, note=NOTE, kind="research", argv=("458",), registry=True, url=None):
     r = subprocess.run([sys.executable, str(d / "check-research-bar.py"), *argv],
                        input=note, capture_output=True, text=True, env=env)
     got = d / "tracker-argv.json"
+    log = d / "jev.log"
+    LOGGED[:] = ([json.loads(x) for x in log.read_text().splitlines() if x]
+                 if log.exists() else [])
     return r, (json.loads(got.read_text()) if got.exists() else None)
 
 
@@ -130,7 +136,27 @@ def repo_reaches_tracker(t):
 def failure_exits_zero(t):
     r, _ = run(t, registry=False)
     return (r.returncode == 0 and not SEEN and r.stdout == ""
-            and r.stderr == ""), (r.returncode, r.stderr[-300:])
+            and r.stderr == ""
+            and [x.get("skipped") for x in LOGGED] == ["the reading raised FileNotFoundError"]
+            ), (r.returncode, r.stderr[-300:], LOGGED)
+
+
+def failed_kind_read_logs_skip(t):
+    r, _ = run(t, kind="", kind_exit=2)
+    return (r.returncode == 0 and not SEEN and len(LOGGED) == 1
+            and LOGGED[0]["read"] == "tracker#458 NOTE"
+            and LOGGED[0]["skipped"].startswith("the kind read failed")), LOGGED
+
+
+def crashed_tracker_logs_skip(t):
+    r, _ = run(t, kind="", kind_exit=1)
+    return (r.returncode == 0 and not SEEN and len(LOGGED) == 1
+            and LOGGED[0]["skipped"].startswith("the kind read failed")), LOGGED
+
+
+def other_kind_logs_nothing(t):
+    r, _ = run(t, kind="none", kind_exit=1)
+    return r.returncode == 0 and not SEEN and not LOGGED, LOGGED
 
 
 CASES = {
@@ -139,7 +165,10 @@ CASES = {
     "a comment of another kind asks nothing": other_comment_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
     "the repository reaches the kind reader": repo_reaches_tracker,
-    "a reader that could not read exits 0 and says nothing": failure_exits_zero,
+    "a reader that could not read exits 0, says nothing and logs a skip": failure_exits_zero,
+    "a failed kind read logs one skip row": failed_kind_read_logs_skip,
+    "a tracker that raised, exit 1 and no word, logs one skip row": crashed_tracker_logs_skip,
+    "an issue with no kind logs nothing": other_kind_logs_nothing,
 }
 
 MUTATIONS = [
@@ -147,7 +176,7 @@ MUTATIONS = [
      'state = {"condition": entry["conditions"][name], "note": note}',
      'state = {"condition": name, "note": note}',
      "a research NOTE asks one state per condition, the note whole, printing nothing"),
-    ("the work kind not read", 'if work_kind(issue, repo) != "research":', "if False:",
+    ("the work kind not read", 'if kind != "research":', "if False:",
      "a NOTE on another work kind asks nothing"),
     ("the comment kind not read", 'if not note.lstrip().startswith("NOTE "):', "if False:",
      "a comment of another kind asks nothing"),
@@ -156,9 +185,19 @@ MUTATIONS = [
     ("the repository dropped", "args + ([repo] if repo else [])", "args",
      "the repository reaches the kind reader"),
     ("the failure boundary removed",
-     "except Exception:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError:",
-     "a reader that could not read exits 0 and says nothing"),
+     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
+     "except ZeroDivisionError as e:",
+     "a reader that could not read exits 0, says nothing and logs a skip"),
+    ("a failed kind read taken for a kind",
+     '    if p.returncode == 0 or (p.returncode == 1 and kind == "none"):', "    if True:",
+     "a failed kind read logs one skip row"),
+    ("any exit 1 taken for a kind",
+     '(p.returncode == 1 and kind == "none")', "p.returncode == 1",
+     "a tracker that raised, exit 1 and no word, logs one skip row"),
+    ("a skip logged for a kind that is not research",
+     '        if kind != "research":\n            return 0',
+     '        if kind != "research":\n            jev.skip(READER, subject, "x", env)\n            return 0',
+     "an issue with no kind logs nothing"),
 ]
 
 

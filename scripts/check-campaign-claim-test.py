@@ -1970,6 +1970,22 @@ def main():
         rows = logged(pr_note_log, 1, 50)
         check("a NOTE on a pull request starts no reading", rows == [],
               (out(r)[:300], rows))
+        # T2: A REPORT ASKING FOR THE MERGE IS HANDED TO check-done-carry.py,
+        # after its sha read: the stub gh answers no pull request, so the
+        # sha is unchecked and the reader logs the skip for its own read.
+        report_log = Path(d) / "report.log"
+        r = ask(tree, tool="Bash",
+                env=dict(env, CAMPAIGN_JEV_LOG=str(report_log)),
+                command=f"gh pr comment 7 -b 'REPORT demo-worker-1: pr#7 at "
+                        f"{head}, asking for the merge'")
+        rows = logged(report_log, 1, 100)
+        check("a REPORT asking for the merge on a pull request is handed to "
+              "the done-test reading",
+              r.returncode == 0
+              and [(x["reader"], x["read"]) for x in rows]
+              == [("check-done-carry.py", "tracker#7 REPORT")]
+              and rows[0]["skipped"].startswith("the pull request read failed"),
+              (out(r)[:300], rows))
 
     # ---------------------------------------------------------------- #389
     # AN INSTALL'S WORKTREES HOLD CLAIMS, AND ONLY A CHECKOUT OF A MEMBER
@@ -4127,7 +4143,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 648
+    EXPECTED = 649
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

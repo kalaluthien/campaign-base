@@ -299,6 +299,12 @@ CASES = [
      {"scripts/fixtures/notes.html": "<p>hi</p>\n"}, None),
     ("R6 a template under an assets/ is some other tree's script",
      {".claude/skills/s/assets/scripts/x.html": "<p>hi</p>\n"}, None),
+    # A script whose name ends in `-test` beside its own suite: CI's suite
+    # glob runs the script itself (pr#480's `check-done-test.py`).
+    ("R6 a script named like a suite beside its own suite",
+     {"scripts/check-done-test.py": "x = 1\n", "scripts/check-done-test-test.py": "x = 1\n"}, "R6"),
+    ("R6 a suite with no suite of its own is a suite",
+     {"scripts/check-done-carry-test.py": "x = 1\n", "scripts/check-done-carry.py": "x = 1\n"}, None),
 
     # A file with no text in it at all -- a guard whose whole point is naming
     # which reading it could not make must not itself die in the decode.

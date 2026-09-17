@@ -30,6 +30,15 @@ Usage: scripts/campaign-directory.py <campaign issue number or slug> [start]
 
 `start` is where the base root is resolved from, defaulting to the working
 directory; a caller already holding `$BASE` passes it.
+
+       scripts/campaign-directory.py mark <N> <slug> <dir>
+
+`mark` is the one writer of the marker, which `opening-campaign` calls on the
+directory its `mkdir` just made. It writes `<N> <slug>` and READS IT BACK
+through `resolve`, by the number and by the slug, answering `<dir>` only when
+both come back as it; anything else is `unknown`, exit 2, with the marker it
+wrote removed, so a marker the reader would not answer is never left behind.
+A directory already carrying a marker is refused and left as it is.
 """
 import importlib.machinery
 import importlib.util
@@ -85,11 +94,36 @@ def resolve(token, start):
     return str(found[0]), f"read from {found[0]}/.campaign"
 
 
+def mark(number, slug, target):
+    """(the word, the sentence beside it) for writing `target`'s marker."""
+    marker = target / ".campaign"
+    try:
+        with open(marker, "x") as out:
+            out.write(f"{number} {slug}\n")
+    except FileExistsError:
+        return "unknown", f"{marker} already exists; left as it is"
+    except OSError as e:
+        return "unknown", f"{marker} would not be written ({e.__class__.__name__})"
+    want = str(target.resolve())
+    for token in (number, slug):
+        word, note = resolve(token, target)
+        if word != want:
+            marker.unlink()
+            return "unknown", (f"wrote {marker}, but {token} read back as "
+                               f"{word} ({note}); removed it")
+    return want, f"wrote {marker} and read it back by {number} and {slug}"
+
+
 def main(argv) -> int:
+    if argv[:1] == ["mark"] and len(argv) == 4:
+        word, note = mark(argv[1], argv[2], Path(argv[3]))
+        print(word)
+        print(f"campaign-directory: {note}", file=sys.stderr)
+        return 0 if word.startswith("/") else 2
     if not (1 <= len(argv) <= 2):
         print("unknown")
         print("usage: campaign-directory.py <campaign issue number or slug> "
-              "[start]", file=sys.stderr)
+              "[start] | mark <N> <slug> <dir>", file=sys.stderr)
         return 2
     start = Path(argv[1]) if len(argv) == 2 else Path(os.getcwd())
     word, note = resolve(argv[0], start)

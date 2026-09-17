@@ -328,7 +328,7 @@ pred sessionFrame {
    keeps the OLD slug. `check-campaign-claim.py` reads a branch as a claim only
    when a campaign directory's `.campaign` marker names its slug, and refuses a
    worker whose name carries another. The rename changes the label, and the
-   marker by hand: while the marker holds the old slug, a successor named for
+   marker: while the marker holds the old slug, a successor named for
    the new one is refused; once it holds the new one, the old claim is no
    claim. Neither order lets the work move. What happens instead is an
    ordering: the worker lands and releases its claim under the old name, and

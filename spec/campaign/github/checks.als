@@ -147,21 +147,44 @@ pred S22a_ControlTheClaimHappensWithTheHoldOff {
   backlogDiscipline and eventually (Now.event = Claim and Now.issue not in Backlog)
 }
 
-/* JV1. A JUDGMENT ADVISES ONLY WHEN IT REPLIED, WAS CONFIDENT AND FIT
-   (system.als's `advised`), and only then: JV1b is UNSAT because a failed call,
-   an answer under its threshold and the no-match option each come back
-   `unknown`, and dropping any one of `advised`'s three conditions makes it
-   SAT. */
-pred JV1_ARepliedConfidentFittingJudgmentAdvises { some j: Judgment | advised[j] }
-pred JV1b_AFailedLowOrNoMatchAnswerNeverAdvises {
-  some j: Judgment | advised[j] and (j not in Replied or j not in Confident or j not in Fits)
+/* THE JUDGMENT'S GUARD, OVER TRACES. Under `judgmentDiscipline` an issue is
+   read one way or the other and never both: `StandIn` needs all four bits and
+   `HandUp` needs their absence, and the bits do not vary within a trace, so
+   nothing can be stood in for and handed up in the same run. That is the whole
+   claim -- if a judgment could do both, "the agent reads only what Jev
+   escalates" would be a sentence about nothing.
+
+   IT BITES: `JudgmentGuard_Bites` drops ONE condition -- `Acting`, the tier --
+   from the `StandIn` half and goes SAT, so a judgment at `advise` or `shadow`
+   that merely replied, was confident and fit would replace the reading AND be
+   handed up. The retired JV1/JV1b could not do this: JV1b negated `advised`'s
+   own body, so it could only fail when that one line was edited, and no live
+   decision depended on it (DECISION 5713799466). */
+assert JudgmentStandsInOrIsHandedUp {
+  judgmentDiscipline implies
+    all i: Issue |
+      not (eventually (Now.event = StandIn and Now.issue = i)
+           and eventually (Now.event = HandUp and Now.issue = i))
 }
+pred JudgmentGuard_Bites {
+  always (Now.event = StandIn implies
+            (Judgment in Replied and Judgment in Confident and Judgment in Fits))
+  always (Now.event = HandUp implies not standsIn[Judgment])
+  some i: Issue | eventually (Now.event = StandIn and Now.issue = i)
+                  and eventually (Now.event = HandUp and Now.issue = i)
+}
+/* The reachability floor for the two events the assert names. */
+pred Cov_StandIn { eventually Now.event = StandIn }
+pred Cov_HandUp  { eventually Now.event = HandUp }
 
 /* ---------------- commands ---------------- */
 
--- a judgment advises only when it replied, was confident and fit
-run JV1_ARepliedConfidentFittingJudgmentAdvises for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
-run JV1b_AFailedLowOrNoMatchAnswerNeverAdvises    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 0
+-- a judgment stands in for an agent's read only at tier `act` and only when it
+-- replied, cleared its threshold and fits; otherwise the issue is handed up
+check JudgmentStandsInOrIsHandedUp for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
+run JudgmentGuard_Bites            for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
+run Cov_StandIn                    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
+run Cov_HandUp                     for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 6 steps expect 1
 
 run S1_HappyPath             for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1
 run S2_SubIssueDropped           for exactly 3 Issue, 2 PullRequest, exactly 1 Campaign, exactly 3 Repo, 12 steps expect 1

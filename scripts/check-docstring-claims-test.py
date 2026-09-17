@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: JV1_ARepliedConfidentFittingJudgmentAdvises, JV1b_AFailedLowOrNoMatchAnswerNeverAdvises
+# witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
 """Prove check-docstring-claims.py asks what a commit touched, cuts the state the entry names, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every

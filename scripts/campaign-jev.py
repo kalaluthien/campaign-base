@@ -479,13 +479,100 @@ Verdict = namedtuple("Verdict", "word raw why tier does")
 Judged = namedtuple("Judged", "verdicts model latency call logged")
 
 
+# ------------------------------------------------------ THE BOUNDS ON AN `act`
+# FOUR, AND THEY ARE READ WHERE THE REGISTRY IS LOADED, so an entry that breaks
+# one never reaches a reader (DECISION 5714078253). A tier is a promise about
+# what a typed guess may do, and a promise nothing reads is prose.
+#
+#   a  an act never moves a label a person alone moves: `standing` and
+#      `backlog` are the owner's hold, and `bound:` and `campaign:` are the
+#      campaign's own identity. Nothing here can observe that a person changed
+#      their mind, which is why those labels are theirs.
+#   b  an act is never a claim, a release, a merge, a close, a launch or a
+#      retire. Each has an ACTOR in the model -- a session, a planner, a
+#      person -- and a judgment is not one of them.
+#   c  a write a judgment causes is made by the CALLING READER'S OWN SESSION,
+#      through `gh` as that session, so `check-campaign-claim.py` judges it by
+#      that session's role and claim. This module therefore carries out no act
+#      and runs no command an entry names: an entry that hands one over would
+#      be a path around the guard, and is refused.
+#   d  on a `BLOCKED`, the ceiling is `advise` plus a route label. The owner's
+#      answer to a `BLOCKED` is the planner's `DECISION`
+#      (`EscalationGoesThroughAPlanner`), so no reading at any tier may post a
+#      comment opening `DECISION`.
+ACT_VERBS = ("label", "comment", "rank", "route")
+# The labels only a person moves, by exact name and by prefix.
+PERSON_LABELS = ("standing", "backlog")
+PERSON_LABEL_PREFIXES = ("bound:", "campaign:")
+# The events that have an actor. Named here so the refusal can name the bound;
+# none of them is an `ACT_VERBS` either, which is the same rule stated once as
+# an allow-list and once as the refusal a reader reads.
+NEVER_ACTED = ("claim", "release", "merge", "close", "launch", "retire")
+# What an entry may not hand this module: a command line to run would be a
+# write by THIS process rather than by the reader's session.
+NEVER_IN_AN_ENTRY = ("command", "run", "gh", "shell")
+DECISION_KIND = "DECISION"
+BLOCKED_SUBJECT = "blocked"
+
+
+def check_act_bounds(reg):
+    """Raise on the first entry that breaks a bound, naming which.
+
+    READ AT LOAD, not at the act: a registry the tree committed with a bad
+    entry must fail the suite and the first reader, not the one call that
+    happens to clear its threshold."""
+    for name, entry in sorted(reg.items()):
+        act = entry.get("act")
+        # BOUND d FIRST AND FOR EVERY TIER: a `DECISION` Jev wrote is one
+        # nobody made, whatever confidence it carried.
+        if act and str(act.get("opens", "")).upper() == DECISION_KIND:
+            raise ValueError(
+                f"campaign-jev: `{name}`'s act opens a `{DECISION_KIND}` "
+                f"comment; bound d -- the answer to a BLOCKED is a planner's "
+                f"DECISION and never a judgment's, at any tier")
+        if entry.get("tier") != ACTS:
+            continue
+        if not act:
+            raise ValueError(f"campaign-jev: `{name}` is at tier `{ACTS}` with "
+                             f"no `act`")
+        for field in NEVER_IN_AN_ENTRY:
+            if field in act:
+                raise ValueError(
+                    f"campaign-jev: `{name}`'s act carries `{field}`; bound c "
+                    f"-- a write a judgment causes is made by the calling "
+                    f"reader's own session through the ordinary guarded path, "
+                    f"so no entry hands this module a command to run")
+        verb = act.get("verb")
+        if verb in NEVER_ACTED:
+            raise ValueError(
+                f"campaign-jev: `{name}`'s act is a `{verb}`; bound b -- a "
+                f"claim, a release, a merge, a close, a launch and a retire "
+                f"each have an actor, and a judgment is not one")
+        if verb not in ACT_VERBS:
+            raise ValueError(f"campaign-jev: `{name}`'s act verb `{verb}` is "
+                             f"not one of {', '.join(ACT_VERBS)}")
+        label = act.get("label", "")
+        if verb == "label" and (label in PERSON_LABELS
+                                or label.startswith(PERSON_LABEL_PREFIXES)):
+            raise ValueError(
+                f"campaign-jev: `{name}`'s act moves `{label}`; bound a -- "
+                f"{', '.join(PERSON_LABELS)} and the `bound:`/`campaign:` "
+                f"labels are a person's alone")
+        if entry.get("subject") == BLOCKED_SUBJECT and verb != "label":
+            raise ValueError(
+                f"campaign-jev: `{name}` reads a `{BLOCKED_SUBJECT}` at tier "
+                f"`{ACTS}` with a `{verb}`; bound d -- there the ceiling is "
+                f"`{ADVISE}` plus a route label")
+    return reg
+
+
 def load_registry(path=None):
-    """The readings by name. A registry that will not read RAISES: it is this
-    tree's own committed file, so an unreadable one is a broken checkout and
-    not a model that failed to answer."""
+    """The readings by name, with the bounds on an act read before any of them
+    is handed out. A registry that will not read RAISES: it is this tree's own
+    committed file, so an unreadable one is a broken checkout and not a model
+    that failed to answer."""
     path = Path(path) if path else REGISTRY
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return data["readings"]
+    return check_act_bounds(json.loads(path.read_text(encoding="utf-8")))
 
 
 def wording(entry):
@@ -596,6 +683,18 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
             f"campaign-jev: the state of group `{group}` must carry exactly "
             f"{sorted(want)}; missing {sorted(want - given) or 'none'}, extra "
             f"{sorted(given - want) or 'none'}")
+    # A NUMBER WITHOUT ITS REPOSITORY IS NOT A JOIN KEY. A member repository's
+    # pull request closes a sub-issue on this tracker, and its number collides
+    # with this tracker's own -- 33 of 199 closing links are a member's
+    # (rule-check#460 NOTE 5713928884). A join that asked "what happened to
+    # #28" would read whichever #28 it happened to find.
+    key = dict(key or {})
+    numbered = [k for k in ("issue", "pull_request", "comment") if k in key]
+    if numbered and not key.get("repo"):
+        raise ValueError(
+            f"campaign-jev: the join key names {', '.join(numbered)} with no "
+            f"`repo`; a number alone names no issue when a member "
+            f"repository's numbers collide with this tracker's")
     settled = dict(settled or {})
     for name in settled:
         if name not in entries:

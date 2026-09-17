@@ -1,5 +1,5 @@
 {
- "why": "RETIRED WORDINGS, kept so every `seen` row resolves. A `seen` row names the wording it was measured under by hash; a hash whose text is nowhere is a measurement nobody can repeat. The live wording is the registry's and is never copied here.",
+ "why": "WORDINGS THIS TREE HAS ASKED, kept so every `seen` row resolves. A row names the wording it was measured under by hash; a hash whose text is nowhere is a measurement nobody can repeat. A RETIRED wording is one the registry replaced; a VARIANT is a second phrasing asked on purpose, which the evidence row requires. The live wording is the registry's and is never copied here.",
  "wordings": {
   "b812d96a5391": {
    "reading": "verb-first",
@@ -24,6 +24,22 @@
        "Why is the staging cache colder than production's?"
       ]
      }
+    }
+   }
+  },
+  "fcda68669e27": {
+   "reading": "work-kind",
+   "retired": "",
+   "variant": "2026-09-17",
+   "by": "rule-check#455 pr 2: a second phrasing of the same question, asked so the band is not an artifact of one wording (DECISION 5713111488's evidence row)",
+   "question": {
+    "type": "choice",
+    "instructions": "Which kind of work is being asked for by the sub-issue whose title is in `title` and whose body is in `body`?",
+    "criteria": {
+     "research": "answer an open question, or measure or audit something that already runs",
+     "development": "build something new under a specification, or find out whether an approach can work at all",
+     "maintenance": "keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it",
+     "none": "not a unit of work at all"
     }
    }
   }

@@ -1432,6 +1432,38 @@ def _(m):
             and not drifts(no_prs[1], "stuck")), (no_sessions, no_prs)
 
 
+@case("watch: the Jev corpus's waiting line rides on every tick")
+def _(m):
+    """The one line naming what the corpus is waiting for -- rows unjoined,
+    cases unlabelled, readings short of the evidence row. It is NOT a drift:
+    it comes from a reader of its own and not from a source this Watch polls."""
+    was = m.jev_waiting
+    m.jev_waiting = lambda: {"jev waiting: 3 log row(s) unjoined"}
+    try:
+        [out] = polls(m, (0, readings(sessions={"tk-worker-2": sess()})))
+    finally:
+        m.jev_waiting = was
+    return ("+ jev waiting: 3 log row(s) unjoined" in out
+            and not [ln for ln in out if "drift jev" in ln]), out
+
+
+@case("watch: a reader of the Jev corpus never fails the heartbeat")
+def _(m):
+    """Its every failure is swallowed: the heartbeat is what says the campaign
+    is alive, and a corpus reader must not be able to take that away."""
+    was = m.run
+    def boom(*a, **kw):
+        raise RuntimeError("no such reader")
+    m.run = boom
+    try:
+        got = m.jev_waiting()
+    except Exception as e:  # noqa: BLE001 -- the case IS that it never raises
+        got = f"raised {e.__class__.__name__}"
+    finally:
+        m.run = was
+    return got == set(), got
+
+
 @case("watch: a drift clears when its repair lands: a claim, a release")
 def _(m):
     open5 = {5: ("open", False, False)}
@@ -1717,7 +1749,7 @@ MUTATIONS = [
     ("a sizeless boundary clears the context", 'out["context"], out["context_at"] = tokens, ts',
      'out["context"], out["context_at"] = (out["context"] if tokens is None else tokens), ts',
      "a compaction whose boundary carries no size leaves no context, not the stale one"),
-    ("the first poll prints drifts and limits only", 'if ln.startswith(("drift ", "limit ")))',
+    ("the first poll prints drifts and limits only", 'if ln.startswith(("drift ", "limit ", "jev ")))',
      "if True)", "watch: the first poll names the watch and prints every drift and limit, nothing else"),
     ("a later poll prints the change", "added, removed = sorted(lines - self.shown), sorted(self.shown - lines)",
      "added, removed = sorted(lines), []", "watch: a later poll prints only what changed, as + and -"),
@@ -1876,6 +1908,12 @@ MUTATIONS = [
      "watch: an install never read that leaves the list and returns errors again"),
     ("the installs list is a source when read", "        out[\"installs\"] = (sorted(k[len(\"install \"):] for k in each), None)\n", "",
      "watch reader: each install is a source, and one unreadable fails alone"),
+    ("the Jev waiting line dropped", "        lines |= jev_waiting()\n", "",
+     "watch: the Jev corpus's waiting line rides on every tick"),
+    ("the corpus reader left to raise",
+     "    except Exception:  # noqa: BLE001 -- a reader of the corpus, never a gate\n        return set()",
+     "    except ZeroDivisionError:\n        return set()",
+     "watch: a reader of the Jev corpus never fails the heartbeat"),
     ("an install drift per source", 'if source.startswith("install ") and word != "current"}',
      'if False}', "watch: an unreadable install hides no other install's drift"),
     ("unclaimed waits for claims and issues", 'if {"claims", "issues"} <= read:', "if True:",

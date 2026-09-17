@@ -993,6 +993,122 @@ def a_key_names_its_repository(m):
     return not bad, bad
 
 
+def waiting(m, rows, now=None, reg=None):
+    """The two forms of the waiting line over one temp log and an empty
+    corpus, so the log's rows are the only thing that moves between calls."""
+    corpus = ROOT / "corpus-waiting"
+    corpus.mkdir(exist_ok=True)
+    for f in corpus.glob("*"):
+        f.unlink()
+    log = ROOT / "waiting.log"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    reg = reg or {"verb-first": {"tier": "shadow", "join": "issue-title-kept"}}
+    was = m.CORPUS
+    m.CORPUS = corpus
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    try:
+        return m.steady_waiting_line(reg, now=now), m.waiting_line(reg)
+    finally:
+        m.CORPUS = was
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+
+
+# 2026-09-17T00:00:00+00:00 is `log_row`'s own `at`, so a `now` built off it
+# says exactly how old every row in a case is.
+LOGGED_AT = datetime.datetime.fromisoformat("2026-09-17T00:00:00+00:00")
+
+
+def the_watch_line_holds_no_count_that_moves(m):
+    """THE NAMED FAILING CASE (DECISION 5718621461). Two snapshots differing
+    only by two more unjoined rows must read the SAME to the watch: a changed
+    line is an event in every campaign's watch, and two more rows are nothing
+    any planner can act on. The exact line must move, or the probe never varied
+    what it claims to have varied."""
+    now = LOGGED_AT + datetime.timedelta(hours=1)
+    rows = [log_row(f"a{i:03d}", "verb-first", "A title", 900) for i in range(4)]
+    before, before_exact = waiting(m, rows, now=now)
+    more = rows + [log_row("b001", "verb-first", "A title", 900),
+                   log_row("b002", "verb-first", "A title", 900)]
+    after, after_exact = waiting(m, more, now=now)
+    return (before == after and before_exact != after_exact), \
+        (before, after, before_exact, after_exact)
+
+
+def the_watch_line_says_when_waiting_starts_and_ends(m):
+    """It carries no count, so it has to still carry the two transitions that
+    are worth a planner's attention: nothing waiting, and something."""
+    quiet, _exact = waiting(m, [], now=LOGGED_AT)
+    busy, _exact = waiting(m, [log_row("c001", "verb-first", "A title", 900)],
+                           now=LOGGED_AT + datetime.timedelta(hours=1))
+    return (quiet == "jev waiting: nothing" and busy != quiet), (quiet, busy)
+
+
+def the_watch_line_ages_the_oldest_unjoined_row(m):
+    """The third transition: the same rows, read either side of STALE_AFTER.
+    An unjoined row is worth saying twice -- when it appears, and when it has
+    sat long enough that whoever made it will not be joining it."""
+    rows = [log_row("d001", "verb-first", "A title", 900)]
+    young, _exact = waiting(
+        m, rows, now=LOGGED_AT + m.STALE_AFTER - datetime.timedelta(minutes=1))
+    aged, _exact = waiting(m, rows, now=LOGGED_AT + m.STALE_AFTER)
+    return ("oldest over" not in young and "oldest over" in aged), (young, aged)
+
+
+def the_watch_line_names_rows_the_join_refuses(m):
+    """A row the join refuses is not waiting -- nothing can ever label it --
+    and it is still said, because the exact line has named it since DECISION
+    5716626608 and a watch that went quiet would miss a log filling with rows
+    no join will ever take. One more refused row is still the same line."""
+    now = LOGGED_AT + datetime.timedelta(hours=1)
+    one = [log_row("e001", "verb-first", "A title", 900, endpoint="stub")]
+    two = one + [log_row("e002", "verb-first", "A title", 900, endpoint="stub")]
+    said, exact = waiting(m, one, now=now)
+    again, more = waiting(m, two, now=now)
+    quiet, _exact = waiting(m, [], now=now)
+    return (said == again and "never joinable" in said and exact != more
+            and "never joinable" not in quiet), (said, again, quiet, exact, more)
+
+
+def a_row_with_no_at_is_not_the_oldest(m):
+    """An empty string wins a `min`, so a row carrying no `at` read as the
+    oldest hid how old the real oldest row was, and the age clause never
+    fired while one sat in the log."""
+    rows = [log_row("f001", "verb-first", "A title", 900),
+            log_row("f002", "verb-first", "A title", 900, at=None)]
+    aged, exact = waiting(m, rows, now=LOGGED_AT + m.STALE_AFTER)
+    return ("oldest over" in aged
+            and "(oldest 2026-09-17T00:00:00+00:00)" in exact), (aged, exact)
+
+
+def the_age_word_is_written_from_the_constant(m):
+    """The word follows STALE_AFTER rather than assuming whole hours, so
+    moving the constant to 90 minutes cannot print `over 1h`."""
+    got = [m.span_text(datetime.timedelta(hours=6)),
+           m.span_text(datetime.timedelta(minutes=90)),
+           m.span_text(datetime.timedelta(minutes=30))]
+    return got == ["6h", "90m", "30m"], got
+
+
+CASES["the watch's line names the rows the join refuses, and counts none"] = \
+    the_watch_line_names_rows_the_join_refuses
+CASES["a row carrying no `at` is not read as the oldest unjoined row"] = \
+    a_row_with_no_at_is_not_the_oldest
+CASES["the age word is written from the constant, not from whole hours"] = \
+    the_age_word_is_written_from_the_constant
+
+
+CASES["the watch's line holds no count that moves on each call"] = \
+    the_watch_line_holds_no_count_that_moves
+CASES["the watch's line says when waiting starts and when it ends"] = \
+    the_watch_line_says_when_waiting_starts_and_ends
+CASES["the watch's line says when the oldest unjoined row has aged"] = \
+    the_watch_line_ages_the_oldest_unjoined_row
+
+
 CASES["the join labels a closed issue by what happened to its title"] = join_labels_a_closed_issue
 CASES["the join reads the kind label the owner set"] = join_reads_the_kind_label
 CASES["a row the join cannot label stays in the log and is counted"] = join_keeps_what_it_cannot_label
@@ -1817,6 +1933,32 @@ MUTATIONS = [
      'path = Path(env.get("HOME", "~")).expanduser() / ".env"',
      'path = Path("/nonexistent") / ".env"',
      "the key is read from ~/.env when the environment has none"),
+    ("the refused rows dropped from the watch's line",
+     '    if unreal:\n        body += ', '    if False:\n        body += ',
+     "the watch's line names the rows the join refuses, and counts none"),
+    ("the refused rows counted on the watch's line",
+     '+ f"rows never joinable, no `{REAL}` endpoint"',
+     '+ f"{len(unreal)} rows never joinable, no `{REAL}` endpoint"',
+     "the watch's line names the rows the join refuses, and counts none"),
+    ("a row with no `at` read as the oldest again",
+     'oldest = min((r["at"] for r in unjoined if r.get("at")), default="")',
+     'oldest = min((r.get("at") or "" for r in unjoined), default="")',
+     "a row carrying no `at` is not read as the oldest unjoined row"),
+    ("the age word assuming whole hours",
+     'return f"{minutes // 60}h" if minutes and not minutes % 60 else f"{minutes}m"',
+     'return f"{minutes // 60}h"',
+     "the age word is written from the constant, not from whole hours"),
+    # THE WATCH'S LINE, each of its three transitions broken in turn.
+    ("the watch's line carrying the count again",
+     '        parts.append("log rows unjoined" + aged)',
+     '        parts.append(f"{len(unjoined)} log rows unjoined" + aged)',
+     "the watch's line holds no count that moves on each call"),
+    ("unjoined rows never reaching the watch's line",
+     "    if unjoined:\n        aged = ", "    if False:\n        aged = ",
+     "the watch's line says when waiting starts and when it ends"),
+    ("an unjoined row never going stale",
+     "    return now - when >= span", "    return False",
+     "the watch's line says when the oldest unjoined row has aged"),
     ("the log line not written",
      'fh.write(json.dumps(row, sort_keys=True) + "\\n")', "pass",
      "the call is logged as one JSON line"),

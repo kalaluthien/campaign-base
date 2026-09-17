@@ -1525,6 +1525,25 @@ def _(m):
             and not [ln for ln in out if "drift jev" in ln]), out
 
 
+@case("watch: the corpus's line is asked in the form that holds no count")
+def _(m):
+    """A line whose count moved on every call was an EVENT on every tick, and
+    it re-fired every planner on this machine every few minutes with nothing
+    for any of them to do (DECISION 5718621461). So the heartbeat asks for the
+    steady form, never the exact one."""
+    was, asked = m.run, []
+    def record(*argv, **kw):
+        asked.append(argv)
+        return types.SimpleNamespace(stdout="jev waiting: nothing\n")
+    m.run = record
+    try:
+        got = m.jev_waiting()
+    finally:
+        m.run = was
+    return (bool(asked) and "--steady" in asked[0]
+            and got == {"jev waiting: nothing"}), (asked, got)
+
+
 @case("watch: a reader of the Jev corpus never fails the heartbeat")
 def _(m):
     """Its every failure is swallowed: the heartbeat is what says the campaign
@@ -2008,6 +2027,9 @@ MUTATIONS = [
      "watch reader: each install is a source, and one unreadable fails alone"),
     ("the Jev waiting line dropped", "        lines |= jev_waiting()\n", "",
      "watch: the Jev corpus's waiting line rides on every tick"),
+    ("the corpus's line asked in the form whose count moves",
+     '"--waiting", "--steady", timeout=20)', '"--waiting", timeout=20)',
+     "watch: the corpus's line is asked in the form that holds no count"),
     ("the corpus reader left to raise",
      "    except Exception:  # noqa: BLE001 -- a reader of the corpus, never a gate\n        return set()",
      "    except ZeroDivisionError:\n        return set()",

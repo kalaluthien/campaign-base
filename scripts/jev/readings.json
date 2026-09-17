@@ -51,6 +51,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
@@ -113,6 +114,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
@@ -162,6 +164,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "{condition}"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
@@ -201,6 +204,7 @@
     }
    }
   },
+  "compose": {"where": "call"},
   "thresholds": {
    "option": "defect",
    "yes_over": 0.5,
@@ -349,6 +353,7 @@
     }
    }
   },
+  "compose": {"where": "call"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
@@ -428,6 +433,7 @@
     }
    }
   },
+  "compose": {"where": "table", "table": "nouls"},
   "thresholds": {
    "yes_over": 0.5,
    "no_under": 0.2
@@ -462,6 +468,7 @@
     "says_nothing": "Nothing in `report` addresses that finding at all; a reader looking for its disposition finds none. NOT this option: a `report` that is merely short, or one that answers the other findings well, when this finding is still answered somewhere in it."
    }
   },
+  "compose": {"where": "state"},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.8,
@@ -628,6 +635,7 @@
     "noMatch": "no hunk in `candidateHunks` checks this condition: none tests it, or the condition is about something no hunk here exercises"
    }
   },
+  "compose": {"where": "question", "as": "{condition}"},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
@@ -669,6 +677,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "{condition}"},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,
@@ -712,6 +721,7 @@
     "noMatch": "no candidate in `candidates` is evidence for this condition: none implements it, tests it or reports a result that shows it"
    }
   },
+  "compose": {"where": "question", "as": "{condition}"},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
@@ -756,6 +766,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "{condition}"},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,
@@ -801,6 +812,7 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,

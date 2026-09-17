@@ -46,6 +46,8 @@ ROOT = Path(tempfile.mkdtemp(prefix="cited-claims-"))
 
 NEXT = {"p": 0.9}
 SEEN = []
+# The log rows the last run wrote, so a case can read what the row carried.
+LAST = {"rows": []}
 
 
 class Stub(http.server.BaseHTTPRequestHandler):
@@ -146,6 +148,10 @@ def repo(t, edits, p=0.9, url=None, registry=True, tier="advise", drop=()):
         files["scripts/jev/readings.json"] = json.dumps(entries)
     harness.write_tree(d, files)
     harness.git(d, "init", "-q", check=True)
+    # AN ORIGIN, so the row's join key can be read: a commit-time reading is
+    # keyed by the repository, the sha it sits on and the file.
+    harness.git(d, "remote", "add", "origin", "https://github.com/o/r.git",
+                check=True)
     harness.git(d, "add", "-A", check=True)
     harness.git(d, "commit", "-qm", "fixture", "--no-verify", check=True)
     harness.write_tree(d, edits)
@@ -156,6 +162,9 @@ def repo(t, edits, p=0.9, url=None, registry=True, tier="advise", drop=()):
                CAMPAIGN_JEV_LOG=str(d / "jev.log"))
     r = subprocess.run([sys.executable, "scripts/check-cited-claims.py",
                         "--staged"], cwd=d, capture_output=True, text=True, env=env)
+    LAST["rows"] = [json.loads(line)
+                    for line in (d / "jev.log").read_text().splitlines()
+                    if line] if (d / "jev.log").exists() else []
     return r, r.stdout + r.stderr
 
 
@@ -222,9 +231,25 @@ def gap_counted(t):
             and "0 claim(s) read as contradicted, 0 clear" in out), out
 
 
+def row_carries_its_join_key(t):
+    """WHAT THE MOVE FROM `ask` TO `judge` BOUGHT. The row names the reading
+    and its wording, and carries the key as FIELDS -- the repository, the sha
+    this commit sits on, the file and the pred -- so a later commit that
+    rewrote that docstring can be joined to the answer. Under `ask` the row
+    carried none of them and every one of them parked in the log for good."""
+    repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")})
+    judged = [row for row in LAST["rows"] if row.get("reading")]
+    one = judged[0] if judged else {}
+    return (bool(judged) and one.get("repo") == "o/r"
+            and one.get("path") == "scripts/cites.py"
+            and one.get("name")
+            and len(one.get("commit") or "") == 40
+            and len(one.get("wording") or "") == 12), (len(judged), one)
+
+
 def entry_reaches_model(t):
     repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")})
-    q = SEEN[0]["questions"]["c0"] if SEEN else {}
+    q = (SEEN[0]["questions"] if SEEN else {}).get("docstring-claims#c0", {})
     return (q.get("criteria") == ENTRY["question"]["criteria"]
             and q.get("instructions", {}).get("question")
             == ENTRY["question"]["instructions"]
@@ -327,6 +352,7 @@ CASES = {
     "a clear claim is counted, not printed": clear_not_printed,
     "a claim between the two edges is counted in the gap": gap_counted,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
+    "the row carries the reading, the wording and the join key": row_carries_its_join_key,
     "a failed call prints unknown and exits 0": unknown_on_failure,
     "a name declared twice is skipped and named": declared_twice_skipped,
     "a reader that could not read exits 0 and says so": failure_exits_zero,
@@ -350,8 +376,10 @@ MUTATIONS = [
      "if not (mine or name in touched):",
      "if not mine:",
      "a staged pred edit asks every paragraph citing it"),
-    ("the thresholds not read from the entry", 'spec.update(entry["thresholds"])',
-     "pass", "a contradicted claim is printed with its value, exit 0"),
+    ("the claims never handed to the call",
+     '"claim": {f"c{i}": c for i, c in enumerate(found)}},',
+     '"claim": {}},',
+     "a contradicted claim is printed with its value, exit 0"),
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
      "except ZeroDivisionError as e:", "a reader that could not read exits 0 and says so"),
@@ -365,8 +393,14 @@ MUTATIONS = [
     ("the gap left out of the counts",
      """{counts['uncertain']} in the gap, {counts['unknown']} """, '{counts["unknown"]} ',
      "a claim between the two edges is counted in the gap"),
-    ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
-     "the entry's instructions and criteria reach the model, thresholds do not"),
+    ("the row keyed by the file alone",
+     "key=dict(key, path=path, name=name), env=env)",
+     'key={"path": path}, env=env)',
+     "the row carries the reading, the wording and the join key"),
+    ("the pred never named on the row",
+     "key=dict(key, path=path, name=name), env=env)",
+     "key=dict(key, path=path), env=env)",
+     "the row carries the reading, the wording and the join key"),
     ("an unknown claim not printed", 'elif a.word == "unknown":', "elif False:",
      "a failed call prints unknown and exits 0"),
     ("the tier not read", 'shown = entry["tier"] != "shadow"', "shown = True",

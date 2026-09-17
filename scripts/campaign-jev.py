@@ -812,6 +812,11 @@ def check_edges(reg):
                     f"`{lower}` is {lo}; the upper edge of a band sits ABOVE "
                     f"the lower one, or the band has no middle and "
                     f"`{UNCERTAIN}` can never be answered")
+        # AND THE PER-ITEM SHAPE, read at the same moment and for the same
+        # reason: a reading asked per item whose `compose` says nothing is one
+        # whose questions nobody can build, and finding that out at the call
+        # would cost a reader its judgment in the middle of a commit.
+        compose_of(entry)
     return reg
 
 
@@ -940,23 +945,146 @@ def options_of(entry, state=None):
     return built
 
 
+# HOW A READING ASKED PER ITEM PUTS THE ITEM INTO ITS QUESTION, declared
+# BESIDE `question` and never inside it: `wording()` hashes the question block,
+# so a shape written in there would move every band's hash without changing one
+# word the model reads.
+#
+# `where` is where the item's TEXT travels, and it decides the state as well,
+# because an item the question carries is not sent twice:
+#
+#   state     the state carries the items, and the instructions name the one
+#             being asked by its KEY, at `{item}`; the model reads the text out
+#             of the state itself
+#   question  the instructions carry the item's TEXT, and the field it came
+#             from is withheld from the state the call sends
+#   table     the items are the entry's OWN table, named by `table`, and each
+#             one's words fill placeholders across the whole question
+#   call      the reader makes one CALL an item and the item is that call's
+#             state, so this asks one question and fans out nothing
+#
+# `as` says how, and only `question` has one: a word in braces splices the text
+# at that placeholder, and any other word puts it under that key of an
+# instructions OBJECT.
+#
+# THE ITEM SOURCE NEED NOT BE A STATE FIELD. `state.fields` is the slice ONE
+# CASE carries, and a case of a per-item reading is one item -- so
+# `docstring-claims` names `paragraph` and `pred` and cuts its claims out of
+# the paragraph, while `model-comment` names the claim it was asked about. Both
+# withhold the source from the call, so both send what they sent before.
+COMPOSE = "compose"
+IN_STATE, IN_QUESTION, FROM_TABLE, ONE_CALL = "state", "question", "table", "call"
+WHERE = (IN_STATE, IN_QUESTION, FROM_TABLE, ONE_CALL)
+
+
+def compose_of(entry):
+    """How a per-item reading composes its question, or None where it is asked
+    once. THE ONE READER of that rule: `question_of` sends by it and `judge`
+    decides by it which fields the call carries and whether it fans out at all,
+    and a second copy would let the question and the state disagree about where
+    the item went."""
+    if not (entry.get("question") or {}).get("per"):
+        return None
+    shape = entry.get(COMPOSE)
+    if not isinstance(shape, dict) or shape.get("where") not in WHERE:
+        raise ValueError(
+            f"campaign-jev: a reading asked per "
+            f"`{entry['question']['per']}` declares `{COMPOSE}` beside its "
+            f"question, with `where` one of {', '.join(WHERE)}; it holds "
+            f"{shape!r}")
+    for where, field in ((IN_QUESTION, "as"), (FROM_TABLE, "table")):
+        if shape["where"] == where and not shape.get(field):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.where` is `{where}`, so `{field}` "
+                f"must say where the item comes from or goes; it holds "
+                f"{shape.get(field)!r}")
+    if shape["where"] == FROM_TABLE and not isinstance(
+            entry.get(shape["table"]), dict):
+        raise ValueError(
+            f"campaign-jev: `{COMPOSE}.table` names `{shape['table']}`, which "
+            f"is no table of this entry")
+    return shape
+
+
+def instructions_of(entry, item, state=None):
+    """The instructions ONE ITEM of a per-item reading is asked with, for the
+    two shapes that change nothing else about the question."""
+    text = entry["question"]["instructions"]
+    shape = compose_of(entry)
+    if shape["where"] == IN_STATE:
+        return text.replace(ITEM_MARK, str(item))
+    value = ((state or {}).get(entry["question"]["per"]) or {}).get(item)
+    where = shape["as"]
+    if where.startswith("{"):
+        return text.replace(where, str(value))
+    return {"question": text, where: value}
+
+
+def filled_from_table(entry, spec, item):
+    """The whole question with one row of the entry's table put into its
+    placeholders. The substitution is over the question as JSON TEXT, because a
+    row's words reach the criteria and their examples as well as the
+    instructions, and each is escaped as JSON on the way in."""
+    words = (entry[compose_of(entry)["table"]] or {}).get(item) or {}
+    text = json.dumps({k: spec[k] for k in ("type", "instructions", "criteria")})
+    for key, value in words.items():
+        text = text.replace("{" + key + "}", json.dumps(value)[1:-1])
+    return dict(spec, **json.loads(text))
+
+
+def words_of(entry, verdict):
+    """{item: Answer} for a per-item verdict, each raw answer branched.
+
+    `judge` hands a fanned reading its raws and NO word, because what they add
+    up to is the entry's `combine` and that is the reader's. The branch of ONE
+    item is not: a reader that cut its own would be a second reader of the
+    entry's edges, and the two would drift the first time a cut moved."""
+    spec, whys = question_of(entry), verdict.why or {}
+    out = {}
+    for item, raw in (verdict.raw or {}).items():
+        word, why = branch(spec, raw)
+        # THE CALL'S OWN REASON WINS. `branch` can only say the response
+        # carried no answer; the call knows WHY it carried none -- a closed
+        # port, a timeout, a body that was not JSON -- and that sentence is
+        # what a reader prints and a person acts on.
+        out[item] = Answer(word, raw, whys.get(item) or why)
+    return out
+
+
+def items_of(entry, state=None):
+    """The items one per-item reading is asked over, by key, or None where it
+    is asked once. THE ONE READER of where they come from: the state's own
+    field, or the entry's table."""
+    shape = compose_of(entry)
+    if shape is None or shape["where"] == ONE_CALL:
+        return None
+    if shape["where"] == FROM_TABLE:
+        return entry[shape["table"]]
+    return (state or {}).get(entry["question"]["per"])
+
+
 def question_of(entry, item=None, state=None):
     """The spec `ask` and `branch` read: the question as sent, plus the cuts,
     which are this tree's reading of the answer and are never sent.
 
-    `item` is the key of a reading asked per item, written into the instructions
-    where `{item}` stands -- by replacement and not by `format`, so a question
-    holding a brace of its own is not a formatting error.
+    `item` is the key of a reading asked per item, put into the instructions
+    the way the entry's `compose` declares -- by replacement and not by
+    `format`, so a question holding a brace of its own is not a formatting
+    error.
 
-    `state` is what a reading whose options are BUILT is built from; it is
-    ignored by every other reading, so a caller that does not pass it changes
-    nothing for the entries that declare no `options_from`."""
+    `state` is what a reading whose options are BUILT is built from, and where
+    an item composed into the QUESTION reads its text; it is ignored by every
+    other reading, so a caller that does not pass it changes nothing for the
+    entries that declare no `options_from` and no per-item shape."""
     spec = dict(entry["question"])
     spec.update(entry.get("thresholds") or {})
     if spec.pop(OPTIONS_FROM, None):
         spec["criteria"] = options_of(entry, state)
-    if item is not None:
-        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))
+    if item is None:
+        return spec
+    if compose_of(entry)["where"] == FROM_TABLE:
+        return filled_from_table(entry, spec, item)
+    spec["instructions"] = instructions_of(entry, item, state)
     return spec
 
 
@@ -1196,12 +1324,23 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     ties the rows of one call back together."""
     reg = load_registry() if reg is None else reg
     entries = group_of(reg, group)
-    want, given = state_fields(entries), set(state)
+    # THE ITEMS ARE ASKED FOR AND NOT ALWAYS SENT. A reading whose `compose`
+    # puts the item's text in the QUESTION is handed its items here all the
+    # same -- there is nowhere else they could come from -- and the field they
+    # came from is then WITHHELD from the call, because an item carried by the
+    # question is not sent twice. So the caller owes the group's fields plus
+    # every item source, and the endpoint is sent the fields less those.
+    sources = {(e.get("question") or {}).get("per")
+               for e in entries.values()
+               if (compose_of(e) or {}).get("where") == IN_QUESTION}
+    fields = state_fields(entries)
+    want, given = fields | sources, set(state)
     if want != given:
         raise ValueError(
             f"campaign-jev: the state of group `{group}` must carry exactly "
             f"{sorted(want)}; missing {sorted(want - given) or 'none'}, extra "
             f"{sorted(given - want) or 'none'}")
+    carried = fields - sources
     # A NUMBER WITHOUT ITS REPOSITORY IS NOT A JOIN KEY. A member repository's
     # pull request closes a sub-issue on this tracker, and its number collides
     # with this tracker's own -- 33 of 199 closing links are a member's
@@ -1237,31 +1376,40 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     for name, entry in entries.items():
         per = (entry.get("question") or {}).get("per")
         given = settled.get(name)
-        if not per:
+        items = items_of(entry, state)
+        if items is None:                # asked once: no `per`, or one a call
             if name not in settled:
                 asked[name] = question_of(entry, state=state)
             continue
-        items = state.get(per)
         if not isinstance(items, dict):
             raise ValueError(
-                f"campaign-jev: `{name}` is asked per `{per}`, so the state's "
-                f"`{per}` must be an object of one item per question; it is a "
+                f"campaign-jev: `{name}` is asked per `{per}`, so the items "
+                f"`{compose_of(entry)['where']}` holds must be an object of "
+                f"one item per question; they are a "
                 f"{type(items).__name__}")
         if given is not None and not isinstance(given, dict):
             continue                     # one word settles the whole reading
-        if ITEM_MARK not in entry["question"]["instructions"]:
+        # THE ITEM MUST REACH THE MODEL, and the entry's `compose` says how.
+        # The question id never does, so a shape that named the item nowhere
+        # would ask the same question once per item and get one answer n times.
+        shape = compose_of(entry)
+        mark = (ITEM_MARK if shape["where"] == IN_STATE
+                else shape["as"] if shape["where"] == IN_QUESTION
+                and shape["as"].startswith("{") else "")
+        if mark and mark not in entry["question"]["instructions"]:
             raise ValueError(
-                f"campaign-jev: `{name}` is asked per `{per}` through `judge`, "
-                f"so its instructions must name the item with `{ITEM_MARK}`; "
-                f"the question id never reaches the model, and without it the "
-                f"same question would be asked once per item")
-        fanned[name] = per
+                f"campaign-jev: `{name}` is asked per `{per}` and composes its "
+                f"item at `{mark}`, which its instructions do not name; the "
+                f"question id never reaches the model, and without it the same "
+                f"question would be asked once per item")
+        fanned[name] = items
         cleared = given or {}
         for item in items:
             if item not in cleared:
                 asked[f"{name}#{item}"] = question_of(entry, item, state)
     if asked:
-        reading = ask(reader or "campaign-jev.judge", read, state, asked,
+        reading = ask(reader or "campaign-jev.judge", read,
+                      {k: v for k, v in state.items() if k in carried}, asked,
                       env=env, cwd=cwd, timeout=timeout, log=False, cache=cache,
                       run=run)
     else:
@@ -1274,15 +1422,19 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         if name in fanned:
             # ONE VERDICT PER READING STILL, carrying the per-item answers and
             # no word: combining them is the entry's `combine`, which code does.
-            raw, whys = {}, []
-            for item in state[fanned[name]]:
+            # THE RAWS AND THE WHYS ARE BOTH PER ITEM. A joined string read
+            # back to one item was a parse nobody could do safely, and the
+            # reason a question went `unknown` -- which is the whole of what
+            # a failed call leaves behind -- belongs to that item alone.
+            raw, whys = {}, {}
+            for item in fanned[name]:
                 answer = reading.answers.get(f"{name}#{item}")
                 if answer is None:
                     continue
                 raw[item] = answer.raw
                 if answer.why:
-                    whys.append(f"{item}: {answer.why}")
-            word, why = None, "; ".join(whys)
+                    whys[item] = answer.why
+            word, why = None, whys
             verdicts[name] = Verdict(word, raw, why, entry["tier"],
                                      does(entry, word, raw))
         elif name in settled:
@@ -1526,6 +1678,32 @@ def clone_of(repo, cwd=None):
     if out.returncode != 0:
         return None
     return root if repo_of(out.stdout) == repo else None
+
+
+def commit_key(cwd=None):
+    """{repo, commit} for a reading made at `pre-commit`, or {} -- the
+    repository this tree pushes to and the sha it is committing ONTO.
+
+    THE COMMIT BEING MADE HAS NO SHA YET, which is why the key is its parent:
+    the reader runs over the index, and `HEAD` is the newest thing it can name.
+    `fetch_commits` reads the window from there, and the join drops the first
+    later commit that touched the file -- the one this reading was made for.
+
+    A KEY IT COULD NOT READ IS EMPTY, never half: a row carrying a path and no
+    repository is a row the join cannot reach anyway, and it says so."""
+    out = {}
+    for field, args in (("repo", ("remote", "get-url", "origin")),
+                        ("commit", ("rev-parse", "HEAD"))):
+        try:
+            got = subprocess.run(["git", *args], capture_output=True, text=True,
+                                 timeout=10, cwd=str(cwd) if cwd else None)
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        if got.returncode != 0 or not got.stdout.strip():
+            return {}
+        out[field] = got.stdout.strip()
+    out["repo"] = repo_of(out["repo"])
+    return out if out["repo"] else {}
 
 
 def fetch_commits(repo, sha, path, timeout=60, cwd=None):

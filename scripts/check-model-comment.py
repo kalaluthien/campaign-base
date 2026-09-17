@@ -133,16 +133,28 @@ def claims(comment, body, prefilter, s1):
     return list(dict.fromkeys(asked)), skipped
 
 
-def ask_all(entry, states, jev, s1, env=None):
-    """[(label, claims, Reading)] for every definition, asked six at a time.
+def ask_all(entry, states, jev, key, env=None):
+    """[(label, claims, {claim id: Answer}, the log line's fate)] for every
+    definition, asked six at a time.
 
-    ONE CALL A DEFINITION: `s1.questions` turns the claims into one question
-    each, carrying the same instructions and thresholds S1 sends, so the two
-    readings cannot drift in the shape of what they ask."""
+    ONE `judge` CALL A DEFINITION, where it used to be one `ask`. The entry's
+    `compose` puts each claim's text in its own question -- the shape
+    `s1.questions` built by hand, asserted byte for byte by campaign-jev-test's
+    "a question composed into the instructions is what the reader sent" -- so
+    what is sent did not move. What the ROW gained is the reading's name, the
+    wording, and the KEY: the repository, the sha this commit sits on, the file
+    and the definition. Without those a row could never be joined to what
+    happened to that comment afterwards, which is why every one of them parked
+    in the log for good (sdlc-alloy#458 DECISION 5722176509)."""
     def one(state):
-        label, found, body = state
-        return label, found, jev.ask(READER, label, {"body": body},
-                                     s1.questions(entry, found), env=env)
+        label, path, name, found, body = state
+        judged = jev.judge(entry["group"],
+                           {"claim": {f"c{i}": c for i, c in enumerate(found)},
+                            "body": body},
+                           read=label, reader=READER,
+                           key=dict(key, path=path, name=name), env=env)
+        return (label, found, jev.words_of(entry, judged.verdicts[READING]),
+                judged.logged)
     with ThreadPoolExecutor(6) as pool:
         return list(pool.map(one, states))
 
@@ -181,13 +193,14 @@ def main(argv, out=sys.stdout, env=None):
                 skipped += 1
                 jev.skip(READER, f"{path} `{name}`: {sentence}", why, env=env)
             if found:
-                states.append((f"{path} `{name}`", found, body))
+                states.append((f"{path} `{name}`", path, name, found, body))
         print(f"check-model-comment `{READING}`: {len(staged)} staged spec "
               f"file(s) read; {len(states)} definition(s) asked, "
-              f"{sum(len(s[1]) for s in states)} claim(s); {skipped} "
+              f"{sum(len(s[3]) for s in states)} claim(s); {skipped} "
               f"sentence(s) settled by code", file=out)
         if states:
-            s1.report(ask_all(entry, states, jev, s1, env), entry, out)
+            s1.report(ask_all(entry, states, jev, jev.commit_key(), env),
+                      entry, out)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
         print(f"check-model-comment: could not read the commit "
               f"({e.__class__.__name__}: {e}); nothing asked, exit status "

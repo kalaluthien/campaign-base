@@ -1338,6 +1338,110 @@ CASES["a flag the reader computes from the answers reaches the log row"] = a_fla
 CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item
 
 
+def the_composed_question_is_what_the_reader_sent(m):
+    """The three comment readings put the claim's TEXT in the question and
+    WITHHOLD the field it came from, which is what check-cited-claims.py's own
+    composer did before they moved to `judge`. That composer is written out
+    here, so what is asserted is the two request bodies and not a description
+    of one: a conversion that changed a byte the model reads would move a band
+    that was measured on the old one, and `wording()` -- which hashes the
+    entry's question -- could not see it."""
+    found = ["The ref is cut on the remote.", "A claim is atomic."]
+
+    def as_the_reader_did(entry, state):
+        q = entry["question"]
+        spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
+        spec.update(entry["thresholds"])
+        return m.request_body(state, {
+            f"c{i}": dict(spec, instructions={"question": q["instructions"],
+                                              "claim": c})
+            for i, c in enumerate(found)})
+
+    reg = m.load_registry()
+    bad = []
+    for name, state in (
+            ("model-comment", {"body": "pred a { no b }"}),
+            ("docstring-claims", {"paragraph": "a paragraph",
+                                  "pred": {"name": "a", "text": "pred a {}"}}),
+            ("reference-claims", {"paragraph": "a paragraph",
+                                  "pred": {"name": "a", "text": "pred a {}"}})):
+        LOG.write_text("")
+        clear_store()
+        serving()
+        m.judge(reg[name]["group"],
+                dict(state, **{"claim": {f"c{i}": c
+                                         for i, c in enumerate(found)}}),
+                reg=reg, env=env(url=URL), timeout=5, log=False)
+        was = as_the_reader_did(reg[name], state)
+        got = json.loads(SEEN["body"])
+        # THE IDS ARE THE ONE THING THAT MAY MOVE: `judge` names a question
+        # `<reading>#<item>` and the id never reaches the model.
+        got["questions"] = {q.split("#", 1)[-1]: v
+                            for q, v in got["questions"].items()}
+        if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
+            bad.append((name, got, was))
+    return not bad, bad
+
+
+def the_spliced_and_filled_questions_are_what_the_readers_sent(m):
+    """The other two shapes, against the composers that still own them:
+    check-research-bar.py splices the condition's text at `{condition}`, and
+    check-diff-screen.py fills the WHOLE question -- criteria and examples
+    included -- from one row of the entry's own `nouls` table. Both composers
+    are written out here, so the assertion is the bodies and not a description.
+    Their readers move in a later commit; the mechanism they move onto is
+    measured now, while the thing it must equal is still in the tree."""
+    reg = m.load_registry()
+    bad = []
+
+    bar = reg["research-bar"]            # check-research-bar.questions
+    q, spec = bar["question"], {k: v for k, v in bar["question"].items()
+                                if k in ("type", "criteria")}
+    spec.update(bar["thresholds"])
+    was = m.request_body({"note": "a NOTE"}, {
+        name: dict(spec, instructions=q["instructions"].replace(
+            "{condition}", bar["conditions"][name]))
+        for name in bar["conditions"]})
+    got = m.request_body({"note": "a NOTE"}, {
+        name: m.question_of(bar, name, {"condition": bar["conditions"],
+                                        "note": "a NOTE"})
+        for name in bar["conditions"]})
+    if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
+        bad.append(("research-bar", got, was))
+
+    screen = reg["diff-screen"]          # check-diff-screen.questions
+    q, cuts = screen["question"], screen["thresholds"]
+    text = json.dumps({k: q[k] for k in ("type", "instructions", "criteria")})
+    was_q = {}
+    for name, words in screen["nouls"].items():
+        filled = text
+        for key, value in words.items():
+            filled = filled.replace("{" + key + "}", json.dumps(value)[1:-1])
+        was_q[name] = dict(json.loads(filled), **cuts)
+    state = {"file": {"path": "a.py", "patch": "@@"}, "changedTests": []}
+    was = m.request_body(state, was_q)
+    got = m.request_body(state, {name: m.question_of(screen, name, state)
+                                 for name in screen["nouls"]})
+    if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
+        bad.append(("diff-screen", got, was))
+
+    # A ROW'S WORDS ARE ESCAPED ON THE WAY IN, because the substitution is over
+    # the question as JSON text. No committed row carries a quote or a newline
+    # today, so one is made here: a row that did would otherwise tear the
+    # question in half and the filled question would not parse at all.
+    quoted = dict(screen, nouls={"q": dict(
+        next(iter(screen["nouls"].values())),
+        ask='does it say "no" and\nstop?')})
+    try:
+        filled = m.question_of(quoted, "q", state)["instructions"]
+    except Exception as e:  # noqa: BLE001 -- an unescaped row tears the JSON
+        filled = f"{e.__class__.__name__}: {e}"
+    if filled != quoted["question"]["instructions"].replace(
+            "{ask}", 'does it say "no" and\nstop?'):
+        bad.append(("a quoted row", filled))
+    return not bad, bad
+
+
 def a_key_names_its_repository(m):
     """A number without its repository is refused: a member repository's pull
     request closes a sub-issue here and its number collides with this
@@ -1496,6 +1600,8 @@ CASES["the join labels a closed issue by what happened to its title"] = join_lab
 CASES["the join reads the kind label the owner set"] = join_reads_the_kind_label
 CASES["a row the join cannot label stays in the log and is counted"] = join_keeps_what_it_cannot_label
 CASES["joining twice writes one case"] = join_writes_one_case_for_one_row
+CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
+CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent
 CASES["a join key names its repository beside every number"] = a_key_names_its_repository
 CASES["a commit key names its repository and its path"] = a_commit_key_names_its_repository_and_its_path
 
@@ -1749,6 +1855,35 @@ CASES["the evidence row names each part that is short"] = the_evidence_row_names
 CASES["a reading above shadow holds its evidence row"] = a_tier_above_shadow_holds_its_evidence_row
 CASES["every case of a registered reading fits its entry"] = every_case_fits_its_entry
 CASES["every case of every corpus file is well formed"] = every_case_is_well_formed
+
+
+def a_per_item_reading_declares_where_its_item_goes(m):
+    """A reading asked per item whose `compose` says nothing is one whose
+    questions nobody can build, so it is refused AT LOAD -- beside the edges
+    and the bounds on an act -- and not at the call that would have judged a
+    commit. The three shapes are declared apart from `question`, because
+    `wording()` hashes that block and a shape inside it would move every band's
+    hash without changing one word the model reads."""
+    base = {"owner": "a suite", "tier": "shadow", "group": "g",
+            "state": {"fields": ["note"], "why": ""},
+            "prefilter": {"what": ""},
+            "question": {"type": "noul", "per": "note", "instructions": "?",
+                         "criteria": {"true": {}, "false": {}}},
+            "join": None}
+    bad = []
+    for compose, fragment in ((None, "compose"), ({"where": "elsewhere"}, "compose"),
+                              ({"where": "question"}, "as")):
+        entry = dict(base, **({"compose": compose} if compose else {}))
+        try:                 # a bad shape is REFUSED, never left to trip later
+            said, why = refused(m, entry, fragment)
+        except Exception as e:  # noqa: BLE001 -- the failure this asserts
+            said, why = False, f"{e.__class__.__name__}: {e}"
+        if not said:
+            bad.append((compose, why))
+    kept, why = refused(m, dict(base, compose={"where": "state"}), "")
+    if kept:
+        bad.append(("a declared shape", why))
+    return not bad, bad
 
 
 def a_bad_entry_never_loads(m):
@@ -2265,6 +2400,7 @@ CASES["waiting_line counts the never-joinable apart"] = waiting_line_counts_the_
 CASES["a stubbed call never writes the shared log"] = a_stub_never_writes_the_shared_log
 CASES["a row no real endpoint answered is refused by the join, and named"] = a_row_of_no_real_endpoint_is_refused_by_the_join
 
+CASES["a per-item reading declares where its item goes"] = a_per_item_reading_declares_where_its_item_goes
 CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
 CASES["an act never moves a label a person alone moves"] = act_never_moves_a_person_label
 CASES["an act is never a claim, release, merge, close, launch or retire"] = act_is_never_an_event_with_an_actor
@@ -2381,16 +2517,35 @@ MUTATIONS = [
      "a row no real endpoint answered is refused by the join, and named"),
     # --- one thread, one call, per finding ---
     ("the per-item reading asked once for the whole state",
-     '        if not per:\n            if name not in settled:',
-     '        if True:\n            if name not in settled:',
+     '        if items is None:                # asked once: no `per`, or one a call',
+     "        if True:",
      "every question over one thread goes in one call, one per finding"),
     ("the item's name never written into the question",
-     '        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))',
-     "        pass",
+     '    spec["instructions"] = instructions_of(entry, item, state)',
+     "    pass",
      "every question over one thread goes in one call, one per finding"),
     ("the marker never required",
-     '        if ITEM_MARK not in entry["question"]["instructions"]:',
+     '        if mark and mark not in entry["question"]["instructions"]:',
      "        if False:", "a per-item question must name its item"),
+    ("the item's text spliced where the reader put it under a key",
+     '    if where.startswith("{"):',
+     "    if True:",
+     "a question composed into the instructions is what the reader sent"),
+    ("the item source sent as well as carried in the question",
+     "    carried = fields - sources", "    carried = fields",
+     "a question composed into the instructions is what the reader sent"),
+    ("the entry's table never filled into the question",
+     "        return filled_from_table(entry, spec, item)",
+     "        return spec",
+     "a question spliced or filled from a table is what the reader sent"),
+    ("a row's words escaped as JSON on the way in",
+     '        text = text.replace("{" + key + "}", json.dumps(value)[1:-1])',
+     '        text = text.replace("{" + key + "}", str(value))',
+     "a question spliced or filled from a table is what the reader sent"),
+    ("a per-item reading with no declared shape loaded anyway",
+     '    if not isinstance(shape, dict) or shape.get("where") not in WHERE:',
+     "    if False:",
+     "a per-item reading declares where its item goes"),
     ("a cleared finding sent all the same",
      "            if item not in cleared:", "            if True:",
      "a finding the prefilter cleared is never sent"),

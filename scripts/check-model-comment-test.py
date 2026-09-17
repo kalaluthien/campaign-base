@@ -132,6 +132,10 @@ def repo(t, edits, p=0.9, url=None, registry=True, tier="advise", drop=False):
         files["scripts/jev/readings.json"] = json.dumps(entries)
     harness.write_tree(d, files)
     harness.git(d, "init", "-q", check=True)
+    # AN ORIGIN, so the row's join key can be read: a commit-time reading is
+    # keyed by the repository, the sha it sits on and the file.
+    harness.git(d, "remote", "add", "origin", "https://github.com/o/r.git",
+                check=True)
     harness.git(d, "add", "-A", check=True)
     harness.git(d, "commit", "-qm", "fixture", "--no-verify", check=True)
     harness.write_tree(d, edits)
@@ -302,10 +306,28 @@ def shadow_prints_counts(t):
             and "1 claim(s) read as contradicted" in out), out
 
 
+def row_carries_its_join_key(t):
+    """WHAT THE MOVE FROM `ask` TO `judge` BOUGHT. The row names the reading
+    and its wording, and carries the key as FIELDS -- the repository, the sha
+    this commit sits on, the file and the definition -- so a later commit that
+    rewrote that comment can be joined to the answer. Under `ask` the row
+    carried none of them and every one of them parked in the log for good."""
+    _r, _out, d = repo(t, {"spec/fixture/system.als":
+                           SPEC.replace("{ some a.peer }",
+                                        "{ some a.peer or no a }")})
+    judged = [row for row in rows(d) if row.get("reading") == "model-comment"]
+    one = judged[0] if judged else {}
+    return (len(judged) == 1 and one.get("repo") == "o/r"
+            and one.get("path") == "spec/fixture/system.als"
+            and one.get("name") == "holds"
+            and len(one.get("commit") or "") == 40
+            and len(one.get("wording") or "") == 12), (len(judged), one)
+
+
 def entry_reaches_model(t):
     repo(t, {"spec/fixture/system.als":
              SPEC.replace("{ some a.peer }", "{ some a.peer or no a }")})
-    q = SEEN[0]["questions"]["c0"] if SEEN else {}
+    q = SEEN[0]["questions"]["model-comment#c0"] if SEEN else {}
     return (q.get("criteria") == ENTRY["question"]["criteria"]
             and q.get("instructions", {}).get("question")
             == ENTRY["question"]["instructions"]
@@ -351,6 +373,7 @@ CASES = {
     "a clear claim is counted, not printed": clear_not_printed,
     "at tier shadow the counts are printed and no claim": shadow_prints_counts,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
+    "the row carries the reading, the wording and the join key": row_carries_its_join_key,
     "a failed call prints unknown and exits 0": unknown_on_failure,
     "a missing entry is named and nothing is asked": entry_missing_named,
     "a reader that could not read exits 0 and says so": failure_exits_zero,
@@ -396,23 +419,28 @@ MUTATIONS = [
      "if found:", "if True:",
      "a definition with no comment is not asked"),
     ("one call a claim rather than a definition",
-     "s1.questions(entry, found), env=env)",
-     "s1.questions(entry, found[:1]), env=env)",
+     '{"claim": {f"c{i}": c for i, c in enumerate(found)},',
+     '{"claim": {f"c{i}": c for i, c in enumerate(found[:1])},',
      "one call a definition, every claim of it in that call"),
     ("the answers never reported",
-     "s1.report(ask_all(entry, states, jev, s1, env), entry, out)", "pass",
+     "            s1.report(ask_all(entry, states, jev, jev.commit_key(), env),\n"
+     "                      entry, out)", "            pass",
      "a contradicted claim is printed with its value, exit 0"),
     ("the tier read as advise whatever the entry says",
-     "s1.report(ask_all(entry, states, jev, s1, env), entry, out)",
-     's1.report(ask_all(entry, states, jev, s1, env), dict(entry, tier="advise"), out)',
+     "                      entry, out)",
+     '                      dict(entry, tier="advise"), out)',
      "at tier shadow the counts are printed and no claim"),
     ("a settled sentence left unlogged",
      "jev.skip(READER, f\"{path} `{name}`: {sentence}\", why, env=env)", "pass",
      "a sentence code settled is written as a skip row naming the rule"),
-    ("the whole comment sent as the state",
-     'jev.ask(READER, label, {"body": body},',
-     'jev.ask(READER, label, {"body": body, "comment": body},',
-     "the entry's instructions and criteria reach the model, thresholds do not"),
+    ("the row keyed by the file alone",
+     "key=dict(key, path=path, name=name), env=env)",
+     "key={\"path\": path}, env=env)",
+     "the row carries the reading, the wording and the join key"),
+    ("the definition never named on the row",
+     "key=dict(key, path=path, name=name), env=env)",
+     "key=dict(key, path=path), env=env)",
+     "the row carries the reading, the wording and the join key"),
     ("a commit touching no spec module read in full",
      "if not staged:", "if False:",
      "a commit touching no spec module asks nothing and says so"),

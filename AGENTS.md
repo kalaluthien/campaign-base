@@ -526,8 +526,8 @@ hook has already pushed the branch, so a late pull request only keeps published
 work out of sight — which is why `push-campaign-branch.sh` prints the
 `gh pr create` line after every push whose head no open pull request names.
 It announces and refuses nothing, and a `gh` that failed or did not answer in
-time is said rather than read as a yes. An open one is where a review writes its findings, and it is
-what survives the session that opened it.
+time is said rather than read as a yes. An open one is where a review writes
+its findings, and it is what survives the session that opened it.
 
 ## The campaign issue body
 

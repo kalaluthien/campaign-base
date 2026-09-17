@@ -67,21 +67,35 @@ trap 'rm -f "$err"' EXIT INT TERM
 # symmetric. Saying it again at the next commit costs a session one glance and
 # is TRUE every time it prints; missing the first commit is the defect this was
 # written to close.
-GH_TRIES=40
-GH_SLEEP=0.25
+# OVERRIDABLE so a case can reach the give-up branch without waiting the
+# whole bound out, and so a machine on a slow link can widen it. The
+# defaults are the bound; nothing here reads them for anything else.
+GH_TRIES=${GH_TRIES:-40}
+GH_SLEEP=${GH_SLEEP:-0.25}
 
 announce_pull_request() {
 	b=$1
 	# A BOUND, because this runs inside `post-commit` and an unbounded
 	# network call hangs every commit on this machine. Neither `timeout`
-	# nor `gtimeout` is on PATH here, so the watchdog is by hand. The
-	# subshell's own stdout goes to a file and never to this hook's, which
+	# nor `gtimeout` is on PATH here, so the watchdog is by hand.
+	if ! out=$(mktemp); then
+		echo "push-campaign-branch: mktemp failed, so whether a pull request names $b is unread." >&2
+		echo "  Open one if none does." >&2
+		return 0
+	fi
+	# THE TRAP COVERS THIS FILE TOO: the wait below runs for seconds, and an
+	# interrupt inside it would otherwise leave the temp behind.
+	trap 'rm -f "$err" "$out"' EXIT INT TERM
+
+	# `gh` ITSELF IN THE BACKGROUND, not a subshell around it, so `$!` is
+	# gh's own pid: a kill of a wrapper reaps the wrapper and leaves gh
+	# reparented to pid 1 and still running, one leak per hung commit.
+	# `wait` hands back its status, so nothing has to carry it in a file.
+	# Its stdout and stderr go to that file and never to this hook's, which
 	# a caller capturing `git commit` would otherwise wait on -- the same
 	# hazard the `nohup` above is shaped around.
-	out=$(mktemp) || return 0
-	sta=$(mktemp) || { rm -f "$out"; return 0; }
-	( gh pr list --head "$b" --state open --json number --jq '.[].number' \
-		>"$out" 2>&1; echo $? >"$sta" ) </dev/null >/dev/null 2>&1 &
+	gh pr list --head "$b" --state open --json number --jq '.[].number' \
+		</dev/null >"$out" 2>&1 &
 	job=$!
 	n=0
 	while [ "$n" -lt "$GH_TRIES" ] && kill -0 "$job" 2>/dev/null; do
@@ -90,18 +104,21 @@ announce_pull_request() {
 	done
 	if kill -0 "$job" 2>/dev/null; then
 		kill "$job" 2>/dev/null
+		wait "$job" 2>/dev/null
+		# WHAT IT HAD WRITTEN BY THEN IS NOT AN ANSWER: a killed gh can
+		# leave a half-written file, and an empty one would read as
+		# "no pull request names this". Not read at all.
 		echo "push-campaign-branch: gh did not answer in ${GH_TRIES} tries of ${GH_SLEEP}s, so whether a pull request names $b is unread." >&2
 		echo "  Open one if none does." >&2
-		rm -f "$out" "$sta"
 		return 0
 	fi
-	status=$(cat "$sta" 2>/dev/null)
+	wait "$job"
+	gh_status=$?
 	said=$(cat "$out" 2>/dev/null)
-	rm -f "$out" "$sta"
 
 	# AN UNREAD QUESTION IS NOT A YES. A gh that will not run leaves it
 	# unknown and says so; it is never read as "one already names this".
-	if [ "${status:-9}" != 0 ]; then
+	if [ "$gh_status" != 0 ]; then
 		echo "push-campaign-branch: could not tell whether a pull request names $b." >&2
 		echo "$said" | sed 's/^/  /' >&2
 		echo "  Open one if none does." >&2

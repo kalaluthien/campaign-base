@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -35,6 +36,9 @@ import json, os, sys, time
 with open(os.environ["GH_LOG"], "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\\n")
 time.sleep(float(os.environ.get("FAKE_GH_SLEEP", "0")))
+# A MARKER WRITTEN ONLY IF THE SLEEP RAN OUT, so a case can tell a gh the
+# watchdog really killed from one it merely stopped waiting on.
+open(os.environ["GH_LOG"] + ".survived", "a").close()
 if os.environ.get("GH_FAILS"):
     print("gh: could not connect to api.github.com", file=sys.stderr)
     sys.exit(1)
@@ -43,18 +47,33 @@ if prs:
     print(prs)
 '''
 
+FAKE_MKTEMP = '''#!/bin/sh
+# Fails on its Nth call and works before it: the subject takes one temp file
+# for the push's stderr before the one this is aimed at, so a mktemp that
+# failed outright would never reach the second call at all.
+c=$(cat "$FAKE_MKTEMP_COUNT" 2>/dev/null || echo 0)
+c=$((c + 1))
+echo "$c" > "$FAKE_MKTEMP_COUNT"
+[ "$c" != "$FAKE_MKTEMP_FAILS_AT" ] || { echo "mktemp: no space" >&2; exit 1; }
+exec /usr/bin/mktemp "$@"
+'''
+
 FAKE_CLAIM = '#!/bin/sh\necho claim\nexit 0\n'
 FAKE_SCREEN = '#!/bin/sh\nexit 0\n'
 
 
 def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
+        mktemp_fails_at=0, tries=None, grace=0,
         remote_url="https://github.com/x/y.git"):
     """(completed process, the gh calls recorded) after `commits` commits on a
     claim branch over a fixture whose origin fetch url is `remote_url`.
 
     `stale` is how many commits the remote's main has moved since this checkout
     last saw it -- what a worktree holding a claim `campaign-claim take` cut
-    server-side actually has. `gh_sleep` is how long the fake gh takes."""
+    server-side actually has. `gh_sleep` is how long the fake gh takes, `tries`
+    shortens the subject's watchdog, and `grace` is how long to wait AFTER the
+    subject returns before reading whether that gh survived -- read any sooner
+    and a gh still sleeping is indistinguishable from one that was killed."""
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "scripts").mkdir()
@@ -64,6 +83,8 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
             (d / "scripts" / name).write_text(body)
             (d / "scripts" / name).chmod(0o755)
         harness.fake(d / "bin", "gh", FAKE_GH)
+        if mktemp_fails_at:
+            harness.fake(d / "bin", "mktemp", FAKE_MKTEMP)
 
         bare, repo = d / "remote.git", d / "repo"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)],
@@ -105,14 +126,21 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
 
         log = d / "gh-calls"
         env = dict(os.environ, PATH=f"{d / 'bin'}{os.pathsep}{os.environ['PATH']}",
-                   GH_LOG=str(log), GH_PRS=prs, FAKE_GH_SLEEP=str(gh_sleep))
+                   GH_LOG=str(log), GH_PRS=prs, FAKE_GH_SLEEP=str(gh_sleep),
+                   FAKE_MKTEMP_COUNT=str(d / "mktemp-count"),
+                   FAKE_MKTEMP_FAILS_AT=str(mktemp_fails_at))
+        if tries is not None:
+            env["GH_TRIES"] = str(tries)
         if gh_fails:
             env["GH_FAILS"] = "1"
         r = subprocess.run(["sh", str(d / "scripts" / SCRIPT.name)], cwd=repo,
                            env=env, capture_output=True, text=True)
         calls = ([json.loads(line) for line in log.read_text().splitlines()]
                  if log.exists() else [])
-        return r, calls
+        if grace:
+            time.sleep(grace)
+        survived = Path(str(log) + ".survived").exists()
+        return r, calls, survived
 
 
 def main():
@@ -120,7 +148,7 @@ def main():
     # mode: the pull request is opened at the first commit, not when the work
     # is ready. Nothing said so where the first commit happens, so a branch
     # went up pushed and invisible for as many turns as the session took.
-    r, calls = run(commits=1)
+    r, calls, survived = run(commits=1)
     check("a branch's first commit with no open pull request announces the line",
           r.returncode == 0 and "gh pr create" in r.stdout
           and "--head slug/1-topic" in r.stdout
@@ -137,7 +165,7 @@ def main():
           r.returncode == 0 and "pushed slug/1-topic" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r}")
 
-    r, calls = run(commits=1, prs="9")
+    r, calls, survived = run(commits=1, prs="9")
     check("a branch an open pull request already names is not told to open one",
           r.returncode == 0 and "gh pr create" not in r.stdout,
           f"out {r.stdout!r}")
@@ -148,21 +176,21 @@ def main():
     # read k+1 in a worktree lagging k commits and the line was never said.
     # Nothing counts commits now; the question is only whether an open pull
     # request names the head.
-    r, calls = run(commits=1, stale=2)
+    r, calls, survived = run(commits=1, stale=2)
     check("a genuine first commit is announced even with origin/main stale",
           r.returncode == 0 and "gh pr create" in r.stdout,
           f"out {r.stdout!r} err {r.stderr!r}")
 
     # AND SAID AGAIN AT THE NEXT COMMIT, which is the trade: the line is true
     # every time it prints, where a miss at the first commit is the defect.
-    r, calls = run(commits=2)
+    r, calls, survived = run(commits=2)
     check("a later commit with still no pull request is told again",
           r.returncode == 0 and "gh pr create" in r.stdout,
           f"out {r.stdout!r}")
 
     # AN UNREAD QUESTION IS NOT A YES. A gh that will not run leaves it unknown,
     # and the cost of saying so twice is one glance.
-    r, calls = run(commits=1, gh_fails=True)
+    r, calls, survived = run(commits=1, gh_fails=True)
     check("a gh that will not run is said, quoting what it said",
           r.returncode == 0 and "could not tell whether a pull request" in r.stderr
           and "could not connect" in r.stderr and "gh pr create" not in r.stdout,
@@ -171,18 +199,44 @@ def main():
     # A BOUND, because this runs inside post-commit: an unbounded gh hangs
     # every commit on the machine. No `timeout` on PATH here, so the watchdog
     # is by hand, and what it does when it fires is said and not guessed.
-    r, calls = run(commits=1, gh_sleep=30)
+    # THE BOUND IS SHORTENED HERE, and the fake gh's sleep set just past it:
+    # a case that waited the default 10s out would take ten seconds, and one
+    # whose gh slept far longer than the whole run could not tell a gh that was
+    # KILLED from one still sleeping when the run ended -- which is how the
+    # case below first passed with its own branch broken.
+    r, calls, survived = run(commits=1, tries=4, gh_sleep=3, grace=4)
     check("a gh that does not answer is given up on, said, and does not hang",
           r.returncode == 0 and "did not answer" in r.stderr
           and "gh pr create" not in r.stdout,
           f"exit {r.returncode} out {r.stdout!r} err {r.stderr!r}")
     # THE NUMBERS ARE STATED, so a reader can time the wait against them.
     check("...and the message states the tries and the sleep between them",
-          "40 tries of 0.25s" in r.stderr, f"err {r.stderr!r}")
+          "4 tries of 0.25s" in r.stderr, f"err {r.stderr!r}")
+    # THE KILL REACHES gh ITSELF. Backgrounding a subshell around it makes
+    # `$!` the subshell's pid, so the kill reaps a wrapper and leaves gh
+    # reparented to pid 1 and still running -- one leak per hung commit, and
+    # invisible, since the hook returns either way. Read AFTER the fake gh's
+    # own sleep would have run out, so a survivor has had time to say so.
+    #
+    # BREAKING THIS ONE TAKES TWO COMMANDS IN THE SUBSHELL. `( gh ... ) &` with
+    # gh alone is exec'd by sh, so the subshell process BECOMES gh and `$!` is
+    # still gh's pid -- the naive break leaves this case green and proves
+    # nothing. `( gh ...; : ) &` is the shape that actually reds it.
+    check("...and gh itself was killed, not a wrapper around it",
+          not survived, "the fake gh ran its sleep out, so it was not killed "
+          "and only a wrapper around it was")
+
+    # mktemp CAN FAIL ON THE SECOND CALL, disk full mid-run, and a silent
+    # return there is the same class of miss as the first-commit count was.
+    r, calls, survived = run(commits=1, mktemp_fails_at=2)
+    check("a mktemp that fails is said, not returned from silently",
+          r.returncode == 0 and "mktemp failed" in r.stderr
+          and "pushed slug/1-topic" in r.stdout and not calls,
+          f"exit {r.returncode} out {r.stdout!r} err {r.stderr!r}")
 
     # A NON-GITHUB REMOTE has no pull request to open, and a fixture's local
     # remote is not one -- the same reading the diff screen is scoped by.
-    r, calls = run(commits=1, remote_url="/tmp/not-github.git")
+    r, calls, survived = run(commits=1, remote_url="/tmp/not-github.git")
     check("a remote that is not github.com is told nothing and gh is not asked",
           r.returncode == 0 and "gh pr create" not in r.stdout and not calls,
           f"out {r.stdout!r} calls {calls}")

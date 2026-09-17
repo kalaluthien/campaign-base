@@ -46,6 +46,7 @@ import contextlib
 import datetime
 import http.server
 import importlib
+import io
 import json
 import os
 import re
@@ -53,6 +54,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tokenize
 import tempfile
 import threading
 import types
@@ -615,13 +617,23 @@ ISSUES = {
 THREADS = {
     ("kalaluthien/campaign-base", 700): {
         "state": "OPEN", "comments": [
-            {"created_at": "2026-09-17T01:00:00Z",
+            {"where": "comment", "at": "2026-09-17T01:00:00Z",
              "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
                      "second copy is the one that drifts"},
-            {"created_at": "2026-09-17T02:00:00Z", "body": "NOTE w-1: pushed"}]},
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: pushed"}]},
     ("kalaluthien/campaign-base", 701): {
         "state": "MERGED", "comments": [
-            {"created_at": "2026-09-17T02:00:00Z", "body": "NOTE w-1: merged"}]},
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: merged"}]},
+    # THE LATER REVIEW ON THE REVIEW CHANNEL, which `fetch_thread` used to miss
+    # entirely: it read `issues/<n>/comments` alone, so this thread labelled
+    # every finding `disposed` at the merge.
+    ("kalaluthien/campaign-base", 702): {
+        "state": "MERGED", "comments": [
+            {"where": "review", "at": "2026-09-17T01:00:00Z",
+             "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
+                     "second copy is the one that drifts"}]},
 }
 
 
@@ -747,6 +759,54 @@ def join_waits_for_the_merge_on_an_open_thread(m):
             and got.get("truth") == {"F9": "disposed"}
             and "merged with no REVIEW" in got.get("label", {}).get("evidence", "")),\
         (open_pr["C-report-disposes-finding"], got)
+
+
+def join_reads_a_later_review_on_the_review_channel(m):
+    """A REVIEW posted with `gh pr review --comment -b` is a REVIEW: AGENTS.md
+    admits both spellings. Reading one channel labelled the finding `disposed`
+    at the merge -- a wrong label, into the corpus, for good."""
+    cases, _lines = joined(m, [thread_row("wwww", 702, {
+        "F1": "the ceiling is stated twice and the second copy drifts"})])
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    return (got.get("truth") == {"F1": "undisposed"}
+            and "raised again: F1" in got.get("label", {}).get("evidence", "")),\
+        got
+
+
+def fetch_thread_asks_the_thread_s_owner(m):
+    """`check-merge-review.py` owns the thread read -- both channels, each
+    paginated in full -- and this asks it rather than restating which endpoints
+    a thread lives on. A second reader of that rule had already drifted: it
+    read `issues/<n>/comments` alone.
+
+    Both siblings are stubbed, so the case spends no `gh` call and proves the
+    wiring: the rows come back oldest first, whatever channel they arrived on,
+    each with its `at` and its `where`."""
+    rows = [("comment", "a", "NOTE w-1: pushed", 2, "2026-09-18T02:00:00Z"),
+            ("review", "b", "REVIEW r-1: a finding", 1, "2026-09-18T01:00:00Z")]
+    reader = types.SimpleNamespace(
+        bodies_of=lambda repo, number: (rows, None),
+        in_time_order=lambda found: sorted(found, key=lambda r: r[4]))
+    was_load, was_run = m.load_sibling, m.subprocess.run
+    m.load_sibling = lambda name: reader
+    m.subprocess = types.SimpleNamespace(
+        run=lambda *a, **k: types.SimpleNamespace(
+            returncode=0, stdout='{"state": "MERGED"}'),
+        SubprocessError=Exception)
+    try:
+        got = m.fetch_thread("o/r", 274)
+    finally:
+        m.load_sibling = was_load
+        m.subprocess = subprocess
+        m.subprocess.run = was_run
+    return (got is not None and got.get("state") == "MERGED"
+            and [c["where"] for c in got["comments"]] == ["review", "comment"]
+            and [c["at"] for c in got["comments"]]
+            == ["2026-09-18T01:00:00Z", "2026-09-18T02:00:00Z"]), got
+
+
+CASES["the thread join reads a later REVIEW on the review channel"] = join_reads_a_later_review_on_the_review_channel
+CASES["fetch_thread asks the script that owns the thread read"] = fetch_thread_asks_the_thread_s_owner
 
 
 def join_writes_one_case_for_one_row(m):
@@ -946,7 +1006,10 @@ def refused(m, entry, fragment, name="a-reading"):
     the moment a bad entry is stopped -- not the call that happens to clear a
     threshold months later."""
     try:
-        m.check_act_bounds({name: entry})
+        # BOTH CHECKS, IN THE ORDER `load_registry` RUNS THEM, so this helper
+        # answers what the registry refuses rather than what one of its two
+        # readers does; a case written against half of it passed over the other.
+        m.check_edges(m.check_act_bounds({name: entry}))
     except ValueError as e:
         return fragment in str(e), str(e)
     return False, "loaded without a word"
@@ -1012,7 +1075,14 @@ def this_module_carries_out_no_act(m):
     causes is the reader's session's and is judged by its role and its claim."""
     writes = ("gh issue edit", "gh issue close", "gh issue comment", "gh pr ",
               "gh label", "gh api -X", "--method POST", "--method PATCH")
-    found = [w for w in writes if w in SOURCE]
+    # THE CODE, NOT THE PROSE. A docstring naming the spelling a REVIEW may
+    # arrive on -- `gh pr review --comment -b` -- is not a write this module
+    # makes, and reading it as one is a case that fails on an explanation.
+    code = "".join(
+        tok.string for tok in tokenize.generate_tokens(
+            io.StringIO(SOURCE).readline)
+        if tok.type not in (tokenize.STRING, tokenize.COMMENT))
+    found = [w for w in writes if w in code]
     return not found, found
 
 
@@ -1407,7 +1477,121 @@ def a_row_says_which_endpoint_answered_it(m):
                                                   real.get("endpoint"))
 
 
+def a_skip_row_claims_no_endpoint(m):
+    """A `skip` row says the reading asked NOTHING, so no endpoint answered it.
+    `real` there would be a row the join could take on the strength of a call
+    nobody made -- and the reading that skipped had no key of its own to fail
+    on, so the word would have been `real` on every machine."""
+    LOG.write_text("")
+    # `env()` AND NOT A DICT OF ITS OWN: with no `CAMPAIGN_JEV_LOG` named, the
+    # skip falls back to `<base>/runtime/jev.log` -- this machine's own.
+    m.skip("a suite", "a label", "the kind read failed", env=env())
+    row = json.loads(LOG.read_text().splitlines()[-1])
+    kept, stray, unreal = m.joinable([row], m.load_registry())
+    return (row.get("endpoint") == "none" and not kept and not stray
+            and len(unreal) == 1), (row.get("endpoint"), kept, stray, unreal)
+
+
+CASES["a skip row says no endpoint answered it, and the join refuses it"] = a_skip_row_claims_no_endpoint
 CASES["a row says which endpoint answered it"] = a_row_says_which_endpoint_answered_it
+# ------------------------------------- the five that survived every mutation
+# Named in pr#474's REVIEW (issuecomment-5718228578) note 4: each was landed
+# with a case for what it DOES and none for what it must not do, so the whole
+# behaviour could be deleted and the suite stayed green.
+
+
+def settled_of_reads_both_spellings(m):
+    """THE TWO SPELLINGS THE CORPUS CARRIES: `settled` at the top level, which
+    the survey fit writes, and `source.settled`, which `corpus join` writes off
+    the log row. `report` read only the join's, so every case the survey's
+    prefilter had cleared was counted as one Jev answered."""
+    top = {"settled": "cleared", "source": {}}
+    joined_ = {"source": {"settled": "research"}}
+    both = {"settled": "cleared", "source": {"settled": "research"}}
+    neither = {"source": {}}
+    return (m.settled_of(top) == "cleared"
+            and m.settled_of(joined_) == "research"
+            and m.settled_of(both) == "cleared"
+            and m.settled_of(neither) is None),\
+        [m.settled_of(c) for c in (top, joined_, both, neither)]
+
+
+def scored_skips_a_case_code_settled(m):
+    """A case CODE settled is not one Jev got wrong: the model never saw it. It
+    is also not scorable when nothing has been seen, or when the run recorded
+    no WORD, which is every case of a reading asked per item."""
+    seen = [{"word": "no", "raw": {"type": "noul", "noul": 0.04}}]
+    asked = {"truth": "yes", "seen": seen, "source": {}}
+    settled = {"truth": "yes", "seen": seen, "settled": "no", "source": {}}
+    per_item = {"truth": {"F1": "disposed"}, "source": {},
+                "seen": [{"word": None, "raw": {"F1": {}}}]}
+    nothing = {"truth": "yes", "seen": [], "source": {}}
+    no_truth = {"seen": seen, "source": {}}
+    return (m.scored(asked) and not m.scored(settled)
+            and not m.scored(per_item) and not m.scored(nothing)
+            and not m.scored(no_truth)),\
+        [m.scored(c) for c in (asked, settled, per_item, nothing, no_truth)]
+
+
+def an_uncertain_never_acts(m):
+    """DECISION 5715993782: `uncertain` is an answer that landed BETWEEN the two
+    edges, so the word it would act on is the one the band says is not earned.
+    At `advise` it is shown; above that it does nothing, at any confidence."""
+    entry = acting(verb="label", label="kind:development", what="x", undo="y",
+                   act_over=0.6, ask_over=0.3)
+    high = {"type": "noul", "noul": 0.99}
+    got = [m.does(entry, "uncertain", high), m.does(entry, "yes", high),
+           m.does(entry, "unknown", high)]
+    entry["tier"] = "advise"
+    shown = m.does(entry, "uncertain", high)
+    return (got == ["nothing", "act", "nothing"] and shown == "show"),\
+        (got, shown)
+
+
+def spend_lines_leaves_a_stub_out_of_the_ratio(m):
+    """A stub's call cost nobody anything, so it is not in calls-a-state. It is
+    counted and named apart, since a row that vanished from both would read as
+    a log nobody wrote to."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"reading": "verb-first", "state_hash": "aaa", "endpoint": "real"},
+        {"reading": "verb-first", "state_hash": "bbb", "endpoint": "stub"},
+        {"reading": "verb-first", "state_hash": "ccc", "endpoint": "stub"},
+    ]))
+    lines = m.spend_lines(env=env())
+    verb = [ln for ln in lines if "verb-first" in ln]
+    return (len(verb) == 1 and "1 sent over 1 state(s)" in verb[0]
+            and "2 from a stubbed endpoint" in lines[0]), lines
+
+
+def waiting_line_counts_the_never_joinable_apart(m):
+    """A row the join refuses is NOT waiting: nothing can ever label it, so
+    counting it as waiting asks a reader to fix a number that cannot move."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        log_row("aaaa", "verb-first", "Cache the weather feed", 900),
+        log_row("bbbb", "verb-first", "Cache the weather feed", 900,
+                endpoint="stub"),
+        log_row("cccc", "verb-first", "Cache the weather feed", 900,
+                endpoint="none"),
+    ]))
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(LOG)
+    try:
+        line = m.waiting_line()
+    finally:
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    return ("1 log row(s) unjoined" in line
+            and "2 row(s) never joinable, no `real` endpoint" in line), line
+
+
+CASES["settled_of reads both spellings the corpus carries"] = settled_of_reads_both_spellings
+CASES["scored skips a case code settled, unseen or asked per item"] = scored_skips_a_case_code_settled
+CASES["an `uncertain` never acts, at any confidence"] = an_uncertain_never_acts
+CASES["spend_lines leaves a stubbed call out of the ratio"] = spend_lines_leaves_a_stub_out_of_the_ratio
+CASES["waiting_line counts the never-joinable apart"] = waiting_line_counts_the_never_joinable_apart
+
 CASES["a stubbed call never writes the shared log"] = a_stub_never_writes_the_shared_log
 CASES["a row no real endpoint answered is refused by the join, and named"] = a_row_of_no_real_endpoint_is_refused_by_the_join
 
@@ -1419,12 +1603,87 @@ CASES["this module carries out no act of its own"] = this_module_carries_out_no_
 CASES["no reading's act opens a DECISION, at any tier"] = act_never_opens_a_decision
 CASES["a BLOCKED reading at act may only route"] = a_blocked_reading_may_only_route
 CASES["every registry entry carries what a reader branches on"] = registry_shape
+def edges_do_not_cross(m):
+    """The two edges of a band are in ORDER, or the registry does not load. A
+    pair that crossed has no middle, so `uncertain` could never be answered --
+    and nothing refused it while the suite only asserted both were present."""
+    bad = []
+    for cuts, why in (({"yes_over": 0.2, "no_under": 0.5}, "yes_over"),
+                      ({"yes_over": 0.5, "no_under": 0.5}, "yes_over"),
+                      ({"floor": 0.6, "certain_over": 0.5, "no_match": "none"},
+                       "certain_over"),
+                      ({"floor": 0.5, "certain_over": 0.5, "no_match": "none"},
+                       "certain_over")):
+        entry = acting(verb="label", label="kind:development", what="x",
+                       undo="y", act_over=0.9, ask_over=0.7)
+        entry["thresholds"] = cuts
+        if "floor" in cuts:
+            entry["question"]["type"] = "choice"
+            entry["question"]["criteria"] = {"none": "", "development": ""}
+        ok, said = refused(m, entry, why)
+        if not ok:
+            bad.append((cuts, said))
+    # AND IT IS READ AT LOAD, through the file, not only by whoever calls the
+    # check: a registry the tree committed with a crossed pair must refuse on
+    # the way in.
+    path = ROOT / "crossed-readings.json"
+    crossed = acting(verb="label", label="kind:development", what="x",
+                     undo="y", act_over=0.9, ask_over=0.7)
+    crossed["thresholds"] = {"yes_over": 0.2, "no_under": 0.5}
+    path.write_text(json.dumps({"crossed": crossed}))
+    try:
+        m.load_registry(path)
+        bad.append(("through load_registry", "a crossed pair loaded"))
+    except ValueError as e:
+        if "yes_over" not in str(e):
+            bad.append(("through load_registry", str(e)))
+    # AND THE COMMITTED REGISTRY LOADS, which is the half a made entry cannot
+    # show: every edge pair this tree ships is in order.
+    try:
+        m.load_registry()
+    except ValueError as e:
+        bad.append(("the committed registry", str(e)))
+    return not bad, bad
+
+
+CASES["the two edges of a band do not cross"] = edges_do_not_cross
 CASES["a reading with no thresholds is at shadow"] = thresholds_or_shadow
 CASES["a reading at act declares what it does and how it is undone"] = act_declares_its_undo
 CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    ("the two edges allowed to cross", "            if hi <= lo:",
+     "            if False:", "the two edges of a band do not cross"),
+    ("the edge check never run at load",
+     "    return check_edges(\n        check_act_bounds(",
+     "    return (\n        check_act_bounds(",
+     "the two edges of a band do not cross"),
+    # --- the five that survived every mutation (pr#474 REVIEW note 4) ---
+    ("settled_of reading only the join's spelling",
+     '    if case.get("settled") is not None:\n        return case["settled"]',
+     "    if False:\n        return None",
+     "settled_of reads both spellings the corpus carries"),
+    ("scored counting a case code settled",
+     '    return (not isinstance(settled_of(case), str) and seen is not None',
+     "    return (True and seen is not None",
+     "scored skips a case code settled, unseen or asked per item"),
+    ("scored counting a per-item case with no word",
+     '            and seen.get("word") is not None and case.get("truth") is not None)',
+     '            and case.get("truth") is not None)',
+     "scored skips a case code settled, unseen or asked per item"),
+    ("an uncertain allowed to act",
+     '    if word == UNCERTAIN:\n        return NOTHING',
+     "    if False:\n        return NOTHING",
+     "an `uncertain` never acts, at any confidence"),
+    ("a stubbed call counted in the ratio",
+     '        if row.get("endpoint") == STUB:\n            stubbed += 1\n            continue',
+     "        if False:\n            pass",
+     "spend_lines leaves a stubbed call out of the ratio"),
+    ("the never-joinable counted as waiting",
+     '            + (f"; {len(unreal)} row(s) never joinable, no `{REAL}` endpoint"\n               if unreal else ""))',
+     "            + \"\")",
+     "waiting_line counts the never-joinable apart"),
     # --- the shared log, and what may join ---
     ("a stub allowed to write the shared log",
      "    if URL_ENV in env:", "    if False:",
@@ -1455,6 +1714,20 @@ MUTATIONS = [
      '"flag": flag(name, {}) if callable(flag) else flag}',
      "a flag the reader computes from the answers reaches the log row"),
     # --- the thread join ---
+    ("the thread read restated here instead of asked for",
+     "        found, why = reader.bodies_of(repo, number)",
+     '        found, why = [], "read it here instead"',
+     "fetch_thread asks the script that owns the thread read"),
+    ("the thread handed back in the order it arrived",
+     "                         in reader.in_time_order(found)],",
+     "                         in found],",
+     "fetch_thread asks the script that owns the thread read"),
+    ("a later REVIEW read from one channel only",
+     '''    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("at") or "") > at''',
+     '''    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("where") == "comment") and (c.get("at") or "") > at''',
+     "the thread join reads a later REVIEW on the review channel"),
     ("the later REVIEW never read",
      '    body = "\\n".join(later)',
      '    body = ""',
@@ -1611,13 +1884,17 @@ MUTATIONS = [
      '        if entry.get("subject") == BLOCKED_SUBJECT and verb != "label":',
      "        if False:", "a BLOCKED reading at act may only route"),
     ("the bounds never read at load",
-     "    return check_act_bounds(json.loads(path.read_text(encoding=\"utf-8\")))",
-     '    return json.loads(path.read_text(encoding="utf-8"))',
+     "        check_act_bounds(json.loads(path.read_text(encoding=\"utf-8\"))))",
+     '        json.loads(path.read_text(encoding="utf-8")))',
      "a registry file carrying a bad act never loads"),
     ("a skip not logged",
-     '"endpoint": endpoint_word(env), "skipped": why}\n    return log_call(',
-     '"endpoint": endpoint_word(env), "skipped": why}\n    return "logged to" or log_call(',
+     '"endpoint": NONE_SENT, "skipped": why}\n    return log_call(',
+     '"endpoint": NONE_SENT, "skipped": why}\n    return "logged to" or log_call(',
      "a skipped reading is logged as one JSON line naming why"),
+    ("a skip row claiming the real endpoint answered it",
+     '           "endpoint": NONE_SENT, "skipped": why}',
+     '           "endpoint": endpoint_word(env), "skipped": why}',
+     "a skip row says no endpoint answered it, and the join refuses it"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
      "a log that would not write is reported, not raised"),

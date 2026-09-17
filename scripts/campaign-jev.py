@@ -118,6 +118,8 @@ Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting]
 import argparse
 import datetime
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -130,6 +132,8 @@ import uuid
 from collections import namedtuple
 from pathlib import Path
 
+# This script's own directory, which is where its siblings and its registry sit.
+HERE = Path(__file__).resolve().parent
 # THE MODEL THAT ANSWERED WHEN THE THRESHOLDS WERE SET, pinned. `jev-latest`
 # moves on release, and a band measured under one version says nothing about
 # the next. A response naming any other model is `unknown`, not a downgrade.
@@ -178,8 +182,9 @@ NOUL, CHOICE = "noul", "choice"
 # probability, take `yes_over` and `no_under`; an ordinary `choice` takes
 # `floor` -- below it the answer is `unknown` -- and, where it declares one,
 # `certain_over`, the upper edge of the same band. A reading may declare NO
-# edge at all, which `thresholds_or_shadow` admits at `shadow` alone: there the
-# model's own word is recorded and nothing is judged.
+# edge at all, which `campaign-jev-test.py`'s "a reading with no thresholds is
+# at shadow" case admits at `shadow` alone -- a suite case, not a function
+# here -- and there the model's own word is recorded and nothing is judged.
 VALUE_EDGES = ("yes_over", "no_under")
 CHOICE_EDGES = ("floor", "certain_over")
 
@@ -281,9 +286,11 @@ def branch(spec, raw):
                  if isinstance(probabilities, dict) else None)
         what = f"P({spec['option']})"
     # A READING THAT DECLARES NO EDGE records the model's own answer and judges
-    # nothing. Legal at `shadow` alone (`thresholds_or_shadow`), where a reading
-    # enters to collect cases until a record labels them: a cut invented before
-    # the first case is the number every later band gets fitted to. A `choice`
+    # nothing. Legal at `shadow` alone -- campaign-jev-test.py's "a reading
+    # with no thresholds is at shadow" case, which reads the committed
+    # registry -- where a reading enters to collect cases until a record labels
+    # them: a cut invented before the first case is the number every later band
+    # gets fitted to. A `choice`
     # has a word of its own to record; a `noul` has only a number, so there is
     # no word to earn and it comes back `uncertain`.
     if not any(k in spec for k in VALUE_EDGES + CHOICE_EDGES):
@@ -341,7 +348,12 @@ def base_root(cwd=None):
 # 127.0.0.1 server or a closed port. The join reads it: a stub's answer replayed
 # as a real one would be a case the tracker never produced (DECISION
 # 5716626608).
-REAL, STUB = "real", "stub"
+# A THIRD WORD, `none`, FOR A ROW NO CALL WAS MADE FOR. A `skip` row says the
+# reading asked NOTHING -- the input would not read, the registry would not
+# load -- so no endpoint answered it and claiming the real one did would be a
+# row the join could take. It is refused with the stub's, and the join rule is
+# unchanged: only a row a real endpoint answered.
+REAL, STUB, NONE_SENT = "real", "stub", "none"
 
 
 def endpoint_word(env=None):
@@ -395,7 +407,7 @@ def skip(reader, label, why, env=None, cwd=None):
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
-           "endpoint": endpoint_word(env), "skipped": why}
+           "endpoint": NONE_SENT, "skipped": why}
     return log_call(row, os.environ if env is None else env, cwd)
 
 
@@ -655,8 +667,8 @@ def read_answers(out, questions):
 # back with the tier its entry declares and what that tier does with it. No
 # script writes a question inline, and `campaign-jev-test.py` refuses one that
 # does.
-REGISTRY = Path(__file__).resolve().parent / "jev" / "readings.json"
-CORPUS = Path(__file__).resolve().parent / "jev" / "corpus"
+REGISTRY = HERE / "jev" / "readings.json"
+CORPUS = HERE / "jev" / "corpus"
 # THE THREE TIERS, in the order they are earned. A reading enters at `shadow`,
 # where it costs the reader nothing and only the log grows; it moves up by a
 # DECISION its entry cites, never by a script.
@@ -712,6 +724,33 @@ NEVER_ACTED = ("claim", "release", "merge", "close", "launch", "retire")
 NEVER_IN_AN_ENTRY = ("command", "run", "gh", "shell")
 DECISION_KIND = "DECISION"
 BLOCKED_SUBJECT = "blocked"
+
+
+def check_edges(reg):
+    """Raise on the first entry whose two edges cross, naming which.
+
+    READ AT LOAD, beside the bounds on an act, because a crossed pair is not a
+    cut anybody measured: with `yes_over` at or under `no_under` the band has
+    no middle and `uncertain` can never be answered, and with `certain_over` at
+    or under `floor` the same. Nothing refused it before -- the suite asserted
+    that both edges are PRESENT and never that they are in order -- and every
+    edge here has now been moved twice by a measurement (pr#474 REVIEW note 5).
+
+    A reading declaring NEITHER edge is untouched: that is the `shadow` shape,
+    and the suite's "a reading with no thresholds is at shadow" case owns it."""
+    for name, entry in sorted(reg.items()):
+        cuts = entry.get("thresholds") or {}
+        for lower, upper in (("no_under", "yes_over"), ("floor", "certain_over")):
+            lo, hi = cuts.get(lower), cuts.get(upper)
+            if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+                continue
+            if hi <= lo:
+                raise ValueError(
+                    f"campaign-jev: `{name}`'s `{upper}` is {hi} and its "
+                    f"`{lower}` is {lo}; the upper edge of a band sits ABOVE "
+                    f"the lower one, or the band has no middle and "
+                    f"`{UNCERTAIN}` can never be answered")
+    return reg
 
 
 def check_act_bounds(reg):
@@ -780,7 +819,8 @@ def load_registry(path=None):
     committed file, so an unreadable one is a broken checkout and not a model
     that failed to answer."""
     path = Path(path) if path else REGISTRY
-    return check_act_bounds(json.loads(path.read_text(encoding="utf-8")))
+    return check_edges(
+        check_act_bounds(json.loads(path.read_text(encoding="utf-8"))))
 
 
 def wording(entry):
@@ -1129,31 +1169,53 @@ def join_issue_kind_label(row, issue):
                      f"{row.get('issue')}", ""
 
 
+def load_sibling(name):
+    """A sibling script as a module, by path: these are scripts, not a package.
+    Loaded WHERE IT IS USED and never at import, because the sibling loads this
+    module the same way -- at the point of use -- and two module-level imports
+    of each other would not resolve."""
+    key = name.replace("-", "_").replace(".py", "")
+    spec = importlib.util.spec_from_loader(
+        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def fetch_thread(repo, number, timeout=30):
-    """One pull request's thread and its state, or None. THE ONE FETCH for a
-    pull request, as `fetch_issue` is for an issue, so an offline suite stubs
-    one function per subject and every join is exercised against it."""
-    rows, state = [], ""
+    """One pull request's whole thread, oldest first, and its state -- or None.
+
+    IT ASKS `check-merge-review.py`, which owns the thread read: both channels,
+    each paginated in full, the id and the timestamp per row. Reading
+    `issues/<n>/comments` here instead was a SECOND reader of that rule and it
+    had already drifted -- it missed every REVIEW posted with
+    `gh pr review --comment -b`, so a finding that a later review-channel
+    REVIEW raised again was labelled `disposed` into the corpus at the merge
+    (pr#474 REVIEW issuecomment-5718228578).
+
+    THE ONE FETCH for a pull request, as `fetch_issue` is for an issue, so an
+    offline suite stubs one function per subject."""
     try:
-        out = subprocess.run(
-            ["gh", "api", "--paginate",
-             f"repos/{repo}/issues/{number}/comments"],
-            capture_output=True, text=True, timeout=timeout)
+        reader = load_sibling("check-merge-review.py")
+        found, why = reader.bodies_of(repo, number)
+        if why or found is None:
+            return None
         head = subprocess.run(
             ["gh", "pr", "view", str(number), "-R", repo, "--json", "state"],
             capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.SubprocessError):
+    except Exception:  # noqa: BLE001 -- a thread that would not read is None
         return None
-    if out.returncode != 0 or head.returncode != 0:
+    if head.returncode != 0:
         return None
     try:
-        rows = json.loads(out.stdout)
         state = (json.loads(head.stdout) or {}).get("state") or ""
     except ValueError:
         return None
-    if not isinstance(rows, list):
-        return None
-    return {"comments": rows, "state": state}
+    return {"comments": [{"where": where, "author": author, "body": body,
+                          "id": cid, "at": at}
+                         for where, author, body, cid, at
+                         in reader.in_time_order(found)],
+            "state": state}
 
 
 def re_raised(finding, body):
@@ -1180,7 +1242,7 @@ def join_thread_refinding(row, thread):
         return None, "", "the row carries no finding to label"
     at = row.get("at") or ""
     later = [c.get("body") or "" for c in thread.get("comments") or []
-             if (c.get("created_at") or "") > at
+             if (c.get("at") or "") > at
              and (c.get("body") or "").lstrip().startswith("REVIEW ")]
     if not later:
         if str(thread.get("state", "")).upper() != "MERGED":

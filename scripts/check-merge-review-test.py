@@ -26,11 +26,13 @@ They need the solver, as CI installs it, and fail red without one.
 
 Usage: scripts/check-merge-review-test.py   (needs ~/.local/bin/alloy)
 """
+import contextlib
 import hashlib
 import importlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -42,17 +44,46 @@ OTHER = "fb1bd4f2a7c3e59018d4b6f0a2c8e1d7b3f9a0c5e"
 harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
+# EVERY CASE IS POINTED AWAY FROM THIS MACHINE'S OWN JEV LOG AND STORE, AT THE
+# ONE RUNNER, so no case can forget. `gate` runs the pull request thread
+# reading on every call, and campaign-jev.py falls back to
+# `<base>/runtime/jev.log` when nothing names a log -- so the cases written
+# before that reading existed, which name nothing, each appended a row marked
+# `endpoint: real` to the shared log and put their fixture states in the shared
+# store. Measured: 20 rows a run from here, 10 from
+# check-campaign-claim-test.py (pr#474 REVIEW issuecomment-5718228578).
+JEV_ROOT = Path(tempfile.mkdtemp(prefix="merge-review-jev-"))
+JEV_LOG = JEV_ROOT / "jev.log"
+with contextlib.closing(socket.socket()) as _s:
+    _s.bind(("127.0.0.1", 0))
+    JEV_CLOSED = f"http://127.0.0.1:{_s.getsockname()[1]}/v1/systemone"
+
 
 COMMENT_ID = [5700000000]
 
 
-def comment(body):
+def comment(body, at=None):
     """The REST shape, `user.login` -- not `gh pr view`'s `author.login`. The
     reader changed channels and a fixture still speaking the old one would test
     a mapping nothing performs. The `id` is the REST field the thread reading's
-    join key carries: every join is "the later fact on that number"."""
+    join key carries: every join is "the later fact on that number", and
+    `created_at` is what `one_round` orders on."""
     COMMENT_ID[0] += 1
-    return {"id": COMMENT_ID[0], "user": {"login": "kalaluthien"}, "body": body}
+    row = {"id": COMMENT_ID[0], "user": {"login": "kalaluthien"}, "body": body}
+    if at:
+        row["created_at"] = at
+    return row
+
+
+def pr_review(body, at=None):
+    """The other channel, which spells its timestamp `submitted_at`. A REVIEW
+    posted with `gh pr review --comment -b` arrives here, and AGENTS.md admits
+    it, so it must reach `one_round` in its own place in time."""
+    COMMENT_ID[0] += 1
+    row = {"id": COMMENT_ID[0], "user": {"login": "kalaluthien"}, "body": body}
+    if at:
+        row["submitted_at"] = at
+    return row
 
 
 def fake_gh(bindir, head=HEAD, comments=(), reviews=(), status=0, stdout=None,
@@ -94,10 +125,19 @@ def call(bindir, *args, stdin=None, cwd=None, **extra):
     """(word, returncode, everything printed). The word is the first token of
     the output, wherever it was printed: a refusal goes to stderr.
 
-    `extra` names environment variables a case sets, which is how the shadow
-    reading below is pointed at a log and an endpoint of its own: no case here
-    reaches the network, and none writes into this machine's own jev.log."""
-    env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", **extra)
+    THE ONE RUNNER, and it names the log and the endpoint for EVERY case rather
+    than leaving each to remember: `gate` runs the pull request thread reading,
+    so a case that named neither wrote a row into this machine's shared
+    `runtime/jev.log` and its fixture state into the shared store. `extra`
+    still lets a case name its own."""
+    env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}",
+               CAMPAIGN_JEV_LOG=str(JEV_LOG), CAMPAIGN_JEV_URL=JEV_CLOSED)
+    env.update(extra)
+    # A CASE UNSETS A VARIABLE BY NAMING IT None, which is how the control
+    # below runs without the two this helper sets: a case that could only ADD
+    # to the environment could not show that what it sets is what does the
+    # work.
+    env = {k: v for k, v in env.items() if v is not None}
     p = subprocess.run([str(SCRIPT), *args], capture_output=True, text=True,
                        env=env, input=stdin, cwd=cwd)
     text = (p.stdout or "") + (p.stderr or "")
@@ -435,6 +475,41 @@ def main() -> int:
               (word, code) == ("unknown", 2) and "names no commit" in text,
               f"{word} {code} {text}")
 
+        # ---- the shared log, from the suite's own env -----------------------
+        # COUNTED BEFORE AND AFTER, never read by presence, over a MADE base
+        # checkout: `base_root` is the parent of the git common dir, so a
+        # `git init` directory is one, and the shared branch of `log_path` runs
+        # there without this machine's own log being touched.
+        shared = Path(d) / "made-base"
+        shared.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(shared)],
+                       check=True)
+        (shared / "runtime").mkdir()
+        shared_log = shared / "runtime" / "jev.log"
+        shared_log.write_text('{"a": 1}\n{"a": 2}\n')
+        nohome = Path(d) / "nohome"
+        nohome.mkdir()
+
+        def shared_lines():
+            return len(shared_log.read_text().splitlines())
+
+        fake_gh(bindir, comments=[comment(f"REVIEW rule-check-worker-9: at "
+                                          f"{HEAD[:7]}, no findings")])
+        before = shared_lines()
+        word, code, _text = call(bindir, "274", "--repo", "o/r", cwd=shared)
+        check("a plain gate run in this suite's env writes no shared log line",
+              shared_lines() == before and (word, code) == ("reviewed", 0),
+              (before, shared_lines(), word, code))
+        # THE CONTROL, and it is what makes the case above evidence: the same
+        # run with neither variable named takes the shared branch and DOES add
+        # a line. HOME is an empty directory and the key is unset, so `ask`
+        # answers `unknown` before it opens a socket.
+        call(bindir, "274", "--repo", "o/r", cwd=shared,
+             CAMPAIGN_JEV_LOG=None, CAMPAIGN_JEV_URL=None,
+             TYPESAFE_API_KEY=None, HOME=str(nohome))
+        check("...and the control proves it is those variables doing it",
+              shared_lines() == before + 2, (before, shared_lines()))
+
         # ---- the pull request thread, at shadow ----------------------------
         # THE READING RIDES ON THE THREAD THE GATE ALREADY FETCHED, and it
         # moves nothing: same word, same status, nothing printed. Every case
@@ -526,6 +601,43 @@ def main() -> int:
                                  CAMPAIGN_JEV_URL=closed, HOME=str(emptyhome))
         check("a reading that could not be made leaves the gate's word alone",
               (word, code) == ("reviewed", 0), f"{word} {code}")
+
+        # ---- the round is in TIME, not in channel order --------------------
+        # `bodies_of` returns every issue comment and THEN every pull-request
+        # review, so before this a REVIEW on the review channel sorted after
+        # every REPORT however old it was, and `one_round` found a REVIEW with
+        # no REPORT after it every time -- findings={} on every such thread.
+        rev_body = ("REVIEW rule-check-worker-9: 1 finding at " + HEAD[:7]
+                    + "\n\n| F1 | the ceiling is stated twice and the copy "
+                      "drifts, which is the one that rots |\n")
+        rep_body = ("REPORT rule-check-worker-8: fix round 1 at " + HEAD[:7]
+                    + "\n\n| finding | disposition |\n| --- | --- |\n"
+                      "| F1 | see the review |\n")
+        fake_gh(bindir, comments=[comment(rep_body, "2026-09-18T02:00:00Z")],
+                reviews=[pr_review(rev_body, "2026-09-18T01:00:00Z")])
+        word, code, text, rows = thread_run("274", "--repo", "o/r")
+        by = {r.get("reading"): r for r in rows if r.get("reading")}
+        state = (by.get("C-report-disposes-finding", {}).get("state") or {})
+        check("a REVIEW on the review channel yields its findings",
+              sorted(state.get("findings") or {}) == ["F1"]
+              and state.get("report", "").startswith("REPORT "), rows)
+        check("...and the gate's word and status do not move",
+              (word, code) == ("reviewed", 0), f"{word} {code}")
+
+        # AND THE NEWER REVIEW WINS WHATEVER CHANNEL IT CAME ON. The old one is
+        # on the review channel, which used to sort last and so always won.
+        old_rev = ("REVIEW rule-check-worker-9: 1 finding at " + OTHER[:7]
+                   + "\n\n| F9 | an older round's finding, long since "
+                     "disposed of and gone |\n")
+        fake_gh(bindir,
+                comments=[comment(rev_body, "2026-09-18T03:00:00Z"),
+                          comment(rep_body, "2026-09-18T04:00:00Z")],
+                reviews=[pr_review(old_rev, "2026-09-18T01:00:00Z")])
+        _word, _code, _text, rows = thread_run("274", "--repo", "o/r")
+        by = {r.get("reading"): r for r in rows if r.get("reading")}
+        state = (by.get("C-report-disposes-finding", {}).get("state") or {})
+        check("a newer comment-channel REVIEW outranks an older review-channel "
+              "one", sorted(state.get("findings") or {}) == ["F1"], rows)
 
         # ---- the model's own situation --------------------------------------
 

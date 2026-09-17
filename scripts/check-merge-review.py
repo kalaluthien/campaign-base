@@ -221,13 +221,24 @@ def head_of(repo, pr):
 
 
 def bodies_of(repo, pr):
-    """([(where, author, body)], why). Both channels, each paginated in full.
+    """([(where, author, body, id, at)], why). Both channels, each paginated in
+    full. THE ONE READER OF A PULL REQUEST'S THREAD in this tree: `gate` calls
+    it, and so does campaign-jev.py's `fetch_thread`, which asks this rather
+    than restating which endpoints a thread lives on.
 
     AGENTS.md admits `gh pr comment` and `gh pr review --comment -b` alike --
     both are `COMMENT_WRITES` in check-campaign-claim.py -- so reading one of
     them would refuse a correctly written REVIEW for the channel it arrived on.
     A response that is not a list is `why` and never an empty list: a shape this
-    did not expect is a reading it did not make."""
+    did not expect is a reading it did not make.
+
+    THE ORDER IS THE TWO CHANNELS, NOT TIME, and the timestamp travels so a
+    caller that needs time can sort. `gate` does not -- it asks whether ANY
+    REVIEW names the head, which no order changes -- and `one_round` does, so
+    the sort lives there rather than here, where it would quietly move which
+    REVIEW the gate's message names. The two channels spell the field
+    differently: an issue comment carries `created_at` and a pull-request
+    review `submitted_at`."""
     found = []
     for where, path in (("comment", f"repos/{repo}/issues/{pr}/comments"),
                         ("review", f"repos/{repo}/pulls/{pr}/reviews")):
@@ -245,7 +256,8 @@ def bodies_of(repo, pr):
             # fetching the same two pages twice to get it would be the second
             # reader this file exists to avoid.
             found.append((where, (row.get("user") or {}).get("login") or "?",
-                          row.get("body") or "", row.get("id")))
+                          row.get("body") or "", row.get("id"),
+                          row.get("created_at") or row.get("submitted_at") or ""))
     return found, None
 
 
@@ -298,9 +310,12 @@ def answer(word, line, extra=()):
 # questions, the state slice, the prefilter, the cuts and the tier -- and this
 # reads them and writes none of them.
 #
-# WHY HERE: `gate` is the one place in this tree that reads a pull request's
-# whole thread, both channels and paginated in full, and it reads it anyway. A
-# reading wired anywhere else would fetch those two pages a second time.
+# WHY HERE: `bodies_of` is THE reader of a pull request's whole thread in this
+# tree -- both channels, each paginated in full -- and `gate` calls it anyway
+# before it answers, so this reading costs no second fetch. campaign-jev.py's
+# `fetch_thread` asks the same function for the join rather than restating
+# which endpoints a thread lives on; it read one channel once and labelled
+# every finding `disposed` for it.
 #
 # THE TIER IS `shadow`: every call is logged by campaign-jev.py, NOTHING is
 # printed, no verdict moves and no exit status moves. `gate`'s word is what it
@@ -370,17 +385,29 @@ def prefilter_clear(report, finding_id):
     return False
 
 
+def in_time_order(found):
+    """`bodies_of`'s rows, oldest first. IT IS NOT THE ORDER THEY ARRIVE IN:
+    that is every issue comment and then every pull-request review, so a REVIEW
+    posted on the review channel sorted after every REPORT however old it was,
+    and `one_round` found a REVIEW with no REPORT after it every time. The
+    index breaks a tie, so two rows sharing a timestamp keep the order they
+    came in; a row with no timestamp sorts first, which no thread GitHub serves
+    has, since both channels carry one."""
+    return [row for _key, row in
+            sorted(((row[4], i), row) for i, row in enumerate(found))]
+
+
 def one_round(found, pattern):
     """(the REVIEW body, the REPORT answering it, the id of each) -- THE SLICE,
     and it is stated here and in the entry's `state.slice` because a thread has
     no size ceiling and the state does.
 
     The round is the LAST comment opening REVIEW and the FIRST comment opening
-    REPORT after it, in the order the two channels were read. Nothing else is
-    sent: an earlier round's REPORT disposes an earlier round's findings, and a
-    REVIEW with no REPORT after it yet has no disposition to judge."""
+    REPORT after it, IN TIME, whichever channel each arrived on. Nothing else
+    is sent: an earlier round's REPORT disposes an earlier round's findings,
+    and a REVIEW with no REPORT after it yet has no disposition to judge."""
     review = report = None
-    for pos, (_where, _author, body, cid) in enumerate(found):
+    for pos, (_where, _author, body, cid, _at) in enumerate(in_time_order(found)):
         if comment_kind(body, pattern) == "REVIEW":
             review, report = (pos, body, cid), None
         elif review and report is None and comment_kind(body, pattern) == "REPORT":
@@ -393,7 +420,7 @@ def thread_state(found, pattern, sort):
     thread, the round's two bodies whole, and the REVIEW's findings by id."""
     review, report = one_round(found, pattern)
     thread = [f"{where} {author}: {(body or '').lstrip().splitlines()[0][:200]}"
-              for where, author, body, _cid in found
+              for where, author, body, _cid, _at in in_time_order(found)
               if (body or "").strip()]
     findings = {}
     if review and report:
@@ -476,7 +503,7 @@ def gate(repo, pr, pattern, want_head):
                        "not there."])
     read_thread(repo, pr, found, pattern)
     reviews, read, other = [], [], []
-    for where, author, body, _id in found:
+    for where, author, body, _id, _at in found:
         kind = comment_kind(body, pattern)
         if kind != "REVIEW":
             other.append(f"{where} by {author}: {kind or 'no kind on its first line'}")

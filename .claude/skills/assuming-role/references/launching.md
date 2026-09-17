@@ -65,6 +65,12 @@ Both are launch flags, `-- --model <fable|opus|sonnet> --effort <level>`
 the prompt. A session already running is moved with
 `.claude/skills/assuming-role/scripts/campaign-model.py`, not relaunched.
 
+**A delegate in a member clone also takes `--autocompact 250k`**, beside
+`--model`: a session started at the base root gets that window from the
+base's `.claude/settings.json` (`autoCompactWindow`), and a member clone reads
+none of the base's settings. The harness then compacts by itself, mid-turn
+too, about 30k below the window (probed on rule-check#481).
+
 ## Delivering the prompt
 
 **`scripts/campaign-assign.py <pane> <sub-issue> --assume-fresh`.** This is

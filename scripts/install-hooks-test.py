@@ -790,6 +790,16 @@ def main():
                   f"whole path",
                   any(LINK in c for c in commands(event)),
                   str(commands(event))[:200])
+        # The push hook (rule-check#481), on the two events it reads and with
+        # no matcher: a session's stop reaches its planners only from here.
+        PUSH = ".claude/skills/assuming-role/scripts/campaign-push.py"
+        for event in ("Notification", "SessionEnd"):
+            slots = [e for e in settings.get("hooks", {}).get(event, [])
+                     if any(PUSH in h["command"] for h in e["hooks"])]
+            check(f"the push hook is registered on {event} by its whole path, "
+                  f"with no matcher",
+                  len(slots) == 1 and "matcher" not in slots[0],
+                  str(settings.get("hooks", {}).get(event))[:200])
         # The registered command must fail CLOSED when its script is gone. Run
         # each one the way the harness does -- through a shell -- after
         # deleting the guard: a bare path exits 127, which the harness reads as

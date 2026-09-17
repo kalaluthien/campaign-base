@@ -463,7 +463,7 @@ CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
 # ---------------- each branch broken in turn ----------------
 # (what is broken, anchor in the script, its replacement, the case that must go red)
 MUTATIONS = [
-    ("the glyph that makes a line a banner", r'r"^[ \t]*⎿[ \t]+You.ve hit your (?P<rest>.*)$"',
+    ("the glyph that makes a line a banner", r'r"^[ \t\u00a0]*⎿[ \t\u00a0]+You.ve hit your (?P<rest>.*)$"',
      r'r"You.ve hit your (?P<rest>.*)$"', case_allow_prose_and_an_added_diff_line),
     ("a working pane's banner is stale", 'if status == "working":', "if False:", case_cli_working_pane_banner_is_stale),
     ("the reader's own pane", 'if a.pane == os.environ.get("HERDR_PANE_ID"):', "if False:", case_cli_own_pane_skips_liveness),
@@ -481,6 +481,7 @@ MUTATIONS = [
      case_session_wraps_to_tomorrow),
     ("yesterday's reset", "max(w for w in days if w <= now)", "at", case_session_read_next_morning_is_yesterdays),
     ("passed", '"passed" if when <= now else', '"passed" if False else', case_session_passed),
+    ("the no-break space after the glyph", r'⎿[ \t\u00a0]+', r'⎿[ \t]+', case_banner_after_a_no_break_space),
     ("the last banner", "last = banners[-1]", "last = banners[0]", case_last_banner_wins),
     ("the unknown clause", 'raise Unparsed("a banner is on screen and its clause is not one this parser knows")', "return None",
      case_unknown_clause_is_unparsed),

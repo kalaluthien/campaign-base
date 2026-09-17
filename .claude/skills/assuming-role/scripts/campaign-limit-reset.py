@@ -124,7 +124,9 @@ except ImportError:  # pragma: no cover -- python < 3.9 has no zoneinfo
     ZoneInfo = None
 
 # A banner line: the glyph the harness paints a tool-result line with, then the words.
-SHAPE = re.compile(r"^[ \t]*⎿[ \t]+You.ve hit your (?P<rest>.*)$", re.MULTILINE)
+# The gap after the glyph is painted with a NO-BREAK SPACE (U+00A0) as well as
+# a SPACE (fixtures/limit-banner-nbsp.txt, 2026-09-18), which `[ \t]` misses.
+SHAPE = re.compile(r"^[ \t\u00a0]*⎿[ \t\u00a0]+You.ve hit your (?P<rest>.*)$", re.MULTILINE)
 CLAUSE = re.compile(
     r"^(?P<kind>session|weekly) limit\W+resets\s+"
     r"(?:(?P<mon>[A-Za-z]{3})\s+(?P<day>\d{1,2})\s+at\s+)?"

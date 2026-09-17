@@ -60,8 +60,11 @@ if git push --quiet origin "$branch" 2>"$err"; then
 	# and a fixture's local remote is not one.
 	case $(git remote get-url origin 2>/dev/null) in
 	*github.com[:/]*)
-		sha=$(git rev-parse HEAD) &&
-			nohup "$HERE/check-diff-screen.py" "$sha" </dev/null >/dev/null 2>&1 &
+		# ONE COMMAND IN THE BACKGROUND, not an `a && b &` list: a list is
+		# a subshell holding this hook's stdout open, so a caller capturing
+		# `git commit`'s output waited for every Jev call.
+		sha=$(git rev-parse HEAD) || exit 0
+		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
 		;;
 	esac
 else

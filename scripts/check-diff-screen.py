@@ -21,16 +21,23 @@ and the time, never the patch. A join finds the pull request by the branch,
 and a `REVIEW` defect naming the path by `path:line` as its later fact.
 
 WHAT IT READS: the commit's own files (`git diff-tree`), each file's patch from
-`git merge-base <commit> origin/main` to the commit, and the paths of the test
-files that branch diff changes.
+the merge-base with the remote's default branch -- `origin/HEAD`, else
+`origin/main` -- to the commit, and the paths of the test files that branch
+diff changes. The branch in the label is the hook's, passed in: read here it
+would be whatever a checkout moved HEAD to after the commit.
+
+WHERE IT LOGS: the base's `runtime/jev.log`, found from this script's own
+directory and not from the checkout it reads. The hook runs it in a member
+repository's clone too, and a log found from there would land an untracked
+`runtime/` in that clone, where `report` never reads it.
 
   asked      one call a file the commit touched: state `{file: {path, patch},
              changedTests}`, one `noul` question a noul, all five in the call
   passed     a merge commit asks nothing: `git diff-tree` lists no file for
              one, since its files are main's, not the branch's work
-  skipped    a binary file, a file whose branch patch is empty, a patch over
-             PATCH_CEILING, a commit with no merge-base, or a reading that
-             raised, asks nothing and logs one `skipped` row naming why
+  skipped    a binary file, a file whose branch patch is empty, a `git diff`
+             that failed, a patch over PATCH_CEILING, a commit with no
+             merge-base, or a reading that raised, asks nothing and logs one `skipped` row naming why
 
 THE TIER is `shadow`: every call is logged and nothing is printed, since the
 hook's background start discards this process's output.
@@ -43,7 +50,7 @@ defect file, the highest of the five lets a reviewer skip 44-57 of 399
 (11-14%), AUC 0.73; "most added lines" skips 30 (8%), AUC 0.78; "tests changed
 or not" skips none. Its lowest defect files are prose: AGENTS.md at 0.12.
 
-Usage: scripts/check-diff-screen.py [<commit>]
+Usage: scripts/check-diff-screen.py [<commit> [<branch>]]
 """
 import importlib.machinery
 import importlib.util
@@ -69,6 +76,7 @@ PATCH_FORM = ("--no-prefix", "--diff-algorithm=histogram", "--no-color",
               "--no-ext-diff", "--no-textconv", "--no-renames")
 TEST = re.compile(r"(-test\.\w+$|_test\.\w+$|(^|/)checks\.als$|(^|/)tests?/)")
 WORKERS = 8
+DEFAULT_BRANCH = ("origin/HEAD", "origin/main")
 
 
 def load_sibling(name):
@@ -124,23 +132,26 @@ def files(commit, base):
 
 
 def main(argv, env=None):
-    if len(argv) > 1:
-        print("Usage: scripts/check-diff-screen.py [<commit>]", file=sys.stderr)
+    if len(argv) > 2:
+        print("Usage: scripts/check-diff-screen.py [<commit> [<branch>]]",
+              file=sys.stderr)
         return 2
     subject = argv[0] if argv else "HEAD"
     try:
         jev = load_sibling("campaign-jev.py")
         commit = (git("rev-parse", "--verify", "-q", subject + "^{commit}")
                   or "").strip()
-        branch = (git("symbolic-ref", "--quiet", "--short", "HEAD")
-                  or "detached").strip()
+        branch = argv[1] if len(argv) > 1 else (
+            git("symbolic-ref", "--quiet", "--short", "HEAD") or "detached").strip()
         label = f"{branch} {commit[:12] or subject}"
         if not commit:
-            jev.skip(READER, label, "the commit does not resolve", env)
+            jev.skip(READER, label, "the commit does not resolve", env, cwd=HERE)
             return 0
-        base = (git("merge-base", commit, "origin/main") or "").strip()
+        base = next((b.strip() for b in (git("merge-base", commit, ref)
+                                             for ref in DEFAULT_BRANCH) if b), "")
         if not base:
-            jev.skip(READER, label, "no merge-base with origin/main", env)
+            jev.skip(READER, label, "no merge-base with origin/HEAD or "
+                     "origin/main", env, cwd=HERE)
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
         asked = questions(entry)
@@ -149,15 +160,17 @@ def main(argv, env=None):
         def one(item):
             path, why = item
             patch = "" if why else git("diff", *PATCH_FORM, base, commit,
-                                       "--", path) or ""
-            if not why and len(patch) > PATCH_CEILING:
+                                       "--", path)
+            if patch is None:
+                why = "git diff failed"
+            elif not why and len(patch) > PATCH_CEILING:
                 why = f"a patch of {len(patch)} chars, over {PATCH_CEILING}"
             if why:
-                jev.skip(READER, f"{label} {path}", why, env)
+                jev.skip(READER, f"{label} {path}", why, env, cwd=HERE)
                 return
             jev.ask(READER, f"{label} {path}",
                     {"file": {"path": path, "patch": patch},
-                     "changedTests": tests}, asked, env=env)
+                     "changedTests": tests}, asked, env=env, cwd=HERE)
         with ThreadPoolExecutor(WORKERS) as pool:
             list(pool.map(one, found))
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
@@ -169,7 +182,8 @@ def skipped(subject, e, env):
     """The skip row for a reading that raised, written if the log can be."""
     try:
         load_sibling("campaign-jev.py").skip(
-            READER, subject, f"the reading raised {e.__class__.__name__}", env)
+            READER, subject, f"the reading raised {e.__class__.__name__}", env,
+            cwd=HERE)
     except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
         pass
 

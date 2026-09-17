@@ -92,6 +92,14 @@ git(MERGED, "update-ref", "refs/remotes/origin/main", "HEAD")
 git(MERGED, "checkout", "-q", "demo/9-topic")
 git(MERGED, "merge", "-q", "--no-edit", "main")
 
+# A REMOTE WHOSE DEFAULT BRANCH IS NOT `main`: `origin/trunk`, named by
+# `origin/HEAD`, and no `origin/main`.
+TRUNK = ROOT / "trunk"
+shutil.copytree(REPO, TRUNK)
+git(TRUNK, "update-ref", "refs/remotes/origin/trunk", BASE)
+git(TRUNK, "update-ref", "-d", "refs/remotes/origin/main")
+git(TRUNK, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+
 # NO origin/main at all.
 LONE = ROOT / "lone"
 shutil.copytree(REPO, LONE)
@@ -99,6 +107,7 @@ git(LONE, "update-ref", "-d", "refs/remotes/origin/main")
 
 SEEN = []
 LOGGED = []
+RUN_DIR = [None]
 
 
 class Stub(http.server.BaseHTTPRequestHandler):
@@ -128,9 +137,12 @@ def load(source):
     return types.SimpleNamespace(source=source, m=m)
 
 
-def run(t, argv=(), registry=True, cwd=REPO):
-    """The finished process; `SEEN` holds the calls, `LOGGED` the log rows."""
+def run(t, argv=(), registry=True, cwd=REPO, named_log=True):
+    """The finished process; `SEEN` holds the calls, `LOGGED` the log rows.
+    `named_log=False` names no log, and makes the reader's directory a git
+    checkout of its own, so the log is where campaign-jev finds a base."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
+    RUN_DIR[0] = d
     (d / "jev").mkdir()
     (d / "check-diff-screen.py").write_text(t.source)
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
@@ -142,9 +154,12 @@ def run(t, argv=(), registry=True, cwd=REPO):
     env = dict(os.environ, CAMPAIGN_JEV_URL=URL, TYPESAFE_API_KEY="stub",
                CAMPAIGN_JEV_LOG=str(d / "jev.log"), HOME=str(d),
                GIT_CONFIG_GLOBAL=os.devnull)
+    if not named_log:
+        del env["CAMPAIGN_JEV_LOG"]
+        git(d, "init", "-q")
     r = subprocess.run([sys.executable, str(d / "check-diff-screen.py"), *argv],
                        capture_output=True, text=True, env=env, cwd=cwd)
-    log = d / "jev.log"
+    log = d / "jev.log" if named_log else d / "runtime" / "jev.log"
     LOGGED[:] = ([json.loads(x) for x in log.read_text().splitlines() if x]
                  if log.exists() else [])
     return r
@@ -203,7 +218,25 @@ def merge_asks_nothing(t):
 def no_merge_base_skips_once(t):
     r = run(t, cwd=LONE)
     return (r.returncode == 0 and not SEEN
-            and [x.get("skipped") for x in LOGGED] == ["no merge-base with origin/main"]), LOGGED
+            and [x.get("skipped") for x in LOGGED] == ["no merge-base with origin/HEAD or origin/main"]), LOGGED
+
+
+def reads_the_remote_default_branch(t):
+    r = run(t, cwd=TRUNK)
+    return (r.returncode == 0
+            and [b["state"]["file"]["patch"] for b in SEEN] == [WANT_A]), (len(SEEN), LOGGED)
+
+
+def labels_the_branch_it_is_given(t):
+    run(t, argv=(HEAD, "demo/9-given"))
+    return [row["read"] for row in LOGGED if "answers" in row] == \
+        [f"demo/9-given {HEAD[:12]} a.py"], LOGGED
+
+
+def logs_to_its_own_base_not_the_clone(t):
+    r = run(t, named_log=False)
+    return (r.returncode == 0 and len(LOGGED) == 4
+            and not (REPO / "runtime").exists()), (LOGGED, sorted(p.name for p in REPO.iterdir()))
 
 
 def failure_logs_skip(t):
@@ -222,6 +255,9 @@ CASES = {
     "a merge commit asks and logs nothing": merge_asks_nothing,
     "a commit with no merge-base logs one skip": no_merge_base_skips_once,
     "a reading that raised exits 0, says nothing and logs a skip": failure_logs_skip,
+    "a remote whose default branch is not main is read through origin/HEAD": reads_the_remote_default_branch,
+    "the label carries the branch the hook passed, not HEAD's": labels_the_branch_it_is_given,
+    "with no log named, rows land in the reader's own base, not the checkout it reads": logs_to_its_own_base_not_the_clone,
 }
 
 MUTATIONS = [
@@ -246,9 +282,17 @@ MUTATIONS = [
     ("no ceiling", "if not why and len(patch) > PATCH_CEILING:", "if False:",
      "an empty branch patch, a binary and a patch over the ceiling each log a skip"),
     ("no merge-base passes silently",
-     '            jev.skip(READER, label, "no merge-base with origin/main", env)\n',
+     '            jev.skip(READER, label, "no merge-base with origin/HEAD or "\n                     "origin/main", env, cwd=HERE)\n',
      "",
      "a commit with no merge-base logs one skip"),
+    ("only origin/main read", 'DEFAULT_BRANCH = ("origin/HEAD", "origin/main")',
+     'DEFAULT_BRANCH = ("origin/main",)',
+     "a remote whose default branch is not main is read through origin/HEAD"),
+    ("the branch read from HEAD again", "branch = argv[1] if len(argv) > 1 else (", "branch = (",
+     "the label carries the branch the hook passed, not HEAD's"),
+    ("the log found from the checkout",
+     '"changedTests": tests}, asked, env=env, cwd=HERE)', '"changedTests": tests}, asked, env=env)',
+     "with no log named, rows land in the reader's own base, not the checkout it reads"),
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
      "except ZeroDivisionError as e:",
@@ -256,7 +300,7 @@ MUTATIONS = [
 ]
 
 
-def hook(origin, pushable=True):
+def hook(origin, pushable=True, sleep=0):
     """(the hook's output, whether it started the screen, with which argument).
     The real push script runs beside a stub claim reader answering `claim` and
     a stub screen writing its argv; the clone's fetch url is `origin` and it
@@ -269,15 +313,18 @@ def hook(origin, pushable=True):
     (scripts / "check-commit-claim.py").write_text(
         "#!/usr/bin/env python3\nimport sys\nprint('claim demo/9-topic')\nsys.exit(0)\n")
     (scripts / "check-diff-screen.py").write_text(
-        f"#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
+        f"#!/usr/bin/env python3\nimport sys, time\nopen({str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n"
+        f"time.sleep({sleep})\n")
     for s in scripts.iterdir():
         s.chmod(0o755)
     git(d, "init", "-q", "--bare", str(bare))
     shutil.copytree(REPO, clone)
     git(clone, "remote", "add", "origin", origin)
     git(clone, "config", "remote.origin.pushurl", str(bare if pushable else d / "nowhere.git"))
+    started = time.time()
     r = subprocess.run([str(scripts / "push-campaign-branch.sh")], cwd=clone,
                        capture_output=True, text=True)
+    HOOK_SECONDS[0] = time.time() - started
     for _ in range(50):
         if marker.exists():
             break
@@ -285,10 +332,15 @@ def hook(origin, pushable=True):
     return r.stdout + r.stderr, marker.read_text() if marker.exists() else None
 
 
+HOOK_SECONDS = [0.0]
+
+
 def hook_cases():
-    out, arg = hook("git@github.com:o/r.git")
-    check("the push hook starts the screen on the pushed sha after pushing a claim to GitHub",
-          "pushed demo/9-topic" in out and arg == HEAD, (out, arg))
+    out, arg = hook("git@github.com:o/r.git", sleep=5)
+    check("the push hook starts the screen on the pushed sha and its branch after pushing a claim to GitHub",
+          "pushed demo/9-topic" in out and arg == f"{HEAD} demo/9-topic", (out, arg))
+    check("...and returns while the screen still runs, its output captured",
+          HOOK_SECONDS[0] < 3, f"{HOOK_SECONDS[0]:.1f} s")
     out, arg = hook(str(ROOT / "elsewhere.git"))
     check("...and not for a remote that is not GitHub",
           "pushed demo/9-topic" in out and arg is None, (out, arg))
@@ -305,7 +357,9 @@ def live(record):
     jev = m.load_sibling("campaign-jev.py")
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
-    wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)
+    # THE COMPOSED QUESTIONS, not `question`: that holds only placeholders, so
+    # a noul reworded would keep the hash its old answers were recorded under.
+    wording = hashlib.sha256(json.dumps(m.questions(ENTRY), sort_keys=True)
                              .encode()).hexdigest()[:12]
     today = datetime.date.today().isoformat()
     misses = 0

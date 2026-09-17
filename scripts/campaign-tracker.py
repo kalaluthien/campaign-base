@@ -270,12 +270,14 @@ VERB_FIRST_QUESTION = (
 # cut would turn the model's own indecision into a verdict.
 # Measured 2026-09-17 over twenty issues of this tracker, asked with the state
 # below -- title AND body, because the body moves the title's answer (#203 came
-# back 0.57 on its title alone and 0.70 beside its body). Over two runs
-# verb-first came back in 0.88-0.96 and not-verb-first in 0.04-0.66, the two
-# runs' own edges four hundredths apart. Both cuts sit in that gap and on
-# neither band.
+# back 0.57 on its title alone and 0.70 beside its body). Over four runs
+# verb-first came back in 0.88-0.96 and not-verb-first in 0.04-0.68. Both cuts
+# sit in that gap and on neither band, and `no_under` carries the wider margin
+# on purpose: the not-verb-first edge climbed 0.62, 0.66, 0.67, 0.68 across the
+# four runs while the verb-first floor did not move off 0.88, and a cut too low
+# costs a missed warning where one too high would cost a false one.
 VERB_FIRST_YES_OVER = 0.80
-VERB_FIRST_NO_UNDER = 0.72
+VERB_FIRST_NO_UNDER = 0.76
 WORK_KIND_QUESTION = (
     "What kind of work does the sub-issue in `title` and `body` ask for?")
 # THE WORDS ARE `WORK_KINDS`, described as the `assuming-role` skill's own table
@@ -296,8 +298,8 @@ WORK_KIND_CRITERIA[WORK_KIND_NO_MATCH] = "not a unit of work at all"
 # the option set can fit and the answer still be a coin toss between two of its
 # members. Measured 2026-09-17 over thirteen sub-issues of this tracker, twelve
 # carrying a `kind:` label the owner set and one that is not a unit of work at
-# all: the answers this floor clears came back in 0.83-1.00 and named the
-# owner's label every time, and the two it suppresses came back in 0.27-0.40.
+# all: the answers this floor clears came back in 0.77-1.00 and named the
+# owner's label every time, and the two it suppresses came back in 0.27-0.41.
 # The floor sits in that gap and on neither band. A run with no wrong
 # answer in it cannot separate right from wrong, so what the floor is measured
 # against is confidence, and what is asserted beside it is that nothing it

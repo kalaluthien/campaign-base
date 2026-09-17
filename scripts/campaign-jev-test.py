@@ -46,11 +46,15 @@ import contextlib
 import datetime
 import http.server
 import importlib
+import io
 import json
 import os
 import re
+import shutil
 import socket
+import subprocess
 import sys
+import tokenize
 import tempfile
 import threading
 import types
@@ -154,10 +158,18 @@ def serving(status=200, body=None, **kw):
     SEEN["count"] = 0
 
 
+def clear_store():
+    """The stored answers beside the log, gone. Every case below asks about a
+    call that was MADE, so a case reading the answer a case before it stored
+    would be measuring the store and calling it the endpoint."""
+    shutil.rmtree(LOG.parent / "jev-cache", ignore_errors=True)
+
+
 def read(m, questions=None, **kw):
-    """One call against the stub, with the log truncated first so each case
-    reads its own line and never the run before it."""
+    """One call against the stub, with the log truncated and the store cleared
+    first so each case reads its own call and never the run before it."""
     LOG.write_text("")
+    clear_store()
     serving(**{k: v for k, v in kw.items()
                if k not in ("url", "key", "home", "state")})
     return m.ask("a suite", "a label", kw.get("state", STATE), questions or BOTH,
@@ -190,8 +202,8 @@ def pure_branches(m):
           m.branch(NOUL_Q, noul(0.92))[0] == "yes")
     check("branch: a noul under the cut is no",
           m.branch(NOUL_Q, noul(0.61))[0] == "no")
-    check("branch: a noul in the gap is unknown",
-          m.branch(NOUL_Q, noul(0.78))[0] == "unknown")
+    check("branch: a noul between the two edges is uncertain, not unknown",
+          m.branch(NOUL_Q, noul(0.78))[0] == "uncertain")
     check("branch: the cuts are inclusive at both ends",
           m.branch(NOUL_Q, noul(0.85))[0] == "yes"
           and m.branch(NOUL_Q, noul(0.70))[0] == "no")
@@ -209,8 +221,32 @@ def pure_branches(m):
           m.branch(OPTION_Q, probs(0.55))[0] == "yes")
     check("branch: one option's probability under the cut is no",
           m.branch(OPTION_Q, probs(0.10))[0] == "no")
-    check("branch: one option's probability in the gap is unknown",
-          m.branch(OPTION_Q, probs(0.35))[0] == "unknown")
+    check("branch: one option's probability between the edges is uncertain",
+          m.branch(OPTION_Q, probs(0.35))[0] == "uncertain")
+    # THE SECOND EDGE OF A `choice`'s BAND. `floor` alone was a lone cut inside
+    # the measured `confident` band, which is what flips on noise; `certain_over`
+    # is its upper edge and what falls between them is `uncertain`.
+    banded = dict(CHOICE_Q, floor=0.45, certain_over=0.50)
+    check("branch: a choice over the upper edge is the option",
+          m.branch(banded, pick("research", 0.51))[0] == "research")
+    check("branch: a choice between the two edges is uncertain",
+          m.branch(banded, pick("research", 0.47))[0] == "uncertain")
+    check("branch: a choice under the lower edge is still unknown",
+          m.branch(banded, pick("research", 0.44))[0] == "unknown")
+    check("branch: the no-match option is unknown inside the band too",
+          m.branch(banded, pick("none", 0.47))[0] == "unknown")
+    # A READING THAT DECLARES NO EDGE records and judges nothing. Legal at
+    # `shadow` alone, where a reading enters to collect cases.
+    bare_choice = {k: v for k, v in CHOICE_Q.items()
+                   if k not in ("floor", "no_match")}
+    got, why = m.branch(bare_choice, pick("research", 0.31))
+    check("branch: a choice with no cut records the model's own option",
+          got == "research" and "no cut is declared" in why, (got, why))
+    bare_noul = {k: v for k, v in NOUL_Q.items()
+                 if k not in ("yes_over", "no_under")}
+    got, why = m.branch(bare_noul, noul(0.31))
+    check("branch: a noul with no cut is uncertain, since it has no word",
+          got == "uncertain" and "no cut is declared" in why, (got, why))
     check("branch: an answer carrying no probabilities is unknown",
           m.branch(OPTION_Q, {"type": "choice", "choice": "supports",
                               "confidence": 0.9})[0] == "unknown")
@@ -251,8 +287,9 @@ CASES = {
     # --- the branches, through a whole call ---
     "a noul over the cut is yes": word("verb_first", "yes", noul=0.94),
     "a noul under the cut is no": word("verb_first", "no", noul=0.46),
-    "a noul in the gap is unknown": unknown_because(
-        "verb_first", "in the gap", noul=0.78),
+    "a noul between the two edges is uncertain": lambda m: (
+        lambda a: (a.word == "uncertain" and "in the band between" in a.why,
+                   (a.word, a.why)))(read(m, noul=0.78).answers["verb_first"]),
     "a confident fitting option is the option": word(
         "work_kind", "maintenance", confidence=0.95),
     "a choice cut on one option reads that option's probability": lambda m: (
@@ -263,6 +300,23 @@ CASES = {
                                         "says_nothing": 0.03}}}})),
     "a choice under the floor is unknown": unknown_because(
         "work_kind", "under the floor", confidence=0.51),
+    # THE SECOND EDGE, THROUGH A WHOLE CALL. `floor` alone was a lone cut inside
+    # the measured `confident` band; `certain_over` is that band's lower edge
+    # and what falls between the two is `uncertain` -- an answer that happened.
+    "a choice between the two edges is uncertain": lambda m: (
+        lambda a: (a.word == "uncertain" and "sits in the band" in a.why,
+                   (a.word, a.why)))(
+        read(m, questions={"work_kind": dict(CHOICE_Q, floor=0.45,
+                                             certain_over=0.50)},
+             confidence=0.47).answers["work_kind"]),
+    # A READING THAT DECLARES NO EDGE, through a whole call: the model's own
+    # option is recorded and nothing is judged. That is what `shadow` is for.
+    "a reading with no cut records and judges nothing": lambda m: (
+        lambda a: (a.word == "maintenance" and "no cut is declared" in a.why,
+                   (a.word, a.why)))(
+        read(m, questions={"work_kind": {k: v for k, v in CHOICE_Q.items()
+                                         if k not in ("floor", "no_match")}},
+             confidence=0.31).answers["work_kind"]),
     "the no-match option is unknown": unknown_because(
         "work_kind", "no-match option", choice="none", confidence=0.95),
     # --- every failure path ---
@@ -365,9 +419,12 @@ def env_not_text(m):
 
 
 def raised_where_nothing_should(m):
-    """A question spec missing a threshold: `branch` raises KeyError inside the
-    call, and `ask`'s own boundary is the only thing between that and the
-    caller's traceback.
+    """A question spec declaring ONE of its two edges: `branch` raises KeyError
+    inside the call, and `ask`'s own boundary is the only thing between that and
+    the caller's traceback. One edge and not none, because none is a reading
+    that declares no cut at all, which is legal at `shadow` and judges nothing;
+    a half-declared band is the caller's bug and `thresholds_or_shadow` refuses
+    it in the registry.
 
     IT CATCHES RATHER THAN LETTING THE CRASH BE THE RESULT: a case that dies of
     the very exception it is asserting against reports "crashed", which the
@@ -375,7 +432,8 @@ def raised_where_nothing_should(m):
     serving()
     try:
         r = m.ask("a suite", "a label", STATE,
-                  {"verb_first": {"type": "noul", "instructions": "x"}},
+                  {"verb_first": {"type": "noul", "instructions": "x",
+                                  "no_under": 0.2}},
                   env=env(), timeout=5)
     except Exception as e:  # noqa: BLE001 -- the thing under assertion
         return False, f"it raised {e.__class__.__name__} instead of answering"
@@ -554,6 +612,47 @@ ISSUES = {
 }
 
 
+# ONE PULL REQUEST THREAD PER SUBJECT, as `ISSUES` is one issue per subject:
+# the thread's join asks what came AFTER the REPORT it judged.
+THREADS = {
+    ("kalaluthien/campaign-base", 700): {
+        "state": "OPEN", "comments": [
+            {"where": "comment", "at": "2026-09-17T01:00:00Z",
+             "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
+                     "second copy is the one that drifts"},
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: pushed"}]},
+    ("kalaluthien/campaign-base", 701): {
+        "state": "MERGED", "comments": [
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: merged"}]},
+    # THE LATER REVIEW ON THE REVIEW CHANNEL, which `fetch_thread` used to miss
+    # entirely: it read `issues/<n>/comments` alone, so this thread labelled
+    # every finding `disposed` at the merge.
+    ("kalaluthien/campaign-base", 702): {
+        "state": "MERGED", "comments": [
+            {"where": "review", "at": "2026-09-17T01:00:00Z",
+             "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
+                     "second copy is the one that drifts"}]},
+}
+
+
+def thread_row(call, number, findings, **kw):
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "C-report-disposes-finding",
+           "subject": f"kalaluthien/campaign-base#{number} thread",
+           "read": f"kalaluthien/campaign-base#{number} thread",
+           "repo": "kalaluthien/campaign-base", "pull_request": number,
+           "state": {"findings": findings, "report": "REPORT w-1: fixed",
+                     "review": "REVIEW r-1: ...", "thread": "..."},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": None, "raw": {}, "why": "", "endpoint": "real",
+           "flag": None}
+    row.update(kw)
+    return row
+
+
 def log_row(call, reading, title, number, **kw):
     row = {"at": "2026-09-17T00:00:00+00:00", "call": call, "reading": reading,
            "subject": f"kalaluthien/campaign-base#{number}",
@@ -563,7 +662,7 @@ def log_row(call, reading, title, number, **kw):
            "wording": "0" * 12, "settled": None, "tier": "advise",
            "does": "show", "asked": MODEL, "answered": MODEL, "latency": 0.5,
            "branch": "yes", "raw": {"type": "noul", "noul": 0.9}, "why": "",
-           "flag": None}
+           "endpoint": "real", "flag": None}
     row.update(kw)
     return row
 
@@ -583,9 +682,11 @@ def joined(m, rows):
     os.environ["CAMPAIGN_JEV_LOG"] = str(log)
     try:
         args = types.SimpleNamespace(
-            fetch=lambda repo, number: ISSUES.get((repo, number)))
+            fetch=lambda repo, number: ISSUES.get((repo, number)),
+            fetch_thread=lambda repo, number: THREADS.get((repo, number)))
         m.cmd_corpus_join(args)
-        out = {n: m.read_corpus(n) for n in ("verb-first", "work-kind")}
+        out = {n: m.read_corpus(n) for n in
+               ("verb-first", "work-kind", "C-report-disposes-finding")}
     finally:
         m.CORPUS = was
         if old is None:
@@ -633,6 +734,81 @@ def join_keeps_what_it_cannot_label(m):
     return (not cases["verb-first"] and lines == 2), (cases["verb-first"], lines)
 
 
+def join_reads_a_later_review_on_the_thread(m):
+    """C-report-disposes-finding's join: a finding a LATER REVIEW raises again
+    is one the REPORT did not dispose. The strong half of the two."""
+    cases, _lines = joined(m, [thread_row("tttt", 700, {
+        "F1": "the ceiling is stated twice and the second copy drifts",
+        "F2": "the usage line still calls the flag --dry"})])
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    return (got.get("truth") == {"F1": "undisposed", "F2": "disposed"}
+            and got.get("label", {}).get("from") == "join:thread-refinding"
+            and "raised again: F1" in got.get("label", {}).get("evidence", "")),\
+        got
+
+
+def join_waits_for_the_merge_on_an_open_thread(m):
+    """The WEAK half waits: with no later REVIEW, only a MERGED pull request
+    labels the disposed class. An open one is a thread nobody has looked at
+    again, which is not agreement."""
+    open_pr, _l = joined(m, [thread_row("uuuu", 700, {"F9": "nobody re-raised"},
+                                        at="2026-09-17T09:00:00+00:00")])
+    merged, _l2 = joined(m, [thread_row("vvvv", 701, {"F9": "nobody re-raised"})])
+    got = (merged["C-report-disposes-finding"] or [{}])[0]
+    return (not open_pr["C-report-disposes-finding"]
+            and got.get("truth") == {"F9": "disposed"}
+            and "merged with no REVIEW" in got.get("label", {}).get("evidence", "")),\
+        (open_pr["C-report-disposes-finding"], got)
+
+
+def join_reads_a_later_review_on_the_review_channel(m):
+    """A REVIEW posted with `gh pr review --comment -b` is a REVIEW: AGENTS.md
+    admits both spellings. Reading one channel labelled the finding `disposed`
+    at the merge -- a wrong label, into the corpus, for good."""
+    cases, _lines = joined(m, [thread_row("wwww", 702, {
+        "F1": "the ceiling is stated twice and the second copy drifts"})])
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    return (got.get("truth") == {"F1": "undisposed"}
+            and "raised again: F1" in got.get("label", {}).get("evidence", "")),\
+        got
+
+
+def fetch_thread_asks_the_thread_s_owner(m):
+    """`check-merge-review.py` owns the thread read -- both channels, each
+    paginated in full -- and this asks it rather than restating which endpoints
+    a thread lives on. A second reader of that rule had already drifted: it
+    read `issues/<n>/comments` alone.
+
+    Both siblings are stubbed, so the case spends no `gh` call and proves the
+    wiring: the rows come back oldest first, whatever channel they arrived on,
+    each with its `at` and its `where`."""
+    rows = [("comment", "a", "NOTE w-1: pushed", 2, "2026-09-18T02:00:00Z"),
+            ("review", "b", "REVIEW r-1: a finding", 1, "2026-09-18T01:00:00Z")]
+    reader = types.SimpleNamespace(
+        bodies_of=lambda repo, number: (rows, None),
+        in_time_order=lambda found: sorted(found, key=lambda r: r[4]))
+    was_load, was_run = m.load_sibling, m.subprocess.run
+    m.load_sibling = lambda name: reader
+    m.subprocess = types.SimpleNamespace(
+        run=lambda *a, **k: types.SimpleNamespace(
+            returncode=0, stdout='{"state": "MERGED"}'),
+        SubprocessError=Exception)
+    try:
+        got = m.fetch_thread("o/r", 274)
+    finally:
+        m.load_sibling = was_load
+        m.subprocess = subprocess
+        m.subprocess.run = was_run
+    return (got is not None and got.get("state") == "MERGED"
+            and [c["where"] for c in got["comments"]] == ["review", "comment"]
+            and [c["at"] for c in got["comments"]]
+            == ["2026-09-18T01:00:00Z", "2026-09-18T02:00:00Z"]), got
+
+
+CASES["the thread join reads a later REVIEW on the review channel"] = join_reads_a_later_review_on_the_review_channel
+CASES["fetch_thread asks the script that owns the thread read"] = fetch_thread_asks_the_thread_s_owner
+
+
 def join_writes_one_case_for_one_row(m):
     """Run twice, and the second run writes nothing: a case is keyed by the
     call and the reading, so a join that ran again would otherwise double every
@@ -648,7 +824,8 @@ def join_writes_one_case_for_one_row(m):
     os.environ["CAMPAIGN_JEV_LOG"] = str(ROOT / "join.log")
     try:
         m.cmd_corpus_join(types.SimpleNamespace(
-            fetch=lambda repo, number: ISSUES.get((repo, number))))
+            fetch=lambda repo, number: ISSUES.get((repo, number)),
+            fetch_thread=lambda repo, number: THREADS.get((repo, number))))
         out = m.read_corpus("verb-first")
     finally:
         m.CORPUS = was
@@ -699,8 +876,102 @@ def a_case_held_to_no_band_is_listed(m):
             and "no-match case" in unplaced[0]), unplaced
 
 
+CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
+CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
 CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed
+
+
+# ------------------------------------------- one thread, one call, per finding
+# A READING WHOSE `question.per` NAMES A STATE FIELD is asked once per key of
+# that field, IN THE SAME CALL: every question over one pull request thread goes
+# in the one call (DECISION 5716060001), and the answers come back as one
+# `Verdict` carrying {key: raw} and no word.
+THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "findings": {"F1": "a", "F2": "b"},
+                "review": "REVIEW r-1: two findings", "thread": "comment w-1: ..."}
+
+
+def thread_answers(**kw):
+    """The stub's reply, keyed the way `judge` fans a per-item reading out."""
+    def picked(p):
+        return {"type": "choice", "choice": "supports", "confidence": 0.9,
+                "probabilities": {"supports": p, "contradicts": 1 - p,
+                                  "says_nothing": 0.0}}
+    answers = {"C-report-disposes-finding#F1": picked(kw.get("f1", 0.95)),
+               "C-report-disposes-finding#F2": picked(kw.get("f2", 0.10)),
+               "C-review-not-the-author": picked(0.9)}
+    NEXT["status"], NEXT["body"] = 200, {"model": MODEL, "answers": answers}
+    SEEN["count"] = 0
+
+
+def a_per_item_reading_is_one_call(m):
+    """Two findings and the other reading of the group: three questions, ONE
+    request, and each question's instructions name its own item, since the id
+    never reaches the model."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    judged = m.judge("pull-request-thread", THREAD_STATE, read="a thread",
+                     env=env(), timeout=5, log=False)
+    sent = json.loads(SEEN["body"])["questions"]
+    v = judged.verdicts["C-report-disposes-finding"]
+    named = {qid: "findings.F1" in q["instructions"]
+             for qid, q in sent.items() if qid.endswith("#F1")}
+    return (SEEN["count"] == 1 and len(sent) == 3 and v.word is None
+            and sorted(v.raw) == ["F1", "F2"] and all(named.values())
+            and judged.verdicts["C-review-not-the-author"].word == "supports"),\
+        (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
+
+
+def a_cleared_finding_is_never_sent(m):
+    """H5: what the prefilter settles is never sent. The settled word may be a
+    {item: word} dict, and only the items it names are cleared."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    judged = m.judge("pull-request-thread", THREAD_STATE, read="a thread",
+                     settled={"C-report-disposes-finding": {"F1": "disposed"}},
+                     env=env(), timeout=5, log=False)
+    sent = sorted(json.loads(SEEN["body"])["questions"])
+    return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author"]
+            and sorted(judged.verdicts["C-report-disposes-finding"].raw)
+            == ["F2"]), sent
+
+
+def a_flag_may_be_computed_from_the_answers(m):
+    """A reader cannot compute a flag from answers it has not got back yet, so
+    `flag` may be a callable. The log row carries what code computed and which
+    answer moved it."""
+    LOG.write_text("")
+    clear_store()
+    thread_answers()
+    m.judge("pull-request-thread", THREAD_STATE, read="a thread", env=env(),
+            timeout=5, flag=lambda name, raw: {"code": len(raw or {})})
+    rows = [json.loads(ln) for ln in LOG.read_text().splitlines()]
+    by = {r["reading"]: r for r in rows}
+    return (by["C-report-disposes-finding"]["flag"] == {"code": 2}
+            and by["C-report-disposes-finding"]["branch"] is None), rows
+
+
+def a_per_item_question_must_name_its_item(m):
+    """Without the marker the same question would be asked once per item and
+    answered once per item, identically -- the id never reaches the model."""
+    reg = m.load_registry()
+    entry = reg["C-report-disposes-finding"]
+    entry["question"] = dict(entry["question"],
+                             instructions="How does `report` relate?")
+    try:
+        m.judge("pull-request-thread", THREAD_STATE, reg=reg, env=env(CLOSED),
+                timeout=1)
+    except ValueError as e:
+        return "{item}" in str(e), str(e)
+    return False, "it asked the same question once per item"
+
+
+CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
+CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
+CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
+CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item
 
 
 def a_key_names_its_repository(m):
@@ -735,7 +1006,10 @@ def refused(m, entry, fragment, name="a-reading"):
     the moment a bad entry is stopped -- not the call that happens to clear a
     threshold months later."""
     try:
-        m.check_act_bounds({name: entry})
+        # BOTH CHECKS, IN THE ORDER `load_registry` RUNS THEM, so this helper
+        # answers what the registry refuses rather than what one of its two
+        # readers does; a case written against half of it passed over the other.
+        m.check_edges(m.check_act_bounds({name: entry}))
     except ValueError as e:
         return fragment in str(e), str(e)
     return False, "loaded without a word"
@@ -801,7 +1075,14 @@ def this_module_carries_out_no_act(m):
     causes is the reader's session's and is judged by its role and its claim."""
     writes = ("gh issue edit", "gh issue close", "gh issue comment", "gh pr ",
               "gh label", "gh api -X", "--method POST", "--method PATCH")
-    found = [w for w in writes if w in SOURCE]
+    # THE CODE, NOT THE PROSE. A docstring naming the spelling a REVIEW may
+    # arrive on -- `gh pr review --comment -b` -- is not a write this module
+    # makes, and reading it as one is a case that fails on an explanation.
+    code = "".join(
+        tok.string for tok in tokenize.generate_tokens(
+            io.StringIO(SOURCE).readline)
+        if tok.type not in (tokenize.STRING, tokenize.COMMENT))
+    found = [w for w in writes if w in code]
     return not found, found
 
 
@@ -972,6 +1253,348 @@ def a_bad_entry_never_loads(m):
     return False, "loaded a registry whose act moves `standing`"
 
 
+# ------------------------------------------------------- the store of answers
+# RAW PROBABILITIES REPLAYED, so a moved cut asks nothing. Every case here
+# counts the requests the stub SAW: a store that is read is a call not sent.
+
+
+def a_second_identical_ask_sends_nothing(m):
+    """The whole point. Same state, same wording, same pinned model: the second
+    ask replays and the endpoint sees one request, not two."""
+    first = read(m)                      # clears the store, then calls
+    serving()                            # resets SEEN["count"] to 0
+    second = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return (SEEN["count"] == 0 and second.cached is True
+            and not first.cached
+            and second.answers["verb_first"].raw
+            == first.answers["verb_first"].raw), (SEEN["count"], second.cached)
+
+
+def a_hit_is_logged_as_a_hit(m):
+    """It is visible, and it is not a call: `report`'s ratio is over what was
+    sent, so a hit that logged as an ordinary row would flatter the ratio."""
+    read(m)
+    LOG.write_text("")
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    row = json.loads(LOG.read_text().splitlines()[-1])
+    return row.get("cached") is True and row.get("state_hash"), row
+
+
+def moved(m, **kw):
+    """(requests the stub saw on the second ask) after one warm ask, with `kw`
+    changing one of the three things the key is made of."""
+    read(m)
+    serving()
+    state = kw.get("state", STATE)
+    questions = kw.get("questions", BOTH)
+    if kw.get("model"):
+        m.MODEL = kw["model"]
+    try:
+        r = m.ask("a suite", "a label", state, questions, env=env(), timeout=5)
+    finally:
+        m.MODEL = MODEL
+    return SEEN["count"], r
+
+
+def a_changed_state_misses(m):
+    count, _r = moved(m, state={"title": "Retire the queue", "body": "- b"})
+    return count == 1, count
+
+
+def a_changed_wording_misses(m):
+    reworded = {"verb_first": dict(NOUL_Q, instructions="Is it an order?"),
+                "work_kind": CHOICE_Q}
+    count, _r = moved(m, questions=reworded)
+    return count == 1, count
+
+
+def a_changed_model_misses(m):
+    """The pinned model is in the key, so a version bump replays nothing: a
+    band measured under one version says nothing about the next."""
+    count, _r = moved(m, model="jev-1.14.0")
+    return count == 1, count
+
+
+def a_moved_cut_replays(m):
+    """THE REASON THE RAW PROBABILITIES ARE WHAT IS STORED. The cuts never
+    reach the model, so moving one must not move the key: the stored answer is
+    replayed and `branch` runs over it again, here into the other word."""
+    read(m, noul=0.94)
+    serving()
+    moved_cut = {"verb_first": dict(NOUL_Q, yes_over=0.99, no_under=0.96),
+                 "work_kind": CHOICE_Q}
+    r = m.ask("a suite", "a label", STATE, moved_cut, env=env(), timeout=5)
+    return (SEEN["count"] == 0 and r.answers["verb_first"].word == "no"),\
+        (SEEN["count"], r.answers["verb_first"].word)
+
+
+def the_noise_switch_sends_every_time(m):
+    """`cache=False` is what a run measuring noise sets, and it is explicit:
+    a band is what the same state answers ACROSS runs, so a replayed answer
+    would report a drift of zero."""
+    read(m)
+    serving()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    # AND THROUGH `judge`, which is what a reader calls: a switch the group
+    # caller swallowed would leave every repeat run replaying.
+    for _ in range(2):
+        m.judge("issue-shape", STATE, read="a label", env=env(), timeout=5,
+                log=False, cache=False)
+    return SEEN["count"] == 4, SEEN["count"]
+
+
+def an_answer_from_another_model_is_never_stored(m):
+    """It is `unknown` here and would be `unknown` on every replay, so storing
+    it would cache a failure."""
+    read(m, model="jev-latest")
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return SEEN["count"] == 1 and not r.cached, (SEEN["count"], r.cached)
+
+
+def a_store_that_will_not_read_costs_a_call(m):
+    """NEVER RAISES: a store that is gone, unreadable or corrupt is a call to
+    make, not a reading to lose."""
+    read(m)
+    path = m.cache_path(m.cache_key(STATE, BOTH), env=env())
+    path.write_text("{not json")
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    return (SEEN["count"] == 1
+            and r.answers["verb_first"].word == "yes"), (SEEN["count"], r)
+
+
+def the_ratio_counts_sent_calls_over_distinct_states(m):
+    """`report`'s calls-a-state, over a made log: three calls on two states,
+    one of them replayed, reads 2 sent over 2 states with 1 replayed."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "bbb", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": True},
+        {"reading": "verb-first", "state_hash": "ccc", "settled": "no"},
+        {"reading": "verb-first", "skipped": "the kind read failed"},
+        {"reader": "check-finding-sort.py", "state_hash": "ddd"},
+        {"reader": "an old row", "read": "before the hash was logged"},
+    ]))
+    lines = m.spend_lines(env=env())
+    head, verb = lines[0], [ln for ln in lines if "verb-first" in ln]
+    return (len(verb) == 1 and "2 sent over 2 state(s)" in verb[0]
+            and "1.0 a state" in verb[0] and "1 replayed" in verb[0]
+            and "1 with no state to group by" in head
+            and any("(reader) check-finding-sort.py" in ln for ln in lines)),\
+        lines
+
+
+CASES["a second identical ask replays and sends nothing"] = a_second_identical_ask_sends_nothing
+CASES["a replayed answer is logged as a hit, not as a call"] = a_hit_is_logged_as_a_hit
+CASES["a changed state misses the store"] = a_changed_state_misses
+CASES["a changed wording misses the store"] = a_changed_wording_misses
+CASES["a changed model misses the store"] = a_changed_model_misses
+CASES["a moved cut replays the stored answer and asks nothing"] = a_moved_cut_replays
+CASES["the noise switch sends every time"] = the_noise_switch_sends_every_time
+CASES["an answer from another model is never stored"] = an_answer_from_another_model_is_never_stored
+CASES["a store that will not read costs a call, not an answer"] = a_store_that_will_not_read_costs_a_call
+CASES["report counts calls sent over distinct states"] = the_ratio_counts_sent_calls_over_distinct_states
+
+# ------------------------------------------- the shared log, and what may join
+# A STUB'S ANSWER IS NOT EVIDENCE. `<base>/runtime/jev.log` is where the corpus
+# grows from, so a run that named its own endpoint never writes there, and the
+# join refuses any row that does not say the REAL endpoint answered it.
+
+
+def a_base(name):
+    """A made base checkout: `base_root` is the parent of the git COMMON dir,
+    so a directory with a `.git` in it is one. The shared log's own rule is
+    then exercised at `<this>/runtime/jev.log` -- the same code path, the same
+    `log_path` branch -- without this machine's own log being touched."""
+    root = ROOT / name
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    (root / "runtime").mkdir(exist_ok=True)
+    log = root / "runtime" / "jev.log"
+    log.write_text('{"a": 1}\n{"a": 2}\n')
+    return root, log
+
+
+def lines(path):
+    return len(path.read_text().splitlines())
+
+
+def a_stub_never_writes_the_shared_log(m):
+    """COUNTED BEFORE AND AFTER, never read by presence: the file is there
+    either way, so only the count can say whether a line was added.
+
+    The control is the same call with no `CAMPAIGN_JEV_URL`, which takes the
+    shared branch and DOES write -- so what the case measures is the endpoint's
+    rule and not a log that was unwritable all along."""
+    root, log = a_base("shared-log")
+    before = lines(log)
+    stub = {"HOME": str(HOME), "CAMPAIGN_JEV_URL": URL,
+            "TYPESAFE_API_KEY": "stub-key"}
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=stub, cwd=root, timeout=5)
+    stubbed = lines(log)
+    # THE CONTROL. No URL named, no key and an empty HOME: `ask` answers
+    # `unknown` before it opens a socket, and the row still lands in the shared
+    # log, which is the branch the case above must not have taken.
+    m.ask("a suite", "a label", STATE, BOTH,
+          env={"HOME": str(HOME)}, cwd=root, timeout=5)
+    return (stubbed == before and lines(log) == before + 1
+            and "CAMPAIGN_JEV_URL" in r.logged),\
+        (before, stubbed, lines(log), r.logged)
+
+
+def a_row_of_no_real_endpoint_is_refused_by_the_join(m):
+    """NAMED, not dropped: the output says which row and why. Nothing can ever
+    label it, so it is not waiting either."""
+    real = log_row("rrrr", "verb-first", "Cache the weather feed", 900)
+    stubbed = log_row("ssss", "verb-first", "Cache the weather feed", 900,
+                      endpoint="stub")
+    legacy = log_row("llll", "verb-first", "Cache the weather feed", 900)
+    legacy.pop("endpoint")
+    cases, _lines = joined(m, [real, stubbed, legacy])
+    ids = sorted(c["id"] for c in cases["verb-first"])
+    kept, stray, unreal = m.joinable([real, stubbed, legacy],
+                                     m.load_registry())
+    return (ids == ["verb-first-rrrr"] and not stray
+            and sorted(r["call"] for r in unreal) == ["llll", "ssss"]
+            and [r["call"] for r in kept] == ["rrrr"]), (ids, unreal)
+
+
+def a_row_says_which_endpoint_answered_it(m):
+    """One plain word, on every row this module writes: `real` or `stub`. It is
+    what the join reads, so a row that did not carry it could be a suite's
+    answer imported as the tracker's own history."""
+    read(m)
+    stubbed = json.loads(LOG.read_text().splitlines()[-1])
+    root, log = a_base("endpoint-word")
+    m.ask("a suite", "a label", STATE, BOTH, env={"HOME": str(HOME)}, cwd=root,
+          timeout=5)
+    real = json.loads(log.read_text().splitlines()[-1])
+    return (stubbed.get("endpoint") == "stub"
+            and real.get("endpoint") == "real"), (stubbed.get("endpoint"),
+                                                  real.get("endpoint"))
+
+
+def a_skip_row_claims_no_endpoint(m):
+    """A `skip` row says the reading asked NOTHING, so no endpoint answered it.
+    `real` there would be a row the join could take on the strength of a call
+    nobody made -- and the reading that skipped had no key of its own to fail
+    on, so the word would have been `real` on every machine."""
+    LOG.write_text("")
+    # `env()` AND NOT A DICT OF ITS OWN: with no `CAMPAIGN_JEV_LOG` named, the
+    # skip falls back to `<base>/runtime/jev.log` -- this machine's own.
+    m.skip("a suite", "a label", "the kind read failed", env=env())
+    row = json.loads(LOG.read_text().splitlines()[-1])
+    kept, stray, unreal = m.joinable([row], m.load_registry())
+    return (row.get("endpoint") == "none" and not kept and not stray
+            and len(unreal) == 1), (row.get("endpoint"), kept, stray, unreal)
+
+
+CASES["a skip row says no endpoint answered it, and the join refuses it"] = a_skip_row_claims_no_endpoint
+CASES["a row says which endpoint answered it"] = a_row_says_which_endpoint_answered_it
+# ------------------------------------- the five that survived every mutation
+# Named in pr#474's REVIEW (issuecomment-5718228578) note 4: each was landed
+# with a case for what it DOES and none for what it must not do, so the whole
+# behaviour could be deleted and the suite stayed green.
+
+
+def settled_of_reads_both_spellings(m):
+    """THE TWO SPELLINGS THE CORPUS CARRIES: `settled` at the top level, which
+    the survey fit writes, and `source.settled`, which `corpus join` writes off
+    the log row. `report` read only the join's, so every case the survey's
+    prefilter had cleared was counted as one Jev answered."""
+    top = {"settled": "cleared", "source": {}}
+    joined_ = {"source": {"settled": "research"}}
+    both = {"settled": "cleared", "source": {"settled": "research"}}
+    neither = {"source": {}}
+    return (m.settled_of(top) == "cleared"
+            and m.settled_of(joined_) == "research"
+            and m.settled_of(both) == "cleared"
+            and m.settled_of(neither) is None),\
+        [m.settled_of(c) for c in (top, joined_, both, neither)]
+
+
+def scored_skips_a_case_code_settled(m):
+    """A case CODE settled is not one Jev got wrong: the model never saw it. It
+    is also not scorable when nothing has been seen, or when the run recorded
+    no WORD, which is every case of a reading asked per item."""
+    seen = [{"word": "no", "raw": {"type": "noul", "noul": 0.04}}]
+    asked = {"truth": "yes", "seen": seen, "source": {}}
+    settled = {"truth": "yes", "seen": seen, "settled": "no", "source": {}}
+    per_item = {"truth": {"F1": "disposed"}, "source": {},
+                "seen": [{"word": None, "raw": {"F1": {}}}]}
+    nothing = {"truth": "yes", "seen": [], "source": {}}
+    no_truth = {"seen": seen, "source": {}}
+    return (m.scored(asked) and not m.scored(settled)
+            and not m.scored(per_item) and not m.scored(nothing)
+            and not m.scored(no_truth)),\
+        [m.scored(c) for c in (asked, settled, per_item, nothing, no_truth)]
+
+
+def an_uncertain_never_acts(m):
+    """DECISION 5715993782: `uncertain` is an answer that landed BETWEEN the two
+    edges, so the word it would act on is the one the band says is not earned.
+    At `advise` it is shown; above that it does nothing, at any confidence."""
+    entry = acting(verb="label", label="kind:development", what="x", undo="y",
+                   act_over=0.6, ask_over=0.3)
+    high = {"type": "noul", "noul": 0.99}
+    got = [m.does(entry, "uncertain", high), m.does(entry, "yes", high),
+           m.does(entry, "unknown", high)]
+    entry["tier"] = "advise"
+    shown = m.does(entry, "uncertain", high)
+    return (got == ["nothing", "act", "nothing"] and shown == "show"),\
+        (got, shown)
+
+
+def spend_lines_leaves_a_stub_out_of_the_ratio(m):
+    """A stub's call cost nobody anything, so it is not in calls-a-state. It is
+    counted and named apart, since a row that vanished from both would read as
+    a log nobody wrote to."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        {"reading": "verb-first", "state_hash": "aaa", "endpoint": "real"},
+        {"reading": "verb-first", "state_hash": "bbb", "endpoint": "stub"},
+        {"reading": "verb-first", "state_hash": "ccc", "endpoint": "stub"},
+    ]))
+    lines = m.spend_lines(env=env())
+    verb = [ln for ln in lines if "verb-first" in ln]
+    return (len(verb) == 1 and "1 sent over 1 state(s)" in verb[0]
+            and "2 from a stubbed endpoint" in lines[0]), lines
+
+
+def waiting_line_counts_the_never_joinable_apart(m):
+    """A row the join refuses is NOT waiting: nothing can ever label it, so
+    counting it as waiting asks a reader to fix a number that cannot move."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        log_row("aaaa", "verb-first", "Cache the weather feed", 900),
+        log_row("bbbb", "verb-first", "Cache the weather feed", 900,
+                endpoint="stub"),
+        log_row("cccc", "verb-first", "Cache the weather feed", 900,
+                endpoint="none"),
+    ]))
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(LOG)
+    try:
+        line = m.waiting_line()
+    finally:
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    return ("1 log row(s) unjoined" in line
+            and "2 row(s) never joinable, no `real` endpoint" in line), line
+
+
+CASES["settled_of reads both spellings the corpus carries"] = settled_of_reads_both_spellings
+CASES["scored skips a case code settled, unseen or asked per item"] = scored_skips_a_case_code_settled
+CASES["an `uncertain` never acts, at any confidence"] = an_uncertain_never_acts
+CASES["spend_lines leaves a stubbed call out of the ratio"] = spend_lines_leaves_a_stub_out_of_the_ratio
+CASES["waiting_line counts the never-joinable apart"] = waiting_line_counts_the_never_joinable_apart
+
+CASES["a stubbed call never writes the shared log"] = a_stub_never_writes_the_shared_log
+CASES["a row no real endpoint answered is refused by the join, and named"] = a_row_of_no_real_endpoint_is_refused_by_the_join
+
 CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
 CASES["an act never moves a label a person alone moves"] = act_never_moves_a_person_label
 CASES["an act is never a claim, release, merge, close, launch or retire"] = act_is_never_an_event_with_an_actor
@@ -980,12 +1603,172 @@ CASES["this module carries out no act of its own"] = this_module_carries_out_no_
 CASES["no reading's act opens a DECISION, at any tier"] = act_never_opens_a_decision
 CASES["a BLOCKED reading at act may only route"] = a_blocked_reading_may_only_route
 CASES["every registry entry carries what a reader branches on"] = registry_shape
+def edges_do_not_cross(m):
+    """The two edges of a band are in ORDER, or the registry does not load. A
+    pair that crossed has no middle, so `uncertain` could never be answered --
+    and nothing refused it while the suite only asserted both were present."""
+    bad = []
+    for cuts, why in (({"yes_over": 0.2, "no_under": 0.5}, "yes_over"),
+                      ({"yes_over": 0.5, "no_under": 0.5}, "yes_over"),
+                      ({"floor": 0.6, "certain_over": 0.5, "no_match": "none"},
+                       "certain_over"),
+                      ({"floor": 0.5, "certain_over": 0.5, "no_match": "none"},
+                       "certain_over")):
+        entry = acting(verb="label", label="kind:development", what="x",
+                       undo="y", act_over=0.9, ask_over=0.7)
+        entry["thresholds"] = cuts
+        if "floor" in cuts:
+            entry["question"]["type"] = "choice"
+            entry["question"]["criteria"] = {"none": "", "development": ""}
+        ok, said = refused(m, entry, why)
+        if not ok:
+            bad.append((cuts, said))
+    # AND IT IS READ AT LOAD, through the file, not only by whoever calls the
+    # check: a registry the tree committed with a crossed pair must refuse on
+    # the way in.
+    path = ROOT / "crossed-readings.json"
+    crossed = acting(verb="label", label="kind:development", what="x",
+                     undo="y", act_over=0.9, ask_over=0.7)
+    crossed["thresholds"] = {"yes_over": 0.2, "no_under": 0.5}
+    path.write_text(json.dumps({"crossed": crossed}))
+    try:
+        m.load_registry(path)
+        bad.append(("through load_registry", "a crossed pair loaded"))
+    except ValueError as e:
+        if "yes_over" not in str(e):
+            bad.append(("through load_registry", str(e)))
+    # AND THE COMMITTED REGISTRY LOADS, which is the half a made entry cannot
+    # show: every edge pair this tree ships is in order.
+    try:
+        m.load_registry()
+    except ValueError as e:
+        bad.append(("the committed registry", str(e)))
+    return not bad, bad
+
+
+CASES["the two edges of a band do not cross"] = edges_do_not_cross
 CASES["a reading with no thresholds is at shadow"] = thresholds_or_shadow
 CASES["a reading at act declares what it does and how it is undone"] = act_declares_its_undo
 CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    ("the two edges allowed to cross", "            if hi <= lo:",
+     "            if False:", "the two edges of a band do not cross"),
+    ("the edge check never run at load",
+     "    return check_edges(\n        check_act_bounds(",
+     "    return (\n        check_act_bounds(",
+     "the two edges of a band do not cross"),
+    # --- the five that survived every mutation (pr#474 REVIEW note 4) ---
+    ("settled_of reading only the join's spelling",
+     '    if case.get("settled") is not None:\n        return case["settled"]',
+     "    if False:\n        return None",
+     "settled_of reads both spellings the corpus carries"),
+    ("scored counting a case code settled",
+     '    return (not isinstance(settled_of(case), str) and seen is not None',
+     "    return (True and seen is not None",
+     "scored skips a case code settled, unseen or asked per item"),
+    ("scored counting a per-item case with no word",
+     '            and seen.get("word") is not None and case.get("truth") is not None)',
+     '            and case.get("truth") is not None)',
+     "scored skips a case code settled, unseen or asked per item"),
+    ("an uncertain allowed to act",
+     '    if word == UNCERTAIN:\n        return NOTHING',
+     "    if False:\n        return NOTHING",
+     "an `uncertain` never acts, at any confidence"),
+    ("a stubbed call counted in the ratio",
+     '        if row.get("endpoint") == STUB:\n            stubbed += 1\n            continue',
+     "        if False:\n            pass",
+     "spend_lines leaves a stubbed call out of the ratio"),
+    ("the never-joinable counted as waiting",
+     '            + (f"; {len(unreal)} row(s) never joinable, no `{REAL}` endpoint"\n               if unreal else ""))',
+     "            + \"\")",
+     "waiting_line counts the never-joinable apart"),
+    # --- the shared log, and what may join ---
+    ("a stub allowed to write the shared log",
+     "    if URL_ENV in env:", "    if False:",
+     "a stubbed call never writes the shared log"),
+    ("the endpoint never written on a row",
+     "    return STUB if URL_ENV in (os.environ if env is None else env) else REAL",
+     "    return REAL", "a row says which endpoint answered it"),
+    ("the join taking a row of any endpoint",
+     '        if row.get("endpoint") != REAL:', "        if False:",
+     "a row no real endpoint answered is refused by the join, and named"),
+    # --- one thread, one call, per finding ---
+    ("the per-item reading asked once for the whole state",
+     '        if not per:\n            if name not in settled:',
+     '        if True:\n            if name not in settled:',
+     "every question over one thread goes in one call, one per finding"),
+    ("the item's name never written into the question",
+     '        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))',
+     "        pass",
+     "every question over one thread goes in one call, one per finding"),
+    ("the marker never required",
+     '        if ITEM_MARK not in entry["question"]["instructions"]:',
+     "        if False:", "a per-item question must name its item"),
+    ("a cleared finding sent all the same",
+     "            if item not in cleared:", "            if True:",
+     "a finding the prefilter cleared is never sent"),
+    ("a computed flag handed the wrong answers",
+     '"flag": flag(name, raw) if callable(flag) else flag}',
+     '"flag": flag(name, {}) if callable(flag) else flag}',
+     "a flag the reader computes from the answers reaches the log row"),
+    # --- the thread join ---
+    ("the thread read restated here instead of asked for",
+     "        found, why = reader.bodies_of(repo, number)",
+     '        found, why = [], "read it here instead"',
+     "fetch_thread asks the script that owns the thread read"),
+    ("the thread handed back in the order it arrived",
+     "                         in reader.in_time_order(found)],",
+     "                         in found],",
+     "fetch_thread asks the script that owns the thread read"),
+    ("a later REVIEW read from one channel only",
+     '''    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("at") or "") > at''',
+     '''    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("where") == "comment") and (c.get("at") or "") > at''',
+     "the thread join reads a later REVIEW on the review channel"),
+    ("the later REVIEW never read",
+     '    body = "\\n".join(later)',
+     '    body = ""',
+     "the thread join reads a later REVIEW that raised the finding again"),
+    ("an open thread read as agreement",
+     '        if str(thread.get("state", "")).upper() != "MERGED":',
+     "        if False:",
+     "the thread join waits for the merge where nothing was re-raised"),
+    # --- the store of answers ---
+    ("the store never read",
+     "    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None",
+     "    stored = None",
+     "a second identical ask replays and sends nothing"),
+    ("the store never written",
+     "        cache_write(cache_key(state, questions), out, env, cwd)",
+     "        pass", "a second identical ask replays and sends nothing"),
+    ("the state left out of the key",
+     '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
+     '    return f"-{digest(sent)}-{MODEL}"',
+     "a changed state misses the store"),
+    ("the wording left out of the key",
+     '    sent = request_body(state, questions)["questions"]',
+     '    sent = "one wording for all"',
+     "a changed wording misses the store"),
+    ("the pinned model left out of the key",
+     '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
+     '    return f"{digest(state)}-{digest(sent)}"',
+     "a changed model misses the store"),
+    ("the noise switch ignored in `ask`",
+     "if cache else None", "if True else None",
+     "the noise switch sends every time"),
+    ("the noise switch swallowed by `judge`",
+     "timeout=timeout, log=False, cache=cache)",
+     "timeout=timeout, log=False, cache=True)",
+     "the noise switch sends every time"),
+    ("a hit counted as a call",
+     '        if row.get("cached"):\n'
+     '            hits[who] = hits.get(who, 0) + 1\n'
+     '            continue',
+     "        if False:\n            pass",
+     "report counts calls sent over distinct states"),
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
      "a choice under the floor is unknown"),
     ("the option's probability unread",
@@ -994,8 +1777,22 @@ MUTATIONS = [
      "a choice cut on one option reads that option's probability"),
     ("the no-match option ignored", 'if option == spec["no_match"]:', "if False:",
      "the no-match option is unknown"),
-    ("the noul gap closed", 'if value <= spec["no_under"]:', "if True:",
-     "a noul in the gap is unknown"),
+    ("the noul band closed", 'if value <= spec["no_under"]:', "if True:",
+     "a noul between the two edges is uncertain"),
+    # THE BAND'S MIDDLE IS ITS OWN WORD. Answering `unknown` there is what the
+    # two edges were added to stop: a reader cannot tell a reading that did not
+    # happen from one that happened and reached no word.
+    ("the band's middle answered `unknown` again",
+     '        return UNCERTAIN, (f"{what} {value:.2f} sits in the band between "',
+     '        return UNKNOWN, (f"{what} {value:.2f} sits in the band between "',
+     "a noul between the two edges is uncertain"),
+    ("a choice's upper edge dropped",
+     '    if confidence < spec.get("certain_over", 0.0):', "    if False:",
+     "a choice between the two edges is uncertain"),
+    ("a reading with no cut judged all the same",
+     "    if not any(k in spec for k in VALUE_EDGES + CHOICE_EDGES):",
+     "    if False:",
+     "a reading with no cut records and judges nothing"),
     ("a failure answered instead of unknown",
      "return {qid: Answer(UNKNOWN, None, why) for qid in questions}",
      'return {qid: Answer("yes", None, why) for qid in questions}',
@@ -1087,13 +1884,17 @@ MUTATIONS = [
      '        if entry.get("subject") == BLOCKED_SUBJECT and verb != "label":',
      "        if False:", "a BLOCKED reading at act may only route"),
     ("the bounds never read at load",
-     "    return check_act_bounds(json.loads(path.read_text(encoding=\"utf-8\")))",
-     '    return json.loads(path.read_text(encoding="utf-8"))',
+     "        check_act_bounds(json.loads(path.read_text(encoding=\"utf-8\"))))",
+     '        json.loads(path.read_text(encoding="utf-8")))',
      "a registry file carrying a bad act never loads"),
     ("a skip not logged",
-     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return log_call(',
-     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return "logged to" or log_call(',
+     '"endpoint": NONE_SENT, "skipped": why}\n    return log_call(',
+     '"endpoint": NONE_SENT, "skipped": why}\n    return "logged to" or log_call(',
      "a skipped reading is logged as one JSON line naming why"),
+    ("a skip row claiming the real endpoint answered it",
+     '           "endpoint": NONE_SENT, "skipped": why}',
+     '           "endpoint": endpoint_word(env), "skipped": why}',
+     "a skip row says no endpoint answered it, and the join refuses it"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
      "a log that would not write is reported, not raised"),
@@ -1141,6 +1942,16 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
+def held_to_a_band(jev, case):
+    """Whether this case's runs may set the reading's band. THE ONE READER of
+    that rule, because the run loop and the `--record` history both ask it and
+    the two disagreed: the loop skipped a case code settles while the history
+    still let its value widen the band, so the edge moved on a state production
+    never sends. A no-match case is excepted -- `verb-first`'s is settled too --
+    and `band_of` holds it to no band anyway."""
+    return jev.settled_of(case) is None or case.get("role") == "no-match"
+
+
 # Which band a case is held to is `campaign-jev.band_of`'s, asked and never
 # restated: this suite kept its own reading of it, and the two disagreed exactly
 # where the join wrote a case with no `band`.
@@ -1186,6 +1997,17 @@ def live(record, wording_hash=None):
                   f"makes")
             continue
         cases = jev.read_corpus(name)
+        # A READING WITH NO CASES YET IS SKIPPED AT `shadow` AND SAYS SO. A
+        # reading enters the registry to collect cases until a record labels
+        # them (DECISION 5713929966), so it has no cut and no band; anywhere
+        # else, or with a band declared, having no cases is the failure it
+        # always was.
+        if not cases and entry["tier"] == jev.SHADOW \
+                and not (entry.get("thresholds") or {}) \
+                and not (entry.get("bands") or {}).get("declared"):
+            print(f"  {name}: skipped, no cases yet -- it enters at "
+                  f"`{jev.SHADOW}` with no cut, to collect them")
+            continue
         check(f"live: {name} has cases", bool(cases), len(cases))
         spec = jev.question_of(entry)
         wording = jev.wording(entry)
@@ -1203,9 +2025,13 @@ def live(record, wording_hash=None):
         q = {name: spec}
         declared = (entry.get("bands") or {}).get("declared") or {}
         seen, outside, wrong, nomatch, flips = {}, [], [], [], []
+        settled_here = []
         for c in cases:
+            # THE STORE IS OFF HERE, as it is in `relive`: a band is what the
+            # same state answers across runs, and a replayed answer would
+            # report a drift of zero (DECISION 5716060001).
             r = jev.ask("campaign-jev-test.py --live", c["id"],
-                        c.get("state") or {}, q, log=False)
+                        c.get("state") or {}, q, log=False, cache=False)
             model = r.model or model
             a = r.answers[name]
             value = jev.band_value(entry, a.raw)
@@ -1216,6 +2042,21 @@ def live(record, wording_hash=None):
                 c.setdefault("seen", []).append(
                     {"model": r.model, "wording": wording, "at": at,
                      "word": a.word, "raw": a.raw})
+            # A CASE CODE SETTLED IS HELD TO NO BAND AND SCORED AGAINST
+            # NOTHING. A band is what the states production SENDS come back at,
+            # and the prefilter's whole job is that this one is never sent --
+            # `report` already counts such a case as code's rather than as one
+            # Jev got wrong (DECISION 5715993782). It is still ASKED and still
+            # printed, because what the model would have said about a state code
+            # settles is the evidence that the prefilter is worth having. Found
+            # by `work-kind-0873f14b0769`, an issue whose `kind:` label settles
+            # it, which came back `development` at 0.43 against a truth of
+            # `research` and was counted twice over as this reading's failure.
+            # A no-match case is excepted and stays below: `verb-first`'s is
+            # settled too, and where it lands is the whole point of keeping it.
+            if not held_to_a_band(jev, c):
+                settled_here.append((c["id"], a.word, value))
+                continue
             key = jev.band_of(entry, c)[0]
             if c.get("role") == "no-match":
                 nomatch.append((c["id"], a.word, value))
@@ -1237,6 +2078,10 @@ def live(record, wording_hash=None):
         print(f"  {name} seen: "
               + "  ".join(f"{k} {band(v)}" for k, v in sorted(seen.items()))
               + f"  declared {declared}")
+        if settled_here:
+            print(f"  {name}: {len(settled_here)} case(s) code settles, asked "
+                  f"and recorded, held to no band -- "
+                  + ", ".join(f"{i} {w} {v}" for i, w, v in settled_here[:6]))
         check(f"live: every {name} case landed in its declared band",
               not outside, outside)
         check(f"live: every confident {name} answer names the truth",
@@ -1282,16 +2127,23 @@ def live(record, wording_hash=None):
                       cuts["no_under"] <= cuts["yes_over"],
                       (cuts.get("no_under"), cuts.get("yes_over")))
             else:
-                check(f"live: {name}'s floor sits above the whole declared "
+                # THE SAME RULE, WITH THE UPPER EDGE NAMED. A `choice` cut on a
+                # lone `floor` had one number doing both jobs, and it sat inside
+                # the measured `confident` band; `certain_over` is that band's
+                # own lower edge and what falls between the two is `uncertain`.
+                top = cuts.get("certain_over", cuts.get("floor"))
+                check(f"live: {name}'s lower edge sits above the whole declared "
                       f"`unsure` band",
                       bool(declared.get("unsure"))
                       and declared["unsure"][1] < cuts["floor"],
                       (declared.get("unsure"), cuts.get("floor")))
-                check(f"live: {name}'s floor sits below the whole declared "
+                check(f"live: {name}'s upper edge sits below the whole declared "
                       f"`confident` band",
                       bool(declared.get("confident"))
-                      and cuts["floor"] < declared["confident"][0],
-                      (cuts.get("floor"), declared.get("confident")))
+                      and top < declared["confident"][0],
+                      (top, declared.get("confident")))
+                check(f"live: {name}'s two edges do not cross",
+                      cuts["floor"] <= top, (cuts.get("floor"), top))
         if record and not wording_hash:
             # THE BAND IS THE WHOLE RECORDED HISTORY UNDER THIS WORDING, not
             # this run alone: three runs are what a band is made of, and a
@@ -1301,6 +2153,8 @@ def live(record, wording_hash=None):
             # this run is already in it.
             history = {}
             for c in cases:
+                if not held_to_a_band(jev, c):
+                    continue
                 key = jev.band_of(entry, c)[0]
                 for s in c.get("seen") or []:
                     value = jev.band_value(entry, s.get("raw"))

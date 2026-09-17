@@ -146,7 +146,7 @@ def questions(entry):
 def ask_all(entry, cut, sha, subject, jev, env=None):
     """Ask every finding with a site at once; log a skip for every other."""
     asks = []
-    for n, (_, masked) in enumerate(cut, 1):
+    for n, (_word, masked, _ident) in enumerate(cut, 1):
         site, got = site_slice(sha, masked)
         if site is None:
             jev.skip(READER, f"{subject} f{n}", got, env)

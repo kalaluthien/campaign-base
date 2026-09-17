@@ -3,7 +3,7 @@ name: using-herdr
 description: Use when a session must act on a terminal pane other than its own - start or prompt an agent in one, run a command there, read its screen, wait on its state, list who is live - or when the owner names Herdr; not for work this session can do in its own shell or hand to an in-process subagent.
 ---
 
-# Driving herdr
+# Using herdr
 
 This page holds the words and the map. What a command does and where it breaks
 are the two references, so a herdr upgrade or a new finding changes a

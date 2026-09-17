@@ -1,43 +1,62 @@
 #!/usr/bin/env python3
-"""Print where a docstring's claim about a spec pred reads contradicted, and refuse nothing.
+"""Print where prose's claim about a spec pred reads contradicted, and refuse nothing.
 
-THE READING `docstring-claims` in scripts/jev/readings.json, asked through
-scripts/campaign-jev.py at `pre-commit` beside check-sdlc-tie.py. The entry
-holds the question, its criteria, the state's fields and how they are cut, the
-thresholds and the tier; this reads them and writes none of them. How to ask
-Jev well in general is the `asking-jev` skill's `references/`, not this file's.
+THE READINGS `docstring-claims` and `reference-claims` in
+scripts/jev/readings.json, asked through scripts/campaign-jev.py at
+`pre-commit` beside check-sdlc-tie.py. They share one claim cut, one
+`pred.text` builder and one report; they differ only in where a paragraph comes
+from. Each entry holds its question, criteria, state fields and how they are
+cut, prefilter, thresholds and tier; this reads them and writes none of them.
+How to ask Jev well in general is the `asking-jev` skill's `references/`, not
+this file's.
 
 WHAT IT READS, from the INDEX (`git diff --cached` and `git cat-file`), so what
 is judged is what the commit holds:
 
+  sources    docstring-claims: each blank-line paragraph of a Python docstring
+             in a scripts/ directory (check-tree-shape.py's R6 membership,
+             imported). reference-claims: each paragraph, list item or table
+             row -- the row under its header -- of AGENTS.md or a
+             .claude/skills/*/references/*.md, fenced code left out
+  cited      a pred, fun or assert name in backticks, declared once under
+             spec/; a name the entry's `prefilter.plain_name` matches counts
+             only in a sentence its `prefilter.anchored_by` matches or holding
+             another cited name that is not plain
   touched    a staged hunk overlapping a pred, fun or assert under spec/ --
-             its comment included -- or a paragraph of a Python docstring in a
-             scripts/ directory (check-tree-shape.py's R6 membership, imported)
-             that cites one by backticked name
-  asked      every touched paragraph, and every paragraph in the tree citing a
+             its comment included -- or a source paragraph citing one
+  asked      every touched paragraph, and every source paragraph citing a
              touched pred: one state per paragraph and name, one question per
              claim cut from it, all in one call
   skipped    a name declared twice under spec/, counted and named; a commit
              touching neither asks nothing and says so
 
-THE BRANCH is the caller's, on the entry's thresholds over P(contradicts):
-`yes` contradicted, `unknown` in the gap or failed, `no` clear. The entry's
+THE BRANCH is the caller's, on each entry's thresholds over P(contradicts):
+`yes` contradicted, `unknown` in the gap or failed, `no` clear. Each entry's
 tier decides what is printed: at `advise` each contradicted or unknown claim
-with its value or reason; at `shadow` the counts alone. Every call is logged by the caller, and the log line's
-fate is printed. THE EXIT STATUS IS 0 on every path, a failure of this script
-included: the tier is `shadow`, and a judgment never refuses a commit.
+with its value or reason; at `shadow` the counts alone. Every call is logged by
+the caller, and the log line's fate is printed. THE EXIT STATUS IS 0 on every
+path, a failure of this script included: a judgment here never refuses a
+commit.
 
-THE CASES are scripts/jev/corpus/docstring-claims.jsonl, each with the values
-it was seen at. Where this reading is known to be wrong, as seen at jev-1.13.0
-over three runs on 2026-09-17, highest P(contradicts) per paragraph:
+THE CASES are scripts/jev/corpus/<reading>.jsonl, each with the values it was
+seen at. Where a reading is known to be wrong, as seen at jev-1.13.0 over three
+runs on 2026-09-17, highest P(contradicts) per paragraph:
 
+  docstring-claims
   false flag  check-commit-claim.py, claimBeforeCommit, 0.40-0.55
   false flag  campaign-claim.py, AttributionIsSound, 0.61-0.66
   missed      a flipped claim whose words the cut leaves apart from the name:
               everyCodeHasScenario 0.13-0.17, modelSwitch 0.14-0.15
   in the gap  a before/after swap, tieDiscipline, 0.46-0.51
 
-Usage: scripts/check-docstring-claims.py --staged
+  reference-claims
+  false flag  landing-a-change.md, removeDiscipline, 0.51-0.62: the claim
+              holds `commitCheck`'s half of the sentence too
+  false flag  reviewing.md, review, 0.50-0.51
+  missed      flips: commitCheck 0.32-0.35; agentRelease 0.41-0.50 and
+              FeaturelessKeeps 0.48-0.50, both on the edge of the gap
+
+Usage: scripts/check-cited-claims.py --staged
 """
 import ast
 import importlib.machinery
@@ -50,9 +69,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "docstring-claims"
+READINGS = ("docstring-claims", "reference-claims")
 REGISTRY = HERE / "jev" / "readings.json"
-READER = "check-docstring-claims.py --staged"
+READER = "check-cited-claims.py --staged"
+REFERENCE = re.compile(r"AGENTS\.md|\.claude/skills/[^/]+/references/.+\.md")
 
 DECL = re.compile(r"^\s*(?:private\s+)?(pred|fun|assert)\s+(\w+)")
 SIG = re.compile(r"^\s*(?:(?:abstract|one|lone|some|private|var)\s+)*sig\s")
@@ -206,6 +226,62 @@ def paragraphs(text):
     return out
 
 
+def units(text):
+    """[(first line, last line, text)] of every markdown paragraph, list item
+    and table row, 1-based; a row carries its header line above it, and fenced
+    code and headings are no unit."""
+    lines, out = text.split("\n"), []
+    fence, start, header = False, None, None
+
+    def close(k):
+        nonlocal start
+        if start is not None:
+            body = "\n".join(lines[start:k])
+            if header is not None and lines[start].lstrip().startswith("|"):
+                body = f"{header}\n{body}"
+            out.append((start + 1, k, body))
+        start = None
+    for k, line in enumerate(lines + [""]):
+        s = line.strip()
+        if s.startswith("```"):
+            close(k)
+            fence = not fence
+        elif fence:
+            continue
+        elif not s or s.startswith("#"):
+            close(k)
+            header = None
+        elif s.startswith("|"):
+            close(k)
+            if header is None:
+                header = line
+            elif not re.fullmatch(r"\|[\s:|-]+\|", s):
+                start = k
+        elif re.match(r"([-*]|\d+\.)\s", s):
+            close(k)
+            start = k
+        elif start is None:
+            start = k
+    return out
+
+
+def cited(paragraph, decls, prefilter):
+    """The names `paragraph` cites: backticked, declared under spec/, and a
+    plain name only in a sentence the entry's prefilter anchors."""
+    names = [n for n in dict.fromkeys(BACKTICKED.findall(paragraph)) if n in decls]
+    plain = prefilter.get("plain_name")
+    if not plain:
+        return names
+    sentences = SENTENCE.split(" ".join(paragraph.split()))
+
+    def anchored(name):
+        return any(re.search(prefilter["anchored_by"], s)
+                   or any(t != name and t in decls and not re.fullmatch(plain, t)
+                          for t in BACKTICKED.findall(s))
+                   for s in sentences if f"`{name}`" in s)
+    return [n for n in names if not re.fullmatch(plain, n) or anchored(n)]
+
+
 def claims(paragraph, name, cut):
     """The claims about `name`: its sentences, split at the entry's
     separators, a definition following the name keeping the name before it."""
@@ -247,20 +323,21 @@ def staged_hunks(diff):
     return out
 
 
-def targets(hunks, texts, decls, in_scripts_dir):
+def targets(hunks, texts, decls, cut, prefilter):
     """The (path, first line, paragraph, name) states to ask, the pred names
-    touched, and the cited names skipped as declared twice."""
+    touched, and the cited names skipped as declared twice; `cut` gives a
+    source path's paragraphs, or None for a path that is not a source."""
     touched = {n for n, where in decls.items() if len(where) == 1
                for path, first, last in where
                if overlaps(hunks.get(path, []), first + 1, last + 1)}
     asked, skipped = {}, set()
     for path, text in texts.items():
-        if not (path.endswith(".py") and in_scripts_dir(path)):
+        if not (paragraphs_of := cut(path)):
             continue
-        for first, last, para in paragraphs(text):
+        for first, last, para in paragraphs_of(text):
             mine = overlaps(hunks.get(path, []), first, last)
-            for name in dict.fromkeys(BACKTICKED.findall(para)):
-                if name not in decls or not (mine or name in touched):
+            for name in cited(para, decls, prefilter):
+                if not (mine or name in touched):
                     continue
                 if len(decls[name]) > 1:
                     skipped.add(name)
@@ -347,47 +424,60 @@ def report(results, entry, out):
 
 def main(argv, out=sys.stdout, env=None):
     if argv != ["--staged"]:
-        print("Usage: scripts/check-docstring-claims.py --staged", file=sys.stderr)
+        print("Usage: scripts/check-cited-claims.py --staged", file=sys.stderr)
         return 2
     try:
-        entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
+        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
         # `--no-prefix` PINNED: a user's `diff.noprefix` changes what `+++`
         # carries, and a parser reading `b/` found no file at all.
         hunks = staged_hunks(git("diff", "--cached", "-U0", "-M", "--no-color",
                                  "--no-ext-diff", "--no-prefix"))
         in_scripts_dir = load_sibling("check-tree-shape.py").in_scripts_dir
-        relevant = [p for p in hunks if (p.startswith("spec/") and p.endswith(".als"))
-                    or (p.endswith(".py") and in_scripts_dir(p))]
+        sources = {
+            "docstring-claims": lambda p: (
+                paragraphs if p.endswith(".py") and in_scripts_dir(p) else None),
+            "reference-claims": lambda p: (
+                units if REFERENCE.fullmatch(p) else None),
+        }
+        is_spec = lambda p: p.startswith("spec/") and p.endswith(".als")  # noqa: E731
+        wanted = lambda p: is_spec(p) or any(  # noqa: E731
+            sources[r](p) for r in READINGS if r in registry)
+        relevant = [p for p in hunks if wanted(p)]
         if not relevant:
-            print(f"check-docstring-claims: {len(hunks)} staged file(s), none a "
-                  f"spec/ module or a script; nothing asked", file=out)
+            print(f"check-cited-claims: {len(hunks)} staged file(s), none a "
+                  f"spec/ module or a source; nothing asked", file=out)
             return 0
-        paths = [p for p in git("ls-files", "-z").split("\0")
-                 if (p.startswith("spec/") and p.endswith(".als"))
-                 or (p.endswith(".py") and in_scripts_dir(p))]
-        texts = index_texts(paths)
-        spec = {p: t for p, t in texts.items() if p.endswith(".als")}
+        texts = index_texts([p for p in git("ls-files", "-z").split("\0")
+                             if wanted(p)])
+        spec = {p: t for p, t in texts.items() if is_spec(p)}
         decls, fields = declarations(spec)
-        found, touched, skipped = targets(hunks, texts, decls, in_scripts_dir)
-        parts = entry["state"]["pred"]["text"]
-        states = [(f"{p}:{f} `{n}`", para, n,
-                   pred_text(n, parts, decls, fields, spec))
-                  for p, f, para, n in found]
-        print(f"check-docstring-claims: {len(relevant)} staged spec/ module(s) "
-              f"or script(s); {len(touched)} pred(s) touched; {len(states)} "
-              f"paragraph citation(s) asked"
-              + (f"; skipped as declared twice: {', '.join(sorted(skipped))}"
-                 if skipped else ""), file=out)
-        if not states:
-            return 0
-        jev = load_sibling("campaign-jev.py")
-        report(ask_all(entry, states, jev, env), entry, out)
+        jev = None
+        for reading in READINGS:
+            if reading not in registry:
+                print(f"check-cited-claims: no entry `{reading}` in the "
+                      f"registry; not asked", file=out)
+                continue
+            entry = registry[reading]
+            found, touched, skipped = targets(hunks, texts, decls,
+                                              sources[reading],
+                                              entry.get("prefilter", {}))
+            parts = entry["state"]["pred"]["text"]
+            states = [(f"{p}:{f} `{n}`", para, n,
+                       pred_text(n, parts, decls, fields, spec))
+                      for p, f, para, n in found]
+            print(f"check-cited-claims `{reading}`: {len(relevant)} staged "
+                  f"file(s) read; {len(touched)} pred(s) touched; "
+                  f"{len(states)} paragraph citation(s) asked"
+                  + (f"; skipped as declared twice: {', '.join(sorted(skipped))}"
+                     if skipped else ""), file=out)
+            if states:
+                jev = jev or load_sibling("campaign-jev.py")
+                report(ask_all(entry, states, jev, env), entry, out)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
-        print(f"check-docstring-claims: could not read the commit "
+        print(f"check-cited-claims: could not read the commit "
               f"({e.__class__.__name__}: {e}); nothing asked, exit status "
               f"unmoved", file=out)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

@@ -215,7 +215,7 @@ $marker Re-run it after changing this file.
 #
 # The line below is the one list of what this hook runs; campaign-primitives
 # reads it too. Add a guard by adding it here.
-# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py check-sdlc-tie.py check-docstring-claims.py alloy-check.py check-commit-claim.py
+# runs: check-rule-readers.py check-tree-shape.py check-cross-references.py check-sdlc-tie.py check-cited-claims.py alloy-check.py check-commit-claim.py
 set -e
 # \`cmd && other\` under \`set -e\` exits 1 when the test is false, so a machine
 # without the shared guard would have every commit blocked with no message.

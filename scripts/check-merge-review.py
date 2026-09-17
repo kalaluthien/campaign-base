@@ -393,6 +393,94 @@ def prefilter_clear(report, finding_id):
     return False
 
 
+# WHAT READS AS A COMMAND at the head of a backticked span. A check is run in
+# this tree as a script of it or through one of these verbs; a span opening
+# with neither is prose in backticks -- a field name, a branch, a word the
+# writer wanted set apart.
+COMMAND_VERBS = ("uv", "python", "python3", "pytest", "ruff", "git", "gh",
+                 "make", "npm", "node", "bash", "sh", "alloy", "alloy-check")
+# A fenced block or a backticked span, whichever the REPORT used. The fence is
+# tried first, so a block is not cut at the first single backtick inside it.
+SPAN = re.compile(r"```+(.+?)```+|`([^`\n]+)`", re.S)
+# `campaign-installed.py reach`'s own line, `reached <slug> at <path>: ...`,
+# which AGENTS.md § Installed repositories requires the REPORT of a merge to
+# quote. It is the one check quoted bare rather than in backticks, so it is
+# matched on its own shape.
+REACHED = re.compile(r"(?m)^\W{0,4}reached\s+\S+\s+at\s+\S")
+
+
+def quotes_a_check(report):
+    """(does this REPORT quote something that could have failed, what was read).
+
+    ONE CALCULATION and the whole of what "quotes a command" means for
+    `unverified-done`: a backticked span or fenced block whose FIRST WORD reads
+    as a command -- a path this tree runs, `.py` or `.sh`, or one of
+    `COMMAND_VERBS` -- or a line of the shape `campaign-installed.py reach`
+    prints. No request, no file and no clock, so every branch has a case that
+    spends nothing.
+
+    THE FIRST WORD AND NOT ANY WORD. `the ceiling is a constant now` inside
+    backticks is prose, and a span matched on a verb anywhere in it would read
+    `git` out of `the git common dir` and call that REPORT checked. A fenced
+    block's language tag IS a first word and is one of the verbs, which is the
+    right answer for the block under it."""
+    for fenced, inline in SPAN.findall(report or ""):
+        span = (fenced or inline).strip()
+        for line in span.splitlines():
+            word = line.strip().lstrip("$").strip().split(" ")[0]
+            if not word:
+                continue
+            if word.endswith((".py", ".sh")) or word.split("/")[-1] in COMMAND_VERBS:
+                return True, f"a quoted command opening `{word}`"
+    found = REACHED.search(report or "")
+    if found:
+        return True, f"an install's line, `{found.group(0).strip()[:40]}`"
+    return False, ("no backticked span opens with a command and no "
+                   "`reached ... at ...` line")
+
+
+# THE WORDS CODE SETTLES `unverified-done` WITH ARE THE READING'S OWN TWO, as
+# `C-report-disposes-finding`'s prefilter settles with `disposed`, one of the
+# two words its join labels a case with. A third word would be a case
+# `band_of` could hold to no band and a count nobody could read against the
+# asked ones.
+def unverified_lint(report):
+    """({reading: word} for `judge`'s `settled`, the sentence saying why).
+
+    CODE FIRST, AND WHAT IT SETTLES IS NEVER SENT (rule-check#455 DECISION
+    5721058917, step 4). Three branches:
+
+    NO REPORT AT ALL settles BOTH readings `no`. Nothing claims anything, so
+    no done claim is unverified; and there is no prose, so none of it is
+    addressed to whoever judges it. Neither question is asked.
+
+    A REPORT THAT PINS NO SHA settles `unverified-done` `yes`. A check not
+    tied to a revision is a check nothing can be held to, which is why
+    AGENTS.md § The four messages calls such a REPORT unactionable: verdicts
+    and pushes race. The sha is read with this file's own `SHA`, the pattern
+    `names()` reads, and no second reader of it is written here.
+
+    A REPORT THAT QUOTES NO COMMAND AND NO `reach` LINE settles it `yes` too:
+    there is nothing beside the claim that could have failed.
+
+    THE ADDRESS `noul` IS STILL ASKED on both `yes` branches, because the
+    prose it reads is there -- only the empty round settles it. It rides in
+    the same one call either way."""
+    text = (report or "").strip()
+    if not text:
+        return ({"unverified-done": "no", "report-addresses-judge": "no"},
+                "the round carries no REPORT: nothing claims anything, and "
+                "there is no prose to be addressed to anybody")
+    if not SHA.search(text):
+        return ({"unverified-done": "yes"},
+                "the REPORT pins no sha, so no check it names is tied to a "
+                "revision anything can be held to")
+    quoted, why = quotes_a_check(text)
+    if not quoted:
+        return {"unverified-done": "yes"}, f"the REPORT pins a sha and {why}"
+    return {}, f"asked: the REPORT pins a sha and quotes {why}"
+
+
 def in_time_order(found):
     """`bodies_of`'s rows, oldest first. IT IS NOT THE ORDER THEY ARRIVE IN:
     that is every issue comment and then every pull-request review, so a REVIEW
@@ -482,9 +570,10 @@ def read_thread(repo, pr, found, pattern):
         cleared = {item: "disposed"
                    for item in state["findings"]
                    if prefilter_clear(state["report"], item)}
+        lint, _why = unverified_lint(state["report"])
         jev.judge(THREAD_GROUP, state, read=f"{repo}#{pr} thread",
                   reader="check-merge-review.py",
-                  settled={"C-report-disposes-finding": cleared},
+                  settled={"C-report-disposes-finding": cleared, **lint},
                   key={"repo": repo, "pull_request": pr,
                        **{k: v for k, v in ids.items() if v is not None}},
                   flag=flag_of)

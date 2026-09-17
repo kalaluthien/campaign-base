@@ -618,10 +618,15 @@ def main() -> int:
                       or {}).get("findings") or {}) == ["F1", "F2"], rows)
         # A KEYLESS RUN ANSWERS `unknown` BEFORE ANY SOCKET IS OPENED, which is
         # what CI is: the state is built, the rows land, nothing is asked.
+        # A ROW CODE SETTLED IS EXEMPT FROM THE SECOND HALF: it was never asked,
+        # so it has no reason to name a key that was never read. This fixture's
+        # REPORT quotes no command, so `unverified-done` is one of those.
+        asked_rows = [r for r in by.values() if r.get("settled") != "yes"]
         check("a keyless run asks nothing and says so",
               all(r.get("answered") == "" for r in by.values())
+              and len(asked_rows) == len(by) - 1
               and all("TYPESAFE_API_KEY" in (r.get("why") or "")
-                      for r in by.values()), rows)
+                      for r in asked_rows), rows)
         check("...and costs the gate no timeout",
               all((r.get("latency") or 0) < 1.0 for r in by.values()),
               [r.get("latency") for r in by.values()])
@@ -644,7 +649,11 @@ def main() -> int:
                         CAMPAIGN_JEV_URL=JEV_COUNTED, HOME=str(emptyhome),
                         TYPESAFE_API_KEY="stub-key", **kw)
 
-        fake_gh(bindir, comments=[comment(review), comment(report)])
+        # A REPORT THE LINT LEAVES FOR JEV -- it pins a sha AND quotes a
+        # command -- so all four readings ride and the count is over the whole
+        # group. `report` itself quotes none and is settled by code below.
+        checked = report + "\n`scripts/campaign-jev-test.py` 227 pass 0 fail\n"
+        fake_gh(bindir, comments=[comment(review), comment(checked)])
         word, code, _text = counted_run("274", "--repo", "o/r")
         sent = POSTS["questions"][0] if POSTS["questions"] else []
         check("one gate run sends one request whatever the group holds",
@@ -657,17 +666,74 @@ def main() -> int:
         # THE CONTROL: a run over a DIFFERENT thread, which the store cannot
         # answer, must move the counter -- otherwise the 1 above is a stub
         # nothing reached rather than an invariant.
-        other = report.replace("fix round 1", "fix round 2")
+        other = checked.replace("fix round 1", "fix round 2")
         fake_gh(bindir, comments=[comment(review), comment(other)])
         counted_run("274", "--repo", "o/r")
         first = POSTS["count"]
-        fake_gh(bindir, comments=[comment(review), comment(report)])
+        fake_gh(bindir, comments=[comment(review), comment(checked)])
         POSTS["questions"] = []
         call(bindir, "274", "--repo", "o/r", CAMPAIGN_JEV_LOG=str(jevlog),
              CAMPAIGN_JEV_URL=JEV_COUNTED, HOME=str(emptyhome),
              TYPESAFE_API_KEY="stub-key")
         check("...and the control proves the counter counts",
               first == 1 and POSTS["count"] == 2, (first, POSTS["count"]))
+
+        # ---- lint first, in code -------------------------------------------
+        # WHAT CODE ANSWERS IS NEVER SENT, so each branch is read twice: the
+        # word on the log row, and the question ids the endpoint was actually
+        # given. The CONTROL for all three is `checked` above, which pins a sha
+        # AND quotes a command and is asked.
+        def linted(body):
+            """(the settled word per reading, the question ids posted)."""
+            fake_gh(bindir, comments=[comment(review), comment(body)])
+            counted_run("274", "--repo", "o/r")
+            rows = [json.loads(ln) for ln in jevlog.read_text().splitlines()
+                    if ln.strip()]
+            got = {r["reading"]: r.get("settled") for r in rows
+                   if r.get("reading")}
+            return got, (POSTS["questions"][0] if POSTS["questions"] else [])
+
+        # THE NO-SHA FIXTURE QUOTES A COMMAND, so only the sha branch can
+        # settle it: written without one it is settled by the third branch too
+        # and the case passes with the sha branch deleted -- which it did.
+        no_sha = checked.replace(" at " + HEAD[:7], "")
+        words, asked = linted(no_sha)
+        check("a REPORT that pins no sha is code's to answer, not Jev's",
+              words.get("unverified-done") == "yes"
+              and "unverified-done" not in asked, (words, asked))
+        words, asked = linted(report)
+        check("a REPORT quoting no command and no reach line is code's too",
+              words.get("unverified-done") == "yes"
+              and "unverified-done" not in asked, (words, asked))
+        # AND THE ADDRESS IS STILL ASKED on both `yes` branches: the prose it
+        # reads is there, and only the empty round settles it.
+        check("...and its address noul is still asked, since the prose is there",
+              words.get("report-addresses-judge") is None
+              and "report-addresses-judge" in asked, (words, asked))
+        words, asked = linted(
+            report + "\n`reached campaign-base at /x: HEAD 8ca2609 contains "
+                     "8ca2609; apply ok`\n")
+        check("a REPORT quoting only an install's reach line is asked",
+              words.get("unverified-done") is None
+              and "unverified-done" in asked, (words, asked))
+        words, asked = linted(
+            report + "\n`the ceiling is a constant now`\n")
+        check("...and a backticked span that is prose is not a command",
+              words.get("unverified-done") == "yes"
+              and "unverified-done" not in asked, (words, asked))
+        fake_gh(bindir, comments=[comment(review)])
+        counted_run("274", "--repo", "o/r")
+        rows = [json.loads(ln) for ln in jevlog.read_text().splitlines()
+                if ln.strip()]
+        words = {r["reading"]: r.get("settled") for r in rows
+                 if r.get("reading")}
+        asked = POSTS["questions"][0] if POSTS["questions"] else []
+        check("a round with no REPORT settles both new readings `no`",
+              words.get("unverified-done") == "no"
+              and words.get("report-addresses-judge") == "no", words)
+        check("...and asks neither of them",
+              not [q for q in asked
+                   if q in ("unverified-done", "report-addresses-judge")], asked)
 
         # A THREAD WITH NO REPORT AFTER ITS REVIEW HAS NO ROUND TO JUDGE, and
         # the reading still logs: a call that asked nothing is a fact about the

@@ -37,17 +37,24 @@ printed, since the guard does not read this process's output.
 THE EXIT STATUS IS 0 on every path.
 
 THE CASES are scripts/jev/corpus/finding-site.jsonl. Where this reading is
-known to be wrong, as seen at jev-1.13.0 over three runs on 2026-09-17
-(kalaluthien/campaign-base#458 R4): over 122 findings whose fix commit
-changed their site, the same finding against the slice at the fix read
-P(contradicts) above its own reviewed slice 95-102 times, where token overlap
-did 28; but at the threshold that flags every fixed slice (0.02-0.03), 115-121
-of the 122 reviewed slices are flagged too. Of 30 of those fixes checked by
-hand, 26 removed what the finding named, and they read P(contradicts) 0.05 to
-at most 7 over 0.5, so the overlap is the reading's and not the history's.
-A finding whose evidence is a probe -- a mutation that stayed green, a command
-no verdict moved -- reads `supports` from a slice that cannot show it. The
-enclosing function as the slice did no better.
+known to be wrong, as seen at jev-1.13.0 on 2026-09-17
+(kalaluthien/campaign-base#458 R4), over 122 findings whose fix commit changed
+their site, each asked against the slice at the reviewed sha and at the fix,
+three runs:
+
+  order      the fix read P(contradicts) above the reviewed slice in 95-102
+             of 122 pairs; token overlap did in 28
+  filter     none: the threshold that flags every fix (0.02-0.03) flags
+             115-121 of the 122 reviewed slices too
+  truth      of 30 fixes checked by hand, 26 removed what the finding named;
+             those read P(contradicts) from 0.05, and 7 of 26 over 0.5
+  probes     a finding whose evidence is a probe -- a mutation that stayed
+             green, a command no verdict moved -- reads `supports` from a
+             slice that cannot show it
+  slices     the enclosing function instead did no better (77-87 of 122 in
+             order), and neither did a `choice` of the block first, with
+             `none` and a confidence floor, then the claim against the block
+             picked (one run: 68 of 101 pairs in order)
 
 Usage: scripts/check-finding-site.py <pr> [<repo>] < review
 """

@@ -965,7 +965,13 @@ def shape_findings(kind, title, body, want_plan, names=()):
         return [f"it carries the `{CAMPAIGN_LABEL}` label AND a parent. That is "
                 f"not a kind: no reader can say whether it is a campaign filed "
                 f"under a parent or a sub-issue wearing the label. Remove one."]
-    if len(title) > TITLE_CEILING:
+    # AN EMPTY TITLE IS CODE'S OWN REFUSAL, and it is stated here so that the
+    # `verb-first` reading can be settled by it rather than asked: a `noul` has
+    # no no-match option, so a state with no title at all comes back a confident
+    # `no` that says nothing about a title nobody wrote (DECISION 5715993782).
+    if not title.strip():
+        out.append("the title is empty, so it names no mission to carry out")
+    elif len(title) > TITLE_CEILING:
         out.append(f"the title is {len(title)} characters, over {TITLE_CEILING}")
     if len(body) > BODY_CEILING:
         out.append(f"the body is {len(body)} characters, over {BODY_CEILING}. "
@@ -1014,7 +1020,8 @@ def issue_shape(repo, number, timeout=None):
             (data.get("parent") or {}).get("number"), None)
 
 
-def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
+def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True,
+                   settled_verb=None):
     """The lines `check` prints for one reading. A calculation, so every branch
     -- warned, read, unknown, uncertain, suggested, settled -- has a case that
     spends no request.
@@ -1030,10 +1037,15 @@ def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
     meant to cost."""
     out = []
     verb = verdicts[VERB_FIRST]
+    # THE PREFILTER SAYS SO, as the `kind:` label's does below: a line the
+    # model never saw must not read as a second opinion agreeing with code.
+    if settled_verb:
+        out.append(f"  verb-first  `{settled_verb}`, settled by code: the title "
+                   f"is empty, which `check` refuses above, so nothing was asked")
     # AN `unknown` IS ALWAYS REPORTED, whatever the tier asks for a decided
     # answer: it is this reading's own failure and its reason, not advice the
     # tier is rationing.
-    if verb.word == "unknown":
+    elif verb.word == "unknown":
         out.append(f"  verb-first  unknown: {verb.why}")
     # AN `uncertain` IS PRINTED AS THAT WORD AND WARNS NOTHING (DECISION
     # 5715993782). It is an answer that landed between the two measured edges,
@@ -1097,6 +1109,16 @@ def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
     # that verdict, so it must not cost a worker its claim either. `judge`
     # DOES raise on a state field that is missing or extra, which is this
     # caller's own bug and lands here rather than in a reader's face.
+    # THE PREFILTER COMES FIRST AND THE SETTLED READING IS NEVER SENT. The
+    # `kind:` label settles `work-kind`; an empty or whitespace-only title
+    # settles `verb-first` as `no`, since that is `check`'s own refusal two
+    # findings up and a `noul` has no no-match option to answer it with.
+    settled_verb = "no" if not title.strip() else None
+    settled = {}
+    if settled_kind:
+        settled[WORK_KIND] = settled_kind
+    if settled_verb:
+        settled[VERB_FIRST] = settled_verb
     try:
         jev = load(Path(__file__).resolve().parent / "campaign-jev.py",
                    "campaign_jev")
@@ -1104,8 +1126,7 @@ def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
                            read=f"{repo}#{number}",
                            reader="campaign-tracker.py check",
                            key={"repo": repo, "issue": number},
-                           settled=({WORK_KIND: settled_kind}
-                                    if settled_kind else None))
+                           settled=settled or None)
     except Exception as e:  # noqa: BLE001 -- a reading that did not happen
         return [f"  judgments not read: campaign-jev.py raised where it "
                 f"promises not to ({e.__class__.__name__}: {e})"]
@@ -1121,7 +1142,7 @@ def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
                 f"{', '.join(sorted(judged.verdicts)) or '<nothing>'}, and "
                 f"this reads {', '.join(missing)}: unknown"]
     return judgment_lines(judged.verdicts, judged.logged, judged.model,
-                          settled_kind, show_kind)
+                          settled_kind, show_kind, settled_verb)
 
 
 def cmd_check(args):

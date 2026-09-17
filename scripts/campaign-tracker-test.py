@@ -918,6 +918,21 @@ def main():
         check("a title Jev reads as verb-first is printed and warned about by "
               "nothing", r.returncode == 0 and "verb-first  yes" in r.stdout
               and "imperative verb" not in r.stdout)
+        # THE PREFILTER COMES FIRST AND WHAT IT SETTLES IS NEVER SENT. An
+        # empty title is `check`'s own refusal, and a `noul` has no no-match
+        # option to answer one with -- the corpus's `verb-first-no-title` case
+        # came back a confident `no` at 0.04 about a title nobody wrote
+        # (DECISION 5715993782). The stub is a WORKING one here, so a call that
+        # was made would be visible as a `yes`.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, title="   ", jev=jev_answer(noul=0.95)))
+        check("an empty title settles verb-first in code and asks nothing",
+              "verb-first  `no`, settled by code" in r.stdout
+              and "verb-first  yes" not in r.stdout, r.stdout)
+        check("...and `check` refuses the empty title in its own findings",
+              "the title is empty" in r.stdout
+              and "RESULT   the shape holds" not in r.stdout, r.stdout)
+
         # BETWEEN THE TWO MEASURED EDGES THE WORD IS `uncertain`, PRINTED AND
         # WARNING NOTHING (DECISION 5715993782). 0.35 sits in verb-first's band
         # (0.20, 0.50) and 0.47 in work-kind's (0.45, 0.50): neither reading has

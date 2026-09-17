@@ -1063,6 +1063,18 @@ def baseline_word(entry, state):
     return max(scored)[1] if scored else UNKNOWN
 
 
+def settled_of(case):
+    """The word CODE reached for this case, or None. THE ONE READER of the two
+    spellings the corpus carries: `settled` at the top level, which the survey
+    fit writes, and `source.settled`, which `corpus join` writes off the log
+    row. Two readers of this drifted once already -- `report` counted only the
+    join's, so every case the survey's prefilter had cleared read as one Jev
+    answered."""
+    if case.get("settled") is not None:
+        return case["settled"]
+    return (case.get("source") or {}).get("settled")
+
+
 def last_seen(case):
     seen = case.get("seen") or []
     return seen[-1] if seen else None
@@ -1099,7 +1111,8 @@ def evidence_row(entry, cases):
 def agreement(entry, cases):
     """(Jev's share of cases whose last `seen` word is the truth, the token
     baseline's share over the same cases), or (None, None) with nothing seen."""
-    judged = [c for c in cases if last_seen(c) and c.get("truth") is not None]
+    judged = [c for c in cases if last_seen(c) and c.get("truth") is not None
+              and settled_of(c) is None]
     if not judged:
         return None, None
     jev = sum(1 for c in judged if last_seen(c).get("word") == c["truth"])
@@ -1156,8 +1169,12 @@ def cmd_report(args):
             froms[src] = froms.get(src, 0) + 1
         print("  by role: " + ", ".join(f"{k} {v}" for k, v in sorted(roles.items())))
         print("  by label: " + ", ".join(f"{k} {v}" for k, v in sorted(froms.items())))
+        # A CASE CODE SETTLED IS NEVER A DISAGREEMENT. The model was not asked,
+        # so the `seen` rows beside it are a record of what it answered before
+        # the prefilter existed, and counting them against the truth would
+        # charge Jev for a state that is no longer sent (DECISION 5715993782).
         bad = [c["id"] for c in cases if last_seen(c)
-               and c.get("truth") is not None
+               and c.get("truth") is not None and settled_of(c) is None
                and last_seen(c).get("word") != c["truth"]]
         print(f"  disagreement: {len(bad)}" + (f"  {', '.join(bad)}" if bad else ""))
         drifted, unplaced = drift_line(entry, cases)
@@ -1166,8 +1183,7 @@ def cmd_report(args):
             print(f"  held to no band ({len(unplaced)}): "
                   + ", ".join(unplaced[:6])
                   + (" ..." if len(unplaced) > 6 else ""))
-        settled = sum(1 for c in cases
-                      if (c.get("source") or {}).get("settled") is not None)
+        settled = sum(1 for c in cases if settled_of(c) is not None)
         escalated = sum(1 for c in cases if last_seen(c)
                         and last_seen(c).get("word") == UNKNOWN)
         n = len(cases) or 1

@@ -221,7 +221,7 @@
    "why": "the body is not free -- the same title scored 0.57 alone and 0.70 beside its body (rule-check#455) -- and the body is what work-kind, the other reading of this group, is answered from"
   },
   "prefilter": {
-   "what": "none yet: no pattern separates a verb-first title from a noun-first one"
+   "what": "an empty or whitespace-only title is settled by code as `no` and never sent: `check` refuses it in its own findings, and a `noul` has no no-match option to answer with, so asking would turn a state that should not have been sent into a confident word. Beyond that none: no pattern separates a verb-first title from a noun-first one"
   },
   "question": {
    "type": "noul",

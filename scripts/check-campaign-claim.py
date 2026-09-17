@@ -3460,7 +3460,10 @@ def bash_call(command, cwd: Path, session_id=""):
         # ITS OWN CAMPAIGN'S ISSUE NEEDS NO CLAIM, because no claim can ever
         # cover it: the campaign issue is nobody's sub-issue, so `held` finds
         # nothing there for anyone and every worker was refused a comment on
-        # the campaign it works. What licenses it is the session's NAME, which
+        # the campaign it works. A CHORE'S APART (AGENTS.md § Chores): its
+        # campaign issue IS what is claimed, so a verb outside this licence
+        # falls through to `holders` below and the claim covers it, the close
+        # its last pull request makes included. What licenses it is the session's NAME, which
         # carries that campaign's number -- the same fact the rest of this
         # branch reads. A planner reaches the same write through its own row,
         # on any campaign; this is the worker's, on one (#207).

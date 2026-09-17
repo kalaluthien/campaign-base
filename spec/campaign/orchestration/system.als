@@ -365,7 +365,9 @@ pred launch[a: Agent] {
      read in this file (`holder`) and throughout checks.als uses for a
      sub-issue; `campaignIssueOf[i]` is `campaignIssue.i` and is `lone` empty
      on a memberIssue, since `campaignIssue` and `memberIssues` are disjoint
-     (`WellFormed` in `github/system.als`) -- so a literal
+     but for a chore, whose campaign issue is its own one member (`WellFormed`
+     in `github/system.als`) and resolves through `campaignOf` like any other
+     -- so a literal
      `campaignIssueOf[a.task]` would leave `campaignDirAt[...]` with no
      Campaign to look up and make this clause unsatisfiable for a.branch. */
   campaignDirAt[campaignOf[a.task], a.host].checkedOut[a.task.repo] = a.branch

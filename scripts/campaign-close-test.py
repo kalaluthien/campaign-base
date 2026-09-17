@@ -195,6 +195,7 @@ def world(**over):
          "env": {"CLAUDE_CODE_SESSION_ID": SID, "HERDR_ENV": "1"},
          "bound": "here\n", "standing": "not-standing\n",
          "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
+         "labels": (), "state": "OPEN", "gh_chore": 0,
          "origin": MEMBER, "lands": {},
          "root": "/c", "released": {}, "issue": "none\n",
          "check": "", "panes": list(PANES)}
@@ -227,6 +228,10 @@ def answer(w, a):
             return ok(w["local"])
         if name == "campaign-heartbeat.py":
             return ok(w["heartbeat"])
+    if a[:3] == ["gh", "issue", "view"] and a[-1] == "state,labels":
+        return subprocess.CompletedProcess(a, w["gh_chore"], json.dumps(
+            {"state": w["state"], "labels": [{"name": la} for la in w["labels"]]}),
+            "gh failed")
     if a[:3] == ["gh", "issue", "view"]:
         return ok(w["body"], w["gh_view"])
     if a[:3] == ["gh", "issue", "edit"]:
@@ -721,17 +726,111 @@ def leave_refusal(gate, *says, argv=SELF_LEAVE, **over):
 
 def case_spawn_detaches(m):
     """The real spawn: the child leads a session of its own, so closing the
-    tab it was started from does not take it, and it writes to the log."""
+    tab it was started from does not take it, it writes to the log, and it
+    stands in the log's directory and not in one a clean-up may delete."""
     log = Path(tempfile.mkdtemp()) / "leave.log"
     TMP.append(log.parent)
     pid = m.spawn([sys.executable, "-c", "import os; print(os.getsid(0) == "
-                   "os.getpid(), os.getsid(0) != os.getsid(os.getppid()))"], log)
+                   "os.getpid(), os.getsid(0) != os.getsid(os.getppid()), "
+                   "os.path.realpath(os.getcwd()))"], log)
     for _ in range(50):
         if log.exists() and log.read_text().strip():
             break
         time.sleep(0.1)
-    return isinstance(pid, int) and log.read_text().split() == ["True", "True"], \
-        log.read_text()
+    return isinstance(pid, int) and log.read_text().split() == [
+        "True", "True", str(log.parent.resolve())], log.read_text()
+
+
+# ------------------------------------------------------- leave: the chore
+
+CHORE_CLAIM = f"rc/{N}-chore"
+
+
+def settlement_empty(state):
+    """`campaign-tracker settlement` over a chore: it has no sub-issue, so the
+    index is empty and the campaign issue's own state is the whole reading."""
+    return (f"campaign issue {TRACKER}#{N}  [{state}]  Title\n"
+            f"  -- claims: #{N} is `{SLUG}`\n"
+            f"  (no sub-issues: the index is empty)\n")
+
+
+def chore(state="CLOSED", labels=("chore",), **over):
+    """A chore's worker leaving: `whole`'s directory and gates, the leave's
+    two polls, no sub-issue, and the campaign issue's own claim ref landed."""
+    over.setdefault("polls", [(LEAVER, None), (LEFT, None)])
+    over.setdefault("live", live(vacant=[(CHORE_CLAIM, "landed as #99")]))
+    return whole(state=state, labels=labels, settlement=settlement_empty(state),
+                 **over)
+
+
+def steps(out):
+    return [ln.split()[0] for ln in out.splitlines()]
+
+
+def case_leave_chore_cleans_up(m):
+    """The detached run: the leave, then the clean-up its label pre-authorises
+    -- every gate of the campaign scope, the release and the delete."""
+    w = chore()
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    return (code == 0 and not w["dir"].exists() and rel == [CHORE_CLAIM]
+            and not writes(asked)
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]
+            and f"#{N} is a CLOSED chore, and the `chore` label "
+                "pre-authorises the clean-up" in out
+            and steps(out)[:4] == ["exit", "gone", "tab", "chore"]
+            and "bound" in steps(out) and "installed" in steps(out)), out
+
+
+def case_leave_ordinary_chains_nothing(m):
+    """No `chore` label, whatever the issue's state: the leave is the whole
+    run, and not one reader of the campaign scope is asked."""
+    w = chore(labels=())
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    return (code == 0 and w["dir"].exists() and not releases(asked)
+            and not [a for a in asked if a[0] == sys.executable]
+            and steps(out) == ["exit", "gone", "tab"]), out
+
+
+def case_leave_chore_open(m):
+    """An OPEN chore is unfinished, or a person's to drop: just a leave."""
+    w = chore(state="OPEN")
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    return (code == 0 and w["dir"].exists() and not releases(asked)
+            and not [a for a in asked if a[0] == sys.executable]
+            and f"#{N} is a chore and reads OPEN" in out), out
+
+
+def case_leave_chore_unread(m):
+    """The labels that did not read are not the absence of the label."""
+    w = chore(gh_chore=1)
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    return (code == 0 and w["dir"].exists() and not releases(asked)
+            and not [a for a in asked if a[0] == sys.executable]
+            and f"#{N} did not read (gh exited 1: gh failed), so nothing "
+                "follows the leave" in out), out
+
+
+def case_leave_chore_gate_refuses(m):
+    """A gate of the campaign scope refuses: the clean-up stops there and says
+    which, nothing is released or deleted, and the leave is not undone."""
+    w = chore(current=OTHER, live=live(occupied=[("rc/40-x", "/c/wt/40")]))
+    ok, asked, out = refused(m, HANDOVER, w, "live", "rc/40-x is checked out")
+    return (ok and w["dir"].exists() and not releases(asked)
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_leave_chore_said_up_front(m):
+    """The session leaving its own pane is told the clean-up follows, and
+    where the log that says how it went is, before its turn ends."""
+    w = chore()
+    code, out, asked, _ = drive(m, SELF_LEAVE, w)
+    return (code == 0 and len(w["spawned"]) == 1 and w["dir"].exists()
+            and steps(out)[-1] == "chore"
+            and f"#{N} carries `chore`, which pre-authorises its clean-up" in out
+            and "(it reads CLOSED now)" in out
+            and w["spawned"][0][1] in out), out
 
 
 # ------------------------------------------------------------- the refusals
@@ -1056,6 +1155,13 @@ def whole_padded(m):
     return code == 3 and "read as scope campaign -- #10 is a campaign issue" in out, out
 
 
+def case_front_chore(m):
+    w = whole(check=check_line("chore", n=N))
+    code, out, asked, _ = drive(m, [N], w)
+    return (code == 3 and "read as scope campaign -- #10 is a chore, "
+            "by campaign-tracker check" in out and "re-run with --close" in out), out
+
+
 def case_front_campaign(m):
     w = whole(check=check_line("campaign issue", n=N))
     code, out, asked, _ = drive(m, [N], w)
@@ -1181,6 +1287,17 @@ CASES = {
     "refuse leave: the detached run could not start": leave_refusal(
         "detach", "could not start the leave: fork failed",
         spawn_error="fork failed"),
+    "chore: a CLOSED chore's leave goes on to the campaign scope, which "
+    "releases and deletes": case_leave_chore_cleans_up,
+    "chore: an ordinary campaign's leave chains nothing":
+        case_leave_ordinary_chains_nothing,
+    "chore: an OPEN chore's leave is just a leave": case_leave_chore_open,
+    "chore: labels that did not read chain nothing, and say so":
+        case_leave_chore_unread,
+    "chore: a refusing gate stops the clean-up and leaves the leave alone":
+        case_leave_chore_gate_refuses,
+    "chore: the caller's own pane is told the clean-up follows, and which log":
+        case_leave_chore_said_up_front,
     # refusals
     "refuse: the slug did not read": refusal("slug", "did not read", slug=None),
     "refuse: settlement did not finish": refusal(
@@ -1328,6 +1445,7 @@ CASES = {
     "release: the compaction is said once, beside the first release":
         case_compact_said_once,
     "front: a campaign issue number reads as scope campaign": case_front_campaign,
+    "front: a chore's number reads as scope campaign too": case_front_chore,
     "front: a sub-issue number reads as scope sub-issue of its parent":
         case_front_sub_issue,
     "front: a sub-issue without --not-planned halts for the disposition":
@@ -1635,8 +1753,13 @@ MUTATIONS = [
     ("release reads live again", "step_release_all(n, read_live(n, slug),",
      "step_release_all(n, reading,",
      "campaign: the release reads live again after the writes"),
-    ("front: campaign kind", "if kind == TRACKER_MODULE.CAMPAIGN:", "if False:",
+    ("front: campaign kind",
+     "if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):", "if False:",
      "front: a campaign issue number reads as scope campaign"),
+    ("front: a chore is a campaign at a close",
+     "if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):",
+     "if kind == TRACKER_MODULE.CAMPAIGN:",
+     "front: a chore's number reads as scope campaign too"),
     ("front: sub-issue kind", "elif kind == TRACKER_MODULE.SUB_ISSUE:",
      "elif False:",
      "front: a sub-issue number reads as scope sub-issue of its parent"),
@@ -1759,6 +1882,8 @@ MUTATIONS = [
      "leave: the spawned run leads a session of its own and writes the log"),
     ("leave: the spawn writes the log", "stdout=out,", "stdout=subprocess.DEVNULL,",
      "leave: the spawned run leads a session of its own and writes the log"),
+    ("leave: the spawn stands outside what it may delete", "cwd=log.parent,", "",
+     "leave: the spawned run leads a session of its own and writes the log"),
     ("leave: the spawn is this scope, detached", '"leave", n, pane,\n            "--detached"]',
      '"leave", n, pane]', "leave: its own pane is left by a detached run of the same scope"),
     ("dialog: the wait answers it", "    gone, note = wait_gone(pane, listed=listed)",
@@ -1786,6 +1911,38 @@ MUTATIONS = [
      "leave: a key herdr did not send is said in the gone note"),
     ("closed skips the writes", 'if state == "CLOSED":', "if False:",
      "campaign: a CLOSED issue skips the writes, releases, and deletes"),
+    ("chore: the label is what chains", "    if not chore:\n        return\n",
+     "    if False:\n        return\n",
+     "chore: an ordinary campaign's leave chains nothing"),
+    ("chore: an unread reading is not a no", "    if chore is None:\n",
+     "    if False:\n", "chore: labels that did not read chain nothing, and "
+     "say so"),
+    ("chore: only a CLOSED one", '    if state != "CLOSED":\n', "    if False:\n",
+     "chore: an OPEN chore's leave is just a leave"),
+    ("chore: the delete is given", "close=False, delete=True))",
+     "close=False, delete=False))",
+     "chore: a CLOSED chore's leave goes on to the campaign scope, which "
+     "releases and deletes"),
+    ("chore: the handover chains too",
+     "        step_leave(pane, say)\n        step_chore_cleanup(n, say)\n",
+     "        step_leave(pane, say)\n",
+     "chore: a refusing gate stops the clean-up and leaves the leave alone"),
+    ("chore: the detached run chains after the leave",
+     "        step_leave(args.pane, say)\n        step_chore_cleanup(",
+     "        step_chore_cleanup(args.campaign_issue, say)\n        step_leave(",
+     "chore: a CLOSED chore's leave goes on to the campaign scope, which "
+     "releases and deletes"),
+    ("chore: the own pane is told before its turn ends", "    chore, state, _ = chore_of(n)\n",
+     "    chore, state, _ = None, None, None\n",
+     "chore: the caller's own pane is told the clean-up follows, and which log"),
+    # The session whose id the detached run inherits has just left, so an
+    # author read there names nobody: the CLOSED branch must not ask for one.
+    ("chore: a CLOSED issue reads no author",
+     '    state = gate_closable(n)\n    if state == "CLOSED":\n',
+     '    state = gate_closable(n)\n    author = gate_author(slug)\n'
+     '    if state == "CLOSED":\n',
+     "chore: a CLOSED chore's leave goes on to the campaign scope, which "
+     "releases and deletes"),
 ]
 
 

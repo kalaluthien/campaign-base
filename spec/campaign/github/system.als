@@ -214,7 +214,17 @@ fact WellFormed {
   all disj c1, c2: Campaign | c1.campaignIssue != c2.campaignIssue
   always all p: PullRequest | lone pullRequest.p
   always all i: Issue | some i.pullRequest implies i.pullRequest' = i.pullRequest    -- a pull request link is never undone
-  always all c: Campaign | c.campaignIssue not in c.memberIssues
+  /* A CHORE is the one campaign whose campaign issue is its own member, and
+     then its only one: the tracker's `chore` label on a campaign issue with no
+     sub-issue. Every rule that reads `memberIssues` -- `claim`,
+     `openPullRequest`, session's `sessionClaim`, orchestration's `mayAct`,
+     `claimWithinScope` and `holder` -- therefore reads a chore as it reads a
+     sub-issue, and none names it. `S23b_AChoreHasNoSubIssue` reddens when this
+     line goes. ONE REPOSITORY IN THE MODEL: `Issue.repo` is `one`, while
+     `campaign-claim take --repo` cuts a chore one ref in each repository its
+     `## Repos` names, so two refs of one chore are one `Claimed` issue here
+     and no command checks the second. */
+  always all c: Campaign | c.campaignIssue in c.memberIssues implies one c.memberIssues
   always all disj c1, c2: Campaign | no c1.memberIssues & c2.memberIssues
   always all p: PullRequest | p in Merged implies some pullRequest.p
   /* THE BASE IS NEVER IN `## Repos`. That list says which repositories to
@@ -241,8 +251,12 @@ pred dropped[i: Issue] { i not in Open and not complete[i] }
 pred settled[i: Issue] { complete[i] or dropped[i] }
 
 /* The GitHub half. The other -- no role live under the tree -- is
-   orchestration/system.als's. */
-pred closable[c: Campaign]       { (all i: c.memberIssues | settled[i])
+   orchestration/system.als's.
+
+   NOT THE CAMPAIGN ISSUE ITSELF, which a chore holds as its member: `settled`
+   needs it closed, so reading it here would make the close wait for the
+   close. `S23_ChoreLands` is unsatisfiable without the subtraction. */
+pred closable[c: Campaign]       { (all i: c.memberIssues - c.campaignIssue | settled[i])
                                    and c not in Standing }
 pred campaignClosed[c: Campaign] { c.campaignIssue not in Open }
 
@@ -303,12 +317,23 @@ pred githubFrame {
   and Claimed' = Claimed
 }
 
+/* A chore is filed AS one: `campaign-open.py --chore` puts the label on at the
+   create, so the campaign issue may enter its own membership here and at no
+   later event -- `addMember` still refuses every campaign issue.
+
+   IT ENTERS `subIssues` WITH IT, so `IndexExact` stays one statement over
+   every campaign: the model's index of a chore is the chore. The tracker's is
+   empty -- GitHub links no issue under itself, and `campaign-tracker index`
+   prints none -- which is the reading `settlement` calls closable, and
+   `closable` here agrees by not reading the campaign issue. Nothing else reads
+   `subIssues`. */
 pred fileCampaignIssue[c: Campaign] {
   c not in Filed
   no c.memberIssues and no c.subIssues and no c.reposInBody
   Filed' = Filed + c
   Open'  = Open + c.campaignIssue
-  memberIssues' = memberIssues and subIssues' = subIssues and reposInBody' = reposInBody
+  memberIssues' - c->c.campaignIssue = memberIssues
+  subIssues' = subIssues + (memberIssues' - memberIssues) and reposInBody' = reposInBody
   Merged' = Merged and pullRequest' = pullRequest
   Claimed' = Claimed
   Now.event = FileCampaignIssue and Now.issue = c.campaignIssue

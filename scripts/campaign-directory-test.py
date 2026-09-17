@@ -60,6 +60,12 @@ class Fixture:
                            capture_output=True, text=True)
         return r.returncode, r.stdout.splitlines()[0] if r.stdout else "", r
 
+    def mark(self, number, slug, target):
+        r = subprocess.run([str(self.base / "scripts" / "campaign-directory.py"),
+                            "mark", number, slug, str(target)],
+                           capture_output=True, text=True)
+        return r.returncode, r.stdout.splitlines()[0] if r.stdout else "", r
+
 
 def main() -> int:
     print(f"reading {READER}")
@@ -145,6 +151,58 @@ def main() -> int:
         check("no base root above the start is unknown, not none",
               rc == 2 and word == "unknown"
               and "nowhere to look" in r.stderr,
+              f"exit {rc}: {word} / {r.stderr[:200]}")
+
+    # THE MARKER IS WRITTEN BY `mark` AND READ BACK BY THE READER, so the
+    # scaffold's hand `printf` -- a line nothing checked -- is gone. The NAMED
+    # FAILING CASE is the first: `mark` answers the path, and the plain reader
+    # then finds the directory by both fields.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, {"campaign-demo-260910": None})
+        target = f.base / "campaign-demo-260910"
+        rc, word, r = f.mark("1", "demo", target)
+        check("mark writes the marker and answers the directory",
+              rc == 0 and word == str(target)
+              and (target / ".campaign").read_text() == "1 demo\n",
+              f"exit {rc}: {word} / {r.stderr[:200]}")
+        found = [f.ask(t)[1] for t in ("1", "demo")]
+        check("...and the reader then finds it by the number and by the slug",
+              found == [str(target)] * 2, f"{found}")
+
+    # A MARKER THE READER WOULD NOT ANSWER IS REFUSED, not left behind: a slug
+    # with a space splits into three fields, so the read-back by slug misses.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, {"campaign-demo-260910": None})
+        target = f.base / "campaign-demo-260910"
+        rc, word, r = f.mark("1", "de mo", target)
+        check("mark refuses a marker the reader does not read back",
+              rc == 2 and word == "unknown"
+              and "read back" in r.stderr
+              and not (target / ".campaign").exists(),
+              f"exit {rc}: {word} / {r.stderr[:200]}")
+
+    # A SECOND DIRECTORY NAMING THE CAMPAIGN makes the read-back `unknown`, so
+    # `mark` refuses and removes only the marker it wrote.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, {"demo": "1 demo\n", "campaign-demo-260910": None})
+        target = f.base / "campaign-demo-260910"
+        rc, word, r = f.mark("1", "demo", target)
+        check("mark refuses when another directory already names the campaign",
+              rc == 2 and word == "unknown"
+              and "two directories name that campaign" in r.stderr
+              and not (target / ".campaign").exists()
+              and (f.base / "demo" / ".campaign").exists(),
+              f"exit {rc}: {word} / {r.stderr[:200]}")
+
+    # AN EXISTING MARKER IS NOT OVERWRITTEN: step 4 marks only a directory its
+    # own `mkdir` just made, so one already there is somebody else's.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, {"campaign-demo-260910": "2 other\n"})
+        target = f.base / "campaign-demo-260910"
+        rc, word, r = f.mark("1", "demo", target)
+        check("mark refuses a directory that already carries a marker",
+              rc == 2 and word == "unknown" and "already" in r.stderr
+              and (target / ".campaign").read_text() == "2 other\n",
               f"exit {rc}: {word} / {r.stderr[:200]}")
 
     return harness.report()

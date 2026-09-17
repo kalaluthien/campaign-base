@@ -135,7 +135,9 @@ posted its NOTE, started `rule-check-planner-10`, and the successor closed it.
 Rename the slug only once `campaign-claim live <N>` prints no row under either
 claims group, `landed` refs released first with `campaign-claim release`: a
 claim ref keeps the old slug, and nothing reads that prefix after the rename.
-Rewrite the `.campaign` marker with the label. The worker's side is in
+Rewrite the `.campaign` marker with the label, through its one writer: read the
+directory with `campaign-directory.py <N>`, remove its marker, then
+`campaign-directory.py mark <N> <new slug> <dir>`. The worker's side is in
 [worker](role-worker.md).
 
 1. **The predecessor posts its last comment**, `NOTE <old>: handed off to

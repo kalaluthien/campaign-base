@@ -282,7 +282,8 @@ for the other, and a missing slug refuses rather than being guessed at.
   it for, and **nothing composes the path out of the slug**. **A campaign
   directory with no marker is a campaign nothing on this machine can see** — not
   a claim, not a guard log, not a close — so `opening-campaign` writes it at
-  scaffold and a directory that predates it gets one by hand.
+  scaffold and a directory that predates it gets one, both through
+  `scripts/campaign-directory.py mark`, which reads it back.
 - **Branch** — `<slug>/<issue>-<topic>`, **the sub-issue's whole claim** as
   well as its workspace. `campaign-claim take` cuts it from the remote and writes
   nothing else; create-ref refuses an existing ref server-side, so the claim is

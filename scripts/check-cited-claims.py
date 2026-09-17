@@ -30,8 +30,9 @@ is judged is what the commit holds:
   skipped    a name declared twice under spec/, counted and named; a commit
              touching neither asks nothing and says so
 
-THE BRANCH is the caller's, on each entry's thresholds over P(contradicts):
-`yes` contradicted, `unknown` in the gap or failed, `no` clear. Each entry's
+THE BRANCH is the caller's, on each entry's two edges over P(contradicts):
+`yes` contradicted, `no` clear, `uncertain` between the edges and `unknown`
+where the reading failed. Each entry's
 tier decides what is printed: at `advise` each contradicted or unknown claim
 with its value or reason; at `shadow` the counts alone. Every call is logged by
 the caller, and the log line's fate is printed. THE EXIT STATUS IS 0 on every

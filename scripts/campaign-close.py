@@ -54,7 +54,7 @@ it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
 delete (`--delete`). Every run re-reads every gate, so a run that stopped
 halfway is run again, never resumed from memory. ONE CLOSE IS NOT STARTED BY A
 PERSON, and it is the only one: a CLOSED chore's clean-up after its worker's
-leave, which the `chore` label pre-authorises (scope leave step 9).
+leave, which the `chore` label pre-authorises (scope leave step 10).
 
 A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS when that pane is a
 worker's and none is pending -- `campaign-claim release` decides, and
@@ -150,11 +150,23 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   the leave done; its line says when to look and which log
                   says why a pane is still open. Nothing waits for it: end
                   the turn.
-  6-8.            The leave, `worker` steps 3-5, in the foreground for
+  6. idle         The detached run alone, before its `/exit`: `herdr agent
+                  list` every WAIT_EVERY seconds until <pane> reads `idle` or
+                  `done`, or is not listed. `/exit` into a turn still
+                  streaming does not queue: it ended the session 2 s later,
+                  the turn's answer unwritten (rule-check#481 NOTE
+                  5718813306). THE CEILING is WAIT_POLLS polls; AT THE CEILING
+                  `/exit` IS SENT ALL THE SAME and the line says so: a turn
+                  cut short loses its last lines, while a finished worker
+                  left listed is seen by nobody once no watch runs. Another
+                  pane's leave does not wait, as before this step existed:
+                  its caller read it done, and whether it should is the
+                  watch's question (rule-check#349's DECISION, option 1).
+  7-9.            The leave, `worker` steps 3-5, in the foreground for
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
                   nothing but the log would read a refusal there.
-  9. chore        `gh issue view <N>`, its labels and its state, AFTER the
+  10. chore       `gh issue view <N>`, its labels and its state, AFTER the
                   leave and nowhere else -- the campaign scope's `live` gate
                   refuses while a session of the campaign is listed, and the
                   one that just left was one. Holds when: it read, and either
@@ -1002,11 +1014,17 @@ def step_delete(path):
     holds("delete", f"{path} is gone")
 
 
+# herdr's words for a pane no turn is running in.
+IDLE = ("idle", "done")
+
+
 def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
-              every=WAIT_EVERY, listed=None):
+              every=WAIT_EVERY, listed=None, idle=False):
     """(gone, what the last poll read). A listing that did not read is not an
     absence, so it is one more poll and never the answer. `listed()` runs on
-    each poll that still lists <pane>, and what it returns joins the note."""
+    each poll that still lists <pane>, and what it returns joins the note.
+    With `idle`, a poll that lists <pane> with no turn running ends the wait
+    too: the detached leave's wait for its own turn, the header's step 6."""
     read, sleep = read or CLAIM.herdr_sessions, sleep or time.sleep
     note = "no poll ran"
     for k in range(polls):
@@ -1015,6 +1033,9 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
             note = f"poll {k + 1}: {why}"
         elif not any(row["pane"] == pane for row in sessions.values()):
             return True, f"poll {k + 1}: {pane} is not listed"
+        elif idle and all(row["status"] in IDLE for row in sessions.values()
+                          if row["pane"] == pane):
+            return True, f"poll {k + 1}: {pane} reads idle"
         else:
             extra = listed() if listed else None
             note = f"poll {k + 1}: {pane} is still listed" + (
@@ -1022,6 +1043,16 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
         if k + 1 < polls:
             sleep(every)
     return False, note
+
+
+def step_idle(pane, say):
+    """The detached leave's wait for its own turn to end. Never a refusal:
+    at the ceiling the `/exit` goes all the same (the header, step 6)."""
+    began = time.monotonic()
+    idle, note = wait_gone(pane, idle=True)
+    say("idle", note if idle else
+        f"{note}, {time.monotonic() - began:.0f}s in, the ceiling: "
+        f"{EXIT_TEXT} is sent all the same, and may cut that turn short")
 
 
 def dialog_of(screen):
@@ -1249,6 +1280,7 @@ def step_chore_cleanup(n, say):
 
 def leave(args, say=holds):
     if args.detached:
+        step_idle(args.pane, say)
         step_leave(args.pane, say)
         step_chore_cleanup(args.campaign_issue, say)
         return
@@ -1283,7 +1315,7 @@ def leave(args, say=holds):
         raise Refused("detach", f"could not start the leave: {e}")
     say("detach", f"pid {pid} started, which is not the leave done: it sends "
                   f"{EXIT_TEXT} to {pane} once this turn ends, so end it now; "
-                  f"{pane} still open {WAIT_POLLS * WAIT_EVERY}s later was "
+                  f"{pane} still open {2 * WAIT_POLLS * WAIT_EVERY}s later was "
                   f"refused, and the last line of {log} says which step")
     # SAID BEFORE THE TURN ENDS, because the detached run says it to the log
     # alone: what follows the leave is a delete, and the person reading this

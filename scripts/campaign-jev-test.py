@@ -1547,10 +1547,15 @@ def every_case_fits_its_entry(m):
             # cases of one reading may have been asked different option sets:
             # a leave-one-out no-match case is a positive with its own
             # campaign's option taken away.
+            # AND `none` IS NOT ADMITTED FOR FREE. A `choice` answers its own
+            # options and nothing else, so the set is exactly them: unioning
+            # `none` in admitted a truth of `none` for a reading whose
+            # no-match option is spelled `noMatch`, which is the one word this
+            # case exists to catch (pr#484 REVIEW 5720443119).
             if option_cut or entry["question"]["type"] != m.CHOICE:
                 words = {"yes", "no", "none"}
             else:
-                words = set(m.options_of(entry, c.get("state") or {})) | {"none"}
+                words = set(m.options_of(entry, c.get("state") or {}))
             truth = c.get("truth")
             if isinstance(truth, str) and truth not in words:
                 bad.append(f"{c.get('id')}: truth `{truth}` is no word of "

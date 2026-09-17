@@ -33,6 +33,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -876,9 +877,148 @@ def main():
               bool(rows) and (rows[0].get("state") or {}).get("campaigns")
               == {"demo": "In:\n- keep the machine's ops"}, rows[:1])
         check("...within the bound it names, which is under campaign-jev's own",
-              took < 20 and guard_module().FILING_TIMEOUT
+              took < 20 and guard_module().FILING_BUDGET
               < guard_module().load(guard_module().JEV, "cj").TIMEOUT,
               took)
+        # NOTHING THE RECORD DOES REACHES THE VERDICT, and the case is the one
+        # that found it (pr#484 REVIEW 5720443119): `read_text` decodes, so a
+        # body file that is not UTF-8 raised `UnicodeDecodeError` out of
+        # `pre()` -- the guard printed "FAILED and did not judge", exited 0,
+        # and the SIBLING segment filing on another repository went unread.
+        # The assertion is on that sibling, because a refusal that a crash
+        # turns into an allow is the whole of the defect.
+        (f.base / "binary.md").write_bytes(b"## Intent\n\n- \xff\xfe not text\n")
+        off = ("gh issue create -R kalaluthien/other-repo --title X --body Y")
+        r = ask(f.base, tool="Bash",
+                command=f"gh issue create --title t --parent {tracker} "
+                        f"-F binary.md && {off}")
+        check("a body file that is not UTF-8 cannot turn a refusal into an "
+              "allow: the sibling create off the tracker is still refused",
+              r.returncode == 2 and "kalaluthien/other-repo" in r.stderr
+              and "did not judge" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # THE CONTROL IS THE SAME COMMAND WITH A DECODABLE BODY FILE, so what
+        # is measured is the decode and not the chain.
+        (f.base / "text.md").write_text("## Intent\n\n- plain text\n")
+        c = ask(f.base, tool="Bash",
+                command=f"gh issue create --title t --parent {tracker} "
+                        f"-F text.md && {off}")
+        check("...and the decodable control is refused for the same reason, "
+              "with the same status",
+              c.returncode == r.returncode
+              and "kalaluthien/other-repo" in c.stderr,
+              f"exit {c.returncode}: {out(c)[:300]}")
+        before = log.read_text()
+        r = ask(f.base, tool="Bash", command=f"gh issue create --title t "
+                f"--parent {tracker} -F binary.md")
+        filed = (json.loads(log.read_text()[len(before):].splitlines()[-1])
+                 .get("filings") or [{}])[0]
+        check("...and the undecodable body is recorded as unread, naming what "
+              "raised",
+              "UnicodeDecodeError" in filed.get("body_unread", "")
+              and "body" not in filed, filed)
+        # THE TWO HALVES OF THAT FIX ARE REDUNDANT ON THE CASE ABOVE -- either
+        # one alone keeps the sibling refused -- so each is pinned where it is
+        # ALONE. `body_text`'s widened catch is pinned on the path the fence
+        # does not cover: WITHOUT a `--parent`, the refusal reads the body
+        # itself, so a file it cannot decode has to come back as a body it
+        # could not read and not as a traceback. That half was latent on
+        # origin/main too.
+        r = ask(f.base, tool="Bash",
+                command="gh issue create --title t -F binary.md")
+        check("a body file that is not UTF-8 is refused as unreadable, not "
+              "raised, with no --parent in sight",
+              r.returncode == 2 and "binary.md" in r.stderr
+              and "UnicodeDecodeError" in r.stderr
+              and "did not judge" not in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        # AND THE FENCE IS PINNED WHERE `body_text` CANNOT REACH: whatever the
+        # next reader added to `filing_of` raises must be written down as the
+        # reason there is no record, never returned into the verdict. Driven
+        # in-process with the one reader replaced, since no command can make a
+        # function raise for a reason its own callee handles.
+        mod = guard_module()
+        mod.FILINGS.clear()
+        def boom(*a, **kw):
+            raise RuntimeError("a reader nobody predicted")
+        was_body_text = mod.body_text
+        mod.body_text = boom
+        try:
+            found, read = mod.create_findings(
+                ["issue", "create", "-R", "kalaluthien/campaign-base",
+                 "--parent", tracker, "--title", "t", "--body", "b"],
+                [], str(f.base), f.base)
+            raised = None
+        except Exception as e:                      # noqa: BLE001
+            found, read, raised = None, None, e
+        finally:
+            mod.body_text = was_body_text
+        filed = (mod.FILINGS or [{}])[0]
+        mod.FILINGS.clear()
+        check("an exception inside the record is written down, never returned "
+              "into the verdict",
+              raised is None and found == []
+              and "the record raised RuntimeError" in filed.get("body_unread", ""),
+              (repr(raised), found, filed))
+        # WHAT IS RECORDED IS BOUNDED. A 117 KB body file wrote a 126 KB
+        # guard.log row and two 129 KB states into the Jev log for a call that
+        # sent nothing; the cut is said with the length it was cut from, so
+        # the kept part is never mistaken for the whole.
+        keep = guard_module().RECORDED_CHARS
+        huge = "## Intent\n\n- " + ("x" * (keep * 3))
+        (f.base / "huge.md").write_text(huge)
+        before = log.read_text()
+        r = ask(f.base, tool="Bash", command=f"gh issue create --title t "
+                f"--parent {tracker} -F huge.md")
+        added = log.read_text()[len(before):]
+        filed = (json.loads(added.splitlines()[-1]).get("filings") or [{}])[0]
+        check("a body over the recorded bound is cut, and the row says so with "
+              "the length it was cut from",
+              len(filed.get("body", "")) == keep
+              and filed.get("body_truncated") is True
+              and filed.get("body_length") == len(huge),
+              (len(filed.get("body", "")), filed.get("body_truncated"),
+               filed.get("body_length"), len(huge)))
+        check("...so the row itself is bounded, not the body's own size",
+              r.returncode == 0 and len(added) < 2 * keep,
+              (r.returncode, len(added), len(huge)))
+        r = ask(f.base, tool="Bash", command=f"gh issue create "
+                f"--parent {tracker} --body 'a short body' --title t")
+        filed = (json.loads(log.read_text().splitlines()[-1])
+                 .get("filings") or [{}])[0]
+        check("...and a body under it carries no truncation keys at all",
+              filed.get("body") == "a short body"
+              and "body_truncated" not in filed
+              and "body_length" not in filed, filed)
+        # ONE DEADLINE FOR THE WHOLE HOOK CALL, and the endpoint that exercises
+        # it is NOT the closed port every other case here uses: a closed port
+        # refuses the connection in 0.09s and never reaches any bound, so it
+        # could not tell a per-filing timeout from a per-call one. This socket
+        # LISTENS AND NEVER ACCEPTS -- the kernel completes the handshake from
+        # the backlog, so the request connects and then waits -- and it is on
+        # 127.0.0.1, so nothing leaves this machine. Three chained creates cost
+        # 9.1s under a per-filing bound and one budget under this one.
+        budget = guard_module().FILING_BUDGET
+        with contextlib.closing(socket.socket()) as blackhole:
+            blackhole.bind(("127.0.0.1", 0))
+            blackhole.listen(8)
+            slow = f"http://127.0.0.1:{blackhole.getsockname()[1]}/v1/systemone"
+            three = " && ".join(
+                f"gh issue create --title t{i} --parent {tracker} --body b{i}"
+                for i in range(3))
+            was = len(jevlog.read_text().splitlines())
+            started = time.time()
+            r = ask(f.base, tool="Bash", command=three,
+                    env={"CAMPAIGN_JEV_URL": slow})
+            took = time.time() - started
+        rows = [json.loads(x) for x in jevlog.read_text().splitlines()[was:]]
+        check("three filings in one call share one deadline, not one each",
+              r.returncode == 0 and took < budget + 3, (r.returncode, took))
+        check("...and a filing there is nothing left for is logged as not "
+              "asked, naming the budget",
+              any("was spent on the filings before it" in (x.get("skipped") or "")
+                  for x in rows),
+              [x.get("skipped") or x.get("reading") for x in rows])
         r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
         check("a gh command shlex cannot split is refused, naming why",
               r.returncode == 2 and "would not split" in r.stderr
@@ -4236,7 +4376,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 657
+    EXPECTED = 667
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

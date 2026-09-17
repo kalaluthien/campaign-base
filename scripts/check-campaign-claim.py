@@ -189,6 +189,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -2729,7 +2730,15 @@ def body_text(tokens, heredocs, cwd=None, file_first=False):
         resolved = Path(path) if Path(path).is_absolute() else here / path
         try:
             return resolved.read_text(encoding="utf-8"), None, None
-        except OSError as e:
+        # NOT `OSError` ALONE. `read_text` decodes, so a file that is not UTF-8
+        # raises `UnicodeDecodeError`, which is a `ValueError` and was never
+        # caught: the guard then printed "FAILED and did not judge", exited 0,
+        # and every OTHER gh write in the same command went unread. That was
+        # latent on the refusal path too and not only the record's -- a
+        # `gh issue create -F <png>` with no `--parent` raised here just the
+        # same (pr#484 REVIEW 5720443119). A file this cannot decode is a body
+        # it could not read, which is the answer that already exists.
+        except (OSError, ValueError) as e:
             return None, (f"`{path}` -> {resolved} could not be read "
                           f"({e.__class__.__name__}), so the body was not "
                           f"read either"), None
@@ -2799,6 +2808,25 @@ def create_parent(tokens):
 # a command filing twice puts both filings on the one row rather than writing
 # two.
 FILINGS = []
+# HOW MUCH OF ONE RECORDED TEXT IS KEPT, in characters, and it bounds both the
+# guard.log row and the state the reading sends, because the state carries what
+# was recorded.
+#
+# THE NUMBER COMES OFF THE CORPUS, not off a round one. An issue body on this
+# tracker is written under `campaign-tracker.py`'s `BODY_CEILING`, 2,000
+# characters; over the 146 cases the filing reading was measured on, the
+# longest body is 2,007 and the 95th percentile is 1,998. The one longer text
+# in the built set, 4,509, is not a sub-issue at all. 8,000 is four times the
+# ceiling a body is written to and near twice the longest text ever seen here,
+# so nothing this reading actually meets is cut -- while a body file naming a
+# binary, a log or `/etc/hosts` is.
+#
+# AND IT IS NOT `BODY_CEILING` ITSELF. That ceiling is a rule about what a
+# person may write, and a body over it is a real filing whose text a reader
+# still wants whole; cutting at the rule would truncate exactly the bodies
+# worth reading. This is a bound on what a hook writes to disk, which is a
+# different question and takes a different number.
+RECORDED_CHARS = 8000
 
 
 def filing_of(tokens, heredocs, cwd, parent, repo):
@@ -2814,7 +2842,15 @@ def filing_of(tokens, heredocs, cwd, parent, repo):
 
     IT READS AND DECIDES NOTHING. No caller branches on what comes back, so a
     title that arrives here as one of `flag_value`'s own flag words costs a
-    record and never a verdict."""
+    record and never a verdict.
+
+    AND IT IS BOUNDED. A `--body-file` names any path the shell does not
+    expand, so what arrives here is whatever is at it: a 117 KB body wrote a
+    126 KB guard.log row and two 129 KB states into the Jev log, for a call
+    that sent nothing (pr#484 REVIEW 5720443119). Each text is cut at
+    `RECORDED_CHARS` and the cut is SAID with the length it was cut from, so a
+    reader never mistakes the kept part for the whole; the state the reading
+    sends carries the cut text, which is the same bound applied once."""
     out = {"repo": repo or "", "parent": parent}
     title = flag_value(tokens, TITLE_VALUED)
     if title is SKIPPED:
@@ -2822,7 +2858,7 @@ def filing_of(tokens, heredocs, cwd, parent, repo):
     elif title is None:
         out["title_unread"] = "it has no --title, so no title was read"
     else:
-        out["title"] = title
+        _keep(out, "title", title)
     path = flag_value(tokens, BODY_FILE_VALUED)
     if isinstance(path, str) and (path.startswith("~") or "$" in path):
         out["body_unread"] = (f"its body file `{path}` is expanded by the "
@@ -2831,12 +2867,20 @@ def filing_of(tokens, heredocs, cwd, parent, repo):
     text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd,
                                                    file_first=True)
     if text is not None:
-        out["body"] = text
+        _keep(out, "body", text)
     else:
         out["body_unread"] = (why_unreadable or why_unjudged
                               or "it has no --body or --body-file, so no body "
                                  "was read")
     return out
+
+
+def _keep(out, field, text):
+    """Write one recorded text, cut at `RECORDED_CHARS` and saying so."""
+    out[field] = text[:RECORDED_CHARS]
+    if len(text) > RECORDED_CHARS:
+        out[f"{field}_truncated"] = True
+        out[f"{field}_length"] = len(text)
 
 
 def create_findings(tokens, heredocs, cwd, root):
@@ -2873,11 +2917,24 @@ def create_findings(tokens, heredocs, cwd, root):
     # guard reads rather than for the well-formed ones alone: a create refused
     # here -- filed off the index, or on the wrong repository -- is exactly a
     # request whose routing went wrong, and a record that kept those out would
-    # miss the half worth reading. It appends to `FILINGS` and returns nothing
-    # into `found` or `read`, so no verdict, no wording and no exit status of
-    # this function moves; the body it reads is read a second time below, which
-    # is what keeps that true rather than argued.
-    FILINGS.append(filing_of(tokens, heredocs, cwd, parent, named))
+    # miss the half worth reading.
+    #
+    # NOTHING IT DOES REACHES THE VERDICT, by two things and not one. It adds
+    # to neither `found` nor `read`, so no wording and no exit status of this
+    # function moves; and it is FENCED, so an exception in it is written down
+    # as the reason there is no record rather than escaping `pre()`. The fence
+    # is what was missing: on the `--parent` path this function returns two
+    # lines below and never reads the body again, so a `read_text` that raised
+    # here left the whole command allowed unjudged -- a sibling segment filing
+    # on another repository passed where it is refused (pr#484 REVIEW
+    # 5720443119). `body_text` no longer raises for that case either; this
+    # catches whatever the next reader added here does.
+    try:
+        FILINGS.append(filing_of(tokens, heredocs, cwd, parent, named))
+    except Exception as e:              # noqa: BLE001 -- recorded, not raised
+        FILINGS.append({"repo": named or "", "parent": parent,
+                        "body_unread": f"the record raised "
+                                       f"{e.__class__.__name__}: {e}"})
     if parent is not None:
         read.append(f"it carries --parent {parent}")
         return found, read
@@ -3881,15 +3938,23 @@ def pre(payload):
 JEV = HERE / "campaign-jev.py"
 FILING_GROUP = "issue-filing"
 FILING_READER = "check-campaign-claim.create"
-# Seconds this reading may cost a filing, and it is the WHOLE of its cost: the
-# call is made once the verdict has already been printed, so what a slow
-# endpoint delays is the session's next turn and never the answer. Measured Jev
-# calls run 0.6-1.1s (campaign-jev.py's own `TIMEOUT` comment), so three
-# seconds is three times the slowest measured call; campaign-jev's default of
-# ten is right for a script a person is waiting on and wrong in front of a tool
-# call. A closed endpoint answers at once and never waits this out, which is
-# what the suite's closed-port case pins.
-FILING_TIMEOUT = 3.0
+# Seconds this reading may cost ONE HOOK CALL -- every filing of it together,
+# not each -- because a command may file more than once and a per-filing bound
+# multiplies: three chained creates against an endpoint that accepts and never
+# answers cost 9.1 seconds (pr#484 REVIEW 5720443119). One deadline is taken
+# when the reading starts, each `judge` is given what is LEFT of it, and a
+# filing with nothing left is logged as not asked.
+#
+# WHAT THE WAIT DELAYS IS THE CREATE ITSELF. A PreToolUse hook runs BEFORE the
+# tool, so the harness holds the `gh issue create` until this returns -- the
+# verdict is already decided and printed by then, but the command has not run.
+# Measured Jev calls take 0.6-1.1s (campaign-jev.py's own `TIMEOUT` comment),
+# so three seconds is three times the slowest measured call and the most a
+# filing waits; campaign-jev's default of ten is right for a script a person is
+# watching and wrong in front of a tool call. A closed endpoint answers at once
+# and never reaches this bound, which is why the suite also holds a socket that
+# accepts and never answers.
+FILING_BUDGET = 3.0
 SCOPE_HEADING = "Scope"
 DERIVED_BODY = Path("runtime") / "campaign-issue-body-derived.md"
 
@@ -3970,9 +4035,16 @@ def read_filings(cwd: Path):
     while the group's own answer, the `choice` read against the address `noul`,
     is `campaign-jev.py`'s `address_word` over the two rows of one `call` id
     and is not stored: a derived value kept beside its inputs is the copy that
-    drifts."""
+    drifts.
+
+    ONE DEADLINE FOR THE WHOLE CALL, taken here: each `judge` is given what is
+    left of `FILING_BUDGET`, and a filing there is nothing left for is logged
+    as not asked rather than asked with no bound. A per-filing timeout
+    multiplied by the number of creates in one command, which is the shape the
+    hook cannot afford."""
     if not FILINGS:
         return
+    deadline = time.monotonic() + FILING_BUDGET
     jev = load(JEV, "campaign_jev")
     reg = jev.load_registry()
     scopes, missed = open_campaign_scopes(cwd)
@@ -4001,13 +4073,20 @@ def read_filings(cwd: Path):
                      "alone" + (f": {'; '.join(missed)}" if missed else ""),
                      cwd=cwd)
             continue
+        left = deadline - time.monotonic()
+        if left <= 0:
+            jev.skip(FILING_READER, label,
+                     f"not asked: the {FILING_BUDGET:.1f}s this reading may "
+                     f"cost one hook call was spent on the filings before it",
+                     cwd=cwd)
+            continue
         jev.judge(FILING_GROUP,
                   {"request": {"title": filing.get("title", ""),
                                "body": filing["body"]},
                    "campaigns": scopes},
                   read=f"{repo}#{number} <- {label}", reader=FILING_READER,
                   key={"repo": repo, "issue": number}, reg=reg, cwd=cwd,
-                  timeout=FILING_TIMEOUT,
+                  timeout=left,
                   flag={"options": sorted(scopes), "unread": missed})
 
 

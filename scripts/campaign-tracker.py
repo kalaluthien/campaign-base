@@ -1102,6 +1102,17 @@ def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
     except Exception as e:  # noqa: BLE001 -- a reading that did not happen
         return [f"  judgments not read: campaign-jev.py raised where it "
                 f"promises not to ({e.__class__.__name__}: {e})"]
+    # THE TWO NAMES ARE READ BEFORE THEY ARE INDEXED. `judgment_lines` reaches
+    # for both by name, and a reading renamed or dropped from the group would
+    # be a KeyError OUTSIDE the guard above -- a traceback out of `check`, and
+    # `campaign-claim take` gates on `check`'s verdict, so it would cost a
+    # worker its claim over a registry edit. Missing is `unknown` with a reason,
+    # like every other reading that did not happen.
+    missing = [n for n in (VERB_FIRST, WORK_KIND) if n not in judged.verdicts]
+    if missing:
+        return [f"  judgments not read: the `{JUDGMENT_GROUP}` group answers "
+                f"{', '.join(sorted(judged.verdicts)) or '<nothing>'}, and "
+                f"this reads {', '.join(missing)}: unknown"]
     return judgment_lines(judged.verdicts, judged.logged, judged.model,
                           settled_kind, show_kind)
 

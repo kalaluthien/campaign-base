@@ -501,6 +501,9 @@ Judged = namedtuple("Judged", "verdicts model latency call logged")
 #      (`EscalationGoesThroughAPlanner`), so no reading at any tier may post a
 #      comment opening `DECISION`.
 ACT_VERBS = ("label", "comment", "rank", "route")
+# What an act declares, all four: what it does, how it is undone, and the cuts
+# `does` reads. A missing cut is a KeyError there, so it is refused at load.
+ACT_FIELDS = ("what", "undo", "act_over", "ask_over")
 # The labels only a person moves, by exact name and by prefix.
 PERSON_LABELS = ("standing", "backlog")
 PERSON_LABEL_PREFIXES = ("bound:", "campaign:")
@@ -535,6 +538,15 @@ def check_act_bounds(reg):
         if not act:
             raise ValueError(f"campaign-jev: `{name}` is at tier `{ACTS}` with "
                              f"no `act`")
+        # THE FOUR AN ACT IS MADE OF, refused here rather than by `does`, which
+        # would meet a missing cut as a KeyError on the one call that cleared
+        # its threshold -- the failure furthest from the entry that caused it.
+        for field in ACT_FIELDS:
+            if field not in act:
+                raise ValueError(
+                    f"campaign-jev: `{name}` is at tier `{ACTS}` with no "
+                    f"`{field}`; an act says what it does, how it is undone, "
+                    f"and the two cuts it acts and asks over")
         for field in NEVER_IN_AN_ENTRY:
             if field in act:
                 raise ValueError(
@@ -624,6 +636,43 @@ def confidence(entry, raw):
                                                                    1 - value)
     value = raw.get("confidence")
     return None if not isinstance(value, (int, float)) else value
+
+
+def band_of(entry, case):
+    """(the band key a case is held to, why there is none). THE ONE READER, for
+    the join, the drift reader and `--live` alike.
+
+    IT WAS THREE, AND THEY DISAGREED. `corpus join` wrote a case with no `band`,
+    the drift reader fell back to the TRUTH word, and for a `choice` the truth
+    is an option name and never a band name -- so every case the join added was
+    drift-blind for good, at any confidence, while the evidence row and the
+    agreement share went on counting it.
+
+    An explicit `band` WINS, because it was measured: `k442`'s truth is a real
+    option and its band is `unsure`, which no rule over the truth word could
+    derive. Where there is none the band is derived -- a two-word reading's is
+    its truth, and a `choice`'s is `confident` for a real option -- and where it
+    cannot be derived the case is held to NO band and the reason is returned,
+    so a reader lists it rather than silently skipping it. A no-match case is
+    one of those: its confidence is the no-match option's and says nothing
+    about how decided a real option was."""
+    if case.get("band"):
+        return case["band"], ""
+    if case.get("role") == "no-match":
+        return None, ("a no-match case: its confidence is the no-match "
+                      "option's and no real option's")
+    truth = case.get("truth")
+    if not isinstance(truth, str):
+        return None, "its truth is not one word"
+    cuts = entry.get("thresholds") or {}
+    if entry["question"]["type"] == NOUL or cuts.get("option"):
+        if truth in ("yes", "no"):
+            return truth, ""
+        return None, f"`{truth}` is neither yes nor no"
+    options = entry["question"].get("criteria") or {}
+    if truth in options and truth != cuts.get("no_match"):
+        return "confident", ""
+    return None, f"`{truth}` names no option of the set"
 
 
 def band_value(entry, raw):
@@ -894,7 +943,7 @@ def cmd_corpus_join(args):
             waiting.append((row, why))
             continue
         cases = read_corpus(name)
-        cases.append({
+        case = {
             "id": f"{name}-{row['call']}", "reading": name,
             "state": row.get("state") or {}, "truth": truth,
             "label": {"from": f"join:{entry['join']}",
@@ -908,7 +957,13 @@ def cmd_corpus_join(args):
             "role": "case",
             "seen": ([{"model": row.get("answered") or "", "at": row.get("at"),
                        "wording": row.get("wording"), "word": row.get("branch"),
-                       "raw": row.get("raw")}] if row.get("raw") else [])})
+                       "raw": row.get("raw")}] if row.get("raw") else [])}
+        # THE BAND THE CASE IS HELD TO, WRITTEN NOW. A case with none is one no
+        # declared band can ever call drifted, and for a `choice` the truth
+        # word is an option name and never a band name -- so a joined case at
+        # 0.01 confidence read `drift: none` for good.
+        case["band"] = band_of(entry, case)[0]
+        cases.append(case)
         write_corpus(name, cases)
         known.setdefault(name, set()).add(ref)
         added += 1
@@ -1046,7 +1101,12 @@ def cmd_report(args):
                and c.get("truth") is not None
                and last_seen(c).get("word") != c["truth"]]
         print(f"  disagreement: {len(bad)}" + (f"  {', '.join(bad)}" if bad else ""))
-        print("  drift: " + drift_line(entry, cases))
+        drifted, unplaced = drift_line(entry, cases)
+        print("  drift: " + drifted)
+        if unplaced:
+            print(f"  held to no band ({len(unplaced)}): "
+                  + ", ".join(unplaced[:6])
+                  + (" ..." if len(unplaced) > 6 else ""))
         settled = sum(1 for c in cases
                       if (c.get("source") or {}).get("settled") is not None)
         escalated = sum(1 for c in cases if last_seen(c)
@@ -1079,21 +1139,30 @@ def cmd_report(args):
 
 
 def drift_line(entry, cases):
-    """A `seen` value outside the declared band UNDER THE SAME MODEL AND
-    WORDING. A value read under another wording is a different question's
-    answer and says nothing about this one's band."""
+    """(the drift, the cases held to no band). A `seen` value outside the
+    declared band UNDER THE SAME MODEL AND WORDING; a value read under another
+    wording is a different question's answer and says nothing about this one's
+    band.
+
+    A CASE `band_of` CANNOT PLACE IS RETURNED, never skipped: a case counted by
+    the evidence row and by the agreement share while no band could ever call it
+    drifted is the shape this reader was blind in."""
     declared = (entry.get("bands") or {}).get("declared") or {}
     model = (entry.get("bands") or {}).get("model")
-    out = []
+    out, unplaced = [], []
     for c in cases:
+        key, why = band_of(entry, c)
+        if key is None:
+            unplaced.append(f"{c['id']} ({why})")
+            continue
+        band = declared.get(key)
         for s in c.get("seen") or []:
             if s.get("model") != model or s.get("wording") != wording(entry):
                 continue
-            band = declared.get(c.get("truth")) or declared.get(c.get("band"))
             value = band_value(entry, s.get("raw"))
             if band and value is not None and not (band[0] <= value <= band[1]):
-                out.append(f"{c['id']} {value:.2f} outside {band}")
-    return ", ".join(out) if out else "none"
+                out.append(f"{c['id']} {value:.2f} outside {key} {band}")
+    return (", ".join(out) if out else "none"), unplaced
 
 
 def relive(name, entry, cases, env=None, root=None):

@@ -35,7 +35,10 @@ than chosen. `--record` widens the declared bands to hold an excursion, writes
 them with the wording hash and the date into the entry, and appends one `seen`
 row per case. `--wording <hash>` asks a retired wording from
 `scripts/jev/wordings.json` instead, which is how a criteria change gets its
-before-and-after numbers.
+before-and-after numbers. A reading whose `question.per` says its own reader
+composes one question per claim or per condition is SKIPPED and says so: the
+entry's bare `instructions` are not what production sends, and a band measured
+on them would belong to a call nobody makes.
 
 Usage: scripts/campaign-jev-test.py [--live [--record] [--wording <hash>]]
 """
@@ -458,17 +461,34 @@ def thresholds_or_shadow(m):
 
 
 def act_declares_its_undo(m):
-    """A reading at `act` says what it does and how it is undone, or it is not
-    at `act`: an irreversible thing on a typed guess is the one answer this
-    module never gives."""
+    """A reading at `act` says what it does, how it is undone, and the two cuts
+    `does` reads -- or it does not load. An irreversible thing on a typed guess
+    is the one answer this module never gives, and a missing cut would reach
+    `does` as a KeyError on the one call that cleared its threshold.
+
+    MADE ENTRIES, NOT THE COMMITTED REGISTRY, which holds nothing at `act`: a
+    case that reads the registry alone passes over an empty set and proves
+    nothing (the REVIEW at a73fc57, note 3).
+    """
     bad = []
+    for missing in m.ACT_FIELDS:
+        act = {"verb": "label", "label": "kind:development", "what": "x",
+               "undo": "y", "act_over": 0.9, "ask_over": 0.7}
+        act.pop(missing)
+        ok, why = refused(m, acting(**act), f"no `{missing}`")
+        if not ok:
+            bad.append((missing, why))
+    whole = acting(verb="label", label="kind:development", what="x", undo="y",
+                   act_over=0.9, ask_over=0.7)
+    ok, _why = refused(m, whole, "")
+    if ok:
+        bad.append(("all four", "a whole act was refused"))
+    # The entries the tree actually ships, judged the same way.
     for name, e in entries(m).items():
-        if e.get("tier") != m.ACTS:
-            continue
-        act = e.get("act") or {}
-        for k in ("what", "undo", "act_over", "ask_over"):
-            if k not in act:
-                bad.append(f"{name}: at `act` with no `{k}`")
+        if e.get("tier") == m.ACTS:
+            for k in m.ACT_FIELDS:
+                if k not in (e.get("act") or {}):
+                    bad.append(f"{name}: at `act` with no `{k}`")
     return not bad, bad
 
 
@@ -625,6 +645,49 @@ def join_writes_one_case_for_one_row(m):
             os.environ["CAMPAIGN_JEV_LOG"] = old
     return len(first["verb-first"]) == 1 and len(out) == 1, \
         (len(first["verb-first"]), len(out or []))
+
+
+def a_joined_case_is_held_to_a_band(m):
+    """THE DEFECT THE REVIEW AT a73fc57 FOUND: `corpus join` wrote a case with
+    no `band`, and the drift reader resolved the band from the TRUTH word --
+    which for a `choice` is an option name and never a band name. So every case
+    the join added was drift-blind for good, at any confidence, while the
+    evidence row and the agreement share went on counting it.
+
+    The case is the join's own output, not a hand-built dict: a regression test
+    over a shape the join does not actually write would pass with the join
+    still broken."""
+    entry = m.load_registry()["work-kind"]
+    cases, _lines = joined(m, [
+        log_row("gggg", "work-kind", "A title somebody rewrote", 901,
+                wording=m.wording(entry), branch="maintenance",
+                raw={"type": "choice", "choice": "maintenance",
+                     "confidence": 0.01})])
+    got = (cases["work-kind"] or [{}])[0]
+    drifted, unplaced = m.drift_line(entry, cases["work-kind"])
+    return (got.get("band") == "confident" and "work-kind-gggg" in drifted
+            and "0.01" in drifted and not unplaced), (got.get("band"), drifted,
+                                                      unplaced)
+
+
+def a_case_held_to_no_band_is_listed(m):
+    """And the other half: a case `band_of` cannot place is RETURNED, never
+    skipped. A case counted by the evidence row while no band could call it
+    drifted is the shape this reader was blind in."""
+    entry = m.load_registry()["work-kind"]
+    nomatch = {"id": "a-no-match", "reading": "work-kind", "role": "no-match",
+               "truth": "none", "state": {}, "label": {"from": "owner"},
+               "source": {"kind": "fixture"},
+               "seen": [{"model": MODEL, "wording": m.wording(entry),
+                         "raw": {"type": "choice", "choice": "none",
+                                 "confidence": 0.99}}]}
+    _drifted, unplaced = m.drift_line(entry, [nomatch])
+    return (len(unplaced) == 1 and "a-no-match" in unplaced[0]
+            and "no-match case" in unplaced[0]), unplaced
+
+
+CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
+CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed
 
 
 def a_key_names_its_repository(m):
@@ -982,6 +1045,20 @@ MUTATIONS = [
     ("a live run replaces the history", '        c.setdefault("seen", []).append(',
      '        c["seen"] = []\n        c.setdefault("seen", []).append(',
      "report --live appends a run and replaces none"),
+    # THE DEFECT THE REVIEW AT a73fc57 FOUND, from both ends.
+    ("the join writes no band",
+     '        case["band"] = band_of(entry, case)[0]', "        pass",
+     "a case the join writes is held to a band, and drift reads it"),
+    ("a choice's band never derived",
+     '    if truth in options and truth != cuts.get("no_match"):',
+     "    if False:",
+     "a case the join writes is held to a band, and drift reads it"),
+    ("an unplaced case skipped in silence",
+     '            unplaced.append(f"{c[\'id\']} ({why})")', "            pass",
+     "a case held to no band is listed, never skipped"),
+    ("an act's four fields never required", "        for field in ACT_FIELDS:",
+     "        for field in ():",
+     "a reading at act declares what it does and how it is undone"),
     ("bound a dropped", '        if verb == "label" and (label in PERSON_LABELS',
      "        if False and (label in PERSON_LABELS",
      "an act never moves a label a person alone moves"),
@@ -1047,13 +1124,9 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
-def band_key(entry, case):
-    """Which band a case belongs to: a `noul`'s is its truth, a `choice`'s is
-    how decided the answer should be. A case that fits no option belongs to
-    neither -- it is the no-match evidence and is reported on its own."""
-    if case.get("role") == "no-match" or case.get("truth") == "none":
-        return None
-    return case["truth"] if entry["question"]["type"] == "noul" else case.get("band")
+# Which band a case is held to is `campaign-jev.band_of`'s, asked and never
+# restated: this suite kept its own reading of it, and the two disagreed exactly
+# where the join wrote a case with no `band`.
 
 
 # The number the band is over is `campaign-jev.band_value`'s, asked and never
@@ -1082,6 +1155,19 @@ def live(record, wording_hash=None):
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     model = ""
     for name, entry in sorted(reg.items()):
+        # A READING WHOSE QUESTION IS COMPOSED PER ITEM IS SKIPPED, AND SAYS
+        # SO. `question.per` means production builds one question per claim or
+        # per condition out of this entry -- `check-cited-claims.py` and
+        # `check-research-bar.py` do -- so asking the entry's bare
+        # `instructions` here would measure a call nobody makes and declare a
+        # band for it. Measuring those is their own reader's, with their own
+        # composer (the REVIEW at a73fc57, note 7).
+        if (entry.get("question") or {}).get("per"):
+            print(f"  {name}: skipped, its question is composed per "
+                  f"`{entry['question']['per']}` by its own reader; a band "
+                  f"measured on the bare instructions would be a call nobody "
+                  f"makes")
+            continue
         cases = jev.read_corpus(name)
         check(f"live: {name} has cases", bool(cases), len(cases))
         spec = jev.question_of(entry)
@@ -1113,7 +1199,7 @@ def live(record, wording_hash=None):
                 c.setdefault("seen", []).append(
                     {"model": r.model, "wording": wording, "at": at,
                      "word": a.word, "raw": a.raw})
-            key = band_key(entry, c)
+            key = jev.band_of(entry, c)[0]
             if c.get("role") == "no-match":
                 nomatch.append((c["id"], a.word, value))
                 continue
@@ -1198,7 +1284,7 @@ def live(record, wording_hash=None):
             # this run is already in it.
             history = {}
             for c in cases:
-                key = band_key(entry, c)
+                key = jev.band_of(entry, c)[0]
                 for s in c.get("seen") or []:
                     value = jev.band_value(entry, s.get("raw"))
                     if (key and value is not None

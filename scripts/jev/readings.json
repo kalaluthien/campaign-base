@@ -1,6 +1,6 @@
 {
  "docstring-claims": {
-  "owner": "scripts/check-docstring-claims.py --staged",
+  "owner": "scripts/check-cited-claims.py --staged",
   "tier": "shadow",
   "group": "docstring-claim",
   "state": {
@@ -31,6 +31,68 @@
   },
   "prefilter": {
    "what": "a staged change to a spec/ pred, fun or assert, or to a docstring paragraph citing one; any other commit asks nothing"
+  },
+  "question": {
+   "type": "choice",
+   "per": "claim",
+   "instructions": "Is `claim` about `pred.name` true of the Alloy definition in `pred.text`?",
+   "criteria": {
+    "supports": {
+     "what": "the definition makes `claim` true",
+     "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"
+    },
+    "contradicts": {
+     "what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
+     "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"
+    },
+    "says_nothing": {
+     "what": "the definition neither makes `claim` true nor false",
+     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"
+    }
+   }
+  },
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {}
+ },
+ "reference-claims": {
+  "owner": "scripts/check-cited-claims.py --staged",
+  "tier": "shadow",
+  "group": "reference-claim",
+  "state": {
+   "fields": [
+    "paragraph",
+    "pred"
+   ],
+   "paragraph": "one paragraph, list item or table row under its header, of AGENTS.md or a .claude/skills/*/references/*.md, as written",
+   "pred": {
+    "name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
+    "text": [
+     "comment",
+     "declaration",
+     "callees",
+     "fields"
+    ]
+   },
+   "claims": {
+    "sentences_holding": "`<pred.name>`",
+    "split_at": [
+     "; "
+    ],
+    "definition_at": [
+     ": ",
+     ", which is to say "
+    ]
+   }
+  },
+  "prefilter": {
+   "what": "a staged change to a spec/ pred, fun or assert, or to a reference paragraph citing one; any other commit asks nothing",
+   "plain_name": "[a-z]+",
+   "anchored_by": "spec/|\\.als|(?<![/\\w])model\\b"
   },
   "question": {
    "type": "choice",

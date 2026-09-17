@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
-"""Prove check-docstring-claims.py asks what a commit touched, cuts the state the entry names, and never refuses.
+"""Prove check-cited-claims.py asks what a commit touched, from either source, cuts the state each entry names, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers every
 question it is sent with one P(contradicts), and the reader runs in a fixture
@@ -8,14 +8,14 @@ repository holding its own copies of the scripts it loads and of
 scripts/jev/readings.json. Each case is then broken by a mutation of the
 reader's text and must go red by its own assertion.
 
-`--live` asks every line of scripts/jev/corpus/docstring-claims.jsonl against
-the real endpoint, reads each case's highest P(contradicts) against the
-entry's thresholds, counts the cases off their `truth`, and fails a case whose
+`--live` asks every line of scripts/jev/corpus/<reading>.jsonl, for each reading
+the reader owns, against the real endpoint, reads each case's highest
+P(contradicts) against its entry's thresholds, counts the cases off their `truth`, and fails a case whose
 word differs from the last one `seen` under the same question wording, so a
 known miss stays counted and a change is red; `--record` appends the reading
 to each line's `seen`.
 
-Usage: scripts/check-docstring-claims-test.py [--live [--record]]
+Usage: scripts/check-cited-claims-test.py [--live [--record]]
 """
 import datetime
 import hashlib
@@ -35,13 +35,14 @@ harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
 HERE = Path(__file__).resolve().parent
-SCRIPT = HERE / "check-docstring-claims.py"
+SCRIPT = HERE / "check-cited-claims.py"
 SOURCE = SCRIPT.read_text()
 REGISTRY = HERE / "jev" / "readings.json"
-CORPUS = HERE / "jev" / "corpus" / "docstring-claims.jsonl"
-ENTRY = json.loads(REGISTRY.read_text())["docstring-claims"]
+CORPUS = HERE / "jev" / "corpus"
+ENTRIES = json.loads(REGISTRY.read_text())
+ENTRY = ENTRIES["docstring-claims"]
 MODEL = "jev-1.13.0"
-ROOT = Path(tempfile.mkdtemp(prefix="docstring-claims-"))
+ROOT = Path(tempfile.mkdtemp(prefix="cited-claims-"))
 
 NEXT = {"p": 0.9}
 SEEN = []
@@ -91,6 +92,26 @@ An unrelated paragraph about `other`.
 """
 '''
 UNRELATED = "#!/usr/bin/env python3\n\"\"\"Cites `holds` too.\"\"\"\n"
+REFERENCE = """# A reference
+
+The model is `holds`: an agent holds its own claim.
+
+- A list item naming `other` with nothing to anchor it.
+
+| stage | in `spec/fixture` |
+| --- | --- |
+| one | `holds` |
+
+| other table | x |
+| --- | --- |
+| two | y |
+- first item
+- second item
+
+```sh
+`holds` in a fence
+```
+"""
 
 
 def module(source):
@@ -104,19 +125,24 @@ def load(source):
     return types.SimpleNamespace(source=source, m=module(source))
 
 
-def repo(t, edits, p=0.9, url=None, registry=True, tier="advise"):
+def repo(t, edits, p=0.9, url=None, registry=True, tier="advise", drop=()):
     """The reader, as `t.source`, run in a fresh repository whose first commit
     holds the fixture tree and whose index holds `edits` on top of it."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     files = {"spec/fixture/system.als": SPEC, "spec/more/system.als": SPEC_TWICE,
              "scripts/cites.py": CITING, "scripts/also.py": UNRELATED,
              "README.md": "fixture\n",
-             "scripts/check-docstring-claims.py": t.source,
+             ".claude/skills/x/references/ref.md": REFERENCE,
+             ".claude/skills/x/SKILL.md": REFERENCE,
+             "scripts/check-cited-claims.py": t.source,
              "scripts/campaign-jev.py": (HERE / "campaign-jev.py").read_text(),
              "scripts/check-tree-shape.py": (HERE / "check-tree-shape.py").read_text()}
     if registry:
         entries = json.loads(REGISTRY.read_text())
-        entries["docstring-claims"]["tier"] = tier
+        for name in entries:
+            entries[name]["tier"] = tier
+        for name in drop:
+            del entries[name]
         files["scripts/jev/readings.json"] = json.dumps(entries)
     harness.write_tree(d, files)
     harness.git(d, "init", "-q", check=True)
@@ -128,13 +154,17 @@ def repo(t, edits, p=0.9, url=None, registry=True, tier="advise"):
     SEEN.clear()
     env = dict(os.environ, CAMPAIGN_JEV_URL=url or URL, TYPESAFE_API_KEY="stub",
                CAMPAIGN_JEV_LOG=str(d / "jev.log"))
-    r = subprocess.run([sys.executable, "scripts/check-docstring-claims.py",
+    r = subprocess.run([sys.executable, "scripts/check-cited-claims.py",
                         "--staged"], cwd=d, capture_output=True, text=True, env=env)
     return r, r.stdout + r.stderr
 
 
-def asked_names():
-    return sorted(b["state"]["pred"]["name"] for b in SEEN)
+def asked_names(source=".py"):
+    """The names asked of paragraphs from docstrings (`.py`) or references
+    (`.md`), told apart by the fixture text the paragraph came from."""
+    return sorted(b["state"]["pred"]["name"] for b in SEEN
+                  if (b["state"]["paragraph"].split("\n")[0] in REFERENCE)
+                  == (source == ".md"))
 
 
 def cut_claims(t):
@@ -157,12 +187,13 @@ def pred_touched(t):
     r, out = repo(t, {"spec/fixture/system.als":
                       SPEC.replace("some a.peer and", "some a.peer or")})
     return (r.returncode == 0 and asked_names() == ["holds", "holds"]
-            and len(SEEN) == 2), (asked_names(), out)
+            and asked_names(".md") == ["holds", "holds"] and len(SEEN) == 4), (
+        [b["state"]["paragraph"] for b in SEEN], out)
 
 
 def paragraph_touched(t):
     r, out = repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")})
-    return (r.returncode == 0 and asked_names() == ["holds"]
+    return (r.returncode == 0 and asked_names() == ["holds"] and len(SEEN) == 1
             and "pred holds" in SEEN[0]["state"]["pred"]["text"]), (asked_names(), out)
 
 
@@ -225,6 +256,55 @@ def deletion_hunk(t):
     return got == {"spec/a.als": [(3, 4)]}, got
 
 
+def reference_units(t):
+    got = [u for _, _, u in t.m.units(REFERENCE)]
+    return got == ["The model is `holds`: an agent holds its own claim.",
+                   "- A list item naming `other` with nothing to anchor it.",
+                   "| stage | in `spec/fixture` |\n| one | `holds` |",
+                   "| other table | x |\n| two | y |",
+                   "- first item", "- second item"], got
+
+
+def plain_name_anchored(t):
+    decls = {"holds": [1], "other": [1], "someRule": [1]}
+    pre = ENTRIES["reference-claims"]["prefilter"]
+    got = [t.m.cited("The model is `holds`. `other` is elsewhere.", decls, pre),
+           t.m.cited("`other` sits beside `someRule`.", decls, pre),
+           t.m.cited("Run `/model`, then `holds`.", decls, pre),
+           t.m.cited("`other` is elsewhere.", decls, {})]
+    return got == [["holds"], ["other", "someRule"], [], ["other"]], got
+
+
+def reference_touched(t):
+    r, out = repo(t, {".claude/skills/x/references/ref.md":
+                      REFERENCE.replace("its own claim", "its claim")})
+    asked = [b["state"]["paragraph"] for b in SEEN]
+    return (r.returncode == 0
+            and asked == ["The model is `holds`: an agent holds its claim."]
+            and "reference-claims`: 1 staged" in out), (asked, out)
+
+
+def reference_without_entry_not_read(t):
+    r, out = repo(t, {".claude/skills/x/references/ref.md":
+                      REFERENCE.replace("its own claim", "its claim")},
+                  drop=("reference-claims",))
+    return (r.returncode == 0 and not SEEN
+            and "none a spec/ module or a source; nothing asked" in out), out
+
+
+def skill_body_not_a_source(t):
+    r, out = repo(t, {".claude/skills/x/SKILL.md": REFERENCE.replace("its own", "its")})
+    return r.returncode == 0 and not SEEN and "nothing asked" in out, out
+
+
+def entry_missing_other_asked(t):
+    r, out = repo(t, {"spec/fixture/system.als":
+                      SPEC.replace("some a.peer and", "some a.peer or")},
+                  drop=("reference-claims",))
+    return (r.returncode == 0 and "no entry `reference-claims`" in out
+            and asked_names() == ["holds", "holds"] and not asked_names(".md")), out
+
+
 def failure_exits_zero(t):
     r, out = repo(t, {"spec/fixture/system.als": SPEC + "\n"}, registry=False)
     return r.returncode == 0 and "could not read the commit" in out, (r.returncode, out)
@@ -245,6 +325,12 @@ CASES = {
     "at tier shadow the counts are printed and no claim": shadow_prints_counts,
     "a comment holding a glob keeps its first line": glob_in_comment,
     "a deletion-only hunk touches the lines on both sides": deletion_hunk,
+    "reference units: a paragraph, an item, a row under its header, no fence": reference_units,
+    "a plain name counts only where the entry's prefilter anchors it": plain_name_anchored,
+    "a staged reference paragraph edit asks that paragraph alone": reference_touched,
+    "a skill body outside references/ is no source": skill_body_not_a_source,
+    "a reference edit with no reference entry reads nothing": reference_without_entry_not_read,
+    "a reading missing from the registry is named, the other still asked": entry_missing_other_asked,
 }
 
 MUTATIONS = [
@@ -253,8 +339,8 @@ MUTATIONS = [
     ("the fields left out of pred.text", 'if "fields" in parts and read:', "if False:",
      "pred.text: the pred, its comment, its callee and the field's comment"),
     ("a touched pred's citations not asked",
-     "if name not in decls or not (mine or name in touched):",
-     "if name not in decls or not mine:",
+     "if not (mine or name in touched):",
+     "if not mine:",
      "a staged pred edit asks every paragraph citing it"),
     ("the thresholds not read from the entry", 'spec.update(entry["thresholds"])',
      "pass", "a contradicted claim is printed with its value, exit 0"),
@@ -282,6 +368,32 @@ MUTATIONS = [
      "last = first + max(count, 1) - 1", "a deletion-only hunk touches the lines on both sides"),
     ("a name declared twice asked anyway", "if len(decls[name]) > 1:", "if False:",
      "a name declared twice is skipped and named"),
+    ("a table row without its header", 'body = f"{header}\\n{body}"', "pass",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a list item run into the one above", 'elif re.match(r"([-*]|\\d+\\.)\\s", s):',
+     "elif False:",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a header kept past its table", "            header = None\n", "            pass\n",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a source read for a reading the registry lacks",
+     "sources[r](p) for r in READINGS if r in registry)",
+     "sources[r](p) for r in READINGS)",
+     "a reference edit with no reference entry reads nothing"),
+    ("a fence read as prose", "fence = not fence", "fence = False",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("the prefilter's anchor ignored",
+     "return [n for n in names if not re.fullmatch(plain, n) or anchored(n)]",
+     "return names",
+     "a plain name counts only where the entry's prefilter anchors it"),
+    ("a reference paragraph's citations not read",
+     "units if REFERENCE.fullmatch(p) else None", "None",
+     "a staged reference paragraph edit asks that paragraph alone"),
+    ("any markdown under a skill read as a reference",
+     "units if REFERENCE.fullmatch(p) else None",
+     "units if p.endswith('.md') else None",
+     "a skill body outside references/ is no source"),
+    ("a missing entry fails the whole run", "if reading not in registry:", "if False:",
+     "a reading missing from the registry is named, the other still asked"),
 ]
 
 
@@ -291,13 +403,19 @@ def live(record):
     known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
     jev = m.load_sibling("campaign-jev.py")
-    rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
-    t = ENTRY["thresholds"]
+    for reading in m.READINGS:
+        live_one(m, jev, reading, ENTRIES[reading], CORPUS / f"{reading}.jsonl",
+                 record)
+
+
+def live_one(m, jev, name, entry, corpus, record):
+    rows = [json.loads(line) for line in corpus.read_text().splitlines() if line]
+    t = entry["thresholds"]
     targets = [(r["id"], r["state"]["paragraph"], r["state"]["pred"]["name"],
                 r["state"]["pred"]["text"]) for r in rows]
-    results = m.ask_all(ENTRY, targets, jev)
+    results = m.ask_all(entry, targets, jev)
     today = datetime.date.today().isoformat()
-    wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)
+    wording = hashlib.sha256(json.dumps(entry["question"], sort_keys=True)
                              .encode()).hexdigest()[:12]
     misses = 0
     for row, (label, found, reading) in zip(rows, results):
@@ -314,13 +432,13 @@ def live(record):
             check(f"live {row['id']} reads {before[-1]['word']} as last recorded",
                   word == before[-1]["word"], f"{word} at {raw}, {row['source']['ref']}")
         row["seen"].append({"model": reading.model, "wording": wording,
-                            "raw": raw, "word": word, "at": today})
-    print(f"{misses} of {len(rows)} case(s) off their truth")
-    check("live: every case asked", len(results) == len(rows), len(results))
+                            "raw": raw if raw is None else round(raw, 2), "word": word, "at": today})
+    print(f"{name}: {misses} of {len(rows)} case(s) off their truth")
+    check(f"live {name}: every case asked", len(results) == len(rows), len(results))
     if record:
-        CORPUS.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
+        corpus.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
                                   for r in rows))
-        print(f"recorded into {CORPUS}")
+        print(f"recorded into {corpus}")
 
 
 def main(argv):

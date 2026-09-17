@@ -771,6 +771,25 @@ def join_skips_a_subject_that_will_not_read(m):
         (code, ids, asked, said)
 
 
+def join_writes_the_reading_s_own_state_slice(m):
+    """ONE `judge` CALL CARRIES THE UNION of every reading's fields, so a group
+    whose two readings name DIFFERENT fields wrote a case carrying both --
+    `judge` RAISES on such a state as an extra field, and `--live` would ask a
+    question about state the band was never measured with.
+
+    The control is the other reading of the same group over the SAME row: each
+    must get its own half and neither the union."""
+    rows = [thread_row("tttt", 702, {"F1": "the ceiling is stated twice"})]
+    cases, _lines = joined(m, rows)
+    got = (cases["C-report-disposes-finding"] or [{}])[0]
+    reg = m.load_registry()
+    whole = set(rows[0]["state"])
+    return (sorted(got.get("state") or {})
+            == sorted(reg["C-report-disposes-finding"]["state"]["fields"])
+            and set(got.get("state") or {}) != whole), (got.get("state"), whole)
+
+
+CASES["the join writes the reading's own slice of the state"] = join_writes_the_reading_s_own_state_slice
 CASES["a row whose subject will not read is skipped, counted and named"] = join_skips_a_subject_that_will_not_read
 
 
@@ -2156,6 +2175,11 @@ MUTATIONS = [
      '    return settled_of(case) is None or case.get("role") == "no-match"',
      "    return True",
      "a case code settled is never named as drift"),
+    ("the join writing the whole group's state into one reading's case",
+     '            "state": {k: v for k, v in (row.get("state") or {}).items()\n'
+     '                      if k in fields}, "truth": truth,',
+     '            "state": row.get("state") or {}, "truth": truth,',
+     "the join writes the reading's own slice of the state"),
     ("a subject that will not read counted as waiting",
      "        if fetched[(subject, repo, number)] is None:",
      "        if False:",

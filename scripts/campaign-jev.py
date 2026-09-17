@@ -1453,10 +1453,21 @@ def cmd_corpus_join(args):
         if truth is None:
             waiting.append((row, why))
             continue
+        # THE READING'S OWN SLICE OF THE STATE, not the group's. One `judge`
+        # call carries the union of every reading's fields and its row records
+        # that union, so a group whose two readings name DIFFERENT fields --
+        # `pull-request-thread`, where one reads the report and its findings
+        # and the other the review and the thread -- wrote a case carrying
+        # both. `judge` then RAISES on such a state as an extra field, and
+        # `--live` would ask a question about state the band was never
+        # measured with. Found by the suite's "every case of a registered
+        # reading fits its entry" on the first thread row ever joined.
+        fields = (entry.get("state") or {}).get("fields") or []
         cases = read_corpus(name)
         case = {
             "id": f"{name}-{row['call']}", "reading": name,
-            "state": row.get("state") or {}, "truth": truth,
+            "state": {k: v for k, v in (row.get("state") or {}).items()
+                      if k in fields}, "truth": truth,
             "label": {"from": f"join:{entry['join']}",
                       "at": datetime.date.today().isoformat(),
                       "evidence": evidence},

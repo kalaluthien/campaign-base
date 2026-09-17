@@ -786,6 +786,99 @@ def main():
                 "kalaluthien/campaign-base --title t --parent 272 --body x")
         check("...and the same with -R naming the tracker is allowed",
               r.returncode == 0, out(r)[:300])
+        # WHAT A CREATE FILED IS RECORDED (rule-check#455 pr 4). The guard used
+        # to return the moment it saw `--parent` and never read the body, so a
+        # request had no record on this machine at all; the filing now rides on
+        # the guard.log row of that call.
+        log = f.base / "runtime" / "guard.log"
+        create = (f"gh issue create -R kalaluthien/campaign-base "
+                  f"--title 'Script the upkeep' --parent {tracker} "
+                  f"--body '{templated}'")
+        before = log.read_text() if log.is_file() else ""
+        r = ask(f.base, tool="Bash", command=create)
+        row = json.loads((log.read_text()[len(before):]).splitlines()[-1])
+        filed = (row.get("filings") or [{}])[0]
+        check("a create's title, body, parent and repository are recorded on "
+              "the guard.log row of that call",
+              filed.get("title") == "Script the upkeep"
+              and filed.get("body") == templated
+              and filed.get("parent") == tracker
+              and filed.get("repo") == "kalaluthien/campaign-base", filed)
+        # THE CONTROL FOR "THE VERDICT DOES NOT MOVE": the same create with a
+        # DIFFERENT body must print the same verdict, byte for byte. A record
+        # that leaked into the verdict -- a body sentence appended to what the
+        # `--parent` branch reads -- would make the two differ, so this can
+        # fail. The exit status and the `--parent` sentence are pinned beside
+        # it, and the body sentences are pinned ABSENT.
+        plain = ask(f.base, tool="Bash",
+                    command=create.replace(f"'{templated}'", "'a plain body'"))
+        check("...and the verdict, its wording and its exit status do not move",
+              r.returncode == 0 and plain.returncode == 0
+              and r.stdout == plain.stdout
+              and f"it carries --parent {tracker}" in r.stdout
+              and "its body carries" not in r.stdout
+              and "no body was read" not in r.stdout,
+              (r.returncode, plain.returncode, r.stdout[:200],
+               plain.stdout[:200]))
+        # EACH UNREAD CASE IS SAID, never left absent: a body this guard could
+        # not see must not read as a filing with no body. The verdict is
+        # unchanged here too -- a body file that cannot be read is refused only
+        # where there is no `--parent`, and this create has one.
+        before = log.read_text()
+        r = ask(f.base, tool="Bash", command=f"gh issue create --title t "
+                f"--parent {tracker} -F gone.md")
+        filed = (json.loads(log.read_text()[len(before):].splitlines()[-1])
+                 .get("filings") or [{}])[0]
+        check("a body the guard could not read is recorded as unread, naming "
+              "the path, and the create is still allowed",
+              r.returncode == 0 and "gone.md" in filed.get("body_unread", "")
+              and "body" not in filed, (r.returncode, filed))
+        before = log.read_text()
+        r = ask(f.base, tool="Bash", command=f"gh issue create "
+                f"--parent {tracker} --body x")
+        filed = (json.loads(log.read_text()[len(before):].splitlines()[-1])
+                 .get("filings") or [{}])[0]
+        check("a create with no --title is recorded as having none",
+              "no title was read" in filed.get("title_unread", ""), filed)
+        # A CALL THAT FILED NOTHING CARRIES NO `filings` KEY, so a reader never
+        # has to tell an empty list from a call that filed nothing.
+        before = log.read_text()
+        ask(f.base, tool="Bash", command="gh issue view 5")
+        check("a call that filed nothing carries no `filings` key",
+              "filings" not in json.loads(
+                  log.read_text()[len(before):].splitlines()[-1]), "")
+        # THE READING RIDES ON THE RECORD AND CHANGES NOTHING. `CAMPAIGN_JEV_URL`
+        # is a closed port for every case in this suite, so the endpoint never
+        # answers -- which is the point: the reading must cost the filing its
+        # bound at most and must move no verdict. What it writes goes to this
+        # run's own Jev log, and the shared `runtime/jev.log` is never named.
+        jevlog = Path(os.environ["CAMPAIGN_JEV_LOG"])
+        (f.camp / "runtime").mkdir(parents=True, exist_ok=True)
+        (f.camp / "runtime" / "campaign-issue-body-derived.md").write_text(
+            "## Intent\n\n- x\n\n## Scope\n\nIn:\n\n- keep the machine's ops\n\n"
+            "## Repos\n\n- none\n")
+        was = len(jevlog.read_text().splitlines()) if jevlog.is_file() else 0
+        started = time.time()
+        r = ask(f.base, tool="Bash", command=create)
+        took = time.time() - started
+        rows = [json.loads(x) for x in jevlog.read_text().splitlines()[was:]] \
+            if jevlog.is_file() else []
+        check("the filing reading logs against a closed endpoint and moves no "
+              "verdict",
+              r.returncode == 0 and r.stdout == plain.stdout
+              and len(rows) == 2
+              and {x["reading"] for x in rows} == {"filing-scope-covers",
+                                                   "filing-addresses-judge"}
+              and all(x["branch"] == "unknown" for x in rows),
+              (r.returncode, took, rows[:1]))
+        check("...and its Scope option is the campaign directory's own, read "
+              "off this machine and not from the network",
+              bool(rows) and (rows[0].get("state") or {}).get("campaigns")
+              == {"demo": "In:\n- keep the machine's ops"}, rows[:1])
+        check("...within the bound it names, which is under campaign-jev's own",
+              took < 20 and guard_module().FILING_TIMEOUT
+              < guard_module().load(guard_module().JEV, "cj").TIMEOUT,
+              took)
         r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
         check("a gh command shlex cannot split is refused, naming why",
               r.returncode == 2 and "would not split" in r.stderr
@@ -4127,7 +4220,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 648
+    EXPECTED = 656
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

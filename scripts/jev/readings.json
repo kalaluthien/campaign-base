@@ -97,5 +97,31 @@
   "join": null,
   "bands": {},
   "lessons": []
+ },
+ "finding-sort": {
+  "owner": "scripts/check-finding-sort.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "finding-sort",
+  "state": {
+   "fields": ["finding"],
+   "finding": "one finding of a REVIEW comment, one state per finding, the reviewer's own defect or refinement word masked to [label]"
+  },
+  "prefilter": {"what": "a comment opening REVIEW, posted with gh pr comment, cut into item lines by check-finding-sort.py's findings(); anything else asks nothing"},
+  "question": {
+   "type": "choice",
+   "per": "finding",
+   "instructions": "If the finding is fixed the way it asks, does what the code does when run change?",
+   "criteria": {
+    "defect": {"what": "yes: some input, state or test outcome differs after the fix -- a wrong result, a wrong refusal or allow, a crash, a slow path, or a test that cannot fail becoming one that can",
+               "example": "`parse_date` reads `2026-02-30` as March 2 instead of refusing it, so a bad due date is stored"},
+    "refinement": {"what": "no: only text a person reads changes -- a comment, a docstring, a message, a name, a number stated in prose, a document",
+                   "example": "the usage line still calls the flag `--dry`, while the code and the error message name it `--check`"},
+    "unclear": {"what": "the finding does not say what would change"}
+   }
+  },
+  "thresholds": {"option": "defect", "yes_over": 0.5, "no_under": 0.2},
+  "join": null,
+  "bands": {},
+  "lessons": []
  }
 }

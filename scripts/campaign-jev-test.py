@@ -371,6 +371,18 @@ def raised_where_nothing_should(m):
             and "raised where nothing is meant to (KeyError)" in got.why), got
 
 
+def skip_logged(m):
+    LOG.write_text("")
+    note = m.skip("a suite", "a label", "the kind read failed (TimeoutExpired)",
+                  env=env())
+    rows = [json.loads(x) for x in LOG.read_text().splitlines() if x]
+    ok = (len(rows) == 1 and rows[0]["reader"] == "a suite"
+          and rows[0]["read"] == "a label" and rows[0]["asked"] == MODEL
+          and rows[0]["skipped"] == "the kind read failed (TimeoutExpired)"
+          and "answers" not in rows[0] and note.startswith("logged to"))
+    return ok, (rows, note)
+
+
 def log_refused(m):
     blocker = ROOT / "not-a-dir"
     blocker.write_text("")
@@ -387,6 +399,7 @@ CASES["a ~/.env that is not text is unknown, not a traceback"] = env_not_text
 CASES["a call that raises where nothing should is unknown"] = raised_where_nothing_should
 CASES["the call is logged as one JSON line"] = logged_line
 CASES["a log that would not write is reported, not raised"] = log_refused
+CASES["a skipped reading is logged as one JSON line naming why"] = skip_logged
 
 MUTATIONS = [
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
@@ -445,6 +458,10 @@ MUTATIONS = [
      "    except ZeroDivisionError as e:", "a call that raises where nothing should is unknown"),
     ("a set-but-empty endpoint read as unset", "    if not url:",
      "    if False:", "an endpoint set to nothing never reaches the network"),
+    ("a skip not logged",
+     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return log_call(',
+     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return "logged to" or log_call(',
+     "a skipped reading is logged as one JSON line naming why"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
      "a log that would not write is reported, not raised"),

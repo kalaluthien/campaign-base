@@ -164,7 +164,7 @@
     }
    }
   },
-  "compose": {"where": "question", "as": "{condition}"},
+  "compose": {"where": "question", "as": {"{condition}": "condition"}},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
@@ -635,7 +635,9 @@
     "noMatch": "no hunk in `candidateHunks` checks this condition: none tests it, or the condition is about something no hunk here exercises"
    }
   },
-  "compose": {"where": "question", "as": "{condition}"},
+  "compose": {"where": "question", "as": {"{condition}": "condition"},
+              "criteria": {"from": "candidateHunks", "template": "{hunk}",
+                           "put": {"{hunk}": "key", "{path}": "first line"}}},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
@@ -677,7 +679,7 @@
     }
    }
   },
-  "compose": {"where": "question", "as": "{condition}"},
+  "compose": {"where": "question", "as": {"{condition}": "condition"}},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,
@@ -721,7 +723,9 @@
     "noMatch": "no candidate in `candidates` is evidence for this condition: none implements it, tests it or reports a result that shows it"
    }
   },
-  "compose": {"where": "question", "as": "{condition}"},
+  "compose": {"where": "question", "as": {"{condition}": "condition"},
+              "criteria": {"from": "candidates", "template": "{hunk}",
+                           "put": {"{hunk}": "key", "{path}": "first line"}}},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
@@ -766,7 +770,8 @@
     }
    }
   },
-  "compose": {"where": "question", "as": "{condition}"},
+  "compose": {"where": "question",
+              "as": {"{condition}": "condition", "{reportLine}": "reportLine"}},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,

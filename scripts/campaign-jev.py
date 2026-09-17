@@ -18,8 +18,9 @@ at `act` and only when the call replied, cleared its threshold and fits;
 otherwise the issue is escalated to an agent.
 
 THE QUESTION IS NEVER WRITTEN HERE. `scripts/jev/readings.json` is the one home
-of every reading -- the question, its `criteria`, the state slice, the code
-prefilter, the cuts and the tier -- and a reader asks by NAME:
+of every reading -- the question, its `criteria`, how a reading asked per item
+puts that item into it (`compose`), the state slice, the code prefilter, the
+cuts and the tier -- and a reader asks by NAME:
 
     judge("issue-shape", {"title": ..., "body": ...},
           read="kalaluthien/campaign-base#455",
@@ -956,16 +957,18 @@ def options_of(entry, state=None):
 #   state     the state carries the items, and the instructions name the one
 #             being asked by its KEY, at `{item}`; the model reads the text out
 #             of the state itself
-#   question  the instructions carry the item's TEXT, and the field it came
+#   question  the instructions carry the item's TEXT, and every field it came
 #             from is withheld from the state the call sends
 #   table     the items are the entry's OWN table, named by `table`, and each
 #             one's words fill placeholders across the whole question
 #   call      the reader makes one CALL an item and the item is that call's
 #             state, so this asks one question and fans out nothing
 #
-# `as` says how, and only `question` has one: a word in braces splices the text
-# at that placeholder, and any other word puts it under that key of an
-# instructions OBJECT.
+# `as` says how, and only `question` has one. A MAP of `{placeholder}` to a
+# state field splices each one's item into the instructions -- a reading may
+# take more than one, as `done-report-claim` takes the condition and the REPORT
+# line that answers it -- and a plain word instead puts the item's text under
+# that key of an instructions OBJECT.
 #
 # THE ITEM SOURCE NEED NOT BE A STATE FIELD. `state.fields` is the slice ONE
 # CASE carries, and a case of a per-item reading is one item -- so
@@ -998,12 +1001,69 @@ def compose_of(entry):
                 f"campaign-jev: `{COMPOSE}.where` is `{where}`, so `{field}` "
                 f"must say where the item comes from or goes; it holds "
                 f"{shape.get(field)!r}")
+    if shape["where"] == IN_QUESTION and isinstance(shape["as"], dict):
+        loose = sorted(m for m in shape["as"] if not m.startswith("{"))
+        if loose:
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.as` maps a PLACEHOLDER to the state "
+                f"field its item comes from; {', '.join(loose)} is no "
+                f"placeholder")
     if shape["where"] == FROM_TABLE and not isinstance(
             entry.get(shape["table"]), dict):
         raise ValueError(
             f"campaign-jev: `{COMPOSE}.table` names `{shape['table']}`, which "
             f"is no table of this entry")
+    built = shape.get("criteria")
+    if built is not None:
+        if built.get("template") not in (entry["question"].get("criteria") or {}):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.criteria.template` names "
+                f"`{built.get('template')}`, which is no option of this "
+                f"entry's question")
+        bad = sorted(set((built.get("put") or {}).values()) - set(PUTS))
+        if bad or not built.get("put"):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.criteria.put` fills each "
+                f"placeholder from {' or '.join(PUTS)}; it names "
+                f"{', '.join(bad) or 'nothing'}")
     return shape
+
+
+# WHERE A BUILT OPTION'S WORDS COME FROM, for a `choice` whose options are one
+# per item of a state field and whose descriptions are a TEMPLATE the entry
+# holds under a braced key. `key` is the item's own name and `first line` the
+# first line of its value -- which is what the model reads at the top of that
+# item in the state, so the description names the file the hunk opens with and
+# nothing the call did not send.
+PUT_KEY, PUT_FIRST_LINE = "key", "first line"
+PUTS = (PUT_KEY, PUT_FIRST_LINE)
+
+
+def criteria_of(entry, state=None):
+    """The `choice` criteria as the model is sent them: the entry's own, or one
+    per item of the field `compose.criteria` names, each from the template.
+
+    THE ONE READER of that rule, as `options_of` is of `options_from`. The two
+    are different shapes on purpose: `options_from` takes each option's
+    DESCRIPTION straight out of the state, and this fills a template the entry
+    wrote, so the wording of an option stays in the registry where every other
+    wording is."""
+    shape = (compose_of(entry) or {}).get("criteria")
+    written = entry["question"]["criteria"]
+    if not shape:
+        return written
+    template = written[shape["template"]]
+    built = {}
+    for key, value in ((state or {}).get(shape["from"]) or {}).items():
+        text = template
+        for mark, source in shape["put"].items():
+            text = text.replace(mark, key if source == PUT_KEY
+                                else str(value).split("\n", 1)[0])
+        built[key] = text
+    for name, text in written.items():
+        if name != shape["template"]:
+            built[name] = text
+    return built
 
 
 def instructions_of(entry, item, state=None):
@@ -1013,11 +1073,14 @@ def instructions_of(entry, item, state=None):
     shape = compose_of(entry)
     if shape["where"] == IN_STATE:
         return text.replace(ITEM_MARK, str(item))
-    value = ((state or {}).get(entry["question"]["per"]) or {}).get(item)
-    where = shape["as"]
-    if where.startswith("{"):
-        return text.replace(where, str(value))
-    return {"question": text, where: value}
+    how = shape["as"]
+    if isinstance(how, dict):
+        for mark, field in how.items():
+            text = text.replace(
+                mark, str(((state or {}).get(field) or {}).get(item)))
+        return text
+    return {"question": text,
+            how: ((state or {}).get(entry["question"]["per"]) or {}).get(item)}
 
 
 def filled_from_table(entry, spec, item):
@@ -1051,6 +1114,18 @@ def words_of(entry, verdict):
     return out
 
 
+def item_fields(entry):
+    """The state fields a per-item reading takes its items from: the ones the
+    caller is asked for and the call does NOT send, because the question
+    carries their text. THE ONE READER of that half of `compose.as`."""
+    shape = compose_of(entry)
+    if shape is None or shape["where"] != IN_QUESTION:
+        return set()
+    how = shape["as"]
+    return set(how.values()) if isinstance(how, dict) \
+        else {entry["question"]["per"]}
+
+
 def items_of(entry, state=None):
     """The items one per-item reading is asked over, by key, or None where it
     is asked once. THE ONE READER of where they come from: the state's own
@@ -1080,6 +1155,8 @@ def question_of(entry, item=None, state=None):
     spec.update(entry.get("thresholds") or {})
     if spec.pop(OPTIONS_FROM, None):
         spec["criteria"] = options_of(entry, state)
+    elif "criteria" in spec:
+        spec["criteria"] = criteria_of(entry, state)
     if item is None:
         return spec
     if compose_of(entry)["where"] == FROM_TABLE:
@@ -1330,9 +1407,8 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     # came from is then WITHHELD from the call, because an item carried by the
     # question is not sent twice. So the caller owes the group's fields plus
     # every item source, and the endpoint is sent the fields less those.
-    sources = {(e.get("question") or {}).get("per")
-               for e in entries.values()
-               if (compose_of(e) or {}).get("where") == IN_QUESTION}
+    sources = set().union(*(item_fields(e) for e in entries.values())) \
+        if entries else set()
     fields = state_fields(entries)
     want, given = fields | sources, set(state)
     if want != given:
@@ -1393,15 +1469,17 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         # The question id never does, so a shape that named the item nowhere
         # would ask the same question once per item and get one answer n times.
         shape = compose_of(entry)
-        mark = (ITEM_MARK if shape["where"] == IN_STATE
-                else shape["as"] if shape["where"] == IN_QUESTION
-                and shape["as"].startswith("{") else "")
-        if mark and mark not in entry["question"]["instructions"]:
+        marks = ([ITEM_MARK] if shape["where"] == IN_STATE
+                 else list(shape["as"]) if shape["where"] == IN_QUESTION
+                 and isinstance(shape["as"], dict) else [])
+        missing = [m for m in marks
+                   if m not in entry["question"]["instructions"]]
+        if missing:
             raise ValueError(
                 f"campaign-jev: `{name}` is asked per `{per}` and composes its "
-                f"item at `{mark}`, which its instructions do not name; the "
-                f"question id never reaches the model, and without it the same "
-                f"question would be asked once per item")
+                f"item at {', '.join(missing)}, which its instructions do not "
+                f"name; the question id never reaches the model, and without "
+                f"it the same question would be asked once per item")
         fanned[name] = items
         cleared = given or {}
         for item in items:

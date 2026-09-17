@@ -1442,6 +1442,59 @@ def the_spliced_and_filled_questions_are_what_the_readers_sent(m):
     return not bad, bad
 
 
+def the_done_questions_are_what_their_readers_sent(m):
+    """The last two shapes, against the composers that still own them:
+    check-done-carry.py builds one option per candidate hunk from a template
+    the entry holds under a braced key, and check-done-report.py splices TWO
+    placeholders -- the condition and the REPORT line answering it. Both
+    composers are written out here; their readers move in this same commit, and
+    what they must go on sending is these bodies."""
+    reg = m.load_registry()
+    conds = {"c1": "the guard refuses a comment over the ceiling",
+             "c2": "a skip row names the rule that took it"}
+    cands = {"h1": {"path": "scripts/a-test.py", "text": "def t(): pass"},
+             "h2": {"path": "scripts/b-test.py", "text": "def u(): pass"}}
+    bad = []
+
+    select = reg["done-test-select"]     # check-done-carry.select_questions
+    q = select["question"]
+    template = q["criteria"]["{hunk}"]
+    criteria = {h: template.replace("{hunk}", h).replace("{path}", c["path"])
+                for h, c in cands.items()}
+    criteria["noMatch"] = q["criteria"]["noMatch"]
+    spec = dict(select["thresholds"], type=q["type"], criteria=criteria)
+    text = {h: c["path"] + "\n" + c["text"] for h, c in cands.items()}
+    state = {"candidateHunks": text}
+    was = m.request_body(state, {
+        cid: dict(spec, instructions=q["instructions"].replace("{condition}", t))
+        for cid, t in conds.items()})
+    got = m.request_body(state, {
+        cid: m.question_of(select, cid,
+                           {"candidateHunks": text, "condition": conds})
+        for cid in conds})
+    if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
+        bad.append(("done-test-select", got, was))
+
+    claim = reg["done-report-claim"]     # check-done-report's own extra splice
+    q = claim["question"]
+    none, lines = q["no_report_line"], {"c1": "the ceiling is a constant now"}
+    spec = dict(claim["thresholds"], type=q["type"], criteria=q["criteria"])
+    was = m.request_body({"evidence": text["h1"]}, {
+        cid: dict(spec, instructions=q["instructions"]
+                  .replace("{condition}", t)
+                  .replace("{reportLine}", lines.get(cid) or none))
+        for cid, t in conds.items()})
+    got = m.request_body({"evidence": text["h1"]}, {
+        cid: m.question_of(claim, cid,
+                           {"evidence": text["h1"], "condition": conds,
+                            "reportLine": {c: lines.get(c) or none
+                                           for c in conds}})
+        for cid in conds})
+    if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
+        bad.append(("done-report-claim", got, was))
+    return not bad, bad
+
+
 def a_key_names_its_repository(m):
     """A number without its repository is refused: a member repository's pull
     request closes a sub-issue here and its number collides with this
@@ -1602,6 +1655,7 @@ CASES["a row the join cannot label stays in the log and is counted"] = join_keep
 CASES["joining twice writes one case"] = join_writes_one_case_for_one_row
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
 CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent
+CASES["a built-criteria question and a two-placeholder one are what their readers sent"] = the_done_questions_are_what_their_readers_sent
 CASES["a join key names its repository beside every number"] = a_key_names_its_repository
 CASES["a commit key names its repository and its path"] = a_commit_key_names_its_repository_and_its_path
 
@@ -2525,11 +2579,12 @@ MUTATIONS = [
      "    pass",
      "every question over one thread goes in one call, one per finding"),
     ("the marker never required",
-     '        if mark and mark not in entry["question"]["instructions"]:',
-     "        if False:", "a per-item question must name its item"),
+     "        missing = [m for m in marks",
+     "        missing = [m for m in []",
+     "a per-item question must name its item"),
     ("the item's text spliced where the reader put it under a key",
-     '    if where.startswith("{"):',
-     "    if True:",
+     "    if isinstance(how, dict):\n        for mark, field in how.items():",
+     "    if True:\n        for mark, field in (how if isinstance(how, dict) else {}).items():",
      "a question composed into the instructions is what the reader sent"),
     ("the item source sent as well as carried in the question",
      "    carried = fields - sources", "    carried = fields",
@@ -2542,6 +2597,16 @@ MUTATIONS = [
      '        text = text.replace("{" + key + "}", json.dumps(value)[1:-1])',
      '        text = text.replace("{" + key + "}", str(value))',
      "a question spliced or filled from a table is what the reader sent"),
+    ("an option's template never filled from the state",
+     '        built[key] = text', "        built[key] = template",
+     "a built-criteria question and a two-placeholder one are what their readers sent"),
+    ("the entry's own options dropped from a built criteria",
+     '        if name != shape["template"]:', "        if False:",
+     "a built-criteria question and a two-placeholder one are what their readers sent"),
+    ("only the first placeholder of a reading spliced",
+     "        for mark, field in how.items():",
+     "        for mark, field in list(how.items())[:1]:",
+     "a built-criteria question and a two-placeholder one are what their readers sent"),
     ("a per-item reading with no declared shape loaded anyway",
      '    if not isinstance(shape, dict) or shape.get("where") not in WHERE:',
      "    if False:",
@@ -2564,9 +2629,8 @@ MUTATIONS = [
      "    criteria.update(built)\n    return criteria",
      "the entry's own option wins a name collision"),
     ("the built options never reaching the question",
-     '    if spec.pop(OPTIONS_FROM, None):\n'
      '        spec["criteria"] = options_of(entry, state)',
-     "    spec.pop(OPTIONS_FROM, None)",
+     "        pass",
      "the built options are what the question carries"),
     ("the address read as an upper edge it never reaches",
      "    if value >= ADDRESS_OVER:", "    if False:",
@@ -2630,7 +2694,8 @@ MUTATIONS = [
      "    return root",
      "fetch_commits refuses a sha that has not reached origin/main"),
     ("a subject taken with a field of its key missing",
-     "    if missing:", "    if False:",
+     "    missing = [f for f in fields if not row.get(f)]\n    if missing:",
+     "    missing = []\n    if missing:",
      "a row's subject names the fetch and what it is given"),
     ("a commit key taken with no repository and no path",
      '    if "commit" in key:', "    if False:",

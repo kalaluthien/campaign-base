@@ -127,20 +127,21 @@ def load_sibling(name):
     return mod
 
 
-def questions(entry):
-    q = entry["question"]
-    spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
-    spec.update(entry["thresholds"], instructions=q["instructions"])
-    return {"c": spec}
+def ask_all(entry, cut, subject, jev, key=None, env=None):
+    """[Verdict] for every finding, asked at once.
 
-
-def ask_all(entry, cut, subject, jev, env=None):
-    """[Answer] for every finding, asked at once."""
+    ONE `judge` CALL A FINDING, which is what this entry's `compose` says by
+    `call`: the finding IS the state, so nothing fans out inside a call and the
+    question sent is the entry's own. What the ROW gained is the reading's
+    name, the wording and the KEY -- the repository, the pull request and which
+    finding of the review it was -- so the same thread's next REVIEW can be
+    joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
     def one(item):
         n, (word, masked, _ident) = item
-        reading = jev.ask(READER, f"{subject} f{n} {word}", {"finding": masked},
-                          questions(entry), env=env)
-        return reading.answers["c"]
+        judged = jev.judge(entry["group"], {"finding": masked},
+                           read=f"{subject} f{n} {word}", reader=READER,
+                           key=dict(key or {}, finding=n), env=env)
+        return judged.verdicts[READING]
     with ThreadPoolExecutor(min(8, len(cut))) as pool:
         return list(pool.map(one, enumerate(cut, 1)))
 
@@ -160,7 +161,11 @@ def main(argv, stdin=sys.stdin, env=None):
         if not cut:
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        ask_all(entry, cut, subject, load_sibling("campaign-jev.py"), env)
+        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
+        # repository names no pull request when a member repository's numbers
+        # collide with this tracker's.
+        ask_all(entry, cut, subject, load_sibling("campaign-jev.py"),
+                {"repo": repo, "pull_request": int(pr)} if repo else None, env)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
         try:
             load_sibling("campaign-jev.py").skip(

@@ -86,25 +86,22 @@ def work_kind(issue, repo):
     return "", (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
 
 
-def questions(entry):
-    """A question per condition, its text put into the entry's instructions.
+def ask_all(entry, note, subject, jev, key=None, env=None):
+    """{condition: Answer} for every condition of the entry, in one call.
 
     ONE CALL A NOTE, not one a condition (sdlc-alloy#458 DECISION
     issuecomment-5716072632): questions in one call cannot see each other, so
-    each still asks one narrow judgment, and the state is the note alone."""
-    q = entry["question"]
-    spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
-    spec.update(entry["thresholds"])
-    return {name: dict(spec, instructions=q["instructions"].replace(
-                "{condition}", entry["conditions"][name]))
-            for name in entry["conditions"]}
-
-
-def ask_all(entry, note, subject, jev, env=None):
-    """{condition: Answer} for every condition of the entry, in one call."""
-    reading = jev.ask(READER, f"{subject} NOTE", {"note": note},
-                      questions(entry), env=env)
-    return reading.answers
+    each still asks one narrow judgment, and the state the endpoint is sent is
+    the note alone. The conditions are handed to `judge` as the state's
+    `condition` field and its `compose` splices each one's text at
+    `{condition}` -- the shape this file composed by hand until now -- so what
+    is sent did not move. What the ROW gained is the reading's name, the
+    wording and the KEY, without which no later DECISION could ever be joined
+    to the answer (sdlc-alloy#458 DECISION 5722176509)."""
+    judged = jev.judge(entry["group"],
+                       {"note": note, "condition": entry["conditions"]},
+                       read=f"{subject} NOTE", reader=READER, key=key, env=env)
+    return jev.words_of(entry, judged.verdicts[READING])
 
 
 def main(argv, stdin=sys.stdin, env=None):
@@ -126,7 +123,11 @@ def main(argv, stdin=sys.stdin, env=None):
         if kind != "research":
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev, env)
+        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: the guard passes it, and a
+        # number with no repository names no issue when a member repository's
+        # numbers collide with this tracker's.
+        ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev,
+                {"repo": repo, "issue": int(issue)} if repo else None, env)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
         skipped(subject, e, env)
     return 0

@@ -262,7 +262,7 @@ fact DirectoryTrace { directoryInit and always directoryStep }
  * end.
  */
 
-/* Filled by CommitLocal and emptied by PushBase, the post-commit hook's push
+/* Filled by CommitLocal and emptied by PushBase, the post-commit and post-merge hooks' push
    (`push-campaign-branch.sh`). */
 var sig BaseUnpushed in Machine {}
 /* The INNER clone under <campaign>/repos/campaign-base/. A separate bit
@@ -302,7 +302,7 @@ pred commitLocal[m: Machine] {
 }
 
 /* The outer checkout's commits reach origin. Unattended: the post-commit
-   hook pushes a campaign branch the moment it has a commit. */
+   and post-merge hooks push a campaign branch the moment it has a commit. */
 pred pushBase[m: Machine] {
   m in BaseUnpushed
   BaseUnpushed' = BaseUnpushed - m

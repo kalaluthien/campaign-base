@@ -598,6 +598,13 @@ def step_name(slug, state):
 # ------------------------------------------------------------------ 9. claim
 
 
+# The claim guard reads the tool call's own working directory, never a `cd`
+# inside the command (#475's first live chore had `gh pr create` refused so).
+CD_NOTE = ("step 9 claim: run a `cd` into the checkout as its OWN call, or "
+           "use `git -C` and `gh -R`: the claim guard reads the call's "
+           "working directory and not a `cd` written in the same command")
+
+
 def step_claim(number, slug, topic, base, target, entries, state):
     """The claim, cut only where WHERE is unambiguous.
 
@@ -618,6 +625,7 @@ def step_claim(number, slug, topic, base, target, entries, state):
         for entry in entries + [BASE_REPO]:
             print(f"  {CLAIM_PY} take {number} {number} "
                   f"{topic}-{entry.rsplit('/', 1)[-1]} --repo {entry}")
+        print(CD_NOTE)
         return branch, []
 
     where = entries[0] if entries else BASE_REPO
@@ -647,6 +655,7 @@ def step_claim(number, slug, topic, base, target, entries, state):
         tree = target / "worktrees" / f"{number}-{topic}"
         print(f"  git -C {base} fetch origin {branch} && "
               f"git -C {base} worktree add -b {branch} {tree} FETCH_HEAD")
+    print(CD_NOTE)
     return branch, [branch]
 
 

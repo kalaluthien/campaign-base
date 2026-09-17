@@ -332,6 +332,8 @@ def main() -> int:
         check("...acquiring nothing, and saying so, because `## Repos` is none",
               ran.count("acquire-repo.sh") == 0
               and "no repository acquired" in out, out[-400:])
+        check("...and the closing words say a `cd` is its own call there too",
+              m.CD_NOTE in out, out[-300:])
         check("...and the summary line names the issue, the directory and the branch",
               f"chore#{NUMBER} {URL}" in out and str(target) in out
               and f"branch {SLUG}/{NUMBER}-{SLUG}" in out, out[-400:])
@@ -404,6 +406,10 @@ def main() -> int:
               and str(Path(d)) in " ".join(ran.seen)
               and ran.count("repos/a") == 1 and ran.count("repos/b") == 1,
               f"{[line for line in ran.seen if 'acquire' in line]}")
+
+        check("...and the closing words say a `cd` is its own call, since the "
+              "guard reads the call's directory", m.CD_NOTE in out
+              and "as its OWN call" in m.CD_NOTE, out[-300:])
 
     # one entry is unambiguous, so it IS cut, and `--repo` names where
     with tempfile.TemporaryDirectory() as d:

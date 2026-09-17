@@ -275,6 +275,15 @@ def answer(w, a):
                                            w.get("lsof", ""), "")
     if a[:2] == ["git", "-C"] and a[3:] == ["worktree", "prune"]:
         return ok("")
+    if a[:2] == ["git", "-C"] and a[3:4] == ["rev-parse"]:
+        # A linked worktree's git dir is not the common one; a clone's is.
+        linked = "/worktrees/" in a[2]
+        return ok(f"/b/.git/worktrees/x\n/b/.git\n" if linked
+                  else f"{a[2]}/.git\n{a[2]}/.git\n")
+    if a[:2] == ["git", "-C"] and a[3:] in (["switch", "--detach"],
+                                            ["worktree", "remove", a[-1]]):
+        return subprocess.CompletedProcess(a, w.get("git_vacate", 0), "",
+                                           "contains modified or untracked files")
     return subprocess.CompletedProcess(a, 127, "", "not faked")
 
 
@@ -311,6 +320,7 @@ def drive(m, argv, w):
         m.CLAIM.herdr_sessions = blocked_read
     m.CLAIM.base_root = lambda: (w["root"], None)
     m.CLAIM.remote_of = lambda clone: w["origin"]
+    m.CLAIM.merged_pr_of = lambda repo, branch: w.get("merged", {}).get(branch)
     m.CLAIM.issue_repo = lambda issue, default: w["lands"].get(
         issue, (TRACKER, None, "lands in the base"))
     clock = [0.0]
@@ -790,7 +800,10 @@ def chore(state="CLOSED", labels=("chore",), **over):
     run's reading of its own turn as over, the leave's two polls, no
     sub-issue, and the campaign issue's own claim ref landed."""
     over.setdefault("polls", [(TURN_OVER, None), (LEAVER, None), (LEFT, None)])
-    over.setdefault("live", live(vacant=[(CHORE_CLAIM, "landed as #99")]))
+    if "live" not in over:
+        # Two readings: the release ahead of the gates, then what is left.
+        over["live_seq"] = [live(vacant=[(CHORE_CLAIM, "landed as #99")]), live()]
+    over.setdefault("live", live())
     return whole(state=state, labels=labels, settlement=settlement_empty(state),
                  **over)
 
@@ -851,6 +864,90 @@ def case_leave_chore_gate_refuses(m):
     return (ok and w["dir"].exists() and not releases(asked)
             and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def vacates(asked):
+    return [a[3:] for a in asked if a[:2] == ["git", "-C"]
+            and a[3:4] in (["switch"], ["worktree"]) and a[3:] != ["worktree", "prune"]]
+
+
+def standing(**over):
+    """skill-upkeep#485 as it was left: a CLOSED chore whose merged claims are
+    still checked out in its own directory, a clone and a linked worktree, and
+    a third landed and checked out nowhere. The second live reading is the one
+    after the vacate and the release."""
+    w = chore(**over)
+    clone, wt = str(w["dir"] / "repos" / "member"), str(w["dir"] / "worktrees" / "b")
+    w["here"] = [(f"rc/{N}-a", clone), (f"rc/{N}-b", wt)]
+    w.setdefault("merged", {f"rc/{N}-a": 38, f"rc/{N}-b": 86})
+    w["live_seq"] = [live(occupied=w.pop("occupied", w["here"]),
+                          vacant=[(CHORE_CLAIM, "landed as #99")]), live()]
+    return w
+
+
+def case_leave_chore_releases_first(m):
+    """The defect the first live chore found: `live` refused the clean-up over
+    the chore's own merged claims. Each is taken off its branch by git's own
+    refusals, then released, and only then are the campaign scope's gates read."""
+    w = standing()
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    clone, wt = w["here"][0][1], w["here"][1][1]
+    return (code == 0 and not w["dir"].exists()
+            and vacates(asked) == [["switch", "--detach"],
+                                   ["worktree", "remove", wt]]
+            and rel == [f"rc/{N}-a", f"rc/{N}-b", CHORE_CLAIM]
+            and steps(out).index("vacate") < steps(out).index("release")
+            < steps(out).index("bound")
+            and f"rc/{N}-a at {clone}" in out), out
+
+
+def case_leave_chore_unmerged_stands(m):
+    """A claim no merged pull request has as its head is not finished work:
+    nothing is vacated, nothing released, and the clean-up stops there."""
+    w = standing(merged={f"rc/{N}-a": 38})
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "chore",
+                             f"rc/{N}-b", "no merged pull request")
+    return (ok and w["dir"].exists() and not releases(asked)
+            and not vacates(asked)), out
+
+
+def case_leave_chore_merge_unread_stands(m):
+    """A merged reading that did not happen is not a merge."""
+    w = standing(merged={f"rc/{N}-a": "?", f"rc/{N}-b": 86})
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "chore",
+                             f"rc/{N}-a", "did not read")
+    return ok and w["dir"].exists() and not vacates(asked), out
+
+
+def case_leave_chore_outside_stands(m):
+    """A checkout outside the chore's own directory is somebody's workspace:
+    it is left alone, and `live` refuses it as it always did."""
+    w = standing(occupied=[(f"rc/{N}-a", "/c/elsewhere/wt")])
+    w["live_seq"] = w["live_seq"][:1]
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "live",
+                             f"rc/{N}-a is checked out")
+    return (ok and w["dir"].exists() and not vacates(asked)
+            and [a[a.index("--branch") + 1] for a in releases(asked)]
+            == [CHORE_CLAIM]), out
+
+
+def case_leave_chore_dirty_worktree_stands(m):
+    """git refuses to remove a worktree holding a change, and no force is
+    given: the clean-up stops, and nothing was released."""
+    w = standing(git_vacate=1)
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "vacate",
+                             "contains modified or untracked files")
+    return ok and w["dir"].exists() and not releases(asked), out
+
+
+def case_leave_chore_release_refuses(m):
+    """A release that refuses -- an unreviewed merge, say -- stops the
+    clean-up before any gate of the campaign scope is read."""
+    w = standing(released={f"rc/{N}-b": "refusing: no REVIEW names the head\n"})
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "release",
+                             "no REVIEW names the head")
+    return ok and w["dir"].exists() and "bound" not in steps(out), out
 
 
 def case_leave_chore_said_up_front(m):
@@ -1332,6 +1429,18 @@ CASES = {
         case_leave_chore_unread,
     "chore: a refusing gate stops the clean-up and leaves the leave alone":
         case_leave_chore_gate_refuses,
+    "chore: its own merged claims are vacated and released before any gate":
+        case_leave_chore_releases_first,
+    "chore: a claim never merged is left standing, and stops the clean-up":
+        case_leave_chore_unmerged_stands,
+    "chore: a merged reading that did not happen vacates nothing":
+        case_leave_chore_merge_unread_stands,
+    "chore: a checkout outside its directory is left to the live gate":
+        case_leave_chore_outside_stands,
+    "chore: a worktree git will not remove is kept, with no force":
+        case_leave_chore_dirty_worktree_stands,
+    "chore: a release that refuses stops the clean-up before the gates":
+        case_leave_chore_release_refuses,
     "chore: the caller's own pane is told the clean-up follows, and which log":
         case_leave_chore_said_up_front,
     # refusals
@@ -1966,6 +2075,24 @@ MUTATIONS = [
      "say so"),
     ("chore: only a CLOSED one", '    if state != "CLOSED":\n', "    if False:\n",
      "chore: an OPEN chore's leave is just a leave"),
+    ("chore: the release comes before the gates", "    step_chore_release(n)\n    campaign(",
+     "    campaign(",
+     "chore: its own merged claims are vacated and released before any gate"),
+    ("chore: only a merged claim is touched", "        if not isinstance(number, int):\n",
+     "        if False:\n",
+     "chore: a claim never merged is left standing, and stops the clean-up"),
+    ("chore: an unread merge is not a merge", "        if not isinstance(number, int):\n",
+     "        if number is None:\n",
+     "chore: a merged reading that did not happen vacates nothing"),
+    ("chore: only its own directory is vacated",
+     "           if directory and Path(p).is_relative_to(directory)]", "           ]",
+     "chore: a checkout outside its directory is left to the live gate"),
+    ("chore: a vacate git refused stops it", "    if r.returncode != 0:\n        raise Refused(\"vacate\", f\"{branch} at",
+     "    if False:\n        raise Refused(\"vacate\", f\"{branch} at",
+     "chore: a worktree git will not remove is kept, with no force"),
+    ("chore: a refused release stops it", "        if why:\n            raise Refused(\"release\", f\"{branch}: {why}\")",
+     "        if False:\n            raise Refused(\"release\", f\"{branch}: {why}\")",
+     "chore: a release that refuses stops the clean-up before the gates"),
     ("chore: the delete is given", "close=False, delete=True))",
      "close=False, delete=False))",
      "chore: a CLOSED chore's leave goes on to the campaign scope, which "

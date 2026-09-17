@@ -174,7 +174,16 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   A CLOSED chore's `chore` label pre-authorises its clean-up,
                   the one close a person does not start: their word was the
                   Definition of done the merge closed the issue with, and
-                  what is left is scratch. Scope campaign follows with the
+                  what is left is scratch. FIRST ITS OWN MERGED CLAIMS GO:
+                  the session that held them has left, so each stands checked
+                  out under the chore's own directory, where `live` would
+                  refuse the clean-up over it. A claim a merged pull request
+                  has as its head is taken off that checkout -- a linked
+                  worktree removed, a clone detached, neither forced -- and
+                  released, its review reading included. One never merged,
+                  one that did not read, one git keeps, or a release that
+                  refuses stops the clean-up; a checkout outside the directory
+                  is left for `live` to refuse. Scope campaign follows with the
                   delete given, every gate of it in its own order, and a gate
                   that refuses stops it there and undoes nothing -- the leave
                   has already happened. `standing` never meets `chore`, the
@@ -374,6 +383,10 @@ WHY = {
                 "answer on the campaign issue",
     "close": "a close is a GitHub fact or it is nothing",
     "release": "a claim ref is residue only once it is deleted",
+    "chore": "a chore's label pre-authorises clearing finished work, and a "
+             "claim no merged pull request has as its head is not that",
+    "vacate": "a checkout is left by git's own refusals and no force, so one "
+              "holding a change is kept",
     "delete": "the delete is the one step nothing recovers",
     "retire": "only a worker the heartbeat reads as done, its assigned "
               "sub-issue's ref gone and no assignment since, holds nothing an "
@@ -1255,6 +1268,64 @@ def chore_of(n):
         return None, None, f"could not parse gh issue view ({e.__class__.__name__})"
 
 
+def step_vacate(branch, path):
+    """Take one checkout off a merged claim, so `release` finds nobody
+    standing in it. A linked worktree is removed and a clone is detached,
+    neither with a force: git keeps a worktree holding a change, and a detach
+    moves no file."""
+    r = run("git", "-C", path, "rev-parse", "--path-format=absolute",
+            "--git-dir", "--git-common-dir")
+    dirs = (r.stdout or "").split()
+    if r.returncode != 0 or len(dirs) != 2:
+        raise Refused("vacate", f"git did not say what {path} is: "
+                                f"{(r.stderr or '').strip()[:120]}")
+    if dirs[0] == dirs[1]:
+        did = "detached, a clone's own checkout"
+        r = run("git", "-C", path, "switch", "--detach")
+    else:
+        did = "removed, a linked worktree"
+        r = run("git", "-C", str(Path(dirs[1]).parent), "worktree", "remove",
+                path)
+    if r.returncode != 0:
+        raise Refused("vacate", f"{branch} at {path}: git exited "
+                                f"{r.returncode}: {(r.stderr or '').strip()[:160]}")
+    holds("vacate", f"{branch} at {path}: {did}")
+
+
+def step_chore_release(n):
+    """A CLOSED chore's own finished claims, released BEFORE the campaign
+    scope's gates (#475's first live chore): the session that held them has
+    left, so they stand checked out in the chore's own directory and `live`
+    refused the clean-up over them. Only a claim a merged pull request has as
+    its head is touched, and only a checkout under that directory; anything
+    else is left for `live` to refuse, which it still does."""
+    slug, directory = slug_of(n), read_directory(n)
+    reading = read_live(n, slug)
+    own = [(b, p) for b, _, p in reading["occupied"]
+           if directory and Path(p).is_relative_to(directory)]
+    for branch, path in own:
+        repo = CLAIM.remote_of(path)
+        number = CLAIM.merged_pr_of(repo, branch) if repo else "?"
+        if not isinstance(number, int):
+            raise Refused("chore", f"{branch} at {path}: " + (
+                f"no merged pull request on {repo} has it as its head"
+                if number is None else "whether it merged did not read")
+                + ", so it is left standing")
+    for branch, path in own:
+        step_vacate(branch, path)
+    done = [b for b, _ in own] + [b for b, _, m in reading["vacant"]
+                                  if m.startswith("landed as")]
+    if done:
+        print(COMPACT_NOTE)
+    for branch in done:
+        why = release_refusal(script(CLAIM_SCRIPT, "release", n, n,
+                                     "--branch", branch))
+        if why:
+            raise Refused("release", f"{branch}: {why}")
+    holds("release", f"{len(done)} merged claim(s) of the chore released "
+                     f"ahead of the gates")
+
+
 def step_chore_cleanup(n, say):
     """What a CLOSED chore's label pre-authorises, run after the leave and
     only there: scope campaign with the delete given. A refusal inside it is
@@ -1273,8 +1344,9 @@ def step_chore_cleanup(n, say):
         return
     say("chore", f"#{n} is a CLOSED chore, and the "
                  f"`{TRACKER_MODULE.CHORE_LABEL}` label pre-authorises the "
-                 f"clean-up: scope campaign below, with the delete given and "
-                 f"every gate of it read")
+                 f"clean-up: its merged claims released, then scope campaign "
+                 f"below, with the delete given and every gate of it read")
+    step_chore_release(n)
     campaign(argparse.Namespace(campaign_issue=n, close=False, delete=True))
 
 

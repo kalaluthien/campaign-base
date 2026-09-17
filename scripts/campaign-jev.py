@@ -87,7 +87,7 @@ the caller prints beside the verdict, as `check-campaign-claim.py` prints one
 beside its own: a caller that logged nothing and said nothing reads exactly like
 one that logged.
 
-Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting]
+Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting [--steady]]
        scripts/campaign-jev.py corpus join
        scripts/campaign-jev.py new <reading>
        scripts/campaign-jev.py probe <request.json>   -- a hand probe; the file
@@ -1060,12 +1060,37 @@ def agreement(entry, cases):
     return jev / len(judged), base / len(judged)
 
 
-def waiting_line(reg=None):
-    """THE FIRST LINE, and the one the heartbeat prints: what is waiting.
+# A LINE THE WATCH READS MUST NOT MOVE ON EVERY CALL. `campaign-heartbeat.py
+# --watch` fires its planner whenever a line it prints CHANGES, and every
+# `campaign-tracker check` logs two rows, so the exact count below re-fired
+# every planner on this machine every few minutes with nothing for any of them
+# to do (DECISION 5718621461). The STEADY form names the classes that are
+# waiting and no count at all: it changes when waiting starts, when it ends,
+# when a class comes or goes, and when the oldest unjoined row passes
+# STALE_AFTER -- and each of those is something its reader can act on. The
+# exact counts stay one flag away, on `report --waiting`.
+STALE_AFTER = datetime.timedelta(hours=6)
 
-    The corpus grows only if somebody is told it has stopped growing, so this
-    counts the three ways it stalls -- rows nobody joined, cases nobody
-    labelled, and a reading above `shadow` whose evidence row is short."""
+
+def older_than(at, span, now=None):
+    """Whether the ISO timestamp `at` is at least `span` old. One absent or
+    unreadable is NOT stale: a torn row must not be what moves the line."""
+    try:
+        when = datetime.datetime.fromisoformat(at)
+    except (TypeError, ValueError):
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return now - when >= span
+
+
+def waiting_facts(reg=None):
+    """The three ways the corpus stalls, as facts: the rows nobody joined and
+    the oldest one's `at`, the cases nobody labelled, and the readings above
+    `shadow` whose evidence row is short. Both lines below render these.
+
+    The corpus grows only if somebody is told it has stopped growing."""
     reg = load_registry() if reg is None else reg
     rows, _how, _torn = read_log()
     rows, _stray = joinable(rows, reg)
@@ -1078,6 +1103,12 @@ def waiting_line(reg=None):
                      if c.get("truth") is None)
     short = [r for r, e in reg.items()
              if e.get("tier") != SHADOW and evidence_row(e, read_corpus(r))]
+    return unjoined, oldest, unlabelled, short
+
+
+def waiting_line(reg=None):
+    """THE FIRST LINE, exact: every count as it stands, for whoever asks."""
+    unjoined, oldest, unlabelled, short = waiting_facts(reg)
     return (f"jev waiting: {len(unjoined)} log row(s) unjoined"
             + (f" (oldest {oldest})" if oldest else "")
             + f", {unlabelled} case(s) unlabelled, "
@@ -1085,9 +1116,25 @@ def waiting_line(reg=None):
             + (f" ({', '.join(sorted(short))})" if short else ""))
 
 
+def steady_waiting_line(reg=None, now=None):
+    """THE SAME FIRST LINE FOR A WATCH: which classes are waiting, no count."""
+    unjoined, oldest, unlabelled, short = waiting_facts(reg)
+    parts = []
+    if unjoined:
+        aged = (f" (oldest over {int(STALE_AFTER.total_seconds() // 3600)}h)"
+                if older_than(oldest, STALE_AFTER, now) else "")
+        parts.append("log rows unjoined" + aged)
+    if unlabelled:
+        parts.append("cases unlabelled")
+    if short:
+        parts.append("readings short of the evidence row "
+                     f"({', '.join(sorted(short))})")
+    return "jev waiting: " + (", ".join(parts) if parts else "nothing")
+
+
 def cmd_report(args):
     reg = load_registry()
-    print(waiting_line(reg))
+    print(steady_waiting_line(reg) if args.steady else waiting_line(reg))
     if args.waiting:
         return 0
     names = [args.reading] if args.reading else sorted(reg)
@@ -1247,7 +1294,10 @@ def main(argv):
     p.add_argument("--live", action="store_true",
                    help="re-ask every case and append what came back")
     p.add_argument("--waiting", action="store_true",
-                   help="the first line alone, for the heartbeat")
+                   help="the first line alone, with every count as it stands")
+    p.add_argument("--steady", action="store_true",
+                   help="that line in the form a watch reads: which classes "
+                        "are waiting, and no count that moves on each call")
     p.set_defaults(run=cmd_report)
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])

@@ -217,8 +217,11 @@ branch the delegate's.
 **`<slug>-<role>-<n>`**, the slug being the campaign's own (§ ID, slug,
 directory, branch) and the role being `planner` or
 `worker`, for every session on this machine; `<n>` is one counter across both
-roles, assigned in the order sessions appear, so two do not both pick `-1` —
-this sentence is that counting rule's one home. **The role word is not a
+roles, assigned in the order sessions appear, so two do not both pick `-1`.
+**`campaign-name-session.py` reads that counter**, off `herdr agent list`
+and nothing else, and refuses a number a listed session of the same campaign
+already wears, naming the next free one; a listing it cannot read leaves the
+number unchecked and says so, since an unreadable herdr is not a veto. **The role word is not a
 label**: `check-campaign-claim.py` resolves it from `herdr agent
 list` and decides both planes by it, so a name of the wrong shape is refused
 every campaign write; what a well-formed one licenses is
@@ -527,8 +530,11 @@ hook refused and ask.
 
 **Open that pull request on the first commit, not when the work is ready.** The
 hook has already pushed the branch, so a late pull request only keeps published
-work out of sight. An open one is where a review writes its findings, and it is
-what survives the session that opened it.
+work out of sight — which is why `push-campaign-branch.sh` prints the
+`gh pr create` line after every push whose head no open pull request names.
+It announces and refuses nothing, and a `gh` that failed or did not answer in
+time is said rather than read as a yes. An open one is where a review writes
+its findings, and it is what survives the session that opened it.
 
 ## The campaign issue body
 

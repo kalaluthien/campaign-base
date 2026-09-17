@@ -36,7 +36,8 @@ returns this line to being a hope.
 
     exit 0   every pair applied, both paths
     exit 1   nothing applied -- a name failed the rule, a pane is named twice,
-             or the arguments are odd
+             a name's `<n>` is one a listed session of that campaign already
+             wears, or the arguments are odd
     exit 2   a herdr call failed partway, or a pane was blocked and got no
              prompt; what was applied is printed
 
@@ -172,8 +173,8 @@ SLUG = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 # One shape, no branches. The sub-issue is deliberately absent: a session works
 # several sub-issues, in parallel or one after another, and a name that tracked
 # the work in hand would go false at every handover. <n> distinguishes sessions
-# sharing a campaign. How <n> is counted across the two roles is AGENTS.md
-# § The session name's rule, stated there and nowhere else.
+# sharing a campaign; AGENTS.md § The session name says how it is counted, and
+# `spent_numbers` below is what reads that counting.
 #
 # SHAPE ONLY. Whether group 1 is a campaign token this file admits is
 # `campaign_of`'s question, because the slug's three conditions are not all
@@ -210,6 +211,69 @@ def role_word(name):
     the slug, so a name that passes holds exactly one."""
     m = NAME.match(name or "")
     return m.group(2) if m and campaign_of(name) is not None else None
+
+
+def number_of(name):
+    """The `<n>` a session name carries, or None when the name is no
+    campaign's. The one reading of that field: `NAME` ends in `-[0-9]+`, so the
+    last segment is it, and nothing else here splits a name to find it."""
+    if campaign_of(name) is None:
+        return None
+    return int(name.rsplit("-", 1)[1])
+
+
+# ---------------------------------------------------------- <n> is one counter
+
+# AGENTS.md § The session name: `<n>` is one counter across both roles,
+# assigned in the order sessions appear, so two do not both pick `-1`. Nothing
+# read it until rule-check#461 -- `NAME` takes any `[0-9]+`, and this script
+# read no other pane's name -- so the planner counted by hand at every launch
+# and two sessions named in the same minute took one number.
+#
+# THE LISTING IS THE COUNTER, because nothing stores one: a session's name
+# lives in herdr and nowhere else. So what is refused is precisely what the
+# listing can show -- two LIVE sessions of one campaign wearing one `<n>` --
+# and a number a retired session spent is in no listing. The suggestion below
+# says as much rather than claiming to be the campaign's high-water mark.
+
+
+def spent_numbers(sessions, campaign, keep_out=()):
+    """Every `<n>` a listed session of `campaign` wears, as {n: name}. Pure over
+    a listing, so a recorded one is a case.
+
+    `keep_out` holds the panes this call is renaming: a pane never collides with
+    the name it already wears, and one renamed away frees its number for another
+    pair of the same call."""
+    out = {}
+    for row in sessions.values():
+        # A ROW WITH NO PANE CANNOT BE SHOWN TO BE SOMEBODY ELSE. `parse_agents`
+        # gives such a row `"?"`, which matches no pane this call names, so it
+        # would be read as another session and the caller refused its own name
+        # -- a false refusal in the one script every session runs at start-up.
+        # Skipped instead: a duplicate hiding on an unidentifiable row is the
+        # cheaper miss.
+        if row["pane"] == "?" or row["pane"] in keep_out:
+            continue
+        n = number_of(row["name"])
+        if n is not None and campaign_of(row["name"]) == campaign:
+            out[n] = row["name"]
+    return out
+
+
+def number_refusal(name, spent):
+    """(why, the next free number) when `spent` already holds this name's `<n>`,
+    else (None, None).
+
+    The suggestion is the highest LISTED number plus one, which is the order
+    sessions appear in. A number a closed session spent is in no listing, so the
+    campaign's own comments are what says whether it was ever used."""
+    n = number_of(name)
+    if n not in spent:
+        return None, None
+    free = max(spent) + 1
+    return (f"{name}: {spent[n]} is listed and already wears -{n}. The next "
+            f"free number this listing shows is {free}, so "
+            f"{name.rsplit('-', 1)[0]}-{free}; nothing was applied"), free
 
 
 # ----------------------------------------------- who is named what, by herdr
@@ -439,6 +503,29 @@ def main():
             refuse(f"{pane} is named more than once; two /rename prompts "
                    "queued at one pane merge into a single name. Name it "
                    "once; nothing was applied")
+
+    # `<n>` IS ONE COUNTER, and the listing is the only place it is written
+    # down. Read once for the whole call, before anything is applied, so a
+    # collision in the last pair does not leave the first pane renamed.
+    sessions, why = herdr_sessions()
+    if sessions is None:
+        # A READING NOT MADE, said and moved past. Refusing here would make an
+        # unreadable herdr a way to block every rename, and the name is not a
+        # security boundary -- it is explicit, and the mistake is loud.
+        print(f"  <n> unchecked: {why}")
+    else:
+        # The names this call is handing out count too: neither is in the
+        # listing yet, so two pairs of one call would otherwise share an `<n>`.
+        taking = []
+        for _pane, name in pairs:
+            campaign = campaign_of(name)
+            spent = spent_numbers(sessions, campaign, keep_out=panes)
+            spent.update({number_of(nm): nm for nm in taking
+                          if campaign_of(nm) == campaign})
+            refusal, _free = number_refusal(name, spent)
+            if refusal:
+                refuse(refusal)
+            taking.append(name)
 
     failed = False
     for pane, name in pairs:

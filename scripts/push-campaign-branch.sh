@@ -49,6 +49,87 @@ if ! err=$(mktemp); then
 fi
 trap 'rm -f "$err"' EXIT INT TERM
 
+# THE PULL REQUEST GOES UP AT THE FIRST COMMIT, not when the work is ready
+# (AGENTS.md § Execution mode): the branch is already pushed by the time this
+# runs, so a late pull request only keeps published work out of sight, and an
+# open one is where a review writes its findings. Nothing here opens one -- the
+# title and the body are the session's to write -- so this ANNOUNCES the line
+# and refuses nothing.
+#
+# THE QUESTION IS "DOES ONE NAME THIS HEAD", AND NOTHING ELSE. It was also
+# gated on the branch being one commit ahead of `origin/main`, so the line
+# would be said once; that reading was SILENTLY WRONG, because `campaign-claim
+# take` cuts the ref from the remote's main sha and never moves the local
+# `origin/main`, so in a worktree lagging k commits a genuine first commit
+# counts k+1 and nothing was said at all (rule-check#461, pr#487 review). The
+# count is gone rather than repaired: a fetch to make it honest is a second
+# unbounded network call, and the cost of the two failure modes is not
+# symmetric. Saying it again at the next commit costs a session one glance and
+# is TRUE every time it prints; missing the first commit is the defect this was
+# written to close.
+# OVERRIDABLE so a case can reach the give-up branch without waiting the
+# whole bound out, and so a machine on a slow link can widen it. The
+# defaults are the bound; nothing here reads them for anything else.
+GH_TRIES=${GH_TRIES:-40}
+GH_SLEEP=${GH_SLEEP:-0.25}
+
+announce_pull_request() {
+	b=$1
+	# A BOUND, because this runs inside `post-commit` and an unbounded
+	# network call hangs every commit on this machine. Neither `timeout`
+	# nor `gtimeout` is on PATH here, so the watchdog is by hand.
+	if ! out=$(mktemp); then
+		echo "push-campaign-branch: mktemp failed, so whether a pull request names $b is unread." >&2
+		echo "  Open one if none does." >&2
+		return 0
+	fi
+	# THE TRAP COVERS THIS FILE TOO: the wait below runs for seconds, and an
+	# interrupt inside it would otherwise leave the temp behind.
+	trap 'rm -f "$err" "$out"' EXIT INT TERM
+
+	# `gh` ITSELF IN THE BACKGROUND, not a subshell around it, so `$!` is
+	# gh's own pid: a kill of a wrapper reaps the wrapper and leaves gh
+	# reparented to pid 1 and still running, one leak per hung commit.
+	# `wait` hands back its status, so nothing has to carry it in a file.
+	# Its stdout and stderr go to that file and never to this hook's, which
+	# a caller capturing `git commit` would otherwise wait on -- the same
+	# hazard the `nohup` above is shaped around.
+	gh pr list --head "$b" --state open --json number --jq '.[].number' \
+		</dev/null >"$out" 2>&1 &
+	job=$!
+	n=0
+	while [ "$n" -lt "$GH_TRIES" ] && kill -0 "$job" 2>/dev/null; do
+		sleep "$GH_SLEEP"
+		n=$((n + 1))
+	done
+	if kill -0 "$job" 2>/dev/null; then
+		kill "$job" 2>/dev/null
+		wait "$job" 2>/dev/null
+		# WHAT IT HAD WRITTEN BY THEN IS NOT AN ANSWER: a killed gh can
+		# leave a half-written file, and an empty one would read as
+		# "no pull request names this". Not read at all.
+		echo "push-campaign-branch: gh did not answer in ${GH_TRIES} tries of ${GH_SLEEP}s, so whether a pull request names $b is unread." >&2
+		echo "  Open one if none does." >&2
+		return 0
+	fi
+	wait "$job"
+	gh_status=$?
+	said=$(cat "$out" 2>/dev/null)
+
+	# AN UNREAD QUESTION IS NOT A YES. A gh that will not run leaves it
+	# unknown and says so; it is never read as "one already names this".
+	if [ "$gh_status" != 0 ]; then
+		echo "push-campaign-branch: could not tell whether a pull request names $b." >&2
+		echo "$said" | sed 's/^/  /' >&2
+		echo "  Open one if none does." >&2
+		return 0
+	fi
+	[ -z "$said" ] || return 0
+	echo "push-campaign-branch: no open pull request names $b."
+	echo "  AGENTS.md § Execution mode: open it on the first commit, not when the work is ready."
+	echo "  gh pr create --base main --head $b --title <verb-first> --body <Closes ...>"
+}
+
 # No force flag and no --no-verify: a rejected push is news, not something to
 # overrule. An amend or a rebase lands here too, and the right answer for those
 # is to be told, not to have the remote rewritten.
@@ -65,6 +146,8 @@ if git push --quiet origin "$branch" 2>"$err"; then
 		# `git commit`'s output waited for every Jev call.
 		sha=$(git rev-parse HEAD) || exit 0
 		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
+
+		announce_pull_request "$branch"
 		;;
 	esac
 else

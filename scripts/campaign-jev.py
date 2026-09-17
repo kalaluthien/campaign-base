@@ -923,6 +923,26 @@ def band_of(entry, case):
     return None, f"`{truth}` names no option of the set"
 
 
+def held_to_a_band(case):
+    """May this case's runs set or test the reading's band? THE ONE READER of
+    that rule, because the drift line, the live run's loop and its `--record`
+    history all ask it -- and the three disagreed.
+
+    A CASE CODE SETTLED IS HELD TO NO BAND. A band is what the states production
+    SENDS come back at, and the prefilter's whole job is that this one is never
+    sent, so a value from it can neither widen an edge nor be called drift.
+    `report` already counts such a case as code's rather than as one Jev got
+    wrong (DECISION 5715993782). The live loop knew this and the drift line did
+    not: `work-kind-0873f14b0769`, an issue whose `kind:` label settles it, came
+    back at 0.40 against a `confident` band of [0.53, 1.0] and was printed as
+    this reading's drift on every `report`.
+
+    A NO-MATCH CASE IS EXCEPTED -- `verb-first`'s is settled too, and where it
+    lands is the whole point of keeping it -- and `band_of` holds it to no band
+    anyway, with its own reason."""
+    return settled_of(case) is None or case.get("role") == "no-match"
+
+
 def band_value(entry, raw):
     """The number a BAND is over, which is not `confidence`'s: a `noul`'s own
     value, and a `choice`'s confidence. The two differ for a `noul` -- 0.04 is
@@ -1674,11 +1694,19 @@ def drift_line(entry, cases):
 
     A CASE `band_of` CANNOT PLACE IS RETURNED, never skipped: a case counted by
     the evidence row and by the agreement share while no band could ever call it
-    drifted is the shape this reader was blind in."""
+    drifted is the shape this reader was blind in.
+
+    WHETHER A CASE MAY BE TESTED AGAINST A BAND AT ALL IS `held_to_a_band`'s,
+    asked here rather than restated: this reader used to call a case code
+    settles drifted, on a value from a state production no longer sends."""
     declared = (entry.get("bands") or {}).get("declared") or {}
     model = (entry.get("bands") or {}).get("model")
     out, unplaced = [], []
     for c in cases:
+        if not held_to_a_band(c):
+            unplaced.append(f"{c['id']} (code settled it, so the state is no "
+                            f"longer sent and no band is over it)")
+            continue
         key, why = band_of(entry, c)
         if key is None:
             unplaced.append(f"{c['id']} ({why})")

@@ -876,6 +876,40 @@ def a_case_held_to_no_band_is_listed(m):
             and "no-match case" in unplaced[0]), unplaced
 
 
+def a_case_code_settled_is_never_drift(m):
+    """THE DEFECT `report` PRINTED ON EVERY RUN: `work-kind-0873f14b0769`, an
+    issue whose `kind:` label settles the reading, came back at 0.40 against a
+    `confident` band of [0.53, 1.0] and was named as drift -- a value from a
+    state the prefilter means production never to send.
+
+    THE CONTROL IS THE SAME CASE WITH THE PREFILTER'S WORD REMOVED, so what is
+    measured is `settled` doing it and not the band, the wording or the model.
+    Both spellings are exercised, because `settled_of` reads two."""
+    entry = m.load_registry()["work-kind"]
+    def case(**kw):
+        out = {"id": "work-kind-settled", "reading": "work-kind", "role": "case",
+               "truth": "research", "band": "confident", "state": {},
+               "label": {"from": "join:issue-kind-label"},
+               "seen": [{"model": MODEL, "wording": m.wording(entry),
+                         "raw": {"type": "choice", "choice": "development",
+                                 "confidence": 0.40}}]}
+        out.update(kw)
+        return out
+    loose = case(settled="research")
+    nested = case(source={"kind": "log", "settled": "research"})
+    control = case(source={"kind": "log", "settled": None})
+    drifted, unplaced = m.drift_line(entry, [loose])
+    nested_drift, nested_unplaced = m.drift_line(entry, [nested])
+    control_drift, control_unplaced = m.drift_line(entry, [control])
+    return (drifted == "none" and len(unplaced) == 1
+            and "code settled it" in unplaced[0]
+            and nested_drift == "none" and len(nested_unplaced) == 1
+            and "work-kind-settled 0.40 outside confident" in control_drift
+            and not control_unplaced), (drifted, unplaced, nested_drift,
+                                        control_drift)
+
+
+CASES["a case code settled is never named as drift"] = a_case_code_settled_is_never_drift
 CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
 CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
@@ -1863,6 +1897,13 @@ MUTATIONS = [
      '    if truth in options and truth != cuts.get("no_match"):',
      "    if False:",
      "a case the join writes is held to a band, and drift reads it"),
+    ("the drift line testing a case code settled against a band",
+     "        if not held_to_a_band(c):", "        if False:",
+     "a case code settled is never named as drift"),
+    ("held_to_a_band letting a settled case through",
+     '    return settled_of(case) is None or case.get("role") == "no-match"',
+     "    return True",
+     "a case code settled is never named as drift"),
     ("an unplaced case skipped in silence",
      '            unplaced.append(f"{c[\'id\']} ({why})")', "            pass",
      "a case held to no band is listed, never skipped"),
@@ -1942,14 +1983,9 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
-def held_to_a_band(jev, case):
-    """Whether this case's runs may set the reading's band. THE ONE READER of
-    that rule, because the run loop and the `--record` history both ask it and
-    the two disagreed: the loop skipped a case code settles while the history
-    still let its value widen the band, so the edge moved on a state production
-    never sends. A no-match case is excepted -- `verb-first`'s is settled too --
-    and `band_of` holds it to no band anyway."""
-    return jev.settled_of(case) is None or case.get("role") == "no-match"
+# Whether a case's runs may set or test a band is `campaign-jev.held_to_a_band`'s,
+# asked and never restated: this suite kept its own reading of it, and the drift
+# line kept a third, which called a case code settles drifted for good.
 
 
 # Which band a case is held to is `campaign-jev.band_of`'s, asked and never
@@ -2042,19 +2078,12 @@ def live(record, wording_hash=None):
                 c.setdefault("seen", []).append(
                     {"model": r.model, "wording": wording, "at": at,
                      "word": a.word, "raw": a.raw})
-            # A CASE CODE SETTLED IS HELD TO NO BAND AND SCORED AGAINST
-            # NOTHING. A band is what the states production SENDS come back at,
-            # and the prefilter's whole job is that this one is never sent --
-            # `report` already counts such a case as code's rather than as one
-            # Jev got wrong (DECISION 5715993782). It is still ASKED and still
-            # printed, because what the model would have said about a state code
-            # settles is the evidence that the prefilter is worth having. Found
-            # by `work-kind-0873f14b0769`, an issue whose `kind:` label settles
-            # it, which came back `development` at 0.43 against a truth of
-            # `research` and was counted twice over as this reading's failure.
-            # A no-match case is excepted and stays below: `verb-first`'s is
-            # settled too, and where it lands is the whole point of keeping it.
-            if not held_to_a_band(jev, c):
+            # WHICH CASES A BAND IS OVER IS `held_to_a_band`'s, and why is its
+            # docstring's. What is this loop's own: such a case is still ASKED
+            # and still PRINTED, because what the model would have said about a
+            # state code settles is the evidence that the prefilter is worth
+            # having.
+            if not jev.held_to_a_band(c):
                 settled_here.append((c["id"], a.word, value))
                 continue
             key = jev.band_of(entry, c)[0]
@@ -2153,7 +2182,7 @@ def live(record, wording_hash=None):
             # this run is already in it.
             history = {}
             for c in cases:
-                if not held_to_a_band(jev, c):
+                if not jev.held_to_a_band(c):
                     continue
                 key = jev.band_of(entry, c)[0]
                 for s in c.get("seen") or []:

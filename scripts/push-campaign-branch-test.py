@@ -246,8 +246,14 @@ def main():
     # fixture was misdirected so the function never ran at all. The marker says
     # the path was taken; the empty directory then says what it left.
     for name, kw, mark in (
+            # STDERR IS WHAT SEPARATES THIS PATH from the two error ones: all
+            # three print no announcement, and only this one says nothing at
+            # all. The clause here used to be `"names it" not in stdout`, which
+            # no output of the subject could ever contain, so it read as a
+            # second check and could not fail.
             ("a pull request already names it", {"prs": "9"},
-             lambda r: "gh pr create" not in r.stdout and "names it" not in r.stdout),
+             lambda r: "no open pull request names" not in r.stdout
+             and r.stderr == ""),
             ("no pull request names it", {},
              lambda r: "gh pr create" in r.stdout),
             ("gh would not run", {"gh_fails": True},

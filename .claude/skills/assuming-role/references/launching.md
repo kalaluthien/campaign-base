@@ -67,11 +67,14 @@ the prompt. A session already running is moved with
 
 ## Delivering the prompt
 
-**`herdr agent prompt <pane> "<text>"`.** This is the launch's own step and
-the delegate's first brief; every LATER assignment to the same session goes
-through `scripts/campaign-assign.py`, which adds the idle and compacted
-readings a running session needs and a fresh one cannot have. Both are prompts
-into the pane, which is the criterion in `AGENTS.md` § The four messages.
+**`scripts/campaign-assign.py <pane> <sub-issue> --assume-fresh`.** This is
+the launch's own step and the delegate's first brief; a LATER assignment to the
+same session is the same script without the flag, which a fresh session has no
+transcript reading for. Before it sends `herdr agent prompt`, it refuses a
+closed sub-issue, a campaign not bound here, a pane named for another campaign,
+and a checkout on `main` behind `origin/main`; its docstring says what else.
+Both are prompts into the pane, which is the criterion in `AGENTS.md` § The
+four messages.
 
 A prompt put on the launch line is
 word-split: a launch ending with a whole sentence delivered its first word alone,
@@ -170,16 +173,6 @@ That fast-forwards the base and runs `scripts/install-hooks.sh`; it refuses
 while the base is on any branch but `main`, which is the case to read as
 "somebody is working in the install" rather than to work around.
 
-**The clone must not be behind *at launch*, which is a different check.** "Do not
-clone while the base is ahead" is not sufficient: the remote can move
-between the clone and the launch, on a campaign of any length, leaving the
-delegate behind with nothing reporting it.
-
-```sh
-git -C <campaign>/repos/<repo> fetch origin -q
-git -C <campaign>/repos/<repo> rev-list --left-right --count origin/main...HEAD
-```
-
-A delegate launched behind obeys an `AGENTS.md` the launching session has already
-superseded, and nothing reports it. Pull the clone, then launch. Pushing the
-base before cloning is worth doing and is not sufficient.
+**The clone must not be behind *at launch*, which is a different check**, and
+`campaign-assign.py` makes it on the pane's checkout: the remote can move
+between the clone and the launch. Pull the clone when it refuses, then retry.

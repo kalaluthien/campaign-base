@@ -44,6 +44,10 @@ FIX = HERE / "fixtures"
 SESSION = (FIX / "limit-banner-session.txt").read_text()
 WEEKLY = (FIX / "limit-banner-weekly.txt").read_text()
 NONE = (FIX / "no-banner.txt").read_text()
+# cut 2026-09-18 by the script's own `read_pane` from a pane stopped on the
+# session limit: the glyph, a SPACE, then a NO-BREAK SPACE (U+00A0), kept byte
+# for byte -- the painting the two captures above do not hold.
+NBSP = (FIX / "limit-banner-nbsp.txt").read_text(encoding="utf-8")
 # the weekly capture cut at its second banner: a pane that was woken after its
 # first banner and went back to work -- a real screen, not a composed one. Its
 # banner still stands on the screen; only herdr's liveness says it is stale.
@@ -121,6 +125,12 @@ def case_minutes_kept(script):
 def case_session_wraps_to_tomorrow(script):
     got = read(script, banner("session", "1:30am (Asia/Seoul)"), at(2026, 9, 8, 23, 0))
     want = ("session", at(2026, 9, 9, 1, 30))
+    return got == want, f"{got} != {want}"
+
+
+def case_banner_after_a_no_break_space(script):
+    got = read(script, NBSP, at(2026, 9, 18, 0, 30))
+    want = ("session", at(2026, 9, 18, 1, 30))
     return got == want, f"{got} != {want}"
 
 

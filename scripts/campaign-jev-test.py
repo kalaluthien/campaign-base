@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# witnesses: JV1_ARepliedConfidentFittingJudgmentAdvises, JV1b_AFailedLowOrNoMatchAnswerNeverAdvises
+# witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
 """Prove campaign-jev.py branches where its thresholds say and answers `unknown` everywhere else.
 
 THE DEFAULT RUN IS OFFLINE and needs no key: a stub HTTP server on 127.0.0.1
@@ -17,26 +17,38 @@ then broken in turn by a mutation of the script's own text and must go red by
 its own assertion, because a case that cannot fail is a case that proves
 nothing.
 
-`--live` is the other half and is opt-in: it runs
-`scripts/fixtures/jev-cases.json` -- cases of this tracker's own history, one of
-which is not a unit of work at all -- against the real endpoint, asking
-`campaign-tracker.py`'s OWN questions through `judgment_questions` rather than
-rebuilding them, so what is measured is what production sends. It asserts a
-BAND per group and never a float, since the same request comes back a few
-hundredths apart: every case must land in its group's DECLARED band, and each
-of `campaign-tracker.py`'s thresholds must sit strictly between the two
-declared bands it separates. That is what makes a threshold measured rather
-than chosen. `--record` widens the declared bands to hold an excursion and
-writes them, the observed bands, the date and the answering model back into the
-fixture.
+It also reads the COMMITTED REGISTRY, `scripts/jev/readings.json`: every entry
+carries what a reader branches on, a reading with no thresholds is at `shadow`
+alone, one at `act` declares what it does and how it is undone and stays inside
+the four bounds on an act, a declared wording is its question's hash, and no
+Jev question is written anywhere else in this tree.
 
-Usage: scripts/campaign-jev-test.py [--live [--record]]
+`--live` is the other half and is opt-in: it runs
+`scripts/jev/corpus/<reading>.jsonl` -- cases of this tracker's own history,
+one of which fits no option and one of which is a flip -- against the real
+endpoint, asking the REGISTRY'S OWN question rather than a copy built here, so
+what is measured is what production sends. It asserts a BAND per band key and
+never a float, since the same request comes back a few hundredths apart: every
+case must land in its DECLARED band, and each cut must sit strictly between the
+two declared bands it separates. That is what makes a threshold measured rather
+than chosen. `--record` widens the declared bands to hold an excursion, writes
+them with the wording hash and the date into the entry, and appends one `seen`
+row per case. `--wording <hash>` asks a retired wording from
+`scripts/jev/wordings.json` instead, which is how a criteria change gets its
+before-and-after numbers. A reading whose `question.per` says its own reader
+composes one question per claim or per condition is SKIPPED and says so: the
+entry's bare `instructions` are not what production sends, and a band measured
+on them would belong to a call nobody makes.
+
+Usage: scripts/campaign-jev-test.py [--live [--record] [--wording <hash>]]
 """
 import contextlib
 import datetime
 import http.server
 import importlib
 import json
+import os
+import re
 import socket
 import sys
 import tempfile
@@ -50,7 +62,8 @@ check = harness.check
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-jev.py"
 SOURCE = SCRIPT.read_text()
-FIXTURE = HERE / "fixtures" / "jev-cases.json"
+REGISTRY = HERE / "jev" / "readings.json"
+WORDINGS = HERE / "jev" / "wordings.json"
 MODEL = "jev-1.13.0"
 
 ROOT = Path(tempfile.mkdtemp(prefix="campaign-jev-"))
@@ -401,6 +414,577 @@ CASES["the call is logged as one JSON line"] = logged_line
 CASES["a log that would not write is reported, not raised"] = log_refused
 CASES["a skipped reading is logged as one JSON line naming why"] = skip_logged
 
+# ------------------------------------------------- the registry, well-formed
+# THE ENTRY IS THE CONTRACT, so these read the committed file and not a
+# fixture: a registry that would not load, or an entry a reader cannot branch
+# on, is the one failure no live run would ever reach.
+
+
+def entries(m):
+    return m.load_registry()
+
+
+def registry_shape(m):
+    """Every entry carries what a reader branches on, and nothing it cannot."""
+    bad = []
+    for name, e in entries(m).items():
+        for field in ("owner", "tier", "group", "state", "prefilter",
+                      "question", "join", "bands"):
+            if field not in e:
+                bad.append(f"{name}: no `{field}`")
+        if e.get("tier") not in m.TIERS:
+            bad.append(f"{name}: tier `{e.get('tier')}`")
+        if not (e.get("state") or {}).get("fields"):
+            bad.append(f"{name}: no state fields")
+        q = e.get("question") or {}
+        if q.get("type") not in (m.NOUL, m.CHOICE):
+            bad.append(f"{name}: question type `{q.get('type')}`")
+        if not q.get("instructions") or not q.get("criteria"):
+            bad.append(f"{name}: a question with no instructions or criteria")
+    return not bad, bad
+
+
+def thresholds_or_shadow(m):
+    """A reading with no thresholds is legal at `shadow` alone: there is no
+    branch to take, so printing one would be a verdict nobody measured."""
+    bad = []
+    for name, e in entries(m).items():
+        cuts, q = e.get("thresholds") or {}, e.get("question") or {}
+        if not cuts:
+            if e.get("tier") != m.SHADOW:
+                bad.append(f"{name}: no thresholds at tier `{e['tier']}`")
+            continue
+        # A `choice` IS CUT ONE OF TWO WAYS, and both are whole. The ordinary
+        # one is the winner's confidence against a `floor`, beside the name of
+        # the no-match option; the other names ONE `option` and cuts its own
+        # probability as a `noul` is cut, for a reading that flags one word --
+        # `contradicts` -- where the winner would hide a strong second.
+        if q.get("type") == m.NOUL or "option" in cuts:
+            want = ("yes_over", "no_under")
+        else:
+            want = ("floor", "no_match")
+        for k in want:
+            if k not in cuts:
+                bad.append(f"{name}: no `{k}`")
+        options = q.get("criteria") or {}
+        for k in ("no_match", "option"):
+            if k in cuts and cuts[k] not in options:
+                bad.append(f"{name}: `{k}` names no option of the set")
+    return not bad, bad
+
+
+def act_declares_its_undo(m):
+    """A reading at `act` says what it does, how it is undone, and the two cuts
+    `does` reads -- or it does not load. An irreversible thing on a typed guess
+    is the one answer this module never gives, and a missing cut would reach
+    `does` as a KeyError on the one call that cleared its threshold.
+
+    MADE ENTRIES, NOT THE COMMITTED REGISTRY, which holds nothing at `act`: a
+    case that reads the registry alone passes over an empty set and proves
+    nothing (the REVIEW at a73fc57, note 3).
+    """
+    bad = []
+    for missing in m.ACT_FIELDS:
+        act = {"verb": "label", "label": "kind:development", "what": "x",
+               "undo": "y", "act_over": 0.9, "ask_over": 0.7}
+        act.pop(missing)
+        ok, why = refused(m, acting(**act), f"no `{missing}`")
+        if not ok:
+            bad.append((missing, why))
+    whole = acting(verb="label", label="kind:development", what="x", undo="y",
+                   act_over=0.9, ask_over=0.7)
+    ok, _why = refused(m, whole, "")
+    if ok:
+        bad.append(("all four", "a whole act was refused"))
+    # The entries the tree actually ships, judged the same way.
+    for name, e in entries(m).items():
+        if e.get("tier") == m.ACTS:
+            for k in m.ACT_FIELDS:
+                if k not in (e.get("act") or {}):
+                    bad.append(f"{name}: at `act` with no `{k}`")
+    return not bad, bad
+
+
+def wording_is_computed(m):
+    """A declared wording is the hash of the question beside it. A rewording
+    that kept the old hash would keep a band measured for another question."""
+    bad = [f"{n}: declares {e['bands']['wording']}, computed {m.wording(e)}"
+           for n, e in entries(m).items()
+           if (e.get("bands") or {}).get("wording")
+           and e["bands"]["wording"] != m.wording(e)]
+    return not bad, bad
+
+
+def no_question_outside_the_registry(m):
+    """The one home of a question. A script that writes its own would be a
+    second wording nothing measures and no `report` counts."""
+    allowed = {"campaign-jev.py"}
+    found = []
+    for root in [HERE, *sorted((HERE.parent / ".claude" / "skills").glob(
+            "*/scripts"))]:
+        for path in sorted(root.glob("*.py")):
+            if path.name in allowed or path.name.endswith("-test.py"):
+                continue
+            # A QUESTION WRITTEN, not a question READ. `"instructions":` with
+            # a value after it is a question being composed; `q["instructions"]`
+            # is a script reading the registry's, which is the sanctioned path
+            # and is what `check-docstring-claims.py` does.
+            if re.search(r'["\']instructions["\']\s*:', path.read_text(encoding="utf-8")):
+                found.append(str(path))
+    return not found, found
+
+
+# ------------------------------------------------------ the join and the reader
+# THE JOIN IS WHAT MAKES THE CORPUS GROW BY ITSELF, so it is exercised offline
+# against a stubbed fetch: `fetch_issue` is the one call out, and every join
+# reads what it returns. The corpus and the log are a case's own temp files --
+# a suite that wrote into `scripts/jev/corpus/` would be a suite that edits the
+# evidence.
+ISSUES = {
+    ("kalaluthien/campaign-base", 900): {
+        "title": "Cache the weather feed", "state": "CLOSED", "labels": [],
+        "closedByPullRequestsReferences": [
+            {"number": 28, "repository": {"name": "dotclaude",
+                                          "owner": {"login": "kalaluthien"}}}]},
+    ("kalaluthien/campaign-base", 901): {
+        "title": "A title somebody rewrote", "state": "CLOSED", "labels": [
+            {"name": "kind:development"}]},
+    ("kalaluthien/campaign-base", 902): {
+        "title": "Still being argued about", "state": "OPEN", "labels": []},
+}
+
+
+def log_row(call, reading, title, number, **kw):
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call, "reading": reading,
+           "subject": f"kalaluthien/campaign-base#{number}",
+           "read": f"kalaluthien/campaign-base#{number}",
+           "repo": "kalaluthien/campaign-base", "issue": number,
+           "state": {"title": title, "body": "- a body"},
+           "wording": "0" * 12, "settled": None, "tier": "advise",
+           "does": "show", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": "yes", "raw": {"type": "noul", "noul": 0.9}, "why": "",
+           "flag": None}
+    row.update(kw)
+    return row
+
+
+def joined(m, rows):
+    """`corpus join` over one temp log and one temp corpus, with the fetch
+    stubbed. Returns (the cases by reading, the log's line count after)."""
+    corpus = ROOT / f"corpus-{abs(hash(SOURCE)) % 9999}-{len(rows)}"
+    if corpus.exists():
+        for f in corpus.glob("*"):
+            f.unlink()
+    log = ROOT / "join.log"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    was = m.CORPUS
+    m.CORPUS = corpus
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    try:
+        args = types.SimpleNamespace(
+            fetch=lambda repo, number: ISSUES.get((repo, number)))
+        m.cmd_corpus_join(args)
+        out = {n: m.read_corpus(n) for n in ("verb-first", "work-kind")}
+    finally:
+        m.CORPUS = was
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    return out, len(log.read_text().splitlines())
+
+
+def join_labels_a_closed_issue(m):
+    """The title kept through the close labels the state `yes`; the title
+    rewritten before it labels the state as judged `no`."""
+    cases, _lines = joined(m, [
+        log_row("aaaa", "verb-first", "Cache the weather feed", 900),
+        log_row("bbbb", "verb-first", "The title as it was judged", 901)])
+    by = {c["id"]: c for c in cases["verb-first"]}
+    kept = by.get("verb-first-aaaa") or {}
+    moved = by.get("verb-first-bbbb") or {}
+    return (kept.get("truth") == "yes" and moved.get("truth") == "no"
+            and kept.get("label", {}).get("from") == "join:issue-title-kept"
+            and kept.get("source", {}).get("ref") == "aaaa:verb-first"),  \
+        (kept.get("truth"), moved.get("truth"), kept.get("label"))
+
+
+def join_reads_the_kind_label(m):
+    """work-kind's join is the `kind:` label the issue carries now: the
+    owner's word, the strongest label this tree has."""
+    cases, _lines = joined(m, [
+        log_row("cccc", "work-kind", "A title somebody rewrote", 901,
+                branch="maintenance",
+                raw={"type": "choice", "choice": "maintenance",
+                     "confidence": 0.8})])
+    got = (cases["work-kind"] or [{}])[0]
+    return (got.get("truth") == "development"
+            and got.get("label", {}).get("from") == "join:issue-kind-label"), got
+
+
+def join_keeps_what_it_cannot_label(m):
+    """A row it cannot label yet STAYS in the log and is counted. A row dropped
+    before it is joined is a case nobody will ever have."""
+    cases, lines = joined(m, [
+        log_row("dddd", "verb-first", "Still being argued about", 902),
+        log_row("eeee", "verb-first", "No key at all", 900, repo=None,
+                issue=None)])
+    return (not cases["verb-first"] and lines == 2), (cases["verb-first"], lines)
+
+
+def join_writes_one_case_for_one_row(m):
+    """Run twice, and the second run writes nothing: a case is keyed by the
+    call and the reading, so a join that ran again would otherwise double every
+    case it had already labelled."""
+    rows = [log_row("ffff", "verb-first", "Cache the weather feed", 900)]
+    first, _l = joined(m, rows)
+    corpus = ROOT / f"corpus-{abs(hash(SOURCE)) % 9999}-1"
+    # The same temp corpus is reused by `joined` for a one-row list, so the
+    # second call meets the case the first wrote.
+    was, out = m.CORPUS, None
+    m.CORPUS = corpus
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(ROOT / "join.log")
+    try:
+        m.cmd_corpus_join(types.SimpleNamespace(
+            fetch=lambda repo, number: ISSUES.get((repo, number))))
+        out = m.read_corpus("verb-first")
+    finally:
+        m.CORPUS = was
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    return len(first["verb-first"]) == 1 and len(out) == 1, \
+        (len(first["verb-first"]), len(out or []))
+
+
+def a_joined_case_is_held_to_a_band(m):
+    """THE DEFECT THE REVIEW AT a73fc57 FOUND: `corpus join` wrote a case with
+    no `band`, and the drift reader resolved the band from the TRUTH word --
+    which for a `choice` is an option name and never a band name. So every case
+    the join added was drift-blind for good, at any confidence, while the
+    evidence row and the agreement share went on counting it.
+
+    The case is the join's own output, not a hand-built dict: a regression test
+    over a shape the join does not actually write would pass with the join
+    still broken."""
+    entry = m.load_registry()["work-kind"]
+    cases, _lines = joined(m, [
+        log_row("gggg", "work-kind", "A title somebody rewrote", 901,
+                wording=m.wording(entry), branch="maintenance",
+                raw={"type": "choice", "choice": "maintenance",
+                     "confidence": 0.01})])
+    got = (cases["work-kind"] or [{}])[0]
+    drifted, unplaced = m.drift_line(entry, cases["work-kind"])
+    return (got.get("band") == "confident" and "work-kind-gggg" in drifted
+            and "0.01" in drifted and not unplaced), (got.get("band"), drifted,
+                                                      unplaced)
+
+
+def a_case_held_to_no_band_is_listed(m):
+    """And the other half: a case `band_of` cannot place is RETURNED, never
+    skipped. A case counted by the evidence row while no band could call it
+    drifted is the shape this reader was blind in."""
+    entry = m.load_registry()["work-kind"]
+    nomatch = {"id": "a-no-match", "reading": "work-kind", "role": "no-match",
+               "truth": "none", "state": {}, "label": {"from": "owner"},
+               "source": {"kind": "fixture"},
+               "seen": [{"model": MODEL, "wording": m.wording(entry),
+                         "raw": {"type": "choice", "choice": "none",
+                                 "confidence": 0.99}}]}
+    _drifted, unplaced = m.drift_line(entry, [nomatch])
+    return (len(unplaced) == 1 and "a-no-match" in unplaced[0]
+            and "no-match case" in unplaced[0]), unplaced
+
+
+CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
+CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed
+
+
+def a_key_names_its_repository(m):
+    """A number without its repository is refused: a member repository's pull
+    request closes a sub-issue here and its number collides with this
+    tracker's -- 33 of 199 closing links (rule-check#460 NOTE 5713928884)."""
+    bad = []
+    for key in ({"issue": 455}, {"pull_request": 28},
+                {"repo": "kalaluthien/campaign-base", "comment": 5}):
+        try:
+            m.judge("issue-shape", {"title": "t", "body": "b"}, key=key,
+                    env=env(url=CLOSED), timeout=1)
+        except ValueError as e:
+            if "repo" not in str(e):
+                bad.append((key, str(e)))
+            continue
+        if "repo" not in key:
+            bad.append((key, "took a number with no repository"))
+    return not bad, bad
+
+
+CASES["the join labels a closed issue by what happened to its title"] = join_labels_a_closed_issue
+CASES["the join reads the kind label the owner set"] = join_reads_the_kind_label
+CASES["a row the join cannot label stays in the log and is counted"] = join_keeps_what_it_cannot_label
+CASES["joining twice writes one case"] = join_writes_one_case_for_one_row
+CASES["a join key names its repository beside every number"] = a_key_names_its_repository
+
+
+def refused(m, entry, fragment, name="a-reading"):
+    """(whether loading a registry holding `entry` refused, naming `fragment`,
+    the message). The bounds are read where the registry is LOADED, so this is
+    the moment a bad entry is stopped -- not the call that happens to clear a
+    threshold months later."""
+    try:
+        m.check_act_bounds({name: entry})
+    except ValueError as e:
+        return fragment in str(e), str(e)
+    return False, "loaded without a word"
+
+
+def acting(**act):
+    """An entry at tier `act`, otherwise well-formed."""
+    return {"owner": "a suite", "tier": "act", "group": "g",
+            "state": {"fields": ["title"], "why": ""},
+            "prefilter": {"what": ""},
+            "question": {"type": "noul", "instructions": "?",
+                         "criteria": {"true": {}, "false": {}}},
+            "thresholds": {"yes_over": 0.9, "no_under": 0.1},
+            "join": "j", "bands": {}, "act": act}
+
+
+def act_never_moves_a_person_label(m):
+    """BOUND a: `standing`, `backlog`, `bound:` and `campaign:` are a person's
+    alone -- nothing here can observe that they changed their mind."""
+    bad = []
+    for label in ("standing", "backlog", "bound:mini", "campaign:rule-check"):
+        ok, why = refused(m, acting(verb="label", label=label, what="", undo="",
+                                    act_over=0.9, ask_over=0.7), "bound a")
+        if not ok:
+            bad.append((label, why))
+    ok, _why = refused(m, acting(verb="label", label="kind:development",
+                                 what="", undo="", act_over=0.9, ask_over=0.7),
+                       "bound a")
+    if ok:
+        bad.append(("kind:development", "refused, and it is not a person's"))
+    return not bad, bad
+
+
+def act_is_never_an_event_with_an_actor(m):
+    """BOUND b: a claim, a release, a merge, a close, a launch and a retire each
+    have an actor in the model, and a judgment is not one."""
+    bad = []
+    for verb in m.NEVER_ACTED:
+        ok, why = refused(m, acting(verb=verb, what="", undo="", act_over=0.9,
+                                    ask_over=0.7), "bound b")
+        if not ok:
+            bad.append((verb, why))
+    return not bad, bad
+
+
+def act_carries_no_command_for_this_module(m):
+    """BOUND c: the write is made by the calling reader's own session through
+    the ordinary guarded path, so no entry hands this module a command."""
+    bad = []
+    for field in m.NEVER_IN_AN_ENTRY:
+        ok, why = refused(m, acting(verb="label", label="kind:development",
+                                    what="", undo="", act_over=0.9,
+                                    ask_over=0.7, **{field: "gh issue edit"}),
+                          "bound c")
+        if not ok:
+            bad.append((field, why))
+    return not bad, bad
+
+
+def this_module_carries_out_no_act(m):
+    """BOUND c, the other half: `campaign-jev.py` writes nothing to GitHub. It
+    reads an issue for a join and nothing else, so every write a judgment
+    causes is the reader's session's and is judged by its role and its claim."""
+    writes = ("gh issue edit", "gh issue close", "gh issue comment", "gh pr ",
+              "gh label", "gh api -X", "--method POST", "--method PATCH")
+    found = [w for w in writes if w in SOURCE]
+    return not found, found
+
+
+def act_never_opens_a_decision(m):
+    """BOUND d: the answer to a `BLOCKED` is a planner's `DECISION`
+    (`EscalationGoesThroughAPlanner`), so no reading writes one -- at `act`, at
+    `advise` or at `shadow`."""
+    bad = []
+    for tier in ("shadow", "advise", "act"):
+        entry = acting(verb="comment", opens="DECISION", what="", undo="",
+                       act_over=0.9, ask_over=0.7)
+        entry["tier"] = tier
+        ok, why = refused(m, entry, "bound d")
+        if not ok:
+            bad.append((tier, why))
+    return not bad, bad
+
+
+def a_blocked_reading_may_only_route(m):
+    """BOUND d: on a `BLOCKED` the ceiling is `advise` plus a route label."""
+    entry = acting(verb="comment", opens="NOTE", what="", undo="",
+                   act_over=0.9, ask_over=0.7)
+    entry["subject"] = "blocked"
+    ok, why = refused(m, entry, "bound d")
+    routed = acting(verb="label", label="kind:development", what="", undo="",
+                    act_over=0.9, ask_over=0.7)
+    routed["subject"] = "blocked"
+    also, why2 = refused(m, routed, "bound d")
+    return ok and not also, (why, why2)
+
+
+def relive_appends_and_never_replaces(m):
+    """`report --live` re-asks a case and APPENDS what came back. A run that
+    overwrote the one before it would erase the evidence of drift, which is the
+    one thing the run history is for."""
+    corpus = ROOT / "relive"
+    corpus.mkdir(exist_ok=True)
+    entry = m.load_registry()["verb-first"]
+    case = {"id": "a-case", "reading": "verb-first",
+            "state": {"title": "Cache the feed", "body": "- a body"},
+            "truth": "yes", "label": {"from": "owner"},
+            "source": {"kind": "fixture"}, "role": "case",
+            "seen": [{"model": MODEL, "wording": "old", "at": "2026-01-01",
+                      "word": "no", "raw": {"type": "noul", "noul": 0.1}}]}
+    serving(noul=0.95)
+    NEXT["body"] = {"model": MODEL,
+                    "answers": {"verb-first": {"type": "noul", "noul": 0.95}}}
+    out = m.relive("verb-first", entry, [case], env=env(), root=corpus)
+    seen = out[0]["seen"]
+    return (len(seen) == 2 and seen[0]["wording"] == "old"
+            and seen[1]["wording"] == m.wording(entry)
+            and seen[1]["word"] == "yes"), seen
+
+
+CASES["report --live appends a run and replaces none"] = relive_appends_and_never_replaces
+
+
+def every_case_fits_its_entry(m):
+    """A case of a REGISTERED reading is re-askable: its state carries exactly
+    the fields the entry names, and its truth is a word the reading answers.
+
+    THE UNREGISTERED CASES ARE NOT JUDGED HERE and are not thereby unchecked:
+    rule-check#460's step 2 corpus lands before its readings do, one state per
+    pull request, so `report` counts them by reading until each entry
+    arrives."""
+    reg = entries(m)
+    bad = []
+    for name, entry in reg.items():
+        want = set(entry["state"]["fields"])
+        # WHICH WORDS A READING ANSWERS IS THE CUT'S, NOT THE TYPE'S. A
+        # `choice` cut on ONE option answers yes, no or unknown about that
+        # option, exactly as a `noul` does -- so the option cut is read first,
+        # and only a `choice` cut on the winner answers an option word.
+        if (entry.get("thresholds") or {}).get("option"):
+            words = {"yes", "no", "none"}
+        elif entry["question"]["type"] == m.CHOICE:
+            words = set(entry["question"]["criteria"]) | {"none"}
+        else:
+            words = {"yes", "no", "none"}
+        for c in m.read_corpus(name):
+            if c.get("reading") != name:
+                bad.append(f"{c.get('id')}: reading `{c.get('reading')}`")
+            got = set(c.get("state") or {})
+            if got != want:
+                bad.append(f"{c.get('id')}: state {sorted(got)}, entry names "
+                           f"{sorted(want)}")
+            truth = c.get("truth")
+            if isinstance(truth, str) and truth not in words:
+                bad.append(f"{c.get('id')}: truth `{truth}` is no word of "
+                           f"{sorted(words)}")
+    return not bad, bad
+
+
+def every_case_is_well_formed(m):
+    """Every case of every corpus file, registered or not: a case with no id,
+    no reading or no label source is one no reader can count."""
+    bad = []
+    for path in sorted((HERE / "jev" / "corpus").glob("*.jsonl")):
+        if path.stem.endswith(".changes"):
+            continue
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            c = json.loads(line)
+            for field in ("id", "reading", "state", "truth", "label", "source",
+                          "role"):
+                if field not in c:
+                    bad.append(f"{path.name}:{i + 1} no `{field}`")
+            if (c.get("label") or {}).get("from") is None:
+                bad.append(f"{path.name}:{i + 1} no label source")
+            if c.get("role") not in ("case", "flip", "no-match"):
+                bad.append(f"{path.name}:{i + 1} role `{c.get('role')}`")
+            # A NUMBER WITHOUT ITS REPOSITORY NAMES NOTHING, in a case as in a
+            # log row: a member repository's numbers collide with this
+            # tracker's.
+            src = c.get("source") or {}
+            if any(k in src and src[k] is not None
+                   for k in ("issue", "pull_request", "comment_id")) \
+                    and not src.get("repo"):
+                bad.append(f"{path.name}:{i + 1} a number with no `repo`")
+    return not bad, bad[:20]
+
+
+def a_tier_above_shadow_holds_its_evidence_row(m):
+    """DECISION 5713111488's bar, enforced rather than remembered: a reading
+    that PRINTS or ACTS has at least 8 real cases with a known truth, a flip, a
+    no-match, two wordings, three runs, and beats a token-overlap baseline. At
+    `shadow` it costs a reader nothing, so it is collecting cases and the row
+    does not apply yet."""
+    short = {name: m.evidence_row(e, m.read_corpus(name))
+             for name, e in entries(m).items() if e["tier"] != m.SHADOW}
+    return not any(short.values()), {k: v for k, v in short.items() if v}
+
+
+def the_evidence_row_names_what_is_short(m):
+    """The bar counted against a corpus that meets none of it: each part is
+    named on its own, because "short of the evidence row" with no reason sends
+    whoever reads it looking at all six."""
+    entry = entries(m)["verb-first"]
+    thin = [{"id": "one", "reading": "verb-first", "role": "case",
+             "truth": "yes", "state": {}, "label": {"from": "owner"},
+             "source": {"kind": "fixture"}, "seen": []}]
+    short = " | ".join(m.evidence_row(entry, thin))
+    for want in ("under 8", "no flip case", "no no-match case",
+                 "wording(s) seen, under 2", "run(s) recorded, under 3"):
+        if want not in short:
+            return False, (want, short)
+    return True, short
+
+
+CASES["the evidence row names each part that is short"] = the_evidence_row_names_what_is_short
+CASES["a reading above shadow holds its evidence row"] = a_tier_above_shadow_holds_its_evidence_row
+CASES["every case of a registered reading fits its entry"] = every_case_fits_its_entry
+CASES["every case of every corpus file is well formed"] = every_case_is_well_formed
+
+
+def a_bad_entry_never_loads(m):
+    """The bounds are read AT LOAD, so a registry file carrying a bad entry
+    refuses on the way in rather than on the one call that would have acted."""
+    path = ROOT / "bad-readings.json"
+    entry = acting(verb="label", label="standing", what="", undo="",
+                   act_over=0.9, ask_over=0.7)
+    path.write_text(json.dumps({"bad": entry}))
+    try:
+        m.load_registry(path)
+    except ValueError as e:
+        return "bound a" in str(e), str(e)
+    return False, "loaded a registry whose act moves `standing`"
+
+
+CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
+CASES["an act never moves a label a person alone moves"] = act_never_moves_a_person_label
+CASES["an act is never a claim, release, merge, close, launch or retire"] = act_is_never_an_event_with_an_actor
+CASES["an entry hands this module no command to run"] = act_carries_no_command_for_this_module
+CASES["this module carries out no act of its own"] = this_module_carries_out_no_act
+CASES["no reading's act opens a DECISION, at any tier"] = act_never_opens_a_decision
+CASES["a BLOCKED reading at act may only route"] = a_blocked_reading_may_only_route
+CASES["every registry entry carries what a reader branches on"] = registry_shape
+CASES["a reading with no thresholds is at shadow"] = thresholds_or_shadow
+CASES["a reading at act declares what it does and how it is undone"] = act_declares_its_undo
+CASES["a declared wording is the hash of its question"] = wording_is_computed
+CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
+
 MUTATIONS = [
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
      "a choice under the floor is unknown"),
@@ -458,6 +1042,54 @@ MUTATIONS = [
      "    except ZeroDivisionError as e:", "a call that raises where nothing should is unknown"),
     ("a set-but-empty endpoint read as unset", "    if not url:",
      "    if False:", "an endpoint set to nothing never reaches the network"),
+    # THE FOUR BOUNDS ON AN `act`, each dropped in turn (DECISION 5714078253).
+    ("the eight cases never counted", "    if len(real) < 8:", "    if False:",
+     "the evidence row names each part that is short"),
+    ("a flip no longer required",
+     '    if not any(c.get("role") == "flip" for c in cases):', "    if False:",
+     "the evidence row names each part that is short"),
+    ("a no-match no longer required",
+     '    if not any(c.get("role") == "no-match" for c in cases):',
+     "    if False:", "the evidence row names each part that is short"),
+    ("one wording enough", "    if len(wordings) < 2:", "    if False:",
+     "the evidence row names each part that is short"),
+    ("one run enough", "    if len(runs) < 3:", "    if False:",
+     "the evidence row names each part that is short"),
+    ("a live run replaces the history", '        c.setdefault("seen", []).append(',
+     '        c["seen"] = []\n        c.setdefault("seen", []).append(',
+     "report --live appends a run and replaces none"),
+    # THE DEFECT THE REVIEW AT a73fc57 FOUND, from both ends.
+    ("the join writes no band",
+     '        case["band"] = band_of(entry, case)[0]', "        pass",
+     "a case the join writes is held to a band, and drift reads it"),
+    ("a choice's band never derived",
+     '    if truth in options and truth != cuts.get("no_match"):',
+     "    if False:",
+     "a case the join writes is held to a band, and drift reads it"),
+    ("an unplaced case skipped in silence",
+     '            unplaced.append(f"{c[\'id\']} ({why})")', "            pass",
+     "a case held to no band is listed, never skipped"),
+    ("an act's four fields never required", "        for field in ACT_FIELDS:",
+     "        for field in ():",
+     "a reading at act declares what it does and how it is undone"),
+    ("bound a dropped", '        if verb == "label" and (label in PERSON_LABELS',
+     "        if False and (label in PERSON_LABELS",
+     "an act never moves a label a person alone moves"),
+    ("bound b dropped", "        if verb in NEVER_ACTED:", "        if False:",
+     "an act is never a claim, release, merge, close, launch or retire"),
+    ("bound c dropped", "        for field in NEVER_IN_AN_ENTRY:",
+     "        for field in ():",
+     "an entry hands this module no command to run"),
+    ("bound d dropped",
+     '        if act and str(act.get("opens", "")).upper() == DECISION_KIND:',
+     "        if act and False:", "no reading's act opens a DECISION, at any tier"),
+    ("the BLOCKED ceiling dropped",
+     '        if entry.get("subject") == BLOCKED_SUBJECT and verb != "label":',
+     "        if False:", "a BLOCKED reading at act may only route"),
+    ("the bounds never read at load",
+     "    return check_act_bounds(json.loads(path.read_text(encoding=\"utf-8\")))",
+     '    return json.loads(path.read_text(encoding="utf-8"))',
+     "a registry file carrying a bad act never loads"),
     ("a skip not logged",
      '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return log_call(',
      '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return "logged to" or log_call(',
@@ -509,154 +1141,189 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
-def live(record):
-    """The fixture against the real endpoint.
+# Which band a case is held to is `campaign-jev.band_of`'s, asked and never
+# restated: this suite kept its own reading of it, and the two disagreed exactly
+# where the join wrote a case with no `band`.
 
-    THE FIXTURE DECLARES THE BANDS AND THIS ASSERTS THEM. Every case must land
-    inside its group's declared band, and each of `campaign-tracker.py`'s
-    thresholds must sit STRICTLY between the two declared bands it separates.
-    A recorded band no assertion reads is a number that drifts in silence,
-    which is what these were before: the declared band is the contract, the
-    observed one is the last run and says nothing on its own.
 
-    `--record` widens the declared bands to hold this run. Widening past a
-    threshold turns the assertion below red, which is the drift alarm: nothing
-    here quietly moves a cut to fit new data."""
+# The number the band is over is `campaign-jev.band_value`'s, asked and never
+# restated: a suite that kept its own copy would measure a band the module does
+# not read.
+
+
+def live(record, wording_hash=None):
+    """THE CORPUS AGAINST THE REAL ENDPOINT, asked with the REGISTRY'S OWN
+    question -- never a copy built here, which drifted within one round the
+    last time this suite kept one.
+
+    THE ENTRY DECLARES THE BANDS AND THIS ASSERTS THEM. Every case must land
+    inside its band, and each cut must sit STRICTLY between the two declared
+    bands it separates. That is what makes a threshold measured rather than
+    chosen. `--record` widens the declared bands to hold this run, writes the
+    wording hash and the date into the entry, and appends one `seen` row per
+    case -- appends, because a band is read from the run history and a run that
+    overwrote the one before it would erase the evidence of drift.
+
+    `--wording <hash>` asks a RETIRED wording from `scripts/jev/wordings.json`
+    instead, which is how a criteria change gets its before-and-after numbers
+    and how a reading comes to have been seen under two wordings."""
     jev = load(SOURCE)
-    tracker = harness.load(HERE / "campaign-tracker.py", "campaign_tracker")
-    cases = json.loads(FIXTURE.read_text())
-    groups = cases["groups"]
+    reg = jev.load_registry()
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     model = ""
-
-    # ---------------------------------------------------------- verb-first
-    seen = {"yes": [], "no": []}
-    outside = []
-    declared = groups["verb-first"].get("declared") or {}
-    # THE QUESTIONS ARE PRODUCTION'S OWN, asked from `judgment_questions` and
-    # never rebuilt here. A hand-built copy drifted within one round: `check`
-    # gained `criteria` for the `noul` and this measured the question without
-    # it, which would have declared a band for a call nobody makes.
-    asked = tracker.judgment_questions(True)
-    q = {"verb_first": asked["verb_first"]}
-    for c in groups["verb-first"]["cases"]:
-        # THE STATE IS PRODUCTION'S, title and body together and untruncated:
-        # the body moves the title's answer, so a band measured on the title
-        # alone, or on a body cut mid-word, is a band for a call never made.
-        r = jev.ask("campaign-jev-test.py --live", c["id"],
-                    {"title": c["title"], "body": c["body"]}, q)
-        model = r.model or model
-        raw = r.answers["verb_first"].raw
-        if raw is None:
-            check(f"live verb-first {c['id']} answered", False, r.answers)
+    for name, entry in sorted(reg.items()):
+        # A READING WHOSE QUESTION IS COMPOSED PER ITEM IS SKIPPED, AND SAYS
+        # SO. `question.per` means production builds one question per claim or
+        # per condition out of this entry -- `check-cited-claims.py` and
+        # `check-research-bar.py` do -- so asking the entry's bare
+        # `instructions` here would measure a call nobody makes and declare a
+        # band for it. Measuring those is their own reader's, with their own
+        # composer (the REVIEW at a73fc57, note 7).
+        if (entry.get("question") or {}).get("per"):
+            print(f"  {name}: skipped, its question is composed per "
+                  f"`{entry['question']['per']}` by its own reader; a band "
+                  f"measured on the bare instructions would be a call nobody "
+                  f"makes")
             continue
-        seen[c["truth"]].append(raw["noul"])
-        if not record and not inside(raw["noul"], declared.get(c["truth"])):
-            outside.append((c["id"], raw["noul"], c["truth"],
-                            declared.get(c["truth"])))
-        print(f"  {c['id']:<8} noul {raw['noul']:.2f}  truth {c['truth']}")
-    check("live: every verb-first case answered",
-          len(seen["yes"]) + len(seen["no"])
-          == len(groups["verb-first"]["cases"]),
-          (len(seen["yes"]), len(seen["no"])))
-    print(f"  verb-first seen: yes {band(seen['yes'])}  no {band(seen['no'])}"
-          f"  declared {declared}")
-
-    # ----------------------------------------------------------- work-kind
-    conf = {"confident": [], "unsure": []}
-    kout, wrong, nomatch, floor_only = [], [], [], []
-    kdeclared = groups["work-kind"].get("declared") or {}
-    q = {"work_kind": asked["work_kind"]}
-    for c in groups["work-kind"]["cases"]:
-        r = jev.ask("campaign-jev-test.py --live", c["id"],
-                    {"title": c["title"], "body": c["body"]}, q)
-        model = r.model or model
-        got = r.answers["work_kind"]
-        raw = got.raw
-        if raw is None:
-            check(f"live work-kind {c['id']} answered", False, r.answers)
-            continue
-        print(f"  {c['id']:<10} {raw['choice']:<12} conf {raw['confidence']:.2f}"
-              f"  truth {c['truth']}  -> {got.word}")
-        if c["truth"] == "unknown":
-            nomatch.append((c["id"], raw["choice"], raw["confidence"], got.word))
-            continue
-        conf[c["band"]].append(raw["confidence"])
-        if not record and not inside(raw["confidence"], kdeclared.get(c["band"])):
-            kout.append((c["id"], raw["confidence"], c["band"],
-                         kdeclared.get(c["band"])))
-        if c["band"] == "confident" and raw["choice"] != c["truth"]:
-            wrong.append((c["id"], raw["choice"], raw["confidence"], c["truth"]))
-        if c["band"] == "unsure":
-            floor_only.append((c["id"], raw["choice"], got.word))
-    print(f"  work-kind seen: confident {band(conf['confident'])}  "
-          f"unsure {band(conf['unsure'])}  declared {kdeclared}")
-
-    # ------------------------------------------------------- the assertions
-    # EACH DECLARED BAND HAS ONE EDGE THAT CARRIES THE CLAIM, the one facing
-    # its threshold, and the fixture declares the other at the extreme: a `no`
-    # answered lower, or a `confident` answered higher, moves away from the cut
-    # and says nothing it is about. Asserting both edges cost a false alarm
-    # the first time an `unsure` case answered 0.14 against a 0.15 declared.
-    check("live: every verb-first case landed in its declared band",
-          not outside, outside)
-    check("live: every work-kind case landed in its declared band",
-          not kout, kout)
-    # THE THRESHOLDS AGAINST THE DECLARED BANDS, not against this run: a cut
-    # measured against the run that just happened moves with it.
-    check("live: the no-verb cut sits above the whole declared `no` band",
-          bool(declared.get("no"))
-          and declared["no"][1] < tracker.VERB_FIRST_NO_UNDER,
-          (declared.get("no"), tracker.VERB_FIRST_NO_UNDER))
-    check("live: the verb-first cut sits below the whole declared `yes` band",
-          bool(declared.get("yes"))
-          and tracker.VERB_FIRST_YES_OVER < declared["yes"][0],
-          (tracker.VERB_FIRST_YES_OVER, declared.get("yes")))
-    check("live: the two verb-first cuts do not cross",
-          tracker.VERB_FIRST_NO_UNDER <= tracker.VERB_FIRST_YES_OVER,
-          (tracker.VERB_FIRST_NO_UNDER, tracker.VERB_FIRST_YES_OVER))
-    check("live: the floor sits above the whole declared `unsure` band",
-          bool(kdeclared.get("unsure"))
-          and kdeclared["unsure"][1] < tracker.WORK_KIND_FLOOR,
-          (kdeclared.get("unsure"), tracker.WORK_KIND_FLOOR))
-    check("live: the floor sits below the whole declared `confident` band",
-          bool(kdeclared.get("confident"))
-          and tracker.WORK_KIND_FLOOR < kdeclared["confident"][0],
-          (tracker.WORK_KIND_FLOOR, kdeclared.get("confident")))
-    check("live: every confident kind names the label the owner set",
-          not wrong, wrong)
-    # THE TWO WAYS A `choice` COMES BACK UNKNOWN, TOLD APART. Both branches
-    # print the same word, so a case that asserted only the word would pass
-    # with either one dead.
-    check("live: the case fitting no option is unknown BY the no-match option",
-          bool(nomatch) and all(o == tracker.WORK_KIND_NO_MATCH and w == "unknown"
-                                for _i, o, _c, w in nomatch), nomatch)
-    check("live: an unsure case is unknown by the FLOOR, naming a real option",
-          bool(floor_only)
-          and all(o != tracker.WORK_KIND_NO_MATCH and o in tracker.WORK_KINDS
-                  and w == "unknown" for _i, o, w in floor_only), floor_only)
+        cases = jev.read_corpus(name)
+        check(f"live: {name} has cases", bool(cases), len(cases))
+        spec = jev.question_of(entry)
+        wording = jev.wording(entry)
+        if wording_hash:
+            retired = json.loads(WORDINGS.read_text())["wordings"]
+            if wording_hash not in retired:
+                check(f"live: wording {wording_hash} is on file", False,
+                      sorted(retired))
+                continue
+            spec = dict(retired[wording_hash]["question"])
+            spec.update(entry.get("thresholds") or {})
+            wording = wording_hash
+            if retired[wording_hash]["reading"] != name:
+                continue
+        q = {name: spec}
+        declared = (entry.get("bands") or {}).get("declared") or {}
+        seen, outside, wrong, nomatch, flips = {}, [], [], [], []
+        for c in cases:
+            r = jev.ask("campaign-jev-test.py --live", c["id"],
+                        c.get("state") or {}, q, log=False)
+            model = r.model or model
+            a = r.answers[name]
+            value = jev.band_value(entry, a.raw)
+            print(f"  {c['id']:<28} {a.word:<12} "
+                  f"{'--' if value is None else format(value, '.2f')}  "
+                  f"truth {c['truth']}")
+            if record:
+                c.setdefault("seen", []).append(
+                    {"model": r.model, "wording": wording, "at": at,
+                     "word": a.word, "raw": a.raw})
+            key = jev.band_of(entry, c)[0]
+            if c.get("role") == "no-match":
+                nomatch.append((c["id"], a.word, value))
+                continue
+            if c.get("role") == "flip":
+                flips.append((c["id"], a.word, c["truth"]))
+            if value is None:
+                check(f"live {name} {c['id']} answered", False, (a.word, a.why))
+                continue
+            if key:
+                seen.setdefault(key, []).append(value)
+                if not record and not inside(value, declared.get(key)):
+                    outside.append((c["id"], value, key, declared.get(key)))
+            if entry["question"]["type"] == "choice" and key == "confident" \
+                    and a.raw.get("choice") != c["truth"]:
+                wrong.append((c["id"], a.raw.get("choice"), c["truth"]))
+        if record:
+            jev.write_corpus(name, cases)
+        print(f"  {name} seen: "
+              + "  ".join(f"{k} {band(v)}" for k, v in sorted(seen.items()))
+              + f"  declared {declared}")
+        check(f"live: every {name} case landed in its declared band",
+              not outside, outside)
+        check(f"live: every confident {name} answer names the truth",
+              not wrong, wrong)
+        # THE FLIP IS THE CASE THAT SAYS THE READING READS THE STATE, not the
+        # shape of the corpus: the judged thing was changed and the answer has
+        # to move with it.
+        check(f"live: every {name} flip case answers its flipped truth",
+              bool(flips) and all(w == t for _i, w, t in flips), flips)
+        # THE TWO TYPES HAVE DIFFERENT NO-MATCH MACHINERY, and pretending
+        # otherwise would be the assertion that reads like a pass. A `choice`
+        # carries a no-match OPTION, so a state fitting none of the words must
+        # come back `unknown` BY that option. A `noul` carries no such thing:
+        # asked whether a title opens with an imperative verb, a state with no
+        # title at all comes back a confident `no`, measured here. So its
+        # no-match case is RECORDED with where it landed rather than asserted
+        # into a branch the question has no way of taking -- and `report`
+        # counts it as a disagreement, which is what it is.
+        if entry["question"]["type"] == "choice":
+            check(f"live: the {name} case fitting no option is unknown BY the "
+                  f"no-match option",
+                  bool(nomatch) and all(w == "unknown" for _i, w, _v in nomatch),
+                  nomatch)
+        else:
+            check(f"live: the {name} no-match case is answered and recorded, "
+                  f"since a noul has no no-match option",
+                  bool(nomatch) and all(v is not None for _i, _w, v in nomatch),
+                  nomatch)
+        cuts = entry.get("thresholds") or {}
+        if not record and cuts and declared:
+            if entry["question"]["type"] == "noul":
+                check(f"live: {name}'s no cut sits above the whole declared "
+                      f"`no` band",
+                      bool(declared.get("no"))
+                      and declared["no"][1] < cuts["no_under"],
+                      (declared.get("no"), cuts.get("no_under")))
+                check(f"live: {name}'s yes cut sits below the whole declared "
+                      f"`yes` band",
+                      bool(declared.get("yes"))
+                      and cuts["yes_over"] < declared["yes"][0],
+                      (cuts.get("yes_over"), declared.get("yes")))
+                check(f"live: {name}'s two cuts do not cross",
+                      cuts["no_under"] <= cuts["yes_over"],
+                      (cuts.get("no_under"), cuts.get("yes_over")))
+            else:
+                check(f"live: {name}'s floor sits above the whole declared "
+                      f"`unsure` band",
+                      bool(declared.get("unsure"))
+                      and declared["unsure"][1] < cuts["floor"],
+                      (declared.get("unsure"), cuts.get("floor")))
+                check(f"live: {name}'s floor sits below the whole declared "
+                      f"`confident` band",
+                      bool(declared.get("confident"))
+                      and cuts["floor"] < declared["confident"][0],
+                      (cuts.get("floor"), declared.get("confident")))
+        if record and not wording_hash:
+            # THE BAND IS THE WHOLE RECORDED HISTORY UNDER THIS WORDING, not
+            # this run alone: three runs are what a band is made of, and a
+            # `--record` that read only the run it just made would declare a
+            # band narrower than the evidence and then widen it on the next
+            # run, which reads exactly like drift. `seen` is appended above, so
+            # this run is already in it.
+            history = {}
+            for c in cases:
+                key = jev.band_of(entry, c)[0]
+                for s in c.get("seen") or []:
+                    value = jev.band_value(entry, s.get("raw"))
+                    if (key and value is not None
+                            and s.get("wording") == wording
+                            and s.get("model") == jev.MODEL):
+                        history.setdefault(key, []).append(value)
+            reg[name]["bands"]["declared"] = {
+                k: widened(declared.get(k), band(v)) for k, v in history.items()}
+            reg[name]["bands"]["measured"] = datetime.date.today().isoformat()
+            reg[name]["bands"]["wording"] = wording
+            reg[name]["bands"]["model"] = model or reg[name]["bands"]["model"]
     check("live: the pinned model is the one that answered",
           model == jev.MODEL, model)
-
-    if record:
-        groups["verb-first"]["declared"] = {
-            k: widened(declared.get(k), band(seen[k])) for k in ("yes", "no")}
-        groups["verb-first"]["observed"] = {k: band(seen[k])
-                                            for k in ("yes", "no")}
-        groups["work-kind"]["declared"] = {
-            k: widened(kdeclared.get(k), band(conf[k]))
-            for k in ("confident", "unsure")}
-        groups["work-kind"]["observed"] = {k: band(conf[k])
-                                           for k in ("confident", "unsure")}
-        groups["work-kind"]["observed"]["no-match"] = nomatch
-        cases["measured"] = datetime.date.today().isoformat()
-        cases["model"] = model
-        FIXTURE.write_text(json.dumps(cases, indent=1, ensure_ascii=False) + "\n")
-        print(f"recorded into {FIXTURE}")
+    if record and not wording_hash:
+        REGISTRY.write_text(json.dumps(reg, indent=1, ensure_ascii=False) + "\n")
+        print(f"recorded into {REGISTRY} and the corpus")
 
 
 def main(argv):
     if "--live" in argv:
-        live("--record" in argv)
+        at = argv.index("--wording") if "--wording" in argv else None
+        live("--record" in argv, argv[at + 1] if at is not None else None)
         return harness.report()
     pure_branches(load(SOURCE))
     harness.mutate(SOURCE, load, CASES, MUTATIONS)

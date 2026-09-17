@@ -349,9 +349,18 @@ with `--plan` and refuses on it. What structure cannot decide -- whether the
 title is verb-first, and which `kind:` an unlabelled sub-issue is -- **`check`
 itself** asks Jev through **`scripts/campaign-jev.py`, the one caller of that
 model here**; so does `take`, which runs `check`, while `bind` reads the shape
-by its own hands and prints no judgment. Those answers warn and suggest: none
+by its own hands and prints no judgment. **Every question is declared once in
+`scripts/jev/readings.json`**, which is its one home -- the wording, the state
+slice, the code prefilter, the cuts and the TIER -- and a reader asks by group
+name. The tier is what an answer may do: `shadow` logs only, `advise` prints,
+`act` does the reversible thing its entry names at high confidence and asks at
+medium. Both readings above sit at `advise`, so they warn and suggest: none
 refuses, none moves an exit status, and a call that failed in any way comes
-back `unknown` rather than a guess. Both templates are in
+back `unknown` rather than a guess. **No judgment ever claims, releases,
+merges, closes, launches, retires, moves a label a person alone moves, or
+writes a `DECISION`**, at any tier; `campaign-jev.py` refuses an entry that
+would, and the write a judgment causes is made by the calling session through
+the same guarded path as any other. Both templates are in
 `.claude/skills/opening-campaign/assets/`.
 
 **A `backlog` sub-issue is not worked until the owner says so**, and only the

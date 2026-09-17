@@ -133,10 +133,14 @@ check       The one reader of an issue's SHAPE (kalaluthien/campaign-base#217)
 
             TWO READINGS ARE JUDGEMENT, AND JEV MAKES THEM: whether the title
             opens with an imperative verb naming a mission, and -- only where no
-            `kind:` label answers it -- which of `WORK_KINDS` the work is. One
-            call, both questions, `scripts/campaign-jev.py`. Each PRINTS and
-            moves no exit status, and a call that failed prints `unknown` and
-            why: a model's guess never refuses a claim.
+            `kind:` label answers it -- which of `WORK_KINDS` the work is. They
+            are the `issue-shape` group of `scripts/jev/readings.json`, asked
+            BY NAME in one call through `scripts/campaign-jev.py`; no question
+            and no threshold is written here. Both sit at tier `advise`, so
+            each PRINTS and moves no exit status, and a call that failed prints
+            `unknown` and why: a model's guess never refuses a claim. Where the
+            `kind:` label already answers, the label is passed as the
+            prefilter's word and nothing is asked of the model.
 
             WHAT IT DOES NOT CHECK, printed on every run: whether a body is
             bullets rather than prose, whether a `Definition of done` is
@@ -248,98 +252,20 @@ WORK_KIND_LABEL_PREFIX = "kind:"
 # rule-check#354 folded five into these: `analysis` into `research`,
 # `prototyping` into `development`, `migration` into `maintenance`.
 WORK_KINDS = ("research", "development", "maintenance")
-# ------------------------------------------------------- what `check` asks Jev
-# TWO JUDGMENTS `check` PRINTS AND NEVER GATES ON. `scripts/campaign-jev.py` is
-# the one caller of the model; these are this reading's half of the contract --
-# the wording of each question and the thresholds its answer is read against.
-#
-# THE WORDING IS A CONSTANT BECAUSE IT MOVES THE BANDS. A question reworded is a
-# question whose thresholds were measured for a different one, so the two live
-# together and `scripts/campaign-jev-test.py --live` re-measures both at once
-# from `scripts/fixtures/jev-cases.json`, which records the bands and the date.
+# --------------------------------------------------- what `check` asks of Jev
+# NOTHING, HERE. The two readings `check` prints are the `issue-shape` group of
+# `scripts/jev/readings.json`: the wording of each question, its `criteria`,
+# the state slice and every cut live there as data, and this asks by GROUP NAME
+# through `scripts/campaign-jev.py`. A question or a threshold written here
+# would be a second wording nothing measured and no `report` counted, which is
+# what these constants were.
 #
 # NEITHER MOVES THE EXIT STATUS. `shape_findings` alone decides that, and a
 # judgment that gated a claim would be a model's guess wearing a check's
 # authority. Both are printed with the reading, beside the bare-reference
 # warning, for the same reason: they are readings, not verdicts.
-VERB_FIRST_QUESTION = (
-    "Does the issue title in `title` open with an imperative verb naming a "
-    "mission to carry out?")
-# THE BOUNDARY, PINNED ON BOTH SIDES. A `noul` takes an optional `criteria` of
-# `true` and `false`, each a `what` and `examples`
-# (https://docs.typesafe.ai/primitives/advanced.md, "Structured Noul
-# criteria"), and this boundary is subtle enough to need it: the first word of
-# half this tracker's titles is a word that is a verb somewhere else.
-#
-# THE EXAMPLES ARE FRESH AND ARE IN NO FIXTURE. An example lifted from
-# `scripts/fixtures/jev-cases.json` would be a case telling the model its own
-# answer, and the band measured after it would be the leak and not the reading.
-#
-# The `false` side carries the near miss on purpose -- a title opening with the
-# NAME of a command reads as an order and is not one -- because that is where
-# the misses sat: the not-verb-first band's top was dragged up by exactly those.
-VERB_FIRST_CRITERIA = {
-    "true": {
-        "what": "The title opens with an imperative verb telling somebody to "
-                "carry out a mission: an order given, not a description of "
-                "one.",
-        "examples": [
-            "Cache the weather feed for ten minutes",
-            "Retire the two queues nothing reads",
-        ],
-    },
-    "false": {
-        "what": "The title opens with anything else -- a noun naming a thing "
-                "or a component, a statement about how something behaves, or "
-                "a question. A first word that is also the NAME of a command, "
-                "a flag or a function is a noun here and not an order.",
-        "examples": [
-            "The nightly job runs twice on the first of the month",
-            "merge waits on a review that never arrives",
-            "Why is the staging cache colder than production's?",
-        ],
-    },
-}
-# The `noul` cuts, and the gap between them is `unknown`: a `noul` near 0.5 says
-# yes and no are equally likely, not that the title is half a mission, so one
-# cut would turn the model's own indecision into a verdict. The gap between
-# them is wide enough to be worth having only because `VERB_FIRST_CRITERIA`
-# pins the boundary: asked with no criteria the same cases left 0.14 between
-# the two bands, and asked with them they leave 0.40.
-#
-# THE NUMBERS THEY WERE MEASURED AGAINST ARE NOT REPEATED HERE.
-# `scripts/fixtures/jev-cases.json` declares a band per group and records every
-# run behind it, and `scripts/campaign-jev-test.py --live` asserts each cut
-# strictly between the two declared bands it separates and every case inside
-# its own. A band restated in this comment would be the copy that drifts --
-# which is what these already were, twice over, while no check read them.
-VERB_FIRST_YES_OVER = 0.70
-VERB_FIRST_NO_UNDER = 0.55
-WORK_KIND_QUESTION = (
-    "What kind of work does the sub-issue in `title` and `body` ask for?")
-# THE WORDS ARE `WORK_KINDS`, described as the `assuming-role` skill's own table
-# describes them, plus the no-match option a `choice` needs: one with no fitting
-# option still picks one, at high confidence.
-WORK_KIND_CRITERIA = {
-    "research": "answer an open question, or measure or audit something that "
-                "already runs",
-    "development": "build something new under a specification, or find out "
-                   "whether an approach can work at all",
-    "maintenance": "keep a running system in order: change its form with its "
-                   "behaviour kept, tidy it, and file what is found wrong "
-                   "with it",
-}
-WORK_KIND_NO_MATCH = "none"
-WORK_KIND_CRITERIA[WORK_KIND_NO_MATCH] = "not a unit of work at all"
-# The floor on `confidence`, beside the no-match option and not instead of it:
-# the option set can fit and the answer still be a coin toss between two of its
-# members, which is what the fixture's `unsure` cases are.
-#
-# Measured the same way and recorded in the same one place, the fixture. A run
-# with no WRONG answer in it cannot separate right from wrong, so what the
-# floor is measured against is confidence; that nothing it clears is wrong is
-# asserted beside it, case by case.
-WORK_KIND_FLOOR = 0.60
+JUDGMENT_GROUP = "issue-shape"
+VERB_FIRST, WORK_KIND = "verb-first", "work-kind"
 # THE PERSON'S HOLD ON THE CLOSE. A campaign wearing it is one a person keeps
 # open, and only a person takes it off -- nothing here can observe that they
 # changed their mind, which is the same reason `backlog` is the owner's alone.
@@ -1088,89 +1014,107 @@ def issue_shape(repo, number, timeout=None):
             (data.get("parent") or {}).get("number"), None)
 
 
-def judgment_questions(ask_kind):
-    """The questions `check` asks, in ONE call: the title's shape always, the
-    work kind only where no `kind:` label already answers it. Independent
-    questions over one state cost the latency of one, and asking for a kind the
-    label already carries would invite a reader to trust the model over the
-    owner.
-
-    ONE CASE PER STATE, MANY QUESTIONS OVER IT: the state is one issue's
-    `{title, body}`, never a batch of issues under invented keys, so each
-    question names the field it is about by its backticked path and no question
-    can read a neighbouring case's text.
-
-    THE BODY IS IN THE STATE FOR THE KIND QUESTION, which cannot be answered
-    from a title -- and it is measurably not free: the same title scored 0.57
-    alone and 0.70 beside its body (rule-check#455). So the verb-first question
-    names `title` by its path, and the bands are measured with the body present
-    because that is the state this actually sends."""
-    questions = {"verb_first": {"type": "noul",
-                                "instructions": VERB_FIRST_QUESTION,
-                                "criteria": VERB_FIRST_CRITERIA,
-                                "yes_over": VERB_FIRST_YES_OVER,
-                                "no_under": VERB_FIRST_NO_UNDER}}
-    if ask_kind:
-        questions["work_kind"] = {"type": "choice",
-                                  "instructions": WORK_KIND_QUESTION,
-                                  "criteria": WORK_KIND_CRITERIA,
-                                  "floor": WORK_KIND_FLOOR,
-                                  "no_match": WORK_KIND_NO_MATCH}
-    return questions
-
-
-def judgment_lines(answers, logged, model, ask_kind):
+def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
     """The lines `check` prints for one reading. A calculation, so every branch
-    -- warned, read, unknown, suggested -- has a case that spends no request.
+    -- warned, read, unknown, suggested, settled -- has a case that spends no
+    request.
 
-    EVERY LINE SAYS IT ADVISES. A reader meeting `WARNING` beside the findings
-    needs to know which of the two can refuse it, and only one can."""
+    EVERY LINE SAYS WHAT IT IS. A reader meeting `WARNING` beside the findings
+    needs to know which of the two can refuse it, and only one can; a line the
+    LABEL settled says so, because a suggestion that merely repeats the owner's
+    own word would read as a second opinion agreeing with them.
+
+    THE TIER DECIDES WHETHER A LINE IS PRINTED AT ALL. Both readings sit at
+    `advise`, whose verdict is `show`; one moved to `shadow` would print
+    nothing here and still log, which is what a reading entering the process is
+    meant to cost."""
     out = []
-    verb = answers["verb_first"]
-    if verb.word == "no":
+    verb = verdicts[VERB_FIRST]
+    # AN `unknown` IS ALWAYS REPORTED, whatever the tier asks for a decided
+    # answer: it is this reading's own failure and its reason, not advice the
+    # tier is rationing.
+    if verb.word == "unknown":
+        out.append(f"  verb-first  unknown: {verb.why}")
+    elif verb.does != "show":
+        out.append(f"  verb-first  not shown: tier `{verb.tier}`")
+    elif verb.word == "no":
         out.append("  WARNING the title does not open with an imperative verb "
                    "naming a mission, Jev reads. A warning and not a refusal: "
                    "a judgment advises and never refuses.")
-    elif verb.word == "yes":
-        out.append("  verb-first  yes")
     else:
-        out.append(f"  verb-first  unknown: {verb.why}")
-    if ask_kind:
-        kind = answers["work_kind"]
-        if kind.word in WORK_KINDS:
-            out.append(f"  SUGGESTION Jev reads this as "
-                       f"`{WORK_KIND_LABEL_PREFIX}{kind.word}`. A suggestion "
-                       f"and not a label: only the owner of the issue sets one.")
-        else:
-            out.append(f"  kind suggestion unknown: {kind.why}")
+        out.append("  verb-first  yes")
+    kind = verdicts[WORK_KIND]
+    # ASKED WHATEVER THE ISSUE IS, PRINTED ONLY WHERE IT MEANS SOMETHING. One
+    # group is one state and one call, so the kind question rides along on a
+    # campaign issue too and its answer is logged and joined like any other;
+    # what a campaign issue has no room for is the SUGGESTION, since only a
+    # sub-issue wears a `kind:` label.
+    if not show_kind:
+        pass
+    elif kind.word == "unknown" and not settled_kind:
+        out.append(f"  kind suggestion unknown: {kind.why}")
+    elif settled_kind:
+        out.append(f"  kind        `{WORK_KIND_LABEL_PREFIX}{settled_kind}` "
+                   f"already, so nothing was asked")
+    elif kind.does != "show":
+        out.append(f"  kind suggestion not shown: tier `{kind.tier}`")
+    elif kind.word in WORK_KINDS:
+        out.append(f"  SUGGESTION Jev reads this as "
+                   f"`{WORK_KIND_LABEL_PREFIX}{kind.word}`. A suggestion "
+                   f"and not a label: only the owner of the issue sets one.")
+    else:
+        out.append(f"  kind suggestion unknown: the answer `{kind.word}` is no "
+                   f"kind of work this tree names")
     out.append(f"  judged by {model or '<nothing answered>'}, {logged}")
     return out
 
 
-def judgment_report(label, title, body, ask_kind):
+def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
     """The judgment lines for this issue, or the one line saying there are none.
 
-    `scripts/campaign-jev.py` OWNS THE CALL: the key, the pinned model, every
-    failure path and the log are its, and this reads the branch it returns.
-    Loaded here and not at import, because `check-campaign-claim.py` imports
-    this module on every tool call for `bare_references` and must not pay for a
-    dependency no guard uses."""
-    questions = judgment_questions(ask_kind)
+    `scripts/campaign-jev.py` OWNS THE CALL AND `scripts/jev/readings.json` THE
+    QUESTION: the key, the pinned model, every failure path, the log, the
+    wording, the cuts and the tier are theirs, and this hands a group name, a
+    state and the join key and reads the verdicts back. Loaded here and not at
+    import, because `check-campaign-claim.py` imports this module on every tool
+    call for `bare_references` and must not pay for a dependency no guard uses.
+
+    THE LABEL IS THE PREFILTER. Where the issue carries a `kind:` label, code
+    has settled that reading and the word is passed as `settled`: the model is
+    never asked, the log counts the case all the same, and a reader is never
+    invited to weigh a guess against the owner."""
     # THE GUARD COVERS THE CALL AND NOT ONLY THE LOAD. `ask` promises to answer
     # rather than raise, and this is the second reader of that promise: a
     # judgment is an aside to a reading already made, so a traceback from it
     # must not cost `check` its verdict -- and `campaign-claim take` gates on
-    # that verdict, so it must not cost a worker its claim either.
+    # that verdict, so it must not cost a worker its claim either. `judge`
+    # DOES raise on a state field that is missing or extra, which is this
+    # caller's own bug and lands here rather than in a reader's face.
     try:
         jev = load(Path(__file__).resolve().parent / "campaign-jev.py",
                    "campaign_jev")
-        reading = jev.ask("campaign-tracker.py check", f"{label} title+body",
-                          {"title": title, "body": body}, questions)
+        judged = jev.judge(JUDGMENT_GROUP, {"title": title, "body": body},
+                           read=f"{repo}#{number}",
+                           reader="campaign-tracker.py check",
+                           key={"repo": repo, "issue": number},
+                           settled=({WORK_KIND: settled_kind}
+                                    if settled_kind else None))
     except Exception as e:  # noqa: BLE001 -- a reading that did not happen
         return [f"  judgments not read: campaign-jev.py raised where it "
-                f"promises not to ({e.__class__.__name__})"]
-    return judgment_lines(reading.answers, reading.logged, reading.model,
-                          ask_kind)
+                f"promises not to ({e.__class__.__name__}: {e})"]
+    # THE TWO NAMES ARE READ BEFORE THEY ARE INDEXED. `judgment_lines` reaches
+    # for both by name, and a reading renamed or dropped from the group would
+    # be a KeyError OUTSIDE the guard above -- a traceback out of `check`, and
+    # `campaign-claim take` gates on `check`'s verdict, so it would cost a
+    # worker its claim over a registry edit. Missing is `unknown` with a reason,
+    # like every other reading that did not happen.
+    missing = [n for n in (VERB_FIRST, WORK_KIND) if n not in judged.verdicts]
+    if missing:
+        return [f"  judgments not read: the `{JUDGMENT_GROUP}` group answers "
+                f"{', '.join(sorted(judged.verdicts)) or '<nothing>'}, and "
+                f"this reads {', '.join(missing)}: unknown"]
+    return judgment_lines(judged.verdicts, judged.logged, judged.model,
+                          settled_kind, show_kind)
 
 
 def cmd_check(args):
@@ -1198,13 +1142,13 @@ def cmd_check(args):
     # every sub-issue filed before the rule carries none and `campaign-claim
     # take` refuses on a finding -- a refusal would wall the claim on all of
     # them at once.
-    ask_kind = False
+    settled_kind = None
     if kind == SUB_ISSUE:
         work_kind, work_why = work_kind_of(names)
         if work_kind:
+            settled_kind = work_kind
             print(f"  kind   {work_kind}")
         elif not work_why:
-            ask_kind = True
             print(f"  WARNING no `{WORK_KIND_LABEL_PREFIX}<k>` label, so what "
                   f"kind of work this is is unrecorded: one of "
                   f"{', '.join(WORK_KINDS)}. A warning and not a refusal: every "
@@ -1214,7 +1158,8 @@ def cmd_check(args):
               f"it; `campaign-claim take` refuses a claim on it")
     # THE JUDGMENTS, ONE CALL, printed with the reading. Both advise and neither
     # moves the exit status, so a failed call costs this reading nothing.
-    for line in judgment_report(f"{repo}#{number}", title, body, ask_kind):
+    for line in judgment_report(repo, number, title, body, settled_kind,
+                                show_kind=kind == SUB_ISSUE):
         print(line)
     print("  NOT checked: whether the body is bullets rather than prose, "
           "whether `## Definition of done` is checkable. Those are judgement "

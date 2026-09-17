@@ -4,71 +4,132 @@
   "tier": "shadow",
   "group": "docstring-claim",
   "state": {
-   "fields": ["paragraph", "pred"],
+   "fields": [
+    "paragraph",
+    "pred"
+   ],
    "paragraph": "one blank-line-delimited paragraph of a Python docstring under a scripts/ directory, as written",
-   "pred": {"name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
-            "text": ["comment", "declaration", "callees", "fields"]},
-   "claims": {"sentences_holding": "`<pred.name>`", "split_at": ["; "],
-              "definition_at": [": ", ", which is to say "]}
+   "pred": {
+    "name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
+    "text": [
+     "comment",
+     "declaration",
+     "callees",
+     "fields"
+    ]
+   },
+   "claims": {
+    "sentences_holding": "`<pred.name>`",
+    "split_at": [
+     "; "
+    ],
+    "definition_at": [
+     ": ",
+     ", which is to say "
+    ]
+   }
   },
-  "prefilter": {"what": "a staged change to a spec/ pred, fun or assert, or to a docstring paragraph citing one; any other commit asks nothing"},
+  "prefilter": {
+   "what": "a staged change to a spec/ pred, fun or assert, or to a docstring paragraph citing one; any other commit asks nothing"
+  },
   "question": {
    "type": "choice",
    "per": "claim",
    "instructions": "Is `claim` about `pred.name` true of the Alloy definition in `pred.text`?",
    "criteria": {
-    "supports": {"what": "the definition makes `claim` true",
-                 "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"},
-    "contradicts": {"what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
-                    "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"},
-    "says_nothing": {"what": "the definition neither makes `claim` true nor false",
-                     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"}
+    "supports": {
+     "what": "the definition makes `claim` true",
+     "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"
+    },
+    "contradicts": {
+     "what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
+     "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"
+    },
+    "says_nothing": {
+     "what": "the definition neither makes `claim` true nor false",
+     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"
+    }
    }
   },
-  "thresholds": {"option": "contradicts", "yes_over": 0.5, "no_under": 0.2},
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  },
  "reference-claims": {
   "owner": "scripts/check-cited-claims.py --staged",
   "tier": "shadow",
   "group": "reference-claim",
   "state": {
-   "fields": ["paragraph", "pred"],
+   "fields": [
+    "paragraph",
+    "pred"
+   ],
    "paragraph": "one paragraph, list item or table row under its header, of AGENTS.md or a .claude/skills/*/references/*.md, as written",
-   "pred": {"name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
-            "text": ["comment", "declaration", "callees", "fields"]},
-   "claims": {"sentences_holding": "`<pred.name>`", "split_at": ["; "],
-              "definition_at": [": ", ", which is to say "]}
+   "pred": {
+    "name": "a pred, fun or assert name the paragraph cites in backticks, declared once under spec/",
+    "text": [
+     "comment",
+     "declaration",
+     "callees",
+     "fields"
+    ]
+   },
+   "claims": {
+    "sentences_holding": "`<pred.name>`",
+    "split_at": [
+     "; "
+    ],
+    "definition_at": [
+     ": ",
+     ", which is to say "
+    ]
+   }
   },
-  "prefilter": {"what": "a staged change to a spec/ pred, fun or assert, or to a reference paragraph citing one; any other commit asks nothing",
-                "plain_name": "[a-z]+",
-                "anchored_by": "spec/|\\.als|(?<![/\\w])model\\b"},
+  "prefilter": {
+   "what": "a staged change to a spec/ pred, fun or assert, or to a reference paragraph citing one; any other commit asks nothing",
+   "plain_name": "[a-z]+",
+   "anchored_by": "spec/|\\.als|(?<![/\\w])model\\b"
+  },
   "question": {
    "type": "choice",
    "per": "claim",
    "instructions": "Is `claim` about `pred.name` true of the Alloy definition in `pred.text`?",
    "criteria": {
-    "supports": {"what": "the definition makes `claim` true",
-                 "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"},
-    "contradicts": {"what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
-                    "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"},
-    "says_nothing": {"what": "the definition neither makes `claim` true nor false",
-                     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"}
+    "supports": {
+     "what": "the definition makes `claim` true",
+     "example": "claim '`complete` needs a merged pull request'; text 'pred complete[i] { ... i.pullRequest in Merged }'"
+    },
+    "contradicts": {
+     "what": "the definition makes `claim` false: it requires something `claim` omits or denies, or means something else",
+     "example": "claim '`claimed` needs only a local branch'; text 'pred claimed[b] { b in Remote.refs }'"
+    },
+    "says_nothing": {
+     "what": "the definition neither makes `claim` true nor false",
+     "example": "claim 'the hook exits 2 on refusal'; text defines only which writes are refused"
+    }
    }
   },
-  "thresholds": {"option": "contradicts", "yes_over": 0.5, "no_under": 0.2},
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  },
  "research-bar": {
   "owner": "scripts/check-research-bar.py, started by scripts/check-campaign-claim.py",
   "tier": "shadow",
   "group": "research-bar",
   "state": {
-   "fields": ["condition", "note"],
+   "fields": [
+    "condition",
+    "note"
+   ],
    "condition": "one value of `conditions`, one state per condition",
    "note": "a NOTE comment posted to a kind:research issue, as the guard read it before the post"
   },
@@ -79,49 +140,174 @@
    "baseline": "runs a baseline -- a cheap alternative or a plain code rule over the same cases -- and reports its number beside the claim's",
    "negative": "says how its negative cases were made, each differing from a positive only in the thing judged"
   },
-  "prefilter": {"what": "a comment opening NOTE, on an issue campaign-tracker.py kind reads as research; anything else asks nothing"},
+  "prefilter": {
+   "what": "a comment opening NOTE, on an issue campaign-tracker.py kind reads as research; anything else asks nothing"
+  },
   "question": {
    "type": "choice",
    "per": "condition",
    "instructions": "Does `note` meet `condition`?",
    "criteria": {
-    "supports": {"what": "the note makes a claim and does what `condition` asks for it, in its own text",
-                 "example": "condition 'runs a baseline'; note 'Jev flags 3 of 46, token overlap flags 39 of 46 on the same cases'"},
-    "contradicts": {"what": "the note makes a claim `condition` applies to and does not do what `condition` asks: a number with no method, a verdict with no baseline, positives with no negative",
-                    "example": "condition 'runs a baseline'; note 'Jev separates the names at AUC 0.94, so adopt it' and no other rule's number"},
-    "says_nothing": {"what": "the note makes no claim `condition` applies to: an assignment, a plan, a design choice, a list of options",
-                     "example": "condition 'runs a baseline'; note 'step 2 is assigned to worker-33 on claim sdlc-alloy/458-jev-sdlc'"}
+    "supports": {
+     "what": "the note makes a claim and does what `condition` asks for it, in its own text",
+     "example": "condition 'runs a baseline'; note 'Jev flags 3 of 46, token overlap flags 39 of 46 on the same cases'"
+    },
+    "contradicts": {
+     "what": "the note makes a claim `condition` applies to and does not do what `condition` asks: a number with no method, a verdict with no baseline, positives with no negative",
+     "example": "condition 'runs a baseline'; note 'Jev separates the names at AUC 0.94, so adopt it' and no other rule's number"
+    },
+    "says_nothing": {
+     "what": "the note makes no claim `condition` applies to: an assignment, a plan, a design choice, a list of options",
+     "example": "condition 'runs a baseline'; note 'step 2 is assigned to worker-33 on claim sdlc-alloy/458-jev-sdlc'"
+    }
    }
   },
-  "thresholds": {"option": "contradicts", "yes_over": 0.5, "no_under": 0.2},
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  },
  "finding-sort": {
   "owner": "scripts/check-finding-sort.py, started by scripts/check-campaign-claim.py",
   "tier": "shadow",
   "group": "finding-sort",
   "state": {
-   "fields": ["finding"],
+   "fields": [
+    "finding"
+   ],
    "finding": "one finding of a REVIEW comment, one state per finding, the reviewer's own defect or refinement word masked to [label]"
   },
-  "prefilter": {"what": "a comment opening REVIEW, posted with gh pr comment, cut into item lines by check-finding-sort.py's findings(); anything else asks nothing"},
+  "prefilter": {
+   "what": "a comment opening REVIEW, posted with gh pr comment, cut into item lines by check-finding-sort.py's findings(); anything else asks nothing"
+  },
   "question": {
    "type": "choice",
    "per": "finding",
    "instructions": "If the finding is fixed the way it asks, does what the code does when run change?",
    "criteria": {
-    "defect": {"what": "yes: some input, state or test outcome differs after the fix -- a wrong result, a wrong refusal or allow, a crash, a slow path, or a test that cannot fail becoming one that can",
-               "example": "`parse_date` reads `2026-02-30` as March 2 instead of refusing it, so a bad due date is stored"},
-    "refinement": {"what": "no: only text a person reads changes -- a comment, a docstring, a message, a name, a number stated in prose, a document",
-                   "example": "the usage line still calls the flag `--dry`, while the code and the error message name it `--check`"},
-    "unclear": {"what": "the finding does not say what would change"}
+    "defect": {
+     "what": "yes: some input, state or test outcome differs after the fix -- a wrong result, a wrong refusal or allow, a crash, a slow path, or a test that cannot fail becoming one that can",
+     "example": "`parse_date` reads `2026-02-30` as March 2 instead of refusing it, so a bad due date is stored"
+    },
+    "refinement": {
+     "what": "no: only text a person reads changes -- a comment, a docstring, a message, a name, a number stated in prose, a document",
+     "example": "the usage line still calls the flag `--dry`, while the code and the error message name it `--check`"
+    },
+    "unclear": {
+     "what": "the finding does not say what would change"
+    }
    }
   },
-  "thresholds": {"option": "defect", "yes_over": 0.5, "no_under": 0.2},
+  "thresholds": {
+   "option": "defect",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
+ },
+ "verb-first": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "advise",
+  "group": "issue-shape",
+  "state": {
+   "fields": [
+    "title",
+    "body"
+   ],
+   "why": "the body is not free -- the same title scored 0.57 alone and 0.70 beside its body (rule-check#455) -- and the body is what work-kind, the other reading of this group, is answered from"
+  },
+  "prefilter": {
+   "what": "none yet: no pattern separates a verb-first title from a noun-first one"
+  },
+  "question": {
+   "type": "noul",
+   "instructions": "Does the issue title in `title` open with an imperative verb naming a mission to carry out?",
+   "criteria": {
+    "true": {
+     "what": "The title opens with an imperative verb telling somebody to carry out a mission: an order given, not a description of one.",
+     "examples": [
+      "Cache the weather feed for ten minutes",
+      "Retire the two queues nothing reads"
+     ]
+    },
+    "false": {
+     "what": "The title opens with anything else -- a noun naming a thing or a component, a statement about how something behaves, or a question.",
+     "examples": [
+      "The nightly job runs twice on the first of the month",
+      "merge waits on a review that never arrives",
+      "Why is the staging cache colder than production's?"
+     ]
+    }
+   }
+  },
+  "thresholds": {
+   "yes_over": 0.7,
+   "no_under": 0.55
+  },
+  "join": "issue-title-kept",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-17",
+   "wording": "548295c0baa4",
+   "declared": {
+    "yes": [
+     0.55,
+     0.98
+    ],
+    "no": [
+     0.02,
+     0.13
+    ]
+   }
+  }
+ },
+ "work-kind": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "advise",
+  "group": "issue-shape",
+  "state": {
+   "fields": [
+    "title",
+    "body"
+   ],
+   "why": "what kind of work a sub-issue asks for cannot be read off its title"
+  },
+  "prefilter": {
+   "what": "the `kind:<k>` label, where the issue carries one: the owner's word, and the reader passes it as `settled`"
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "What kind of work does the sub-issue in `title` and `body` ask for?",
+   "criteria": {
+    "research": "answer an open question, or measure or audit something that already runs",
+    "development": "build something new under a specification, or find out whether an approach can work at all",
+    "maintenance": "keep a running system in order: change its form with its behaviour kept, tidy it, and file what is found wrong with it",
+    "none": "not a unit of work at all"
+   }
+  },
+  "thresholds": {
+   "floor": 0.6,
+   "no_match": "none"
+  },
+  "join": "issue-kind-label",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-17",
+   "wording": "9ed8bf08ffac",
+   "declared": {
+    "confident": [
+     0.53,
+     1.0
+    ],
+    "unsure": [
+     0.15,
+     0.43
+    ]
+   }
+  }
  }
 }

@@ -110,7 +110,7 @@ needs a claim on `<n>`, found in the base's worktrees or an install's. A `gh pr`
 write naming a MEMBER repository needs a claim checked out in a checkout of
 that repository, never the base's (#389). `gh issue create` is exempt from the claim, the
 number being minted there, and read for its shape instead (rule-check#461):
-refused when `-R` names a repository other than the tracker, or its body
+refused when it would file on a repository other than the tracker, or its body
 carries `## Lands in` with no `--parent`; `create_findings` says what it does
 not read. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
@@ -2284,15 +2284,22 @@ def off_tracker(writes, issue, cwd, root):
 
 def repo_named(tokens):
     """The repository a `gh` segment names with `-R`/`--repo`, in any of
-    pflag's three spellings, or None when it names none."""
+    pflag's three spellings, or None when it names none. The LAST one given,
+    as pflag keeps it; `-R=x` is pflag's shorthand spelling of `x`, and a
+    `github.com/` host is dropped."""
+    named = None
     for j, t in enumerate(tokens):
         if t in ("-R", "--repo"):
-            return tokens[j + 1] if j + 1 < len(tokens) else ""
-        if t.startswith("--repo="):
-            return t[len("--repo="):]
-        if t.startswith("-R") and len(t) > 2:
-            return t[2:]
-    return None
+            named = tokens[j + 1] if j + 1 < len(tokens) else ""
+        elif t.startswith("--repo="):
+            named = t[len("--repo="):]
+        elif t.startswith("-R") and len(t) > 2:
+            named = t[2:].removeprefix("=")
+    # `[HOST/]OWNER/REPO` is gh's form; the host is not the repository.
+    return None if named is None else GITHUB_HOST.sub("", named)
+
+
+GITHUB_HOST = re.compile(r"^(https?://)?github\.com/", re.I)
 
 
 def member_pr(tokens):
@@ -2723,46 +2730,63 @@ def _judgeable(text):
 # template's `## Lands in` is what marks a body as a sub-issue's; the third kind
 # carries none and stays free to file unlinked.
 LANDS_IN = re.compile(r"^##[ \t]+Lands in[ \t]*$", re.M)
-REPO_FLAGS = ("-R", "--repo")
+# `gh issue create`'s valued flags (`gh issue create --help`), so a value is
+# never read as `--parent`: `--title --parent` names no parent.
+CREATE_VALUED = {"-a", "--assignee", "-b", "--body", "-F", "--body-file",
+                 "-l", "--label", "-m", "--milestone", "-p", "--project",
+                 "--parent", "--recover", "-R", "--repo", "-T", "--template",
+                 "-t", "--title"}
 
 
-def create_findings(tokens, heredocs, cwd=None):
+def create_parent(tokens):
+    """The `--parent` value a `gh issue create` segment gives, or None."""
+    parent, j = None, 0
+    while j < len(tokens):
+        t = tokens[j]
+        if t.startswith("--parent="):
+            parent = t[len("--parent="):] or None
+        elif t in CREATE_VALUED:
+            if t == "--parent" and j + 1 < len(tokens):
+                parent = tokens[j + 1] or None
+            j += 1
+        j += 1
+    return parent
+
+
+def create_findings(tokens, heredocs, cwd, root):
     """(what is wrong with this `gh issue create`, what was read) for one
-    segment. Refused: `-R`/`--repo` naming a repository other than the
-    tracker, and a body carrying `## Lands in` with no `--parent`. The body is
-    read as `comment_body` reads one; NOT READ, and so allowed: a body the shell
-    composes, `--editor`, `--web`, `--template`, the prompt, and a repository
-    chosen by `GH_REPO` or by the cwd's remote rather than by the flag."""
+    segment. Refused: a repository other than the tracker -- named by `-R`, or
+    by no `-R` from a checkout that is not the base's, whose `gh` files on its
+    own remote, `off_tracker`'s reading -- and a body carrying `## Lands in`
+    with no `--parent`. The body is read as `comment_body` reads one, and a
+    body file it cannot open is refused, since the same command may write it
+    first. NOT READ, and so allowed: a body the shell composes, `--editor`,
+    `--web`, `--template`, the prompt, and `GH_REPO`."""
     found, read = [], []
-    repo = None
-    for j, t in enumerate(tokens):
-        if t in REPO_FLAGS and j + 1 < len(tokens):
-            repo = tokens[j + 1]
-        elif t.startswith("--repo="):
-            repo = t[len("--repo="):]
-        elif t.startswith("-R") and not t.startswith("--") and len(t) > 2:
-            repo = t[2:]
-    if repo is not None:
+    named = repo_named(tokens)
+    if named is None:
+        if checkout_of(cwd)[0] != root:
+            found.append(f"it names no `-R` from {cwd}, which is not the base's "
+                         f"checkout, so gh files it on that checkout's "
+                         f"repository and not the tracker")
+    else:
         m = repos_reader()
         if m is None:
-            found.append(f"it names `-R {repo}`, and campaign-repos.py would not "
-                         f"load ({REPOS_UNREADABLE}) to say which repository "
-                         f"the tracker is")
+            found.append(f"it names `-R {named}`, and campaign-repos.py would "
+                         f"not load ({REPOS_UNREADABLE}) to say whether that "
+                         f"is the tracker")
+        elif not m.is_base(named):
+            found.append(f"it names `-R {named}`, and a sub-issue is filed on "
+                         f"{m.BASE_REPO} whatever repository its code lands in")
         else:
-            name = re.sub(r"^(https?://)?github\.com/", "", repo).removesuffix(".git")
-            if name.lower() != m.BASE_REPO.lower():
-                found.append(f"it names `-R {repo}`, and a sub-issue is filed on "
-                             f"{m.BASE_REPO} whatever repository its code lands in")
-            else:
-                read.append(f"`-R {repo}` is the tracker")
-    if any(t == "--parent" or t.startswith("--parent=") for t in tokens):
-        read.append("it carries --parent")
+            read.append(f"`-R {named}` is the tracker")
+    parent = create_parent(tokens)
+    if parent is not None:
+        read.append(f"it carries --parent {parent}")
         return found, read
     text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd)
     if why_unreadable:
-        # ALLOWED, unlike a comment's: `gh` opens the same path from the same
-        # cwd, so a file this could not read files no issue at all.
-        read.append(f"{why_unreadable}; gh reads the same path and files nothing")
+        found.append(why_unreadable)
     elif why_unjudged:
         read.append(why_unjudged)
     elif text is None:
@@ -2774,7 +2798,6 @@ def create_findings(tokens, heredocs, cwd=None):
         read.append("its body carries no `## Lands in`, so it is not a "
                     "sub-issue and may file unlinked")
     return found, read
-
 
 def comment_findings(text):
     """(every way this comment's shape is wrong, the reason the first line was
@@ -3139,7 +3162,7 @@ def bash_call(command, cwd: Path, session_id=""):
     if root is not None and (root / BASE_MARKER).is_file():
         found = []
         for rest, heredocs in creates:
-            wrong, read = create_findings(rest, heredocs, cwd)
+            wrong, read = create_findings(rest, heredocs, cwd, root)
             found += wrong
             NOTES.extend(f"gh issue create: {r}." for r in read)
         if found:

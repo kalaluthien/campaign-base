@@ -148,6 +148,11 @@ answers `stale`; its lines -- the head, the shas the body names, the word --
 ride in the refusal. `unknown`, a timeout, and a pull request named by branch
 or not at all, which only `gh` resolves, are allowed with the sha NOT checked.
 
+A NOTE ON AN ISSUE IS HANDED TO `check-research-bar.py`, AND A REVIEW ON A PULL
+REQUEST TO `check-finding-sort.py`, in the background, once its shape holds, and
+the verdict never waits for either or reads it: readings in tier `shadow`
+(sdlc-alloy#458), listed in `SHADOW_READINGS`. What each reads is its script's.
+
 A BARE `#N` IS WARNED ABOUT AND NEVER REFUSED. An issue is `<slug>#N` and a
 pull request `pr#N`, since five campaigns file onto one tracker and a bare
 number names no campaign. The form and its sentence are
@@ -2823,6 +2828,45 @@ def comment_findings(text):
 MERGE_REVIEW = HERE / "check-merge-review.py"
 REPORT_READ_TIMEOUT = 10
 PULL_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
+ISSUE_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/issues/(\d+)")
+# THE SHADOW READINGS A COMMENT IS HANDED TO, by the `gh` verb that posts it
+# and its first word: (the reader, the URL form naming its target). A reading
+# in tier `shadow` logs and never prints (sdlc-alloy#458 K1 and R3).
+SHADOW_READINGS = {
+    ("issue", "NOTE"): (HERE / "check-research-bar.py", ISSUE_URL),
+    ("pr", "REVIEW"): (HERE / "check-finding-sort.py", PULL_URL),
+}
+
+
+def shadow_reading(tokens, text, cwd, root):
+    """Start the shadow reading of the comment this `gh issue comment` or `gh pr
+    comment` segment posts, if `SHADOW_READINGS` names one, in the background,
+    and never wait for it: it asks a model, and this guard runs before every
+    tool call. The target is resolved as `report_pin` resolves a pull request,
+    and one only `gh` could resolve is not read. What each reading logs, and
+    that it never prints, is its script's docstring's."""
+    words = gh_words(tokens)
+    if words[1:2] != ["comment"]:
+        return
+    first = text.lstrip().split(" ", 1)[0]
+    reader, form = SHADOW_READINGS.get((words[0], first), (None, None))
+    if reader is None:
+        return
+    pick = words[2] if len(words) > 2 else ""
+    url = form.search(pick)
+    repo = repo_named(tokens) or (url.group(1) if url else None)
+    number = url.group(2) if url else pick.lstrip("#")
+    if not number.isdigit() or (repo is None and checkout_of(cwd)[0] != root):
+        return
+    try:
+        p = subprocess.Popen([sys.executable, str(reader), number]
+                             + ([repo] if repo else []),
+                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        p.stdin.write(text.encode("utf-8"))
+        p.stdin.close()
+    except (OSError, ValueError):  # a lone surrogate does not encode
+        pass
 
 
 def report_pin(tokens, text, cwd, root):
@@ -3222,6 +3266,10 @@ def bash_call(command, cwd: Path, session_id=""):
                 refusal, note = report_pin(rest, text, cwd, root)
                 stale += refusal or []
                 pins += [note] if note else []
+            # A SHADOW READING, only once the shape holds, and never a
+            # verdict (sdlc-alloy#458 K1 and R3).
+            elif not found:
+                shadow_reading(rest, text, cwd, root)
             # THE REFERENCE FORM, WARNED AND NEVER REFUSED. Collected here and
             # put into `NOTES` below, which `refuse` and `allow` print beside
             # every verdict -- so a comment refused for its first line still

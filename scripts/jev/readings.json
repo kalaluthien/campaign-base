@@ -588,5 +588,92 @@
   },
   "join": null,
   "bands": {}
+ },
+ "done-report-select": {
+  "owner": "scripts/check-done-report.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "done-report-select",
+  "state": {
+   "fields": [
+    "condition",
+    "candidates"
+   ],
+   "condition": "one Definition of done item of a sub-issue the pull request closes, as check-done-carry.py's conditions() cuts it: a case pins one; production sends none in the state, since each condition is its own question of the one call a sub-issue, its text in the instructions",
+   "candidates": "every hunk of the pull request's diff, CODE AND TEST, keyed h1..hN in diff order, and every line of the closing REPORT quoting a suite result, keyed r1..rM in REPORT order; each its path -- a file path, or `the REPORT` -- a newline and the text, cut at `candidate_ceiling` bytes"
+  },
+  "prefilter": {
+   "what": "a comment opening REPORT, posted with gh pr comment, that asks for the merge -- the settlement REPORT; a pull request closing no sub-issue with a Definition of done, a diff and a REPORT yielding no candidate, or a state over the budget asks nothing and logs a skip; a condition every clause of which is an event is settled here -- the `reads_from` entry's event cut WIDENED BY `event_extra`, which this reading adds and that one has no use for; it carries no inline flag, since it is appended to a cut that already sets one -- its FACT read from `gh`, and logs a skip carrying what was read",
+   "reads_from": "done-test-select",
+   "event_extra": "\\b(sub-)?issue\\b[^;]*\\bclosed\\b|\\bclosed\\s+as\\b",
+   "fact": {
+    "label": "(?i)\\blabel\\b",
+    "closed": "(?i)\\b(sub-)?issue\\b[^;]*\\bclosed\\b|\\bclosed\\s+as\\b",
+    "comment": "(?i)\\b(NOTE|REPORT|DECISION|REVIEW|BLOCKED)\\b",
+    "merged": "(?i)\\bmerged?\\b"
+   },
+   "result_line": "(?i)\\b\\d+\\s*/\\s*\\d+\\b|\\b\\d+\\s+(suite|case|mutation|finding|defect|refinement|test|check|row|state|condition)s?\\b|\\bnone failed\\b|\\bwent red\\b|\\ball green\\b",
+   "report_line_floor": 0.15,
+   "candidate_ceiling": 1200
+  },
+  "question": {
+   "type": "choice",
+   "per": "condition",
+   "instructions": "Which candidate in `candidates` is the evidence that this condition holds -- a hunk that implements or tests it, or a REPORT line quoting a suite result that shows it: {condition}",
+   "criteria": {
+    "{hunk}": "the candidate `candidates.{hunk}`, from {path}",
+    "noMatch": "no candidate in `candidates` is evidence for this condition: none implements it, tests it or reports a result that shows it"
+   }
+  },
+  "thresholds": {
+   "floor": 0.5,
+   "no_match": "noMatch"
+  },
+  "join": null,
+  "bands": {}
+ },
+ "done-report-claim": {
+  "owner": "scripts/check-done-report.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "done-report-claim",
+  "state": {
+   "fields": [
+    "condition",
+    "reportLine",
+    "evidence"
+   ],
+   "condition": "one Definition of done item whose done-report-select answer picked this candidate: a case pins one; production sends none in the state, its text in the instructions",
+   "reportLine": "the closing REPORT's line of highest token overlap with the condition, at or above `report_line_floor`, else the question's `no_report_line`: a case pins one; production sends none in the state, its text in the instructions",
+   "evidence": "the candidate done-report-select picked, its path, a newline and the text, cut at `candidate_ceiling` bytes"
+  },
+  "prefilter": {
+   "what": "a condition whose done-report-select answer named a candidate; one call a picked candidate, every condition that picked it, each with its own REPORT line"
+  },
+  "question": {
+   "type": "choice",
+   "per": "condition",
+   "instructions": "The closing REPORT says: {reportLine}\n\nDoes `evidence` show that this condition holds: {condition}",
+   "no_report_line": "nothing about this condition",
+   "criteria": {
+    "supports": {
+     "what": "the evidence shows the condition holds: the hunk implements or tests what it states, or the reported result is the one it names",
+     "example": "condition 'the guard refuses a comment over the ceiling, with a named case'; evidence adds 'def test_refuses_over_ceiling(): assert run(body=\"x\"*2001).code == 2'"
+    },
+    "contradicts": {
+     "what": "the evidence shows the condition does not hold: it does the opposite of what the condition states, or the reported result fails it",
+     "example": "condition 'a missing path passes'; evidence adds 'def test_missing_path_refused(): assert run(path=None).code == 2'"
+    },
+    "says_nothing": {
+     "what": "the evidence neither shows nor denies the condition: it changes something else, or only touches the same file or topic",
+     "example": "condition 'the REPORT quotes one refusal'; evidence renames a fixture in the guard's suite"
+    }
+   }
+  },
+  "thresholds": {
+   "option": "supports",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {}
  }
 }

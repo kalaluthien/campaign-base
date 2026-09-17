@@ -15,7 +15,7 @@ name -- so the chain reads `hook <- claude <- shell` the way a live one does.
 Every case also asserts the hook's contract with the harness: exit 0 and no
 stdout, since UserPromptSubmit stdout is injected into the model's context.
 
-Usage: .claude/skills/driving-herdr/scripts/herdr-session-link-test.py
+Usage: .claude/skills/using-herdr/scripts/herdr-session-link-test.py
 """
 import importlib
 import json

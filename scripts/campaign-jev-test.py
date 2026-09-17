@@ -1665,6 +1665,16 @@ def inside(value, declared):
     return declared is not None and declared[0] <= value <= declared[1]
 
 
+def held_to_a_band(jev, case):
+    """Whether this case's runs may set the reading's band. THE ONE READER of
+    that rule, because the run loop and the `--record` history both ask it and
+    the two disagreed: the loop skipped a case code settles while the history
+    still let its value widen the band, so the edge moved on a state production
+    never sends. A no-match case is excepted -- `verb-first`'s is settled too --
+    and `band_of` holds it to no band anyway."""
+    return jev.settled_of(case) is None or case.get("role") == "no-match"
+
+
 # Which band a case is held to is `campaign-jev.band_of`'s, asked and never
 # restated: this suite kept its own reading of it, and the two disagreed exactly
 # where the join wrote a case with no `band`.
@@ -1767,7 +1777,7 @@ def live(record, wording_hash=None):
             # `research` and was counted twice over as this reading's failure.
             # A no-match case is excepted and stays below: `verb-first`'s is
             # settled too, and where it lands is the whole point of keeping it.
-            if jev.settled_of(c) is not None and c.get("role") != "no-match":
+            if not held_to_a_band(jev, c):
                 settled_here.append((c["id"], a.word, value))
                 continue
             key = jev.band_of(entry, c)[0]
@@ -1866,6 +1876,8 @@ def live(record, wording_hash=None):
             # this run is already in it.
             history = {}
             for c in cases:
+                if not held_to_a_band(jev, c):
+                    continue
                 key = jev.band_of(entry, c)[0]
                 for s in c.get("seen") or []:
                     value = jev.band_value(entry, s.get("raw"))

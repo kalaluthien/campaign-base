@@ -251,7 +251,7 @@
   "join": "issue-title-kept",
   "bands": {
    "model": "jev-1.13.0",
-   "measured": "2026-09-17",
+   "measured": "2026-09-18",
    "wording": "548295c0baa4",
    "declared": {
     "yes": [
@@ -290,14 +290,14 @@
    }
   },
   "thresholds": {
-   "floor": 0.45,
-   "certain_over": 0.5,
+   "floor": 0.5,
+   "certain_over": 0.52,
    "no_match": "none"
   },
   "join": "issue-kind-label",
   "bands": {
    "model": "jev-1.13.0",
-   "measured": "2026-09-17",
+   "measured": "2026-09-18",
    "wording": "9ed8bf08ffac",
    "declared": {
     "confident": [
@@ -305,8 +305,8 @@
      1.0
     ],
     "unsure": [
-     0.15,
-     0.43
+     0.11,
+     0.48
     ]
    }
   }

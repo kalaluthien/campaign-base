@@ -1738,6 +1738,7 @@ def live(record, wording_hash=None):
         q = {name: spec}
         declared = (entry.get("bands") or {}).get("declared") or {}
         seen, outside, wrong, nomatch, flips = {}, [], [], [], []
+        settled_here = []
         for c in cases:
             # THE STORE IS OFF HERE, as it is in `relive`: a band is what the
             # same state answers across runs, and a replayed answer would
@@ -1754,6 +1755,21 @@ def live(record, wording_hash=None):
                 c.setdefault("seen", []).append(
                     {"model": r.model, "wording": wording, "at": at,
                      "word": a.word, "raw": a.raw})
+            # A CASE CODE SETTLED IS HELD TO NO BAND AND SCORED AGAINST
+            # NOTHING. A band is what the states production SENDS come back at,
+            # and the prefilter's whole job is that this one is never sent --
+            # `report` already counts such a case as code's rather than as one
+            # Jev got wrong (DECISION 5715993782). It is still ASKED and still
+            # printed, because what the model would have said about a state code
+            # settles is the evidence that the prefilter is worth having. Found
+            # by `work-kind-0873f14b0769`, an issue whose `kind:` label settles
+            # it, which came back `development` at 0.43 against a truth of
+            # `research` and was counted twice over as this reading's failure.
+            # A no-match case is excepted and stays below: `verb-first`'s is
+            # settled too, and where it lands is the whole point of keeping it.
+            if jev.settled_of(c) is not None and c.get("role") != "no-match":
+                settled_here.append((c["id"], a.word, value))
+                continue
             key = jev.band_of(entry, c)[0]
             if c.get("role") == "no-match":
                 nomatch.append((c["id"], a.word, value))
@@ -1775,6 +1791,10 @@ def live(record, wording_hash=None):
         print(f"  {name} seen: "
               + "  ".join(f"{k} {band(v)}" for k, v in sorted(seen.items()))
               + f"  declared {declared}")
+        if settled_here:
+            print(f"  {name}: {len(settled_here)} case(s) code settles, asked "
+                  f"and recorded, held to no band -- "
+                  + ", ".join(f"{i} {w} {v}" for i, w, v in settled_here[:6]))
         check(f"live: every {name} case landed in its declared band",
               not outside, outside)
         check(f"live: every confident {name} answer names the truth",

@@ -239,7 +239,8 @@ campaign, or unreadable — stop and ask.
 
 Then finish it:
 
-- Delete `sub-issue.md`. It is filled once *per sub-issue* from the skill's own
+- Delete `sub-issue.md`, and `chore.md`, which only `scripts/campaign-open.py`
+  reads. The first is filled once *per sub-issue* from the skill's own
   copy, so the top-level copy has no reader and a stale one could be filled long
   after.
 - Everything else the copy brought stays.

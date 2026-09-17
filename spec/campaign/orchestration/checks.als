@@ -262,8 +262,10 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    the name would grant, and what the rule buys is that the role is explicit and
    the mistake is loud. Stated here because a permission table is the thing a
    reader is most likely to mistake for a security boundary. */
-/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE. `memberIssues` excludes it
-   (github/system.als), so `i in s.worksOn.memberIssues` refuses a worker every
+/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE, a chore's apart: there it is its own
+   one member (github/system.als `WellFormed`), and the worker reaches it
+   through the second disjunct below, on its claim, as it reaches any
+   sub-issue. Everywhere else `memberIssues` excludes it, so `i in s.worksOn.memberIssues` refuses a worker every
    write to the issue of the campaign it works -- including a comment, which
    the model has no precondition on. The worker's campaign-plane row therefore
    admits the campaign issue of its OWN campaign, and `Q11` is the witness.
@@ -279,7 +281,8 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    every campaign-issue close to the acting session's own campaign, for every
    role. `sessionRelease` has no such tie and no claim precondition, and a
    campaign issue may start as another campaign's sub-issue (WellFormed bars
-   only its own), be claimed there and leave by RemoveMember -- so a worker
+   neither that nor, since the chore, its own), be claimed there and leave by
+   RemoveMember -- so a worker
    releasing that claim is refused by this conjunct alone, and widening it to
    `i in Campaign.campaignIssue` turns Q14 SAT. Its two neighbours are pinned
    too: dropping the disjunct reddens `Q11`, dropping `i not in
@@ -1090,8 +1093,8 @@ pred Q3_WorkerClosesOwnClaim {
 
    Says "belongs to campaign c, and c is not the session's" rather than "not in
    my memberIssues": the campaign issue of
-   the session's OWN campaign is also outside `memberIssues`, so that
-   spelling would match the one write the rule permits.
+   the session's OWN campaign is also outside `memberIssues`, a chore's
+   apart, so that spelling would match the one write the rule permits.
 
    `c != s.worksOn` sits INSIDE the `eventually`, as in Q10's trio: `worksOn`
    is var, so a session that differs from `c` at time zero can adopt `c` and

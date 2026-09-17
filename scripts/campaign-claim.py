@@ -87,6 +87,29 @@ serialises every machine and not just this one. A repo-less campaign cuts its
 ref on the base, which is what `R4_RepolessCampaign` in
 `spec/campaign/github/system.als` already required.
 
+A CHORE IS CLAIMED AS ITSELF, AND SAYS WHERE RATHER THAN READING IT
+
+A chore is one issue -- a campaign issue carrying `chore`, with no sub-issue
+(AGENTS.md, Chores) -- so `take <N> <N> <topic>` claims the campaign issue
+itself. `## Lands in` is a SUB-ISSUE's section and a chore has none, so the
+destination is `--repo`, admitted from the campaign's own `## Repos` plus the
+base; with no `--repo` the list decides only where it can, and several entries
+is a refusal naming them. `chore_repo` is that whole reading and it is pure.
+
+A campaign issue WITHOUT the label is refused: a charter is nobody's unit of
+work, and what is done under it is filed as a sub-issue and taken as one. Until
+#475 that case was refused only by accident, by the `## Lands in` a campaign
+issue does not carry.
+
+ONE NAME, ONE REPOSITORY, which is what makes the other two commands work on a
+chore. A chore cuts a ref in each repository it changes, and `all_refs` maps a
+branch NAME to one repository, so two refs of one name leave the second
+invisible to `release`, to `live` and to the close that reads `live`. `take`
+keeps the map injective at the one moment it can: before the create it lists
+the chore's other repositories and refuses a name already held there. Then
+`release <N> <N>` needs no section to read -- it verifies the `chore` label,
+sweeps, and takes the repository off the ref it found, `--repo` confirming it.
+
 `release` FINDS THE BRANCH RATHER THAN BEING TOLD IT
 
 The record used to carry the branch, so `release <issue>` knew which ref to
@@ -226,10 +249,10 @@ def _repos_module():
 
 
 def _tracker_module():
-    """`campaign-tracker.py`, imported for the one thing it owns that this file
-    also needs: the `backlog` label's spelling. It is imported and not restated
-    for the same reason `campaign-repos.py` is -- the LIST is still read by
-    running that script, and this is a constant, not a reading.
+    """`campaign-tracker.py`, imported for the two things it owns that this file
+    also needs: the `backlog` and `chore` labels' spellings. They are imported
+    and not restated for the same reason `campaign-repos.py` is -- the LIST is
+    still read by running that script, and these are constants, not readings.
 
     NO CYCLE: `campaign-tracker.py` imports THIS file only inside
     `claim_reader()`, at call time, so a module-level import here resolves."""
@@ -574,22 +597,32 @@ def issue_settled(issue):
     return False, f"#{issue} is {state}"
 
 
-# ONE SPELLING, IMPORTED. `campaign-tracker.py` reads the label to REPORT it
-# and this file reads it to REFUSE a claim on it; two string literals of one
-# label is the drift this campaign exists to remove.
-BACKLOG_LABEL = _tracker_module().BACKLOG_LABEL
+# ONE SPELLING EACH, IMPORTED. `campaign-tracker.py` reads these labels to
+# REPORT them and this file reads them to REFUSE a claim -- on a parked
+# sub-issue, and on a campaign issue nobody made a chore; two string literals of
+# one label is the drift this campaign exists to remove. One load for both, or
+# the whole tracker is executed twice for two constants.
+_LABELS = _tracker_module()
+BACKLOG_LABEL = _LABELS.BACKLOG_LABEL
+CHORE_LABEL = _LABELS.CHORE_LABEL
 
 
-def backlog_labelled(issue):
-    """(is it parked, why_unreadable) -- whether this sub-issue carries
-    `backlog`. `None` for the first means the reading did not happen, which is
-    a refusal: a label listing that failed is not a sub-issue nobody parked.
+def issue_labels(issue):
+    """(label names, why_unreadable) -- the labels of one issue. `None` for the
+    first means the reading did not happen, which is a refusal: a label listing
+    that failed is not a sub-issue nobody parked, nor a campaign issue nobody
+    made a chore.
+
+    ONE READING FOR BOTH GATES `take` has. `backlog` parks a sub-issue and
+    `chore` makes a campaign issue its own unit of work, and they are decided at
+    opposite ends of one claim; asking twice would let one issue answer
+    differently within it.
 
     THE LABEL IS THE WHOLE MECHANISM (kalaluthien/campaign-base#217). A sub-issue
-    without it is worked as soon as it is filed or reopened; one with it waits
-    for the owner's word, and only the owner takes the label off, because
-    nothing on this machine can observe that they changed their mind. It is a
-    label and not a section for the same reason `bound:` is: a label is read by
+    without `backlog` is worked as soon as it is filed or reopened; one with it
+    waits for the owner's word, and only the owner takes the label off, because
+    nothing on this machine can observe that they changed their mind. Both are
+    labels and not sections for the same reason `bound:` is: a label is read by
     exact name, has no history, and does not cost a body edit to set."""
     r = run("gh", "issue", "view", str(issue), "-R", TRACKER, "--json",
             "labels", "--jq", "[.labels[].name]")
@@ -601,7 +634,7 @@ def backlog_labelled(issue):
     except ValueError as e:
         return None, (f"could not parse #{issue}'s labels "
                       f"({e.__class__.__name__})")
-    return BACKLOG_LABEL in names, None
+    return names, None
 
 
 def campaign_repos(campaign_issue):
@@ -699,6 +732,49 @@ def repo_named(args):
     return getattr(args, "repo", None) is not None
 
 
+def chore_repo(listed, named_repo, default_repo):
+    """(repo, note), or (None, refusal) -- where a chore's ref is cut. Pure, so
+    every branch of it is testable without a request.
+
+    IT IS WHAT A CHORE READS INSTEAD OF `## Lands in`. That section belongs to a
+    sub-issue and a chore has none, so `named_repo` -- the caller's `--repo` --
+    answers rather than confirms, and `listed`, the campaign's own `## Repos`,
+    is what admits the answer. The base is admitted beside the list and is never
+    in it: `campaign-repos.py` refuses the entry, and every campaign may change
+    the base, which is `claimWithinScope`'s `Base` disjunct, R14d.
+
+    NOTHING IS GUESSED AMONG SEVERAL. With no `--repo` the list decides only
+    where it can -- `- none` is the base, one entry is that entry -- and several
+    is a refusal naming them. A claim is the one write here that MINTS a name,
+    so a pick among equals cuts a real ref on a repository nobody named."""
+    if named_repo is not None:
+        if REPOS.key(named_repo) == REPOS.key(default_repo):
+            return default_repo, (f"--repo names the base ({default_repo}), "
+                                  f"which every campaign is for")
+        # THROUGH THE ONE KEY, as the `## Repos` scope check is: `--repo` is
+        # typed by a person and GitHub does not tell `Web` from `web`.
+        for entry in listed:
+            if REPOS.key(entry) == REPOS.key(named_repo):
+                return entry, f"--repo names {entry}, which `## Repos` lists"
+        return None, (
+            f"--repo names {named_repo}, which is neither the base "
+            f"({default_repo}) nor one of {', '.join(listed) or '`- none`'}.\n"
+            f"  Adding a repository is a scope change and belongs in the "
+            f"campaign issue's `## Repos`.")
+    if not listed:
+        return default_repo, (f"no --repo, and this chore lists no member "
+                              f"repository, so its ref is cut on the base "
+                              f"({default_repo})")
+    if len(listed) == 1:
+        return listed[0], (f"no --repo, and `## Repos` lists {listed[0]} alone, "
+                           f"so the ref is cut there")
+    return None, (
+        f"no --repo, and `## Repos` lists {', '.join(listed)}, so which of them "
+        f"this chore's ref is cut on is not derivable.\n  Name it with --repo, "
+        f"the base ({default_repo}) included -- one ref per repository, so a "
+        f"chore that changes two takes two.")
+
+
 def partition_refs(repo, branches):
     """(held, residue, unread) -- which of these refs are live claims.
 
@@ -770,23 +846,67 @@ def cmd_take(args):
          ", so the parentage could not be checked -- a parent that could not "
          "be read is not a parent that disagrees")))
 
+    # THE LABELS, READ ONCE FOR THE TWO GATES THAT TURN ON ONE: whether this is
+    # a chore, which decides where the ref is cut just below, and whether a
+    # sub-issue is parked, which is refused once its shape has been read.
+    labels, why_labels = issue_labels(args.issue)
+    if labels is None:
+        print(f"refusing: {why_labels}\n  A label listing that did not happen is "
+              f"not a sub-issue nobody parked, nor a\n  campaign issue nobody "
+              f"made a chore.", file=sys.stderr)
+        return 1
+
     # WHERE, read from the sub-issue and not from the caller. Before #187 this
     # was `repo`, so two takers naming different repositories both cut a
     # ref and both held #N. `--repo` survives only as a confirmation, and a
     # disagreement is refused rather than resolved: whichever way it were
     # resolved silently, one of the two readers would be wrong for good.
-    repo, named, note = issue_repo(args.issue, DEFAULT_REPO)
-    if repo is None:
-        print(f"refusing: {note}\n  Where a claim is cut is a fact about the "
-              f"sub-issue, so a body this could not read is not a\n  "
-              f"sub-issue whose ref may be cut anywhere.", file=sys.stderr)
-        return 1
-    print(note)
-    if repo_named(args) and args.repo != repo:
-        print(f"refusing: --repo says {args.repo}, #{args.issue} says {repo}.\n"
-              f"  The sub-issue decides. Fix its `## Lands in` section, or drop "
-              f"--repo.", file=sys.stderr)
-        return 1
+    #
+    # ...EXCEPT FOR A CHORE (#475), which is the campaign issue claimed as
+    # itself and has no sub-issue to read a destination off. There `--repo` is
+    # the answer and `## Repos` admits it, which is `chore_repo`.
+    chore = str(args.issue) == str(args.campaign_issue)
+    if chore:
+        # A CHARTER IS NOBODY'S UNIT OF WORK. Only the `chore` label makes a
+        # campaign issue one, and without it the claim is refused here rather
+        # than by the `## Lands in` a campaign issue happens not to carry --
+        # which is what refused it before #475, saying the wrong thing.
+        if CHORE_LABEL not in labels:
+            print(f"refusing: #{args.issue} is the campaign issue and does not "
+                  f"carry `{CHORE_LABEL}`.\n  A campaign issue is a charter, "
+                  f"not a unit of work; only a chore is claimed as itself.\n"
+                  f"  File the work as a sub-issue of it and take that.",
+                  file=sys.stderr)
+            return 1
+        listed, repos_note = campaign_repos(args.campaign_issue)
+        if listed is None:
+            print(f"refusing: {repos_note}\n  #{args.issue} is a chore, so its "
+                  f"own `## Repos` is what says where its ref may be cut.\n  A "
+                  f"scope that could not be read is not a scope that admits "
+                  f"one.", file=sys.stderr)
+            return 1
+        print(repos_note)
+        repo, note = chore_repo(listed, args.repo, DEFAULT_REPO)
+        if repo is None:
+            print(f"refusing: {note}", file=sys.stderr)
+            return 1
+        print(note)
+        # ...and the scope check below is `chore_repo`'s own work, already done:
+        # `named` is what it reads, and None is what exempts a destination.
+        named = None
+    else:
+        repo, named, note = issue_repo(args.issue, DEFAULT_REPO)
+        if repo is None:
+            print(f"refusing: {note}\n  Where a claim is cut is a fact about "
+                  f"the sub-issue, so a body this could not read is not a\n  "
+                  f"sub-issue whose ref may be cut anywhere.", file=sys.stderr)
+            return 1
+        print(note)
+        if repo_named(args) and args.repo != repo:
+            print(f"refusing: --repo says {args.repo}, #{args.issue} says "
+                  f"{repo}.\n  The sub-issue decides. Fix its `## Lands in` "
+                  f"section, or drop --repo.", file=sys.stderr)
+            return 1
 
     # ...AND IT MUST BE A REPOSITORY THE CAMPAIGN IS FOR. `## Lands in` is
     # one sub-issue's; `## Repos` is the campaign's scope and the thing a
@@ -846,12 +966,7 @@ def cmd_take(args):
               f"which is the claim just refused. Ask one, or take the planner "
               f"role yourself.", file=sys.stderr)
         return 1
-    backlog, why_backlog = backlog_labelled(args.issue)
-    if backlog is None:
-        print(f"refusing: {why_backlog}\n  A label listing that did not happen "
-              f"is not a sub-issue nobody parked.", file=sys.stderr)
-        return 1
-    if backlog:
+    if BACKLOG_LABEL in labels:
         print(f"refusing: #{args.issue} carries `{BACKLOG_LABEL}`, so it is not "
               f"worked until the owner says so.\n  The owner removes the label; "
               f"nothing here does, because its premise -- that the owner has "
@@ -922,6 +1037,35 @@ def cmd_take(args):
               f"  Or file a new sub-issue for what is left.", file=sys.stderr)
         return 1
     print(state_note)
+
+    # ...AND A CHORE'S REF NAME MUST BE FREE IN THE OTHER REPOSITORIES IT MAY
+    # USE. `all_refs` maps a branch NAME to the first repository it was found on
+    # (`setdefault`), so one name on two repositories collapses to one there and
+    # `release` and `live` -- and a close, through `live` -- never see the
+    # second. A sub-issue lands in one repository and cannot reach this; a chore
+    # cuts one ref per repository it changes, so the topic is what keeps that
+    # map injective. Swept over exactly what `chore_repo` admits -- the base
+    # plus `## Repos` -- because no other repository can hold a ref this
+    # command cut.
+    if chore:
+        elsewhere = [r for r in [DEFAULT_REPO] + listed
+                     if REPOS.key(r) != REPOS.key(repo)]
+        held, unread_elsewhere = all_refs(elsewhere, args.campaign_issue, slug)
+        if unread_elsewhere:
+            print(f"refusing: {'; '.join(unread_elsewhere)}\n  A ref listing "
+                  f"that did not happen is not proof {branch} is free there.",
+                  file=sys.stderr)
+            return 1
+        if branch in held:
+            print(f"refusing: {branch} already exists on {held[branch]}, and a "
+                  f"chore's refs are told apart by NAME.\n  `release` and "
+                  f"`live` read which repository a ref is on from the name "
+                  f"alone, so two of\n  one name leave the second invisible to "
+                  f"both. Take {repo} under another topic.", file=sys.stderr)
+            return 1
+        if elsewhere:
+            print(f"{branch} is on none of {', '.join(elsewhere)}, so the name "
+                  f"still says which repository it is on")
 
     # Resolved and checked before the create, never written inline: a read that
     # fails and still prints goes up as the sha and comes back as the 422 that
@@ -1903,16 +2047,37 @@ def cmd_release(args):
     # `## Lands in` section"; before this, only `take` did, and `release` still
     # picked a repository out of the clones on disk. A delete aimed by the
     # wrong reader takes a ref that is not this sub-issue's.
-    subject, _named, note = issue_repo(args.issue, DEFAULT_REPO)
-    if subject is None:
-        print(f"refusing: {note}\n  Where a claim lives is a fact about the "
-              f"sub-issue, and this deletes a ref.", file=sys.stderr)
-        return 1
-    print(note)
-    if repo_named(args) and args.repo != subject:
-        print(f"refusing: --repo says {args.repo}, #{args.issue} says "
-              f"{subject}.\n  The sub-issue decides.", file=sys.stderr)
-        return 1
+    #
+    # A CHORE HAS NO SUCH SECTION (#475). It is the campaign issue, so there is
+    # no body line to read and the sweep below -- the base, the clones and
+    # `## Repos` -- is what finds its ref, by name. The LABEL is what says so:
+    # a campaign issue without it falls through to the reading below, which
+    # refuses it exactly as it always did.
+    chore = False
+    if str(args.issue) == str(args.campaign_issue):
+        labels, why_labels = issue_labels(args.issue)
+        if labels is None:
+            print(f"refusing: {why_labels}\n  Whether #{args.issue} is a chore "
+                  f"decides how its ref is found, and this deletes.",
+                  file=sys.stderr)
+            return 1
+        chore = CHORE_LABEL in labels
+    if chore:
+        subject = DEFAULT_REPO
+        print(f"#{args.issue} carries `{CHORE_LABEL}`, so it is the campaign "
+              f"issue itself and names no `## Lands in`; its ref is found by "
+              f"name across the sweep")
+    else:
+        subject, _named, note = issue_repo(args.issue, DEFAULT_REPO)
+        if subject is None:
+            print(f"refusing: {note}\n  Where a claim lives is a fact about the "
+                  f"sub-issue, and this deletes a ref.", file=sys.stderr)
+            return 1
+        print(note)
+        if repo_named(args) and args.repo != subject:
+            print(f"refusing: --repo says {args.repo}, #{args.issue} says "
+                  f"{subject}.\n  The sub-issue decides.", file=sys.stderr)
+            return 1
     repos, repo_note = claim_repos(subject, root, mine,
                                    args.campaign_issue)
     slug, slug_note = campaign_slug(args.campaign_issue)
@@ -1953,6 +2118,13 @@ def cmd_release(args):
                 f"the same branch name.", file=sys.stderr)
         return 1
     repo = found[branch]
+    # A CHORE'S `--repo` CONFIRMS THE REF THAT WAS FOUND, where a sub-issue's
+    # confirms `## Lands in`: the chore has no section to disagree with, and the
+    # ref is the only fact there is. Refused rather than resolved, as there.
+    if chore and repo_named(args) and REPOS.key(args.repo) != REPOS.key(repo):
+        print(f"refusing: --repo says {args.repo}, but {branch} was found on "
+              f"{repo}.\n  The ref decides.", file=sys.stderr)
+        return 1
     print(f"releasing {branch} on {repo} ({repo_note})")
 
     # What is standing in it, read before anything is deleted. A sweep that
@@ -2155,7 +2327,13 @@ def main():
     # cannot tell `--repo kalaluthien/campaign-base` typed by hand from no flag
     # at all, so an explicit base `--repo` on a member-repository sub-issue was
     # the one case "`--repo` may only confirm" silently did not cover.
-    against.add_argument("--repo", default=None)
+    against.add_argument("--repo", default=None,
+                         help="which repository. `take` on a sub-issue reads it "
+                              "as a confirmation of the `## Lands in` that "
+                              "decides; `take` on a chore, which has no such "
+                              "section, reads it as the answer, admitted from "
+                              "`## Repos` or the base; `release` and `live` "
+                              "sweep it.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     # One shape for the campaign issue everywhere: `#1` and `1` are the same

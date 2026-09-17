@@ -52,7 +52,9 @@ THE PERSON'S ANSWERS are flags, and a run without one halts before the write
 it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
 --not-planned, or finish it, or reparent it), the close (`--close`), and the
 delete (`--delete`). Every run re-reads every gate, so a run that stopped
-halfway is run again, never resumed from memory.
+halfway is run again, never resumed from memory. ONE CLOSE IS NOT STARTED BY A
+PERSON, and it is the only one: a CLOSED chore's clean-up after its worker's
+leave, which the `chore` label pre-authorises (scope leave step 9).
 
 A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS when that pane is a
 worker's and none is pending -- `campaign-claim release` decides, and
@@ -164,6 +166,22 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
                   nothing but the log would read a refusal there.
+  9. chore        `gh issue view <N>`, its labels and its state, AFTER the
+                  leave and nowhere else -- the campaign scope's `live` gate
+                  refuses while a session of the campaign is listed, and the
+                  one that just left was one. Holds when: it read, and either
+                  nothing followed or the campaign scope below held.
+                  A CLOSED chore's `chore` label pre-authorises its clean-up,
+                  the one close a person does not start: their word was the
+                  Definition of done the merge closed the issue with, and
+                  what is left is scratch. Scope campaign follows with the
+                  delete given, every gate of it in its own order, and a gate
+                  that refuses stops it there and undoes nothing -- the leave
+                  has already happened. `standing` never meets `chore`, the
+                  two labels being refused together. An ordinary campaign, an
+                  OPEN chore, and a reading that did not happen each leave the
+                  leave a leave; the caller's own pane is told before its turn
+                  ends that the clean-up follows, and which log says how it went.
 
 SCOPE workers <N> -- every finished worker at once
 
@@ -224,7 +242,8 @@ SCOPE campaign <N> [--close] [--delete]
                   the tracker's `NOT_CAMPAIGN` -- and it ends
                   `; closable` or the index is empty. An open row halts,
                   listed: its disposition is the person's.
-  8. author       As in `sub-issue` step 4.
+  8. author       As in `sub-issue` step 4, and not read for a CLOSED issue:
+                  the branch below writes no comment for it to sign.
      -- without --close, halt: the close is the person's word.
   9. sync         Holds when: `runtime/campaign-issue-body-derived.md` equals
                   the body now, and after the write the body GitHub stored is
@@ -1206,17 +1225,64 @@ def own_pane():
 
 def spawn(argv, log):
     """Start argv in a session of its own, its output to <log>: the pane it
-    closes is the one it was started from. Returns the pid."""
+    closes is the one it was started from. Returns the pid.
+
+    IN THE LOG'S DIRECTORY and not the caller's, which a chore's clean-up may
+    delete under it: `lsof +D` counts a cwd, so a child standing in what it is
+    about to remove would refuse its own delete. Everything it runs names its
+    target -- `git -C`, `gh -R`, the base root from this file -- so it needs no
+    cwd of its own."""
     with open(log, "w") as out:
         return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out,
-                                stderr=subprocess.STDOUT,
+                                stderr=subprocess.STDOUT, cwd=log.parent,
                                 start_new_session=True).pid
+
+
+def chore_of(n):
+    """(`chore` is on #N, its state), or (None, None, why): ONE read for the
+    two facts the pre-authorised clean-up turns on. A reading that did not
+    happen is never the word `no`, which would take an outage for consent."""
+    r = run("gh", "issue", "view", n, "-R", CLAIM.TRACKER, "--json",
+            "state,labels")
+    if r.returncode != 0:
+        return None, None, (f"gh exited {r.returncode}: "
+                            f"{(r.stderr or '').strip()[:120]}")
+    try:
+        got = json.loads(r.stdout)
+        return (any(la["name"] == TRACKER_MODULE.CHORE_LABEL
+                    for la in got["labels"]), got["state"], None)
+    except (ValueError, KeyError, TypeError) as e:
+        return None, None, f"could not parse gh issue view ({e.__class__.__name__})"
+
+
+def step_chore_cleanup(n, say):
+    """What a CLOSED chore's label pre-authorises, run after the leave and
+    only there: scope campaign with the delete given. A refusal inside it is
+    that scope's own, and it undoes nothing -- the leave already happened."""
+    chore, state, why = chore_of(n)
+    if chore is None:
+        say("chore", f"#{n} did not read ({why}), so nothing follows the "
+                     f"leave: an outage is not the label's absence")
+        return
+    if not chore:
+        return
+    if state != "CLOSED":
+        say("chore", f"#{n} is a chore and reads {state}: finishing it or "
+                     f"dropping it is a person's, so this is a leave and no "
+                     f"more")
+        return
+    say("chore", f"#{n} is a CLOSED chore, and the "
+                 f"`{TRACKER_MODULE.CHORE_LABEL}` label pre-authorises the "
+                 f"clean-up: scope campaign below, with the delete given and "
+                 f"every gate of it read")
+    campaign(argparse.Namespace(campaign_issue=n, close=False, delete=True))
 
 
 def leave(args, say=holds):
     if args.detached:
         step_idle(args.pane, say)
         step_leave(args.pane, say)
+        step_chore_cleanup(args.campaign_issue, say)
         return
     n = args.campaign_issue
     slug = slug_of(n)
@@ -1238,6 +1304,7 @@ def leave(args, say=holds):
     say("session", f"{', '.join(names)} on {pane}, of {slug} (#{n})")
     if pane != own:
         step_leave(pane, say)
+        step_chore_cleanup(n, say)
         return
     log = Path(tempfile.gettempdir()) / f"campaign-leave-{pane.replace(':', '-')}.log"
     argv = [sys.executable, str(Path(__file__).resolve()), "leave", n, pane,
@@ -1250,6 +1317,16 @@ def leave(args, say=holds):
                   f"{EXIT_TEXT} to {pane} once this turn ends, so end it now; "
                   f"{pane} still open {2 * WAIT_POLLS * WAIT_EVERY}s later was "
                   f"refused, and the last line of {log} says which step")
+    # SAID BEFORE THE TURN ENDS, because the detached run says it to the log
+    # alone: what follows the leave is a delete, and the person reading this
+    # pane is the last one who can stop it.
+    chore, state, _ = chore_of(n)
+    if chore:
+        say("chore", f"#{n} carries `{TRACKER_MODULE.CHORE_LABEL}`, which "
+                     f"pre-authorises its clean-up: the detached run goes on "
+                     f"to scope campaign --delete once the leave is done, if "
+                     f"#{n} is closed by then (it reads {state} now), and "
+                     f"{log} says which step stopped it")
 
 
 def workers(args):
@@ -1335,12 +1412,15 @@ def campaign(args):
     gate_local_whole(n, directory)
     gate_installed(n, directory)
     state = gate_closable(n)
-    author = gate_author(slug)
     if state == "CLOSED":
         holds("close", f"#{n} is already closed")
         step_release_all(n, reading, changed="nothing new; the issue was "
                                              "already closed")
     else:
+        # THE AUTHOR SIGNS A COMMENT, and this branch is the only one that
+        # writes any: a CLOSED issue reading no author is what lets the
+        # chore's clean-up run from a process whose session has just left.
+        author = gate_author(slug)
         if not args.close:
             raise Halt(f"every gate held; closing #{n} is the person's word",
                        "--close")
@@ -1438,7 +1518,10 @@ def front_door(args):
             raise Refused("target", f"campaign-tracker check {n} answered for "
                                     f"#{m.group(1)}")
         kind, parent = m.group(2), m.group(3)
-        if kind == TRACKER_MODULE.CAMPAIGN:
+        # A CHORE IS A CAMPAIGN AT A CLOSE: the same scope and the same gates.
+        # Without its word here a person's `/close <N>` refused the one issue
+        # whose pre-authorised clean-up had just stopped at a gate (pr#478).
+        if kind in (TRACKER_MODULE.CAMPAIGN, TRACKER_MODULE.CHORE):
             scope, argv = "campaign", ["campaign", n]
         elif kind == TRACKER_MODULE.SUB_ISSUE:
             scope, argv = "sub-issue", ["sub-issue", parent.lstrip("#"), n]

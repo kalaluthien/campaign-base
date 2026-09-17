@@ -642,7 +642,42 @@ THREADS = {
             {"where": "review", "at": "2026-09-17T01:00:00Z",
              "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
                      "second copy is the one that drifts"}]},
+    # THE FIX ROUND `report-next-round` READS: a later REVIEW and a REPORT
+    # answering it, both after the row's own `at`.
+    ("kalaluthien/campaign-base", 703): {
+        "state": "MERGED", "comments": [
+            {"where": "review", "at": "2026-09-17T03:00:00Z",
+             "body": "REVIEW r-2: one more finding"},
+            {"where": "comment", "at": "2026-09-17T04:00:00Z",
+             "body": "REPORT w-1: fix round 2 at abc1234"}]},
+    # AND THE ROUND STILL OPEN: a later REVIEW nobody has answered.
+    ("kalaluthien/campaign-base", 704): {
+        "state": "OPEN", "comments": [
+            {"where": "comment", "at": "2026-09-17T03:00:00Z",
+             "body": "REVIEW r-2: one more finding"}]},
 }
+
+# WHAT THE LAZY SECOND FETCH ANSWERS, keyed as `fetch_reopen` is called. 701's
+# sub-issue was reopened after the merge naming the pull request; 703's was
+# not, and 702's closes nothing.
+REOPENS = {
+    ("kalaluthien/campaign-base", 701): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 910, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN", "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: the guard pr#701 said was refusing "
+                                 "lets the third spelling through"}]}]},
+    ("kalaluthien/campaign-base", 702): {"merged_at": "2026-09-17T05:00:00Z",
+                                         "issues": []},
+    ("kalaluthien/campaign-base", 703): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 911, "repo": "kalaluthien/campaign-base",
+                    "state": "CLOSED", "comments": []}]},
+}
+
+
+REOPENED = []
 
 
 def thread_row(call, number, findings, **kw):
@@ -688,6 +723,15 @@ def joined(m, rows):
     m.CORPUS = corpus
     old = os.environ.get("CAMPAIGN_JEV_LOG")
     os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    # THE LAZY SECOND FETCH IS A MODULE NAME, not one of `args`'s two subject
+    # fetches, so it is replaced here and its calls are counted: a branch that
+    # must not take it is asserted on this list being empty.
+    was_reopen, REOPENED[:] = m.fetch_reopen, []
+
+    def reopen(repo, number):
+        REOPENED.append((repo, number))
+        return REOPENS.get((repo, number))
+    m.fetch_reopen = reopen
     try:
         args = types.SimpleNamespace(
             fetch=lambda repo, number: ISSUES.get((repo, number)),
@@ -695,9 +739,10 @@ def joined(m, rows):
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
-                "filing-scope-covers")}
+                "unverified-done", "filing-scope-covers")}
     finally:
         m.CORPUS = was
+        m.fetch_reopen = was_reopen
         if old is None:
             os.environ.pop("CAMPAIGN_JEV_LOG", None)
         else:
@@ -1032,6 +1077,102 @@ def fetch_thread_asks_the_thread_s_owner(m):
 
 CASES["the thread join reads a later REVIEW on the review channel"] = join_reads_a_later_review_on_the_review_channel
 CASES["fetch_thread asks the script that owns the thread read"] = fetch_thread_asks_the_thread_s_owner
+
+
+# ------------------------------------ what happened after the REPORT
+# `report-next-round`, the join `unverified-done` enters `unmeasurable`
+# waiting for. Every branch offline, against the stubbed thread fetch and the
+# stubbed LAZY second fetch, whose calls are counted.
+
+
+def done_row(call, number, report="REPORT w-1: fixed at abc1234", **kw):
+    row = thread_row(call, number, {"F1": "a finding"},
+                     reading="unverified-done", report_comment=5700000012,
+                     branch="yes", raw={"type": "noul", "noul": 0.8},
+                     wording="0" * 12)
+    row["state"] = dict(row["state"], report=report)
+    row.update(kw)
+    return row
+
+
+def join_labels_a_fix_round(m):
+    """THE STRONG HALF: a later REVIEW and a REPORT answering it is work that
+    came back, so the claim was not verified. The LAZY SECOND FETCH must not be
+    taken here -- the thread already settled it -- and that is asserted on the
+    call list, not argued."""
+    cases, _lines = joined(m, [done_row("dn01", 703)])
+    got = (cases["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "yes" and got.get("band") == "yes"
+            and got.get("label", {}).get("from") == "join:report-next-round"
+            and "a fix round" in got.get("label", {}).get("evidence", "")
+            and REOPENED == [] and set(got.get("state") or {}) == {"report"}),\
+        (got, REOPENED)
+
+
+def join_waits_on_a_round_nobody_answered(m):
+    """A later REVIEW with NO REPORT after it is not yet a fix round: the round
+    is open and labelling it either way reads a thread still moving. With the
+    pull request open it waits, and the second fetch is not taken."""
+    cases, _lines = joined(m, [done_row("dn02", 704)])
+    return not cases["unverified-done"] and REOPENED == [], \
+        (cases["unverified-done"], REOPENED)
+
+
+def join_takes_the_second_fetch_only_on_a_merge(m):
+    """THE WEAK HALF WAITS FOR THE MERGE, and only then is the reopen asked.
+    702 merged with a later REVIEW nobody answered and closes nothing, so the
+    fetch IS taken and the row labels `no`."""
+    cases, _lines = joined(m, [done_row("dn03", 702)])
+    got = (cases["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "no" and got.get("band") == "no"
+            and "merged with no fix round" in got.get("label", {}).get(
+                "evidence", "")
+            and REOPENED == [("kalaluthien/campaign-base", 702)]), \
+        (got, REOPENED)
+
+
+def join_reads_a_reopened_sub_issue(m):
+    """THE OTHER STRONG HALF: the sub-issue the pull request closes, reopened
+    after the merge with a comment naming that pull request. 701 merged with
+    nothing later on the thread at all, so only the second fetch can say."""
+    cases, _lines = joined(m, [done_row("dn04", 701)])
+    got = (cases["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "yes"
+            and "910 was reopened" in got.get("label", {}).get("evidence", "")
+            and REOPENED == [("kalaluthien/campaign-base", 701)]), \
+        (got, REOPENED)
+
+
+def join_keeps_a_row_with_no_report(m):
+    """A round with no REPORT is a row code settled and the join cannot label:
+    there is nothing that claimed anything. It STAYS in the log, and the second
+    fetch is not spent on it."""
+    cases, lines = joined(m, [done_row("dn05", 701, report="")])
+    return (not cases["unverified-done"] and lines == 1 and REOPENED == []), \
+        (cases["unverified-done"], lines, REOPENED)
+
+
+def every_declared_join_is_a_join(m):
+    """A `join` naming no function in `JOINS` is a reading whose rows
+    `joinable` files as "of no registered reading with a join" -- counted apart
+    and never labelled, for good, with nothing saying why."""
+    bad = [f"{n}: join `{e['join']}`" for n, e in m.load_registry().items()
+           if e.get("join") and e["join"] not in m.JOINS]
+    return not bad, bad
+
+
+CASES["the REPORT join labels a fix round, and spends no second fetch"] = \
+    join_labels_a_fix_round
+CASES["the REPORT join waits on a round nobody has answered"] = \
+    join_waits_on_a_round_nobody_answered
+CASES["the REPORT join asks the reopen only once the pull request merged"] = \
+    join_takes_the_second_fetch_only_on_a_merge
+CASES["the REPORT join reads a sub-issue reopened after the merge"] = \
+    join_reads_a_reopened_sub_issue
+CASES["a row with no REPORT is kept and costs no fetch"] = \
+    join_keeps_a_row_with_no_report
+CASES["every join an entry declares names a function in JOINS"] = \
+    every_declared_join_is_a_join
 
 
 def join_writes_one_case_for_one_row(m):

@@ -1479,9 +1479,112 @@ def join_thread_refinding(row, thread):
                else "none of these findings raised again"), "")
 
 
+def fetch_reopen(repo, number, timeout=30):
+    """(when the pull request merged, the sub-issues it closes with their state
+    and comments) -- or None.
+
+    THE LAZY SECOND FETCH, and the only call either thread join makes beyond
+    `fetch_thread`. It is taken for ONE BRANCH ONLY -- a pull request that
+    merged with no later round -- because that is the one branch the thread
+    itself cannot decide: whether the work came back is a fact of the sub-issue,
+    not of the pull request. WHAT IT COSTS: one `gh pr view` plus one
+    `gh issue view` per closing reference, which on this tracker is one, and
+    NOTHING for every other row -- a row with a fix round, a row on an open pull
+    request, and a row with no REPORT never reach it.
+
+    IT IS A MODULE-LEVEL NAME so an offline suite replaces it as it replaces
+    `fetch_thread`; `cmd_corpus_join` routes the two SUBJECT fetches through
+    its `args` and this one is not a subject, it is a second question about one.
+
+    The closing reference's OWN repository is read off its url, never assumed to
+    be the pull request's: a member repository's pull request closes a sub-issue
+    on this base's tracker."""
+    try:
+        head = subprocess.run(
+            ["gh", "pr", "view", str(number), "-R", repo, "--json",
+             "mergedAt,closingIssuesReferences"],
+            capture_output=True, text=True, timeout=timeout)
+        if head.returncode != 0:
+            return None
+        found = json.loads(head.stdout) or {}
+        issues = []
+        for ref in found.get("closingIssuesReferences") or []:
+            parts = str(ref.get("url") or "").split("/")
+            where = ("/".join(parts[3:5]) if len(parts) > 5 else repo) or repo
+            one = subprocess.run(
+                ["gh", "issue", "view", str(ref.get("number")), "-R", where,
+                 "--json", "state,comments"],
+                capture_output=True, text=True, timeout=timeout)
+            if one.returncode != 0:
+                return None
+            body = json.loads(one.stdout) or {}
+            issues.append({"number": ref.get("number"), "repo": where,
+                           "state": body.get("state") or "",
+                           "comments": [{"at": c.get("createdAt") or "",
+                                         "body": c.get("body") or ""}
+                                        for c in body.get("comments") or []]})
+    except Exception:  # noqa: BLE001 -- a reopen that would not read is None
+        return None
+    return {"merged_at": found.get("mergedAt") or "", "issues": issues}
+
+
+def join_report_next_round(row, thread):
+    """unverified-done: what happened AFTER this REPORT?
+
+    THE TWO HALVES ARE NOT EQUALLY STRONG, as `join_thread_refinding`'s are
+    not. A FIX ROUND after this REPORT -- a later REVIEW on either channel and
+    a REPORT answering it -- is work that came back, and so is the SUB-ISSUE
+    the pull request closes REOPENED after the merge naming that pull request
+    or that REPORT. Both are the strong half: something the REPORT said was
+    done was not.
+
+    A pull request that MERGED with neither is the WEAK half -- nobody looked
+    again -- and it is what labels the verified class, which is why it waits
+    for the merge rather than reading an open thread as agreement.
+
+    A LATER REVIEW WITH NO REPORT AFTER IT IS NOT YET A FIX ROUND: the round is
+    open, nobody has answered it, and reading it either way would label the
+    case on a thread still moving."""
+    if thread is None:
+        return None, "", "the thread did not read"
+    if not ((row.get("state") or {}).get("report") or "").strip():
+        return None, "", "the row carries no REPORT to label"
+    at = row.get("at") or ""
+    later = [c for c in thread.get("comments") or [] if (c.get("at") or "") > at]
+    where = f"{row.get('repo')} pr#{row.get('pull_request')}"
+    for n, one in enumerate(later):
+        if not (one.get("body") or "").lstrip().startswith("REVIEW "):
+            continue
+        if any((d.get("body") or "").lstrip().startswith("REPORT ")
+               for d in later[n + 1:]):
+            return "yes", (f"a fix round after this REPORT on {where}: a later "
+                           f"REVIEW and a REPORT answering it"), ""
+    if str(thread.get("state", "")).upper() != "MERGED":
+        return None, "", ("no fix round after this REPORT yet, and the pull "
+                          "request has not merged")
+    reopen = fetch_reopen(row.get("repo"), row.get("pull_request"))
+    if reopen is None:
+        return None, "", "the pull request's closing references did not read"
+    names = [f"pr#{row.get('pull_request')}"]
+    if row.get("report_comment"):
+        names.append(str(row["report_comment"]))
+    for issue in reopen.get("issues") or []:
+        if str(issue.get("state", "")).upper() != "OPEN":
+            continue
+        for said in issue.get("comments") or []:
+            if (said.get("at") or "") <= (reopen.get("merged_at") or ""):
+                continue
+            if any(n in (said.get("body") or "") for n in names):
+                return "yes", (f"{issue.get('repo')}#{issue.get('number')} was "
+                               f"reopened after {where} merged, naming it"), ""
+    return "no", (f"{where} merged with no fix round after this REPORT and no "
+                  f"sub-issue of it reopened naming it"), ""
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
+         "report-next-round": join_report_next_round,
          "filing-parent-slug": join_filing_parent_slug}
 # WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
 # join key as FIELDS, so the subject is the field it names and never a guess.

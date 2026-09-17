@@ -416,5 +416,84 @@
   "join": null,
   "bands": {},
   "lessons": []
+ },
+ "done-test-select": {
+  "owner": "scripts/check-done-test.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "done-test-select",
+  "state": {
+   "fields": [
+    "condition",
+    "candidateHunks"
+   ],
+   "condition": "one Definition of done item of a sub-issue the pull request closes, as check-done-test.py's conditions() cuts it: a case pins one; production sends none in the state, since each condition is its own question of the one call a sub-issue, its text in the instructions",
+   "candidateHunks": "every hunk of a test file in the pull request's diff (`gh pr diff`), keyed h1..hN in diff order, each its path, a newline and the hunk from its @@ line"
+  },
+  "prefilter": {
+   "what": "a comment opening REPORT, posted with gh pr comment, that asks for the merge; a pull request closing no sub-issue with a Definition of done, a diff changing no test file, or a state over the budget asks nothing and logs a skip; a condition every clause of which is an event no test could carry is settled here and logs a skip",
+   "asks_merge": "(?i)\\b(ask(s|ing)?|request(s|ing)?)\\s+(for\\s+)?(the\\s+|a\\s+)?merge\\b|\\bready\\s+(to|for)\\s+(the\\s+)?merge\\b",
+   "clause": ";\\s+|:\\s+|\\.\\s+(?=[A-Z`])",
+   "event": "(?i)\\b(pull request|PR)\\b[^;]*\\bmerged\\b|\\bmerged\\b[^;]*\\b(pull request|PR)\\b|^\\s*merged\\b|\\binstall(ation)?\\b[^;]*\\b(shows|reach)|\\b(NOTE|REPORT|DECISION|REVIEW|BLOCKED)\\b`?\\s+(\\w+\\s+){0,2}(is\\s+)?(posted|quotes?|lists?|names?|says|records?|states?|picks?|fills?)|\\b(closing|a|the|one|its)\\s+`?(NOTE|REPORT|DECISION|REVIEW|BLOCKED)\\b`?\\s*:|\\blabel\\s+(is\\s+)?(set|added|removed)\\b|\\blive check\\b|\\bowner reads\\b|\\bcomment on\\b",
+   "merge_clause_ceiling": 60
+  },
+  "question": {
+   "type": "choice",
+   "per": "condition",
+   "instructions": "Which test hunk in `candidateHunks` checks this condition, so that the test would fail if the condition did not hold: {condition}",
+   "criteria": {
+    "{hunk}": "the test hunk `candidateHunks.{hunk}`, of {path}",
+    "noMatch": "no hunk in `candidateHunks` checks this condition: none tests it, or the condition is about something no hunk here exercises"
+   }
+  },
+  "thresholds": {
+   "floor": 0.5,
+   "no_match": "noMatch"
+  },
+  "join": null,
+  "bands": {},
+  "lessons": []
+ },
+ "done-test-claim": {
+  "owner": "scripts/check-done-test.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "done-test-claim",
+  "state": {
+   "fields": [
+    "condition",
+    "hunk"
+   ],
+   "condition": "one Definition of done item whose done-test-select answer picked this hunk: a case pins one; production sends none in the state, its text in the instructions",
+   "hunk": "the test hunk done-test-select picked, its path, a newline and the hunk"
+  },
+  "prefilter": {
+   "what": "a condition whose done-test-select answer named a hunk; one call a picked hunk, every condition that picked it"
+  },
+  "question": {
+   "type": "choice",
+   "per": "condition",
+   "instructions": "Does the test in `hunk` show that this condition holds: {condition}",
+   "criteria": {
+    "supports": {
+     "what": "the test checks what the condition states and would fail if it did not hold",
+     "example": "condition 'the guard refuses a comment over the ceiling, with a named case'; hunk adds 'def test_refuses_over_ceiling(): assert run(body=\"x\"*2001).code == 2'"
+    },
+    "contradicts": {
+     "what": "the test checks the opposite of what the condition states: it asserts behaviour the condition rules out",
+     "example": "condition 'a missing path passes'; hunk adds 'def test_missing_path_refused(): assert run(path=None).code == 2'"
+    },
+    "says_nothing": {
+     "what": "the test does not check what the condition states: it tests something else, or only touches the same file or topic",
+     "example": "condition 'the REPORT quotes one refusal'; hunk renames a fixture in the guard's suite"
+    }
+   }
+  },
+  "thresholds": {
+   "option": "supports",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {},
+  "lessons": []
  }
 }

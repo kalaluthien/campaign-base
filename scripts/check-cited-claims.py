@@ -405,7 +405,11 @@ def report(results, entry, out):
     # logs every answer and prints only the counts; `advise` prints each claim
     # read contradicted or unknown.
     shown = entry["tier"] != "shadow"
-    counts = {"yes": 0, "no": 0, "unknown": 0}
+    # THE GAP IS A COUNT OF ITS OWN. `branch` answers four words and the line
+    # used to print three, so a reading whose claims mostly land between the
+    # two edges -- `model-comment`'s do -- printed "0, 0, 0" over a call it had
+    # made and answered.
+    counts = {"yes": 0, "no": 0, "uncertain": 0, "unknown": 0}
     logged = set()
     for label, found, reading in results:
         logged.add(reading.logged)
@@ -421,8 +425,8 @@ def report(results, entry, out):
             elif a.word == "unknown":
                 print(f"  unknown  {label}: {claim} -- {a.why}", file=out)
     print(f"  {counts['yes']} claim(s) read as contradicted, {counts['no']} "
-          f"clear, {counts['unknown']} unknown; tier `{entry['tier']}`, exit "
-          f"status unmoved", file=out)
+          f"clear, {counts['uncertain']} in the gap, {counts['unknown']} "
+          f"unknown; tier `{entry['tier']}`, exit status unmoved", file=out)
     for line in sorted(logged):
         print(f"  answers {line}", file=out)
 

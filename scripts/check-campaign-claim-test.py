@@ -723,6 +723,8 @@ def main():
         (f.base / "sub.md").write_text(templated)
         for cmd in (f"gh issue create --title t --body '{templated}'",
                     "gh issue create --title t --body-file sub.md",
+                    "gh issue create --title t --body x -F sub.md",
+                    "gh issue create --title t -F sub.md --body x",
                     f"gh issue create --title t -F {f.base / 'sub.md'}",
                     f"gh issue create --title t --body-file - <<'EOF'\n{templated}EOF",
                     f"gh issue create --title --parent --body '{templated}'",
@@ -4088,7 +4090,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 641
+    EXPECTED = 643
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

@@ -2691,13 +2691,16 @@ def comment_body(tokens, heredocs, cwd=None):
     return body_text(tokens, heredocs, cwd)
 
 
-def body_text(tokens, heredocs, cwd=None):
+def body_text(tokens, heredocs, cwd=None, file_first=False):
     """`comment_body`'s three-tuple for the body a `--body`, a `--body-file` or
-    a heredoc on `--body-file -` gives this segment, whatever it posts."""
+    a heredoc on `--body-file -` gives this segment, whatever it posts.
+    `file_first` is `gh issue create`'s order: a `--body-file` replaces a
+    `--body` given beside it."""
     text = flag_value(tokens, BODY_VALUED)
     if text is SKIPPED:
         return None, None, SKIPPED_NOTE
-    if text is not None:
+    if text is not None and not (
+            file_first and flag_value(tokens, BODY_FILE_VALUED) is not None):
         return _judgeable(text)
     path = flag_value(tokens, BODY_FILE_VALUED)
     if path is SKIPPED:
@@ -2799,7 +2802,8 @@ def create_findings(tokens, heredocs, cwd, root):
         read.append(f"its body file `{path}` is expanded by the shell, so "
                     f"this guard never sees the text and did not judge it")
         return found, read
-    text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd)
+    text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd,
+                                                   file_first=True)
     if why_unreadable:
         found.append(why_unreadable)
     elif why_unjudged:

@@ -665,8 +665,9 @@ def layout(paths, note):
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
         stem = p.rsplit(".", 1)[0]
-        own = next((q for q in sorted(paths) if q.startswith(stem + "-test.")), None)
-        if stem.endswith("-test") and own:
+        own = (next((q for q in sorted(paths) if q.startswith(stem + "-test.")), None)
+               if stem.endswith("-test") else None)
+        if own:
             note("R6", p, f"named like a suite yet carrying its own suite "
                           f"{own}: CI runs every `*-test.*` in a scripts/ as a "
                           f"suite, so this would be run as one, and its own "

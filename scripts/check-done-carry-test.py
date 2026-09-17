@@ -21,6 +21,7 @@ import datetime
 import hashlib
 import http.server
 import importlib
+import io
 import json
 import os
 import shutil
@@ -293,46 +294,90 @@ def issue_in_its_own_repository(t):
 
 
 class RecordingJev:
-    """A jev double that answers nothing and keeps how it was called.
+    """A jev double that answers nothing and keeps the `cwd` of every call.
 
-    The log is where `cwd` used to be observable, and since pr#474 a stubbed
-    endpoint that names no log writes nothing at all -- on purpose, so a
-    suite's answers cannot reach the shared log the corpus grows from. So the
-    reader's side of that rule is asserted where it is made instead: every
+    The shared log is where `cwd` used to be observable, and since pr#474 a
+    stubbed endpoint that names no log writes nothing at all -- on purpose, so
+    a suite's answers can never reach the log the corpus grows from. So the
+    reader's side of the rule is asserted where the reader makes it: every
     call names the reader's OWN base, never the process's cwd, which is what
     puts a production row in that reader's `runtime/jev.log` when a session
-    runs it from some other checkout."""
+    runs it from some other checkout. `STATE_BUDGET` is read from the real
+    module, since a double holding its own copy passes a moved budget."""
 
-    STATE_BUDGET = 60_000
+    STATE_BUDGET = None      # set from campaign-jev.py by the case below
 
     def __init__(self):
         self.cwds = []
 
     def ask(self, reader, label, state, questions, env=None, cwd=None):
         self.cwds.append(cwd)
-        answers = {cid: types.SimpleNamespace(raw={"choice": "h1"})
-                   for cid in questions}
-        return types.SimpleNamespace(answers=answers)
+        return types.SimpleNamespace(
+            answers={cid: types.SimpleNamespace(raw={"choice": "h1"})
+                     for cid in questions})
 
     def skip(self, reader, label, why, env=None, cwd=None):
         self.cwds.append(cwd)
 
 
+NO_DOD = "## Intent\n\n- x\n"
+NO_TEST_DIFF = ("diff --git a/scripts/tool.py b/scripts/tool.py\n"
+                "--- a/scripts/tool.py\n+++ b/scripts/tool.py\n@@ -1,2 +1,3 @@\n a\n+b\n")
+
+
+def drive(t, jev, answers, diff=DIFF, body=BODY):
+    """`main()` once with `jev` in place of the real one, over a gh double.
+
+    `answers` names the gh verbs that fail. The real `load_sibling` still
+    answers for check-diff-screen.py, whose TEST names a test path."""
+    real, real_gh = t.m.load_sibling, t.m.gh
+    t.m.load_sibling = lambda n: jev if n == "campaign-jev.py" else real(n)
+    t.m.gh = lambda *a: (
+        ("", "gh double: refused") if " ".join(a[:2]) in answers else
+        (json.dumps(closing(5)), "") if a[:2] == ("pr", "view") else
+        (diff, "") if a[:2] == ("pr", "diff") else (body, ""))
+    try:
+        return t.m.main(["9"], io.StringIO(REPORT))
+    finally:
+        t.m.load_sibling, t.m.gh = real, real_gh
+
+
 def every_jev_call_names_the_readers_base(t):
-    reg = {"done-test-select": SELECT, "done-test-claim": CLAIM}
+    """Every one of the reader's ten call sites, and each must name HERE.
+
+    ask_issue's three are driven directly; main()'s seven are driven through
+    main() itself, because a case that calls the inner function supplies the
+    argument the call site was supposed to be pinned for -- that is how this
+    case lost main()'s skips once (the REVIEW at 318a053, D1)."""
+    RecordingJev.STATE_BUDGET = t.m.load_sibling("campaign-jev.py").STATE_BUDGET
     conds = {"c1": "a condition one test could carry"}
     cands = {"h1": {"path": "scripts/tool-test.py", "text": "@@ -1 +1 @@\n+x"}}
-    jev, over = RecordingJev(), RecordingJev()
-    t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, cands, jev)
-    big = {"h1": {"path": "scripts/tool-test.py", "text": "x" * 60_001}}
-    t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, big, over)
-    named = jev.cwds + over.cwds
-    return (len(named) == 3 and set(named) == {t.m.HERE}), (named, t.m.HERE)
-
-
-def a_stub_naming_no_log_writes_nothing(t):
-    r = run(t, named_log=False)
-    return r.returncode == 0 and LOGGED == [], (r.stderr[-300:], reads())
+    inner, over = RecordingJev(), RecordingJev()
+    t.m.ask_issue({"done-test-select": SELECT, "done-test-claim": CLAIM},
+                  "tracker#9 REPORT 5", conds, cands, inner)
+    t.m.ask_issue({"done-test-select": SELECT, "done-test-claim": CLAIM},
+                  "tracker#9 REPORT 5", conds,
+                  {"h1": {"path": "scripts/tool-test.py",
+                          "text": "x" * (RecordingJev.STATE_BUDGET + 1)}}, over)
+    seen, counts = [], []
+    for kw in ({"answers": {"pr view"}},          # the pull request read failed
+               {"answers": {"issue view"}},       # the issue read failed
+               {"answers": (), "body": NO_DOD},   # closes no issue with a DoD
+               {"answers": {"pr diff"}},          # the diff read failed
+               {"answers": (), "diff": NO_TEST_DIFF},   # no test hunk
+               {"answers": ()}):                  # the settled condition, then both asks
+        one = RecordingJev()
+        drive(t, one, **{"answers": kw.pop("answers"), **kw})
+        seen += one.cwds
+        counts.append(len(one.cwds))
+    raised = RecordingJev()
+    raised.ask = raised.skip          # a skip signature for an ask call: TypeError
+    drive(t, raised, answers=())
+    seen += raised.cwds
+    named = inner.cwds + over.cwds + seen
+    return (set(named) == {t.m.HERE} and counts == [1, 2, 1, 1, 1, 3]
+            and len(raised.cwds) >= 1), (counts, len(raised.cwds),
+                                         sorted(set(map(str, named))))
 
 
 def tracker_is_the_default(t):
@@ -383,7 +428,6 @@ CASES = {
     "a member pull request is read in its repository, its tracker issue in the tracker": repository_reaches_gh,
     "an issue is read in its own repository": issue_in_its_own_repository,
     "every jev call names the reader's own base, not the process cwd": every_jev_call_names_the_readers_base,
-    "a stubbed endpoint naming no log writes nothing": a_stub_naming_no_log_writes_nothing,
     "with no repository gh is told the tracker": tracker_is_the_default,
     "a reader that raised exits 0, says nothing and logs a skip": failure_exits_zero,
     "a condition is a list item with its lines, or a table row": conditions_cut,
@@ -442,6 +486,10 @@ MUTATIONS = [
      "a member pull request is read in its repository, its tracker issue in the tracker"),
     ("the issue read in the tracker always", '"-R", name,', '"-R", TRACKER,',
      "an issue is read in its own repository"),
+    ("the log resolved from the process's cwd, at a main() skip",
+     '                             "test could carry", env, cwd=HERE)',
+     '                             "test could carry", env)',
+     "every jev call names the reader's own base, not the process cwd"),
     ("the log resolved from the process's cwd",
      '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)',
      '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env)',

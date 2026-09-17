@@ -485,6 +485,13 @@ def _(m):
             and f"quiet since {ts(2)}, 30m >= 30m" in v[1]), v
 
 
+@case("ask comes before compact: a quiet worker over the threshold is asked first")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, dict(DONE, context=m.COMPACT_AT),
+                  gone(None, ["tk/9-x"]), now=clock(2, 30))
+    return v[0] == "ask", v
+
+
 @case("an idle worker quiet under 30m is not asked, and says so")
 def _(m):
     v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]),
@@ -1646,6 +1653,9 @@ MUTATIONS = [
      "is_own = False", "the run gives one verdict per session of the campaign, and no other"),
     ("ask only an idle worker", "if went is None and idle[0]:", "if went is None:",
      "a working or blocked worker with its claim standing is not asked"),
+    ("ask before compact", "            if ask:\n                return \"ask\", said + passed\n",
+     "            if ask and reading[\"context\"] < COMPACT_AT:\n                return \"ask\", said + passed\n",
+     "ask comes before compact: a quiet worker over the threshold is asked first"),
     ("ask only after the quiet", "if quiet.total_seconds() < STUCK_AFTER:", "if False:",
      "an idle worker quiet under 30m is not asked, and says so"),
     ("ask only with a ref standing", "if got is None or not got[0]:", "if got is None:",

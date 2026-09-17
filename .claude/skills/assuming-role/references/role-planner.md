@@ -110,7 +110,9 @@ each line is an event. On one, run the **heartbeat**:
    `STATUS` prompt -- and `keep` for the rest. Its header says what each
    reads and sends.
 2. Act on the drift the heartbeat does not: assign an `unclaimed` sub-issue,
-   read the answer to an `ask`, release a `settled` one.
+   read the answer to an `ask`, ask about a `stuck` claim no `ask` covered
+   (its worker was not handed it by an assignment sentence), release a
+   `settled` one.
 
 **`quiet <slug>` means nothing is left to do**: no other session of the
 campaign listed, no open sub-issue without `backlog` or `standing`, no

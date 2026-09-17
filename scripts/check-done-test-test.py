@@ -125,9 +125,11 @@ def closing(*numbers, owner="kalaluthien", name="campaign-base"):
 
 
 def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
-        fail=()):
+        fail=(), named_log=True):
     """The finished process; `gh-argv.jsonl` in its directory holds each gh call.
-    `fail` names the gh verbs (`pr view`, `issue view`, `pr diff`) that exit 1."""
+    `fail` names the gh verbs (`pr view`, `issue view`, `pr diff`) that exit 1.
+    `named_log=False` names no log and makes the reader's directory a git
+    repository, run from another one: the log must land in the reader's base."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
     (d / "bin").mkdir()
@@ -154,9 +156,17 @@ def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
     env = dict(os.environ, CAMPAIGN_JEV_URL=URL, TYPESAFE_API_KEY="stub",
                CAMPAIGN_JEV_LOG=str(d / "jev.log"), HOME=str(d),
                PATH=f"{d / 'bin'}:{os.environ['PATH']}")
+    elsewhere = None
+    if not named_log:
+        env.pop("CAMPAIGN_JEV_LOG")
+        elsewhere = d / "elsewhere"
+        for repo in (d, elsewhere):
+            repo.mkdir(exist_ok=True)
+            harness.git(repo, "init", "-q", check=True)
     r = subprocess.run([sys.executable, str(d / "check-done-test.py"), *argv],
-                       input=report, capture_output=True, text=True, env=env)
-    log = d / "jev.log"
+                       input=report, capture_output=True, text=True, env=env,
+                       cwd=elsewhere)
+    log = d / "jev.log" if named_log else d / "runtime" / "jev.log"
     LOGGED[:] = ([json.loads(x) for x in log.read_text().splitlines() if x]
                  if log.exists() else [])
     calls = d / "gh-argv.jsonl"
@@ -266,11 +276,25 @@ def failed_diff_read_skips(t):
 
 
 def repository_reaches_gh(t):
-    r = run(t, argv=("9", "o/r"), view=closing(5, owner="o", name="r"))
+    """A member repository's pull request closing a tracker sub-issue: the pull
+    request is read in its repository, the issue in the tracker."""
+    r = run(t, argv=("9", "o/r"))
     return ([c[:4] for c in r.gh] == [["pr", "view", "9", "-R"], ["issue", "view", "5", "-R"],
                                        ["pr", "diff", "9", "-R"]]
-            and [c[4] for c in r.gh] == ["o/r", "o/r", "o/r"]
+            and [c[4] for c in r.gh] == ["o/r", "kalaluthien/campaign-base", "o/r"]
             and LOGGED[-1]["read"].startswith("o/r#9 REPORT 5")), (r.gh, reads())
+
+
+def issue_in_its_own_repository(t):
+    r = run(t, view=closing(5, owner="o", name="r"))
+    return [c[4] for c in r.gh] == ["kalaluthien/campaign-base", "o/r",
+                                    "kalaluthien/campaign-base"], r.gh
+
+
+def logs_to_its_own_base(t):
+    r = run(t, named_log=False)
+    return (r.returncode == 0 and len(LOGGED) == 3
+            and LOGGED[1]["read"] == "tracker#9 REPORT 5 select"), (r.stderr[-300:], reads())
 
 
 def tracker_is_the_default(t):
@@ -288,7 +312,7 @@ def conditions_cut(t):
     body = ("## Definition of done\n\n- one\n  - sub\n  more\n1. two\n"
             "| a | b |\n| --- | --- |\n| c | d |\n\n## Plan\n\n- not a condition\n")
     got = t.m.conditions(body)
-    return got == ["one sub more", "two", "| a | b |", "| c | d |"], got
+    return got == ["one sub more", "two", "| c | d |"], got
 
 
 def settled_by_events_only(t):
@@ -318,7 +342,9 @@ CASES = {
     "a failed pull request read logs one skip": failed_pr_read_skips,
     "a failed issue read logs a skip for that issue": failed_issue_read_skips,
     "a failed diff read logs one skip": failed_diff_read_skips,
-    "the repository reaches every gh call and the label": repository_reaches_gh,
+    "a member pull request is read in its repository, its tracker issue in the tracker": repository_reaches_gh,
+    "an issue is read in its own repository": issue_in_its_own_repository,
+    "with no log named, the reading logs to its own base from another checkout": logs_to_its_own_base,
     "with no repository gh is told the tracker": tracker_is_the_default,
     "a reader that raised exits 0, says nothing and logs a skip": failure_exits_zero,
     "a condition is a list item with its lines, or a table row": conditions_cut,
@@ -372,9 +398,17 @@ MUTATIONS = [
      '        diff, why = gh("pr", "diff", pr, *target)\n        if False:',
      "a failed diff read logs one skip"),
     ("the repository dropped", 'target = ["-R", repo or TRACKER]', 'target = ["-R", TRACKER]',
-     "the repository reaches every gh call and the label"),
-    ("the issue's own repository dropped", '"-R", name,', '"-R", TRACKER,',
-     "the repository reaches every gh call and the label"),
+     "a member pull request is read in its repository, its tracker issue in the tracker"),
+    ("the issue read in the pull request's repository", '"-R", name,', '*target,',
+     "a member pull request is read in its repository, its tracker issue in the tracker"),
+    ("the issue read in the tracker always", '"-R", name,', '"-R", TRACKER,',
+     "an issue is read in its own repository"),
+    ("the log resolved from the process's cwd",
+     '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)',
+     '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env)',
+     "with no log named, the reading logs to its own base from another checkout"),
+    ("the table header kept", "            if not rule.match(line) and not header:", "            if not rule.match(line):",
+     "a condition is a list item with its lines, or a table row"),
     ("no tracker default", 'target = ["-R", repo or TRACKER]', 'target = ["-R", repo] if repo else []',
      "with no repository gh is told the tracker"),
     ("the failure boundary removed",
@@ -383,7 +417,7 @@ MUTATIONS = [
      "a reader that raised exits 0, says nothing and logs a skip"),
     ("a continuation line dropped", '            out[-1] += " " + re.sub(', "            out[-1] += \"\" and re.sub(",
      "a condition is a list item with its lines, or a table row"),
-    ("the table rule kept", 'if not re.match(r"^\\|[\\s:|-]+\\|?$", line):', "if True:",
+    ("the table rule kept", "            if not rule.match(line) and not header:", "            if not header:",
      "a condition is a list item with its lines, or a table row"),
     ("a long merge clause settled", 'not ("merged" in m.group(0).lower() and len(c) > ceiling)', "True",
      "only a condition of events alone is settled"),

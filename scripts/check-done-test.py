@@ -17,7 +17,7 @@ WHAT IT READS: the REPORT on stdin; through `gh`, the pull request's closing
 issues (`closingIssuesReferences`), each one's body, and `gh pr diff`, which
 is GitHub's patch and not this machine's git config. A condition is one item
 of the body's `## Definition of done`: a list item with the lines under it, or
-a table row. A candidate is one hunk of a test file, a path check-diff-screen.py's
+a table's body row. A candidate is one hunk of a test file, a path check-diff-screen.py's
 `TEST` names, keyed `h1..hN` in diff order.
 
   passed     another comment kind, or a REPORT that does not ask for the merge
@@ -30,7 +30,10 @@ a table row. A candidate is one hunk of a test file, a path check-diff-screen.py
              instructions; `noMatch` is itself the flag that no test carries it
   claim      ONE call a hunk some condition picked, state `{hunk}`, one
              `choice` supports / contradicts / says_nothing a condition that
-             picked it; nothing is asked for a condition that picked no hunk
+             picked it; nothing is asked for a condition that picked no hunk.
+             A pick under the select entry's floor is asked too, on purpose:
+             the carry score below reads every pick, and the floor is the
+             verdict's to apply, from the logged confidence
   logged     `<repo>#<pr> REPORT <issue> select` and
              `<repo>#<pr> REPORT <issue> claim <hunk> <path>`
              (`tracker#<pr>` with no repo)
@@ -44,7 +47,8 @@ condition at most two.
 
 THE TIER is `shadow`: every call is logged by the caller and nothing is
 printed, since the guard does not read this process's output.
-THE EXIT STATUS IS 0 on every path.
+THE EXIT STATUS IS 0 on every path the guard can reach; a usage error, a
+first argument that is not a number, exits 2.
 
 THE CASES are scripts/jev/corpus/done-test-select.jsonl and
 done-test-claim.jsonl. Where this reading is known to be wrong, as seen at
@@ -62,12 +66,14 @@ carried condition asked again with its labelled hunks removed:
   every neg  the cut that flags every negative (0.90) flags 28 of 51 carried;
              two of the negatives read carried are carried by a hunk of
              another suite the label left out
-  baseline   token overlap, same cut: 48 of 51
+  baseline   token overlap, same cut: 48 of 51; yet it ranks as well, AUC
+             0.95 against the removed-hunk negatives and 0.91 against the
+             conditions no hunk carries: it orders, and cannot filter
   selection  the labelled hunk was picked for 76 of 90 carried or partly
              carried conditions, `noMatch` for 11
   prefilter  8 of 192 settled: 7 events, 1 a condition no hunk carries
-  noise      a repeat of 42 states moved one verdict of 163, and one of 84
-             negatives none
+  noise      a repeat of 42 states moved 1 verdict of 163 conditions and 0
+             of 84 negatives
 
 Usage: scripts/check-done-test.py <pr> [<repo>] < report
 """
@@ -109,14 +115,18 @@ def gh(*args):
 
 def conditions(body):
     """The Definition of done items of an issue body: a list item with every
-    line under it, or a table row that is not the header rule."""
+    line under it, or a table's body row -- not its header, the row above the
+    rule, and not the rule."""
     dod = body.split(DOD, 1)[1].split("\n## ", 1)[0]
+    lines = dod.splitlines()
+    rule = re.compile(r"^\|[\s:|-]+\|?$")
     out = []
-    for line in dod.splitlines():
+    for i, line in enumerate(lines):
         if re.match(r"^([-*]|\d+\.)\s", line):
             out.append(re.sub(r"^([-*]|\d+\.)\s+", "", line).strip())
         elif line.startswith("|"):
-            if not re.match(r"^\|[\s:|-]+\|?$", line):
+            header = i + 1 < len(lines) and rule.match(lines[i + 1])
+            if not rule.match(line) and not header:
                 out.append(line.strip())
         elif line.strip() and out:
             out[-1] += " " + re.sub(r"^\s+([-*]|\d+\.)\s+", "", line).strip()

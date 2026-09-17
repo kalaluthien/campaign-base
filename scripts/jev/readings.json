@@ -221,7 +221,7 @@
    "why": "the body is not free -- the same title scored 0.57 alone and 0.70 beside its body (rule-check#455) -- and the body is what work-kind, the other reading of this group, is answered from"
   },
   "prefilter": {
-   "what": "none yet: no pattern separates a verb-first title from a noun-first one"
+   "what": "an empty or whitespace-only title is settled by code as `no` and never sent: `check` refuses it in its own findings, and a `noul` has no no-match option to answer with, so asking would turn a state that should not have been sent into a confident word. Beyond that none: no pattern separates a verb-first title from a noun-first one"
   },
   "question": {
    "type": "noul",
@@ -245,13 +245,13 @@
    }
   },
   "thresholds": {
-   "yes_over": 0.7,
-   "no_under": 0.55
+   "yes_over": 0.5,
+   "no_under": 0.2
   },
   "join": "issue-title-kept",
   "bands": {
    "model": "jev-1.13.0",
-   "measured": "2026-09-17",
+   "measured": "2026-09-18",
    "wording": "548295c0baa4",
    "declared": {
     "yes": [
@@ -290,13 +290,14 @@
    }
   },
   "thresholds": {
-   "floor": 0.6,
+   "floor": 0.5,
+   "certain_over": 0.52,
    "no_match": "none"
   },
   "join": "issue-kind-label",
   "bands": {
    "model": "jev-1.13.0",
-   "measured": "2026-09-17",
+   "measured": "2026-09-18",
    "wording": "9ed8bf08ffac",
    "declared": {
     "confident": [
@@ -304,8 +305,8 @@
      1.0
     ],
     "unsure": [
-     0.15,
-     0.43
+     0.11,
+     0.48
     ]
    }
   }
@@ -315,28 +316,42 @@
   "tier": "shadow",
   "group": "finding-site",
   "state": {
-   "fields": ["finding", "slice"],
+   "fields": [
+    "finding",
+    "slice"
+   ],
    "finding": "one finding of a REVIEW comment as check-finding-sort.py's findings() cuts it, the reviewer's own word masked to [label]",
    "slice": "the file at the reviewed sha, 40 lines each side of the first path:line the finding names, each line numbered"
   },
-  "prefilter": {"what": "a comment opening REVIEW, posted with gh pr comment, whose first line names a sha the checkout holds; a finding with no path:line that resolves there asks nothing and logs a skip"},
+  "prefilter": {
+   "what": "a comment opening REVIEW, posted with gh pr comment, whose first line names a sha the checkout holds; a finding with no path:line that resolves there asks nothing and logs a skip"
+  },
   "question": {
    "type": "choice",
    "per": "finding",
    "instructions": "Does the code in `slice` make the claim `finding` makes about it true?",
    "criteria": {
-    "supports": {"what": "the code in the slice is as the finding describes it: the problem it names is there",
-                 "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i > limit: break' in a loop that should include limit"},
-    "contradicts": {"what": "the code in the slice is not as the finding describes it: the problem it names is absent, or the code already does what it asks",
-                    "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i >= limit + 1: break' with a test that the last item is kept"},
-    "says_nothing": {"what": "the slice does not show the code the finding is about",
-                     "example": "finding 'parse.py:12 -- the usage line names --dry'; slice lines 1-40 hold only imports and a class with no usage text"}
+    "supports": {
+     "what": "the code in the slice is as the finding describes it: the problem it names is there",
+     "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i > limit: break' in a loop that should include limit"
+    },
+    "contradicts": {
+     "what": "the code in the slice is not as the finding describes it: the problem it names is absent, or the code already does what it asks",
+     "example": "finding 'parse.py:12 -- `limit` is compared with > so the last item is dropped'; slice line 12 'if i >= limit + 1: break' with a test that the last item is kept"
+    },
+    "says_nothing": {
+     "what": "the slice does not show the code the finding is about",
+     "example": "finding 'parse.py:12 -- the usage line names --dry'; slice lines 1-40 hold only imports and a class with no usage text"
+    }
    }
   },
-  "thresholds": {"option": "contradicts", "yes_over": 0.5, "no_under": 0.2},
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  },
  "diff-screen": {
   "owner": "scripts/check-diff-screen.py, started by scripts/push-campaign-branch.sh",
@@ -414,8 +429,88 @@
    "no_under": 0.2
   },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
+ },
+ "C-report-disposes-finding": {
+  "owner": "scripts/check-merge-review.py, the merge gate, over the thread it already reads",
+  "tier": "shadow",
+  "group": "pull-request-thread",
+  "state": {
+   "fields": [
+    "report",
+    "findings"
+   ],
+   "report": "the last REPORT of the thread, whole, as it was posted -- the evidence the claim is checked against; nothing outside it can dispose a finding",
+   "findings": "one finding's own text, cut out of the REVIEW the REPORT answers by check-finding-sort.py's `findings()`, keyed by its id. One question per key",
+   "why": "the pair is the round: a REPORT disposes the findings of the REVIEW it answers and of no other. THE STATE IS THE GROUP'S AND CARRIES TWO MORE FIELDS -- `review` and `thread`, which `C-review-not-the-author` reads -- because every question over one pull request thread goes in the one call (DECISION 5716060001). The survey measured this reading on `report` and `findings` alone, so its numbers below are a reading of a narrower state than production now sends",
+   "slice": "the thread is sliced to ONE ROUND by code: the last REVIEW comment, the first REPORT after it, and MAX_FINDINGS findings cut from that REVIEW. A state still over campaign-jev.py's byte budget asks nothing and logs a skip naming the bytes -- this never truncates a finding to fit"
+  },
+  "prefilter": {
+   "what": "a finding whose id a REPORT DISPOSITION ROW names, on a line carrying a disposition word, is settled by code as `disposed` and never sent. It cleared 82% of stratum-A findings and 0% of stratum-B ones over the survey's 20 pairs, and cleared no real negative; the loose variant, reading any line of the REPORT instead of a disposition row, clears two real negatives and is not used (rule-check#460 NOTE 5713816930)"
+  },
+  "question": {
+   "type": "choice",
+   "per": "findings",
+   "instructions": "`report` is a worker's fix-round report answering a code review. The claim is that `report` says what was done about the review finding quoted at `findings.{item}`. How does `report` relate to that claim?",
+   "criteria": {
+    "supports": "`report` names that finding, or its substance, and says what was done about it: fixed, declined with a reason, deferred to a named follow-up, or accepted as it stands. A row reading `F3 | fixed: the ceiling is a constant now` is this option. NOT this option: a line disposing of a DIFFERENT finding of the same review, and a blanket sentence that every finding was handled with no line for this one.",
+    "contradicts": "`report` reaches that finding and leaves it with no disposition -- it points elsewhere, defers to nowhere, or disputes it without a reason. A row reading `F3 | see the review` is this option. NOT this option: a finding DECLINED with its reason given, or one deferred to a named number; both of those are `supports`.",
+    "says_nothing": "Nothing in `report` addresses that finding at all; a reader looking for its disposition finds none. NOT this option: a `report` that is merely short, or one that answers the other findings well, when this finding is still answered somewhere in it."
+   }
+  },
+  "thresholds": {
+   "option": "supports",
+   "yes_over": 0.8,
+   "no_under": 0.4
+  },
+  "combine": "one question per finding, and the pair's score is the max over the findings the prefilter did not clear. CODE decides the gate, never the model: `no` names the finding unanswered to the reader, `uncertain` lists it to check, `yes` is silent. In the survey's flag space, 1 - P(supports), those are its 0.60 and 0.20 cuts",
+  "join": "thread-refinding",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-17",
+   "wording": "a79658e1469c",
+   "measured_as": "the survey's `w1`, the cookbook's relation framing; its `w2`, an omission framing, drifted more and missed one negative at the 0.60 cut (rule-check#460 step 2, set C)",
+   "why": "NO BAND IS DECLARED, because the two distributions OVERLAP: over 3 runs and both strata the disposed findings reached P(supports) as low as 0.45 and the undisposed as high as 0.58. That overlap is why the middle is `uncertain` rather than a word, and why the cuts are set by what a wrong answer costs rather than read off the bands",
+   "evidence": "rule-check#460 step 2, set C: 20 real REVIEW-to-REPORT pairs on merged pull requests, 246 findings, 30 made negatives, 3 runs x 2 wordings. At the 0.20 flag cut, 0 of 30 undisposed findings slipped in any run and 86% (stratum A) / 88% (B) of findings needed no reading, against token overlap's 43% / 54%",
+   "known_wrong": "EVERY NEGATIVE IS MADE. No natural dropped finding exists in 172 REVIEW-to-REPORT pairs of this tracker's history, so a real one has never been measured. The splitter is the weak joint, not the question: a verification list read as findings came back `supports` at 0.68-0.93 on pr#453. A cut learned on 5 stratum-A pairs misses 2 on the other 5; the fixed 0.20 misses none in either half"
+  }
+ },
+ "C-review-not-the-author": {
+  "owner": "scripts/check-merge-review.py, the merge gate, over the thread it already reads",
+  "tier": "shadow",
+  "group": "pull-request-thread",
+  "state": {
+   "fields": [
+    "review",
+    "thread"
+   ],
+   "review": "the REVIEW comment that names the head sha, whole, first line included -- the `KIND <session name>: <one line>` prefix is the only thing on the thread that names who wrote it",
+   "thread": "the first line of every other comment of the thread, in order, each as `<where> <author>: <first line>` -- who posted what, and in what order, and nothing else. One line a comment, so the slice is bounded by the thread's length and not by its size",
+   "why": "one gh account signs every session's writes, so GitHub's own author field says nothing here; the session name on a comment's first line is the only readable trace of which session wrote what. THE STATE IS THE GROUP'S and carries `report` and `findings` too, since every question over one thread goes in the one call"
+  },
+  "prefilter": {
+   "what": "none. The obvious one -- the REVIEW's session name against the REPORTs' -- is not a prefilter but the answer to another question: a worker launches its own review subagent, so the REVIEW and the commits carry the same session name in the ordinary case, and a name comparison would flag every round"
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "`review` is a code review posted to a pull request and `thread` is who posted what on that pull request, in order. The claim is that the REVIEW in `review` was written by an agent that did not write the commits it reviews. How does what you can read relate to that claim?",
+   "criteria": {
+    "supports": "the review or the thread says the review was written by an agent other than the one that wrote the commits: it names a reviewer distinct from the worker reporting on the thread, or names the model and level a separate reviewer ran at. NOT this option: a review that merely reads as careful, or one whose author cannot be told from the worker's.",
+    "contradicts": "the review or the thread says the same agent did both: the review is signed by the session whose REPORTs on this thread claim the commits, with nothing naming a separate reviewer. NOT this option: a thread with no REPORT at all, where nobody has claimed the commits.",
+    "says_nothing": "nothing in the review or the thread says who wrote it against who wrote the commits. NOT this option: a review that names a separate reviewer in passing -- that is `supports`."
+   }
+  },
+  "thresholds": {},
+  "combine": "nothing yet. At `shadow` the answer is recorded and no cut is applied, so no code reads it",
+  "join": null,
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": null,
+   "wording": "1d5e44584dd0",
+   "why": "UNMEASURED AND UNCUT. rule-check#460's step 2 never built a group for merge condition 2 and its step 3 wrote no NOTE for the pull request thread, so the record that would label a case does not exist and none is invented here (DECISION 5713840629: `unmeasurable` is a missing record, not an ending). It enters at `shadow` with no cut to collect cases until one does",
+   "the_missing_record": "which session wrote the commits of a branch, and which wrote the REVIEW. Nothing on this machine holds it: one gh account signs every write, herdr reports where a session was STARTED and not which claim it holds, and check-campaign-claim.py's guard.log keeps 200 bytes of a command. The record that would label these rows is the session name written into the REVIEW's own first line beside the model and level it ran at, which reviewing.md already asks for, read against the session name on the REPORTs of the same thread",
+   "wording_pinned": "the instruction wording moves this band more than the cases do: `did not write the commits` read 0.98+ on six reviews and separated nothing, while `written by another agent` spread the same six 0.03-0.86. This entry asks the claim-against-evidence shape instead of either noul, and the text above is pinned so a later measurement is of the question that was asked"
+  }
  },
  "done-test-select": {
   "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
@@ -450,8 +545,7 @@
    "no_match": "noMatch"
   },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  },
  "done-test-claim": {
   "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
@@ -493,7 +587,6 @@
    "no_under": 0.2
   },
   "join": null,
-  "bands": {},
-  "lessons": []
+  "bands": {}
  }
 }

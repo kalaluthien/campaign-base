@@ -129,7 +129,8 @@ def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
     """The finished process; `gh-argv.jsonl` in its directory holds each gh call.
     `fail` names the gh verbs (`pr view`, `issue view`, `pr diff`) that exit 1.
     `named_log=False` names no log and makes the reader's directory a git
-    repository, run from another one: the log must land in the reader's base."""
+    repository, run from another one: a stubbed endpoint that names no log
+    must write nothing, neither there nor in the reader's own base."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
     (d / "bin").mkdir()
@@ -291,10 +292,47 @@ def issue_in_its_own_repository(t):
                                     "kalaluthien/campaign-base"], r.gh
 
 
-def logs_to_its_own_base(t):
+class RecordingJev:
+    """A jev double that answers nothing and keeps how it was called.
+
+    The log is where `cwd` used to be observable, and since pr#474 a stubbed
+    endpoint that names no log writes nothing at all -- on purpose, so a
+    suite's answers cannot reach the shared log the corpus grows from. So the
+    reader's side of that rule is asserted where it is made instead: every
+    call names the reader's OWN base, never the process's cwd, which is what
+    puts a production row in that reader's `runtime/jev.log` when a session
+    runs it from some other checkout."""
+
+    STATE_BUDGET = 60_000
+
+    def __init__(self):
+        self.cwds = []
+
+    def ask(self, reader, label, state, questions, env=None, cwd=None):
+        self.cwds.append(cwd)
+        answers = {cid: types.SimpleNamespace(raw={"choice": "h1"})
+                   for cid in questions}
+        return types.SimpleNamespace(answers=answers)
+
+    def skip(self, reader, label, why, env=None, cwd=None):
+        self.cwds.append(cwd)
+
+
+def every_jev_call_names_the_readers_base(t):
+    reg = {"done-test-select": SELECT, "done-test-claim": CLAIM}
+    conds = {"c1": "a condition one test could carry"}
+    cands = {"h1": {"path": "scripts/tool-test.py", "text": "@@ -1 +1 @@\n+x"}}
+    jev, over = RecordingJev(), RecordingJev()
+    t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, cands, jev)
+    big = {"h1": {"path": "scripts/tool-test.py", "text": "x" * 60_001}}
+    t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, big, over)
+    named = jev.cwds + over.cwds
+    return (len(named) == 3 and set(named) == {t.m.HERE}), (named, t.m.HERE)
+
+
+def a_stub_naming_no_log_writes_nothing(t):
     r = run(t, named_log=False)
-    return (r.returncode == 0 and len(LOGGED) == 3
-            and LOGGED[1]["read"] == "tracker#9 REPORT 5 select"), (r.stderr[-300:], reads())
+    return r.returncode == 0 and LOGGED == [], (r.stderr[-300:], reads())
 
 
 def tracker_is_the_default(t):
@@ -344,7 +382,8 @@ CASES = {
     "a failed diff read logs one skip": failed_diff_read_skips,
     "a member pull request is read in its repository, its tracker issue in the tracker": repository_reaches_gh,
     "an issue is read in its own repository": issue_in_its_own_repository,
-    "with no log named, the reading logs to its own base from another checkout": logs_to_its_own_base,
+    "every jev call names the reader's own base, not the process cwd": every_jev_call_names_the_readers_base,
+    "a stubbed endpoint naming no log writes nothing": a_stub_naming_no_log_writes_nothing,
     "with no repository gh is told the tracker": tracker_is_the_default,
     "a reader that raised exits 0, says nothing and logs a skip": failure_exits_zero,
     "a condition is a list item with its lines, or a table row": conditions_cut,
@@ -406,7 +445,7 @@ MUTATIONS = [
     ("the log resolved from the process's cwd",
      '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)',
      '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env)',
-     "with no log named, the reading logs to its own base from another checkout"),
+     "every jev call names the reader's own base, not the process cwd"),
     ("the table header kept", "            if not rule.match(line) and not header:", "            if not rule.match(line):",
      "a condition is a list item with its lines, or a table row"),
     ("no tracker default", 'target = ["-R", repo or TRACKER]', 'target = ["-R", repo] if repo else []',

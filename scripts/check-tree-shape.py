@@ -61,6 +61,13 @@ WHAT IT CHECKS
       suite, so a script whose name ends in `-test` beside its own
       `<name>-test.<ext>` suite is refused -- CI ran the reader
       `check-done-test.py` as a suite and failed on its usage exit (pr#480).
+      ITS OWN SUITE IS THE EVIDENCE, and that is the whole reach of the rule:
+      a `-test` name alone says "suite" and is the ordinary case, so a NON-suite
+      carrying such a name and no suite of its own reads exactly like a suite
+      here and is refused by nothing -- CI still runs it, and its usage exit
+      still fails the job. A genuine suite of a suite would be refused as a
+      false positive; none exists in this tree, and the sweep that would find
+      one is `./scripts/check-tree-shape.py`'s own 0 findings.
 
   R8  an entity is exactly `system.als` + `checks.als`, plus any `*.html`.
       An entity is a directory under spec/ directly holding an `.als` or an
@@ -658,10 +665,13 @@ def layout(paths, note):
             note("R6", p, "a script carries the extension of its language: "
                           "add .py or .sh, or move the file out of scripts/")
         stem = p.rsplit(".", 1)[0]
-        if stem.endswith("-test") and any(q.startswith(stem + "-test.") for q in paths):
-            note("R6", p, "named like a suite yet beside its own suite: CI runs "
-                          "every `*-test.*` in a scripts/ as a suite, so rename "
-                          "it to end in something other than `-test`")
+        own = next((q for q in sorted(paths) if q.startswith(stem + "-test.")), None)
+        if stem.endswith("-test") and own:
+            note("R6", p, f"named like a suite yet carrying its own suite "
+                          f"{own}: CI runs every `*-test.*` in a scripts/ as a "
+                          f"suite, so this would be run as one, and its own "
+                          f"suite says it is not -- rename it to end in "
+                          f"something other than `-test`")
 
 
 def entities(staged, note):

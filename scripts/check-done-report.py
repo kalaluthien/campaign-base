@@ -67,7 +67,37 @@ first argument that is not a number, exits 2.
 THE CASES are scripts/jev/corpus/done-report-select.jsonl, the conditions no
 candidate is evidence for, since a candidate id is an option built per state
 and no word of the entry, and done-report-claim.jsonl, each pick with its
-truth.
+truth. Where this reading is known to be wrong, as seen at jev-1.13.0 on
+2026-09-18 (kalaluthien/campaign-base#458 Cl1), over 54 merged pull requests,
+one a sub-issue, 204 conditions labelled against their own words (114 met, 41
+partly, 32 met by nothing here, 13 events) -- 51 of them T2's labels carried
+over by (path, text) -- each met condition asked again with its evidence
+removed:
+
+  met        (1 - P(noMatch)) x P(supports), 0 where no candidate was picked;
+             AUC 0.79 against the removed-evidence negatives and 0.93 against
+             the conditions nothing here meets
+  the line   THE REPORT LINE IS WHAT MAKES IT WORK: the same picks and the
+             same evidence with the line withheld read 0.64 and 0.88. It does
+             not raise a met condition's score -- the mean falls, 0.47 to
+             0.51 -- it pushes the negatives down harder, which is what a
+             reading that separates does and what a mean cannot show
+  baselines  token overlap 0.71 and 0.82; T2's carry over the same conditions
+             0.58 and 0.82, its candidates being the test hunks alone
+  no cut     the cut that flags EVERY negative is 0.99 and flags all 107 met
+             lines -- so does every baseline's. This reading ORDERS and does
+             not filter, and that is why it stays at `shadow`
+  one cut    0.05 catches 30 of the 32 conditions nothing here meets and 82 of
+             140 removed-evidence negatives, flagging 17 of 107 met lines
+  selection  the labelled candidate was picked for 78 of 107 met conditions,
+             `noMatch` for 4; 11 of the 107 picks were a REPORT result line
+  prefilter  15 of 341 conditions settled by a fact (4%): 8 a comment posted,
+             7 the merge; `label` and `closed` matched none in this sample
+  reach      4 of 54 states (7%) were over the budget and asked nothing; 120
+             of 326 conditions (37%) got no REPORT line at all
+  noise      a repeat of 25 states WITH campaign-jev's store off moved 8
+             verdicts of 93 -- 7 selects and 6 claims. With the store on it
+             reads 0, because that key is the state and not the label
 
 Usage: scripts/check-done-report.py <pr> [<repo>] < report
 """

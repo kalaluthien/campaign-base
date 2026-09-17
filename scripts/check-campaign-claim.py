@@ -2762,7 +2762,7 @@ def research_bar(tokens, text, cwd, root):
                              stderr=subprocess.DEVNULL, start_new_session=True)
         p.stdin.write(text.encode("utf-8"))
         p.stdin.close()
-    except OSError:
+    except (OSError, ValueError):  # a lone surrogate does not encode
         pass
 
 

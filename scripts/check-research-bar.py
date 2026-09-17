@@ -11,8 +11,10 @@ WHO RUNS IT: scripts/check-campaign-claim.py, the comment guard, once a
 `gh issue comment` whose first line holds opens `NOTE`. The guard starts this
 in the background and does not wait, so a post is never slowed by the model.
 The guard runs BEFORE the post, so a comment it then refuses for its claim was
-read too; the log line carries the note, and a later join finds no such
-comment.
+read too, and a later join finds no such comment. The log line carries the
+label `<repo>#<issue> NOTE <condition>` (`tracker#<issue>` with no repo) and
+the time, not the note: a join matches on the issue and the time, and a failed
+kind read logs nothing.
 
 WHAT IT READS: the NOTE on stdin, and the issue's work kind from
 `campaign-tracker.py kind`, the one reader of that label.

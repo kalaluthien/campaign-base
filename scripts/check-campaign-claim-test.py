@@ -1782,7 +1782,7 @@ def main():
         bindir = Path(d) / "ghkind"
         bindir.mkdir()
         (bindir / "gh").write_text(
-            "#!/usr/bin/env python3\nimport sys\n"
+            "#!/usr/bin/env python3\nimport sys, time\ntime.sleep(2)\n"
             "if sys.argv[1:3] != ['api', 'repos/kalaluthien/campaign-base/issues/7']:\n"
             "    sys.exit('gh stub: no answer')\n"
             "print('[\"kind:research\"]')\n")
@@ -1794,6 +1794,7 @@ def main():
                    TYPESAFE_API_KEY="stub", CAMPAIGN_JEV_LOG=str(log))
         r = ask(f.trees["demo/7-x"], tool="Bash", env=env,
                 command="gh issue comment 7 -b 'NOTE demo-worker-1: 3 runs'")
+        logged_at_return = log.exists()
         conditions = len(json.loads(
             (HERE / "jev" / "readings.json").read_text())["research-bar"]["conditions"])
         for _ in range(100):
@@ -1802,8 +1803,10 @@ def main():
                 break
             time.sleep(0.2)
         check("ALLOW a NOTE on an issue at once, and its research-bar reading "
-              "logs one call per condition in the background",
-              r.returncode == 0 and len(lines) == conditions
+              "logs one call per condition in the background, after the guard "
+              "returned (the kind read waits 2 s)",
+              r.returncode == 0 and not logged_at_return
+              and len(lines) == conditions
               and all("check-research-bar.py" in x for x in lines),
               (out(r)[:300], lines[:2]))
 

@@ -262,8 +262,10 @@ fun plannerOnlyEvents: set Event { WriteBody + FileCampaignIssue }
    the name would grant, and what the rule buys is that the role is explicit and
    the mistake is loud. Stated here because a permission table is the thing a
    reader is most likely to mistake for a security boundary. */
-/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE. `memberIssues` excludes it
-   (github/system.als), so `i in s.worksOn.memberIssues` refuses a worker every
+/* THE CAMPAIGN ISSUE IS NOT A SUB-ISSUE, a chore's apart: there it is its own
+   one member (github/system.als `WellFormed`), and the worker reaches it
+   through the second disjunct below, on its claim, as it reaches any
+   sub-issue. Everywhere else `memberIssues` excludes it, so `i in s.worksOn.memberIssues` refuses a worker every
    write to the issue of the campaign it works -- including a comment, which
    the model has no precondition on. The worker's campaign-plane row therefore
    admits the campaign issue of its OWN campaign, and `Q11` is the witness.

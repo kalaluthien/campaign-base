@@ -140,6 +140,27 @@ pred S21_StandingBlocksTheClose {
    `Backlog`; it goes SAT the instant the discipline stops reading the label.
    S22a is the control: the same claim with the hold off is still
    reachable, so the UNSAT is the discipline's and not the model's. */
+/* S23. A CHORE LANDS: the campaign issue is filed as its own one member,
+   claimed, and closed by its own merged pull request, under the close
+   discipline and still a member at the close -- a trace that left by
+   RemoveMember first would pass with `closable` unrepaired. Expect 1; it goes
+   UNSAT when any of the three chore lines of system.als is put back. */
+pred S23_ChoreLands {
+  one c: Campaign {
+    c not in Filed
+    closeDiscipline[c]
+    eventually (c.memberIssues = c.campaignIssue and c.campaignIssue in Claimed
+                and eventually (complete[c.campaignIssue] and campaignClosed[c]
+                                and c.campaignIssue in c.memberIssues))
+  }
+}
+
+/* S23b. A CHORE HAS NO SUB-ISSUE. Expect 0; SAT when `WellFormed`'s chore line
+   is dropped rather than rewritten. */
+pred S23b_AChoreHasNoSubIssue {
+  some c: Campaign | eventually (c.campaignIssue in c.memberIssues and #c.memberIssues = 2)
+}
+
 pred S22_BacklogBlocksTheClaim {
   backlogDiscipline and eventually (Now.event = Claim and Now.issue in Backlog)
 }
@@ -200,6 +221,8 @@ run S20_TheBaseIsNeverListed          for exactly 2 Issue, 1 PullRequest, exactl
 run S21_StandingBlocksTheClose        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
 run S22a_ControlTheClaimHappensWithTheHoldOff for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
 run S22_BacklogBlocksTheClaim         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
+run S23_ChoreLands                    for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 1
+run S23b_AChoreHasNoSubIssue          for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 2 Repo, 8 steps expect 0
 
 /* ---------------- properties ---------------- */
 

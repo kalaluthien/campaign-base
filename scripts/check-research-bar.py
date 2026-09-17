@@ -12,18 +12,19 @@ WHO RUNS IT: scripts/check-campaign-claim.py, the comment guard, once a
 in the background and does not wait, so a post is never slowed by the model.
 The guard runs BEFORE the post, so a comment it then refuses for its claim was
 read too, and a later join finds no such comment. The log line carries the
-label `<repo>#<issue> NOTE <condition>` (`tracker#<issue>` with no repo) and
-the time, not the note: a join matches on the issue and the time. A kind read
+label `<repo>#<issue> NOTE` (`tracker#<issue>` with no repo), an answer per
+condition, and the time, not the note: a join matches on the issue and the time. A kind read
 that failed, or a reading that raised, logs a `skipped` row naming why, so a
 count of what the reading covered sees what it missed.
 
 WHAT IT READS: the NOTE on stdin, and the issue's work kind from
 `campaign-tracker.py kind`, the one reader of that label.
 
-  asked      a NOTE on a `kind:research` issue: one state `{condition, note}`
-             per entry of the entry's `conditions`, one `choice` each, all at
-             once; a note reads as the highest P(contradicts) over them, which
-             is what the corpus and a reader of the log take
+  asked      a NOTE on a `kind:research` issue: ONE call, state `{note}`, one
+             `choice` question per entry of the entry's `conditions`, each its
+             condition put into the entry's instructions; a note reads as the
+             highest P(contradicts) over them, which is what the corpus and a
+             reader of the log take
   passed     another comment kind or another work kind asks nothing and logs
              nothing
   skipped    a kind the tracker could not read, or a reading that raised,
@@ -53,7 +54,6 @@ import importlib.util
 import json
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -87,21 +87,24 @@ def work_kind(issue, repo):
 
 
 def questions(entry):
+    """A question per condition, its text put into the entry's instructions.
+
+    ONE CALL A NOTE, not one a condition (sdlc-alloy#458 DECISION
+    issuecomment-5716072632): questions in one call cannot see each other, so
+    each still asks one narrow judgment, and the state is the note alone."""
     q = entry["question"]
     spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
-    spec.update(entry["thresholds"], instructions=q["instructions"])
-    return {"c": spec}
+    spec.update(entry["thresholds"])
+    return {name: dict(spec, instructions=q["instructions"].replace(
+                "{condition}", entry["conditions"][name]))
+            for name in entry["conditions"]}
 
 
 def ask_all(entry, note, subject, jev, env=None):
-    """[(condition, Answer)] for every condition of the entry, asked at once."""
-    def one(name):
-        state = {"condition": entry["conditions"][name], "note": note}
-        reading = jev.ask(READER, f"{subject} NOTE {name}", state,
-                          questions(entry), env=env)
-        return name, reading.answers["c"]
-    with ThreadPoolExecutor(len(entry["conditions"])) as pool:
-        return list(pool.map(one, entry["conditions"]))
+    """{condition: Answer} for every condition of the entry, in one call."""
+    reading = jev.ask(READER, f"{subject} NOTE", {"note": note},
+                      questions(entry), env=env)
+    return reading.answers
 
 
 def main(argv, stdin=sys.stdin, env=None):

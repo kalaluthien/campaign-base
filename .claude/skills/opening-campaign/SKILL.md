@@ -187,7 +187,8 @@ case "$HELD" in
 esac
 if [ "$CAMPAIGN" != "$HELD" ] && mkdir "$CAMPAIGN" 2>/dev/null; then
   cp -R <skill>/assets/. "$CAMPAIGN"/
-  "$BASE/scripts/campaign-directory.py" mark <N> "$SLUG" "$CAMPAIGN" >/dev/null || exit 1
+  "$BASE/scripts/campaign-directory.py" mark <N> "$SLUG" "$CAMPAIGN" >/dev/null ||
+    { rm -rf "$CAMPAIGN"; exit 1; }   # this run's mkdir made it; a re-run finds none
 else
   echo "exists: read $CAMPAIGN/README.md before writing anything in it"
 fi
@@ -212,8 +213,10 @@ reads it back, so a directory scaffolded either side of midnight is still found.
 and the SLUG rather than the directory's name, which now carries a date the
 marker must not.
 `campaign-directory.py mark` is its one writer and reads it back by both
-fields, so a marker the reader would not answer fails this step, and is
-removed, instead of hiding the directory from every later reader.
+fields, so a marker the reader would not answer fails this step instead of
+hiding the directory from every later reader. The step then removes the
+directory its own `mkdir` made: left behind without a marker, a re-run would
+read `none`, fail the `mkdir`, and say `exists` over a directory nothing sees.
 Without it `campaign-claim`, the claim guard and `guard-precision` all read the
 base as holding no campaign at all. It sits beside `runtime/` and not inside it,
 because `runtime/` is scratch sessions sweep.

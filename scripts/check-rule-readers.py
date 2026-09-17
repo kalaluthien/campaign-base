@@ -251,9 +251,9 @@ FORMS = [
         # working directory on no match, a mangled path on two, and it survived
         # the directory name changing twice because nothing named it. A TOOL
         # must be named beside the marker, so the shape diagram in README.md and
-        # the `printf ... >| "$CAMPAIGN/.campaign"` that WRITES one are both
-        # left alone -- writing the marker at scaffold is the one thing that is
-        # not a second reading of it. THAT HOLDS WHILE NO TOOL WORD SHARES THE
+        # a line that only WRITES one, `campaign-directory.py mark` today, are
+        # both left alone -- writing the marker is the one thing that is not a
+        # second reading of it. THAT HOLDS WHILE NO TOOL WORD SHARES THE
         # LINE: a diagram column or a trailing comment naming a tool beside the
         # marker is refused -- one of the stdin-capable words after it, any of
         # them before it -- and takes the `<!-- unguarded: -->` header the way
@@ -263,8 +263,8 @@ FORMS = [
         # "$BASE"/*/.campaign; do dirname "$f"; done`, where the `;` cuts
         # `[^|;&]*` before `dirname`, and a bare `head -1` or `cut` over the
         # same glob. `*/.campaign` is what all of them share and what the
-        # legitimate marker WRITE never has: `printf ... >| "$CAMPAIGN/.campaign"`
-        # names one directory it already resolved.
+        # legitimate marker WRITE never has: it names one directory it already
+        # resolved.
         # The middle half is for the redirect written first, `< "$C/.campaign"
         # cut -f2`, where the tool sits AFTER the marker and the leading
         # alternation cannot see it; it takes the stdin-capable tools, which is

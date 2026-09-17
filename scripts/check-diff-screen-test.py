@@ -139,8 +139,9 @@ def load(source):
 
 def run(t, argv=(), registry=True, cwd=REPO, named_log=True):
     """The finished process; `SEEN` holds the calls, `LOGGED` the log rows.
-    `named_log=False` names no log, and makes the reader's directory a git
-    checkout of its own, so the log is where campaign-jev finds a base."""
+    `named_log=False` names no log, no endpoint and no key, and makes the
+    reader's directory a git checkout of its own, so the log is where
+    campaign-jev finds a base."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     RUN_DIR[0] = d
     (d / "jev").mkdir()
@@ -155,7 +156,16 @@ def run(t, argv=(), registry=True, cwd=REPO, named_log=True):
                CAMPAIGN_JEV_LOG=str(d / "jev.log"), HOME=str(d),
                GIT_CONFIG_GLOBAL=os.devnull)
     if not named_log:
+        # THE ENDPOINT GOES WITH THE LOG. campaign-jev.py writes nothing to the
+        # shared `<base>/runtime/jev.log` while `CAMPAIGN_JEV_URL` names a
+        # stubbed endpoint (rule-check#455 pr 3, DECISION 5716626608), so a
+        # case about the shared fallback must not stub one -- and the key goes
+        # too, or the run would reach the live endpoint with a bogus one. With
+        # neither, `ask` answers `unknown` before it opens a socket and the row
+        # still lands, which is what this case is about.
         del env["CAMPAIGN_JEV_LOG"]
+        del env["CAMPAIGN_JEV_URL"]
+        del env["TYPESAFE_API_KEY"]
         git(d, "init", "-q")
     r = subprocess.run([sys.executable, str(d / "check-diff-screen.py"), *argv],
                        capture_output=True, text=True, env=env, cwd=cwd)

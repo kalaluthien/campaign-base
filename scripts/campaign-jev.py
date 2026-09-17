@@ -33,10 +33,11 @@ UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
 is never sent and never cut down -- no key, a `~/.env` that is not text,
 `CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
 not answer, an HTTP error, a timeout, a body that is not JSON, a response naming
-another model, an answer missing for a question, an answer of another type, a
-raw value the thresholds leave in the gap -- each comes back `unknown` with a
-one-line reason, per question. `ask` is the boundary that holds it: every named
-path above returns rather than raises, and `ask` catches whatever is left and
+another model, an answer missing for a question, an answer of another type --
+each comes back `unknown` with a one-line reason, per question. A raw value the
+two edges leave BETWEEN them is not one of those: it is `uncertain`, an answer
+that happened and reached no word. `ask` is the boundary that holds it: every
+named path above returns rather than raises, and `ask` catches what is left and
 answers `unknown` wearing its exception's class name. The ONE thing that raises
 is a question of an unsupported TYPE, which is the caller's bug and not the
 model's answer. Nothing else may, because a caller prints a verdict on the next
@@ -45,20 +46,22 @@ claim.
 
 THE THRESHOLDS ARE THE CALLER'S, and they are two numbers and not one:
 
-  noul    `yes_over` and `no_under`, and the gap between them is `unknown`. A
-          `noul` near 0.5 means yes and no are equally likely, not a medium
-          degree, so a single cut would turn the model's own indecision into a
-          verdict.
-  choice  `floor` on `confidence`, and the name of the `no_match` option. Both,
-          because a `choice` with no fitting option still picks one: a no-match
-          option alone missed a no-match answered at low confidence, and a floor
-          alone let a confident wrong option through. `confidence` measures how
-          concentrated the distribution is, not whether the option set fits.
+  noul    `yes_over` and `no_under`, and what falls between them is
+          `uncertain`. A `noul` near 0.5 means yes and no are equally likely,
+          not a medium degree, so a single cut would turn the model's own
+          indecision into a verdict.
+  choice  `floor` on `confidence`, the name of the `no_match` option, and where
+          the reading has bands, `certain_over` as the floor's upper edge. The
+          first two both, because a `choice` with no fitting option still picks
+          one: a no-match option alone missed a no-match answered at low
+          confidence, and a floor alone let a confident wrong option through.
+          `confidence` measures how concentrated the distribution is, not
+          whether the option set fits.
   option  a `choice` naming one `option` is instead cut on that option's own
           probability, by `yes_over` and `no_under` as a `noul` is: `yes` the
-          option holds, `no` it does not, the gap `unknown`. For a reading that
-          flags one option -- a claim `contradicts` its evidence -- where the
-          winner and its confidence would hide a strong second.
+          option holds, `no` it does not, between them `uncertain`. For a
+          reading that flags one option -- a claim `contradicts` its evidence
+          -- where the winner and its confidence would hide a strong second.
 
 Every threshold is set from cases of the tree's own history, one of which fits
 no option, and asserted as a BAND: the same request comes back a few hundredths
@@ -79,10 +82,29 @@ ONE CALL PER STATE. Every independent question over the same state goes in one
 `ask`: forty cost the latency of one and cannot see each other's answers. A
 second call is for an answer that must fetch evidence or build the next options.
 
+AND THE SAME STATE IS ASKED ONCE. The raw probabilities of every answer are
+stored beside the log, keyed by a hash of the STATE, a hash of the QUESTIONS AS
+SENT and the pinned MODEL, so a moved cut, band or combiner replays and asks
+nothing; a hit makes no request and needs no key. `cache=False` is the noise
+switch, set by `relive` and by the suite's `--live` half and by nothing else,
+because a band is what the same state answers ACROSS runs. `report` prints calls
+a state per reading, over the calls SENT -- a hit is logged as a hit and is not
+one. The store is scratch: gone, unreadable or corrupt, it costs a call and
+never an answer (DECISION 5716060001).
+
 EVERY CALL IS LOGGED, one JSON line to `<base>/runtime/jev.log` -- git-ignored
 scratch -- naming the reader, a SHORT label for what it read (never the state,
-which carries issue bodies), the model that answered, the latency, and per
-question the raw value and the branch taken. `Reading.logged` is the sentence
+which carries issue bodies), the model that answered, the latency, the
+`endpoint` word, and per question the raw value and the branch taken.
+
+EXCEPT A STUBBED ONE. A run that named `CAMPAIGN_JEV_URL` logs only where
+`CAMPAIGN_JEV_LOG` names a file and NEVER to the shared log, and stores nothing
+there either, because the shared log is what the corpus grows from and a
+suite's answers are not the tracker's history. Every row says which endpoint
+answered it, `real` or `stub`, and `corpus join` takes only a `real` one --
+refusing the rest by name, including rows written before the field existed,
+which cannot say (DECISION 5716626608). A refused row is not waiting: nothing
+can label it, so it is counted apart. `Reading.logged` is the sentence
 the caller prints beside the verdict, as `check-campaign-claim.py` prints one
 beside its own: a caller that logged nothing and said nothing reads exactly like
 one that logged.
@@ -96,6 +118,8 @@ Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting [--steady]
 import argparse
 import datetime
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -108,6 +132,8 @@ import uuid
 from collections import namedtuple
 from pathlib import Path
 
+# This script's own directory, which is where its siblings and its registry sit.
+HERE = Path(__file__).resolve().parent
 # THE MODEL THAT ANSWERED WHEN THE THRESHOLDS WERE SET, pinned. `jev-latest`
 # moves on release, and a band measured under one version says nothing about
 # the next. A response naming any other model is `unknown`, not a downgrade.
@@ -143,7 +169,24 @@ TIMEOUT = 10.0
 # reader's and this returns `unknown` naming both numbers.
 STATE_BUDGET = 60_000
 UNKNOWN = "unknown"
+# THE ANSWER THAT LANDED BETWEEN THE EDGES, and it is NOT `unknown`. A lone cut
+# inside a measured band flips on noise, so a reading that has bands takes two
+# edges and says `uncertain` for what falls between them (DECISION 5715993782).
+# The two words are kept apart because they mean different things to a reader:
+# `unknown` is a reading that did not happen -- no key, no answer, a model that
+# is not the pinned one, a confidence under the floor -- and `uncertain` is one
+# that did happen and does not reach a word. `uncertain` warns nothing.
+UNCERTAIN = "uncertain"
 NOUL, CHOICE = "noul", "choice"
+# THE EDGES, by question type. A `noul`, and a `choice` cut on ONE option's own
+# probability, take `yes_over` and `no_under`; an ordinary `choice` takes
+# `floor` -- below it the answer is `unknown` -- and, where it declares one,
+# `certain_over`, the upper edge of the same band. A reading may declare NO
+# edge at all, which `campaign-jev-test.py`'s "a reading with no thresholds is
+# at shadow" case admits at `shadow` alone -- a suite case, not a function
+# here -- and there the model's own word is recorded and nothing is judged.
+VALUE_EDGES = ("yes_over", "no_under")
+CHOICE_EDGES = ("floor", "certain_over")
 
 # One question's answer: the branch, the raw value as the model returned it, and
 # why the branch is what it is. `why` is filled for `unknown` and empty
@@ -151,7 +194,8 @@ NOUL, CHOICE = "noul", "choice"
 Answer = namedtuple("Answer", "word raw why")
 # One call: the answers by question id, the model that answered (empty when
 # none did), the latency in seconds, and the sentence about the log line.
-Reading = namedtuple("Reading", "answers model latency logged")
+Reading = namedtuple("Reading", "answers model latency logged cached",
+                     defaults=(False,))
 
 
 def read_key(env=None):
@@ -218,7 +262,13 @@ def branch(spec, raw):
     the response carried, or None when it carried none. An unsupported `type`
     RAISES: a question nobody wrote a branch for is the caller's bug, and
     answering `unknown` would hide it behind the word every failure already
-    wears."""
+    wears.
+
+    THE EDGES ARE TWO AND THE MIDDLE IS `uncertain`, never `unknown`. A lone cut
+    inside a measured band flips on noise, so a reading declares the band it was
+    measured over and this answers `uncertain` between the edges -- an answer
+    that happened and reached no word, which a reader prints and warns nothing
+    about. `unknown` stays what it always was: a reading that did not happen."""
     kind = spec["type"]
     if kind not in (NOUL, CHOICE):
         raise ValueError(f"campaign-jev: no branch for a `{kind}` question; "
@@ -235,6 +285,21 @@ def branch(spec, raw):
         value = (probabilities.get(spec["option"])
                  if isinstance(probabilities, dict) else None)
         what = f"P({spec['option']})"
+    # A READING THAT DECLARES NO EDGE records the model's own answer and judges
+    # nothing. Legal at `shadow` alone -- campaign-jev-test.py's "a reading
+    # with no thresholds is at shadow" case, which reads the committed
+    # registry -- where a reading enters to collect cases until a record labels
+    # them: a cut invented before the first case is the number every later band
+    # gets fitted to. A `choice`
+    # has a word of its own to record; a `noul` has only a number, so there is
+    # no word to earn and it comes back `uncertain`.
+    if not any(k in spec for k in VALUE_EDGES + CHOICE_EDGES):
+        option = raw.get(CHOICE)
+        if kind == CHOICE and isinstance(option, str):
+            return option, "no cut is declared, so the option is recorded and "\
+                           "not judged"
+        return UNCERTAIN, (f"no cut is declared, so this answer is recorded "
+                           f"and not judged")
     if kind == NOUL or "option" in spec:
         if not isinstance(value, (int, float)):
             return UNKNOWN, f"the answer carries no {what} value"
@@ -242,9 +307,9 @@ def branch(spec, raw):
             return "yes", ""
         if value <= spec["no_under"]:
             return "no", ""
-        return UNKNOWN, (f"{what} {value:.2f} sits in the gap between "
-                         f"{spec['no_under']:.2f} and {spec['yes_over']:.2f}, "
-                         f"where yes and no are both live")
+        return UNCERTAIN, (f"{what} {value:.2f} sits in the band between "
+                          f"{spec['no_under']:.2f} and {spec['yes_over']:.2f}, "
+                          f"where neither word is earned")
     option, confidence = raw.get(CHOICE), raw.get("confidence")
     if not isinstance(confidence, (int, float)) or not isinstance(option, str):
         return UNKNOWN, "the answer carries no option and confidence"
@@ -254,6 +319,11 @@ def branch(spec, raw):
     if option == spec["no_match"]:
         return UNKNOWN, (f"the answer is `{option}`, the no-match option: no "
                          f"option of the set fits")
+    if confidence < spec.get("certain_over", 0.0):
+        return UNCERTAIN, (f"`{option}` at confidence {confidence:.2f} sits in "
+                           f"the band between {spec['floor']:.2f} and "
+                           f"{spec['certain_over']:.2f}, where the option is "
+                           f"not yet earned")
     return option, ""
 
 
@@ -273,12 +343,38 @@ def base_root(cwd=None):
     return Path(out.stdout.strip()).parent.resolve()
 
 
+# WHICH ENDPOINT ANSWERED, in one plain word on every row. `real` is the live
+# one; `stub` is any run that named `CAMPAIGN_JEV_URL`, which is a suite's
+# 127.0.0.1 server or a closed port. The join reads it: a stub's answer replayed
+# as a real one would be a case the tracker never produced (DECISION
+# 5716626608).
+# A THIRD WORD, `none`, FOR A ROW NO CALL WAS MADE FOR. A `skip` row says the
+# reading asked NOTHING -- the input would not read, the registry would not
+# load -- so no endpoint answered it and claiming the real one did would be a
+# row the join could take. It is refused with the stub's, and the join rule is
+# unchanged: only a row a real endpoint answered.
+REAL, STUB, NONE_SENT = "real", "stub", "none"
+
+
+def endpoint_word(env=None):
+    return STUB if URL_ENV in (os.environ if env is None else env) else REAL
+
+
 def log_path(env=None, cwd=None):
-    """(the log file, how to name it) or (None, why there is none)."""
+    """(the log file, how to name it) or (None, why there is none).
+
+    A STUBBED CALL NEVER REACHES THE SHARED LOG. `CAMPAIGN_JEV_LOG` names where
+    a run logs and always wins; with no name and a stubbed endpoint there is
+    nowhere to log, because the shared `<base>/runtime/jev.log` is where the
+    corpus grows from and a suite's answers are not evidence. A suite that
+    forgets to name a log therefore writes nothing, which it can see."""
     env = os.environ if env is None else env
     named = env.get(LOG_ENV)
     if named:
         return Path(named), named
+    if URL_ENV in env:
+        return None, (f"`{URL_ENV}` names a stubbed endpoint and no `{LOG_ENV}` "
+                      f"names a log, so nothing is written to the shared one")
     root = base_root(cwd)
     if root is None:
         return None, "under no base checkout, so there is no runtime/ to log to"
@@ -310,8 +406,74 @@ def skip(reader, label, why, env=None, cwd=None):
     as `ask`'s, `skipped` in place of `answers`; returns what `log_call` says."""
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
-           "reader": reader, "read": label, "asked": MODEL, "skipped": why}
+           "reader": reader, "read": label, "asked": MODEL,
+           "endpoint": NONE_SENT, "skipped": why}
     return log_call(row, os.environ if env is None else env, cwd)
+
+
+# ------------------------------------------------------------------ the store
+# RAW PROBABILITIES ARE KEPT AND REPLAYED, so a moved cut, band or combiner asks
+# nothing (DECISION 5716060001). The key is three things and all three matter: a
+# hash of the STATE, a hash of the QUESTIONS AS SENT -- the wording, which is
+# what `wording()` hashes for a registry entry -- and the pinned MODEL, because
+# a band measured under one version says nothing about the next.
+#
+# IT LIVES BESIDE THE LOG, in git-ignored runtime scratch, and holds the decoded
+# response whole. Nothing durable lives there: a store that is gone costs a
+# call and never an answer, so every path here returns rather than raises.
+CACHE_DIR = "jev-cache"
+
+
+def digest(obj):
+    """12 hex of one object's canonical JSON. The one hasher, so a key computed
+    on the way in and one computed on the way out cannot disagree."""
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False)
+                          .encode("utf-8")).hexdigest()[:12]
+
+
+def cache_key(state, questions):
+    """`<state>-<wording>-<model>`. The questions are hashed AS SENT, so the
+    thresholds -- which never reach the model -- never split the key either."""
+    sent = request_body(state, questions)["questions"]
+    return f"{digest(state)}-{digest(sent)}-{MODEL}"
+
+
+def cache_path(key, env=None, cwd=None):
+    """The file one key is stored in, or None when there is nowhere to store.
+
+    IT RIDES ON `log_path`, so a stubbed call that named no log has nowhere to
+    store and nothing to read: a stub's answer must never be replayed as a real
+    one, and a suite that names `CAMPAIGN_JEV_LOG` gets a store of its own
+    beside that log. One rule, read in one place."""
+    log, _how = log_path(env, cwd)
+    return None if log is None else log.parent / CACHE_DIR / f"{key}.json"
+
+
+def cache_read(key, env=None, cwd=None):
+    """The stored response, or None. NEVER RAISES: a store that will not read
+    is a call to make, not a reading to lose."""
+    path = cache_path(key, env, cwd)
+    if path is None:
+        return None
+    try:
+        out = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return out if isinstance(out, dict) else None
+
+
+def cache_write(key, out, env=None, cwd=None):
+    """Store one decoded response. NEVER RAISES, and says nothing: a store that
+    could not be written costs the next reader a call it would have made."""
+    path = cache_path(key, env, cwd)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, sort_keys=True, ensure_ascii=False),
+                        encoding="utf-8")
+    except (OSError, TypeError, ValueError):
+        return
 
 
 def request_body(state, questions):
@@ -374,7 +536,7 @@ def unknown_all(questions, why):
 
 
 def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
-        log=True):
+        log=True, cache=True):
     """One call, one `Reading`: a branch per question, and the log line's fate.
 
     `reader` names who asked -- a script and its subcommand -- and `label` what
@@ -397,7 +559,13 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     rather than one per call, so that a join can read a row on its own. Two
     writers of the same line would drift, so there is still exactly one
     function that writes one -- `log_call` -- and this only declines to call
-    it."""
+    it.
+
+    `cache=False` IS THE NOISE SWITCH, and it is explicit rather than guessed
+    at: a run that measures how far the same state moves between runs must send
+    every one of them, so `relive` and the suite's `--live` half set it and
+    nothing else does. A hit is logged as a hit and is NOT a call: `report`'s
+    calls-a-state ratio is over the calls that were actually sent."""
     env = os.environ if env is None else env
     for qid, spec in questions.items():
         if spec["type"] not in (NOUL, CHOICE):
@@ -405,8 +573,10 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
                              f"`{spec['type']}`; this module answers "
                              f"{NOUL} and {CHOICE}")
     started = time.time()
+    hit = False
     try:
-        answers, model, why = _answer(state, questions, env, timeout)
+        answers, model, why, hit = _answer(state, questions, env, timeout,
+                                           cache, cwd)
     except Exception as e:  # noqa: BLE001 -- the boundary; the promise is here
         why = (f"the call raised where nothing is meant to "
                f"({e.__class__.__name__}), so nothing was read")
@@ -415,18 +585,25 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
+           "endpoint": endpoint_word(env),
            "answered": model, "latency": round(latency, 3),
+           # THE STATE'S HASH AND NOT THE STATE. The label carries no state on
+           # purpose -- an issue body in a scratch log is a copy nobody swept --
+           # and `report` needs only to tell one state from another to count
+           # calls a state.
+           "state_hash": digest(state), "cached": hit,
            "answers": {qid: {"branch": a.word, "raw": a.raw, "why": a.why}
                        for qid, a in answers.items()}}
     if why:
         row["why"] = why
     return Reading(answers, model, latency,
                    log_call(row, env, cwd) if log else "not logged here: the "
-                   "row is `judge`'s, one per reading")
+                   "row is `judge`'s, one per reading", hit)
 
 
-def _answer(state, questions, env, timeout):
-    """(the answers, the model that answered, why the whole call failed or "").
+def _answer(state, questions, env, timeout, cache=True, cwd=None):
+    """(the answers, the model that answered, why the whole call failed or "",
+    whether a stored answer was replayed).
     Every path here is one `ask` names; `ask` owns the ones it does not."""
     # THE BUDGET IS READ FIRST, before the key and before the endpoint: an
     # oversize state is the caller's own bug and needs neither to be known.
@@ -435,19 +612,39 @@ def _answer(state, questions, env, timeout):
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
+    # THE STORE IS READ BEFORE THE KEY AND BEFORE THE ENDPOINT. A hit is an
+    # answer this state, this wording and this model already gave, so a reader
+    # with no key at all still gets it -- and a cut moved since costs nothing,
+    # because the raw probabilities are what was stored and `branch` runs here.
+    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None
+    if stored is not None:
+        return read_answers(stored, questions) + (True,)
     key, why = read_key(env)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     url, why = endpoint(env)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     out, why = post(request_body(state, questions), key, url, timeout)
     if why:
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
     if not isinstance(out, dict):
         why = "the response is not an object"
-        return unknown_all(questions, why), "", why
+        return unknown_all(questions, why), "", why, False
+    answers, model, why = read_answers(out, questions)
+    # ONLY AN ANSWER FROM THE PINNED MODEL IS STORED. One from another version
+    # is `unknown` here and would be `unknown` on every replay, so storing it
+    # would cache a failure.
+    if cache and not why:
+        cache_write(cache_key(state, questions), out, env, cwd)
+    return answers, model, why, False
+
+
+def read_answers(out, questions):
+    """(the answers, the model that answered, why) for one decoded response,
+    from the endpoint or from the store. ONE READER, so a replayed answer takes
+    exactly the branches a fresh one takes."""
     if out.get("model") != MODEL:
         model = str(out.get("model"))
         why = (f"`{model}` answered where `{MODEL}` is pinned; a band "
@@ -470,8 +667,8 @@ def _answer(state, questions, env, timeout):
 # back with the tier its entry declares and what that tier does with it. No
 # script writes a question inline, and `campaign-jev-test.py` refuses one that
 # does.
-REGISTRY = Path(__file__).resolve().parent / "jev" / "readings.json"
-CORPUS = Path(__file__).resolve().parent / "jev" / "corpus"
+REGISTRY = HERE / "jev" / "readings.json"
+CORPUS = HERE / "jev" / "corpus"
 # THE THREE TIERS, in the order they are earned. A reading enters at `shadow`,
 # where it costs the reader nothing and only the log grows; it moves up by a
 # DECISION its entry cites, never by a script.
@@ -527,6 +724,33 @@ NEVER_ACTED = ("claim", "release", "merge", "close", "launch", "retire")
 NEVER_IN_AN_ENTRY = ("command", "run", "gh", "shell")
 DECISION_KIND = "DECISION"
 BLOCKED_SUBJECT = "blocked"
+
+
+def check_edges(reg):
+    """Raise on the first entry whose two edges cross, naming which.
+
+    READ AT LOAD, beside the bounds on an act, because a crossed pair is not a
+    cut anybody measured: with `yes_over` at or under `no_under` the band has
+    no middle and `uncertain` can never be answered, and with `certain_over` at
+    or under `floor` the same. Nothing refused it before -- the suite asserted
+    that both edges are PRESENT and never that they are in order -- and every
+    edge here has now been moved twice by a measurement (pr#474 REVIEW note 5).
+
+    A reading declaring NEITHER edge is untouched: that is the `shadow` shape,
+    and the suite's "a reading with no thresholds is at shadow" case owns it."""
+    for name, entry in sorted(reg.items()):
+        cuts = entry.get("thresholds") or {}
+        for lower, upper in (("no_under", "yes_over"), ("floor", "certain_over")):
+            lo, hi = cuts.get(lower), cuts.get(upper)
+            if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+                continue
+            if hi <= lo:
+                raise ValueError(
+                    f"campaign-jev: `{name}`'s `{upper}` is {hi} and its "
+                    f"`{lower}` is {lo}; the upper edge of a band sits ABOVE "
+                    f"the lower one, or the band has no middle and "
+                    f"`{UNCERTAIN}` can never be answered")
+    return reg
 
 
 def check_act_bounds(reg):
@@ -595,7 +819,8 @@ def load_registry(path=None):
     committed file, so an unreadable one is a broken checkout and not a model
     that failed to answer."""
     path = Path(path) if path else REGISTRY
-    return check_act_bounds(json.loads(path.read_text(encoding="utf-8")))
+    return check_edges(
+        check_act_bounds(json.loads(path.read_text(encoding="utf-8"))))
 
 
 def wording(entry):
@@ -609,11 +834,23 @@ def wording(entry):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-def question_of(entry):
+# WHERE THE ITEM'S NAME GOES in a question asked per item. The id never reaches
+# the model, so a fan-out whose instructions did not name the item would ask one
+# question n times and get one answer n times.
+ITEM_MARK = "{item}"
+
+
+def question_of(entry, item=None):
     """The spec `ask` and `branch` read: the question as sent, plus the cuts,
-    which are this tree's reading of the answer and are never sent."""
+    which are this tree's reading of the answer and are never sent.
+
+    `item` is the key of a reading asked per item, written into the instructions
+    where `{item}` stands -- by replacement and not by `format`, so a question
+    holding a brace of its own is not a formatting error."""
     spec = dict(entry["question"])
     spec.update(entry.get("thresholds") or {})
+    if item is not None:
+        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))
     return spec
 
 
@@ -713,8 +950,18 @@ def does(entry, word, raw):
                          f"{', '.join(TIERS)}")
     if word == UNKNOWN or tier == SHADOW:
         return NOTHING
+    # A READING ASKED PER ITEM HAS NO WORD HERE, and what its answers add up to
+    # is its entry's `combine`, which is the reader's code. So this asks nothing
+    # of it beyond `show`: there is no single value to hold against an act cut.
+    if word is None:
+        return SHOW if tier == ADVISE else NOTHING
     if tier == ADVISE:
         return SHOW
+    # AN `uncertain` NEVER ACTS. It is an answer that landed between the two
+    # edges, so the word it would act on is the one the band says is not
+    # earned; at `advise` it is shown, and above that it does nothing.
+    if word == UNCERTAIN:
+        return NOTHING
     act = entry.get("act") or {}
     value = confidence(entry, raw)
     if value is None:
@@ -727,7 +974,7 @@ def does(entry, word, raw):
 
 
 def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
-          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True):
+          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True, cache=True):
     """One group, one state, ONE call: a `Verdict` per reading of the group.
 
     `state` carries exactly the fields the group's entries name, and a MISSING
@@ -739,12 +986,23 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     `settled` is what CODE decided -- the prefilter's word -- as
     {reading: word}. Those readings are never asked, and their rows carry the
     word and the model that never saw them, so the log counts what code saved.
+    For a reading asked PER ITEM the word may instead be a {item: word} dict,
+    and only the items it names are settled: a prefilter that clears six of a
+    review's eight findings leaves two to ask, in the same one call.
+
+    A READING WHOSE `question.per` NAMES A STATE FIELD IS ASKED ONCE PER KEY OF
+    THAT FIELD, all in this same call, under the question ids `<reading>#<key>`.
+    Its `Verdict` carries {key: raw} and NO word: what those answers add up to
+    is the entry's `combine`, which is code's and the reader's, never this
+    module's -- so `does` asks nothing of the reader for it either.
 
     `key` is the join key AS FIELDS -- `repo`, `issue`, and `comment` or
     `pull_request` where there is one -- because every join is "the later fact
     on that number" and a number inside a label is not a field anything can
     read. `flag` is what the reader computed from the answers,
-    {"code": ..., "moved_by": ...}: the flag and which answer moved it.
+    {"code": ..., "moved_by": ...}: the flag and which answer moved it. It may
+    be a CALLABLE `(reading, raw) -> flag`, because a reader cannot compute a
+    flag from answers it has not got back yet.
 
     ONE LOG ROW PER READING, so a row is a case-to-be on its own: the call id
     ties the rows of one call back together."""
@@ -773,10 +1031,36 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         if name not in entries:
             raise ValueError(f"campaign-jev: `{name}` is settled but is no "
                              f"reading of group `{group}`")
-    asked = {n: question_of(e) for n, e in entries.items() if n not in settled}
+    asked, fanned = {}, {}
+    for name, entry in entries.items():
+        per = (entry.get("question") or {}).get("per")
+        given = settled.get(name)
+        if not per:
+            if name not in settled:
+                asked[name] = question_of(entry)
+            continue
+        items = state.get(per)
+        if not isinstance(items, dict):
+            raise ValueError(
+                f"campaign-jev: `{name}` is asked per `{per}`, so the state's "
+                f"`{per}` must be an object of one item per question; it is a "
+                f"{type(items).__name__}")
+        if given is not None and not isinstance(given, dict):
+            continue                     # one word settles the whole reading
+        if ITEM_MARK not in entry["question"]["instructions"]:
+            raise ValueError(
+                f"campaign-jev: `{name}` is asked per `{per}` through `judge`, "
+                f"so its instructions must name the item with `{ITEM_MARK}`; "
+                f"the question id never reaches the model, and without it the "
+                f"same question would be asked once per item")
+        fanned[name] = per
+        cleared = given or {}
+        for item in items:
+            if item not in cleared:
+                asked[f"{name}#{item}"] = question_of(entry, item)
     if asked:
         reading = ask(reader or "campaign-jev.judge", read, state, asked,
-                      env=env, cwd=cwd, timeout=timeout, log=False)
+                      env=env, cwd=cwd, timeout=timeout, log=False, cache=cache)
     else:
         reading = Reading({}, "", 0.0, "")
     call = uuid.uuid4().hex[:12]
@@ -784,21 +1068,38 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         timespec="seconds")
     verdicts, notes = {}, []
     for name, entry in sorted(entries.items()):
-        if name in settled:
+        if name in fanned:
+            # ONE VERDICT PER READING STILL, carrying the per-item answers and
+            # no word: combining them is the entry's `combine`, which code does.
+            raw, whys = {}, []
+            for item in state[fanned[name]]:
+                answer = reading.answers.get(f"{name}#{item}")
+                if answer is None:
+                    continue
+                raw[item] = answer.raw
+                if answer.why:
+                    whys.append(f"{item}: {answer.why}")
+            word, why = None, "; ".join(whys)
+            verdicts[name] = Verdict(word, raw, why, entry["tier"],
+                                     does(entry, word, raw))
+        elif name in settled:
             word, raw, why = settled[name], None, ""
+            verdicts[name] = Verdict(word, raw, why, entry["tier"], NOTHING)
         else:
             answer = reading.answers[name]
             word, raw, why = answer.word, answer.raw, answer.why
-        verdicts[name] = Verdict(word, raw, why, entry["tier"],
-                                 does(entry, word, raw) if name not in settled
-                                 else NOTHING)
+            verdicts[name] = Verdict(word, raw, why, entry["tier"],
+                                     does(entry, word, raw))
         row = {"at": at, "call": call, "reader": reader or "campaign-jev.judge",
                "read": read, "subject": read, "reading": name,
                "wording": wording(entry), "state": state,
                "settled": settled.get(name), "tier": entry["tier"],
                "does": verdicts[name].does, "asked": MODEL,
                "answered": reading.model, "latency": round(reading.latency, 3),
-               "branch": word, "raw": raw, "why": why, "flag": flag}
+               "state_hash": digest(state), "cached": reading.cached,
+               "endpoint": endpoint_word(env),
+               "branch": word, "raw": raw, "why": why,
+               "flag": flag(name, raw) if callable(flag) else flag}
         row.update({k: v for k, v in (key or {}).items() if v is not None})
         notes.append(log_call(row, env, cwd) if log else "not logged")
     logged = (notes[0] if len(set(notes)) == 1 and notes
@@ -868,8 +1169,105 @@ def join_issue_kind_label(row, issue):
                      f"{row.get('issue')}", ""
 
 
+def load_sibling(name):
+    """A sibling script as a module, by path: these are scripts, not a package.
+    Loaded WHERE IT IS USED and never at import, because the sibling loads this
+    module the same way -- at the point of use -- and two module-level imports
+    of each other would not resolve."""
+    key = name.replace("-", "_").replace(".py", "")
+    spec = importlib.util.spec_from_loader(
+        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def fetch_thread(repo, number, timeout=30):
+    """One pull request's whole thread, oldest first, and its state -- or None.
+
+    IT ASKS `check-merge-review.py`, which owns the thread read: both channels,
+    each paginated in full, the id and the timestamp per row. Reading
+    `issues/<n>/comments` here instead was a SECOND reader of that rule and it
+    had already drifted -- it missed every REVIEW posted with
+    `gh pr review --comment -b`, so a finding that a later review-channel
+    REVIEW raised again was labelled `disposed` into the corpus at the merge
+    (pr#474 REVIEW issuecomment-5718228578).
+
+    THE ONE FETCH for a pull request, as `fetch_issue` is for an issue, so an
+    offline suite stubs one function per subject."""
+    try:
+        reader = load_sibling("check-merge-review.py")
+        found, why = reader.bodies_of(repo, number)
+        if why or found is None:
+            return None
+        head = subprocess.run(
+            ["gh", "pr", "view", str(number), "-R", repo, "--json", "state"],
+            capture_output=True, text=True, timeout=timeout)
+    except Exception:  # noqa: BLE001 -- a thread that would not read is None
+        return None
+    if head.returncode != 0:
+        return None
+    try:
+        state = (json.loads(head.stdout) or {}).get("state") or ""
+    except ValueError:
+        return None
+    return {"comments": [{"where": where, "author": author, "body": body,
+                          "id": cid, "at": at}
+                         for where, author, body, cid, at
+                         in reader.in_time_order(found)],
+            "state": state}
+
+
+def re_raised(finding, body):
+    """Is this finding raised again in that later REVIEW? Its id named as an
+    item, or half its words carried -- rule-check#460 set C's own rule, so the
+    label a case gets here is the label the survey's numbers were measured
+    against."""
+    return overlap(body, finding) >= 0.5
+
+
+def join_thread_refinding(row, thread):
+    """C-report-disposes-finding: did a LATER REVIEW raise the finding again?
+
+    THE TWO HALVES ARE NOT EQUALLY STRONG, as `join_issue_title_kept`'s are not.
+    A finding raised again after this REPORT is a finding the REPORT did not
+    dispose, and that half is strong. A pull request that MERGED with no later
+    REVIEW is the weak half -- nobody looked again -- and it is what labels the
+    disposed class, which is why it waits for the merge rather than reading an
+    open thread as agreement."""
+    if thread is None:
+        return None, "", "the thread did not read"
+    findings = (row.get("state") or {}).get("findings") or {}
+    if not findings:
+        return None, "", "the row carries no finding to label"
+    at = row.get("at") or ""
+    later = [c.get("body") or "" for c in thread.get("comments") or []
+             if (c.get("at") or "") > at
+             and (c.get("body") or "").lstrip().startswith("REVIEW ")]
+    if not later:
+        if str(thread.get("state", "")).upper() != "MERGED":
+            return None, "", ("no REVIEW after this REPORT yet, and the pull "
+                              "request has not merged")
+        return ({k: "disposed" for k in findings},
+                f"{row.get('repo')} pr#{row.get('pull_request')} merged with no "
+                f"REVIEW after this REPORT", "")
+    body = "\n".join(later)
+    truth = {k: ("undisposed" if re_raised(text, body) else "disposed")
+             for k, text in findings.items()}
+    again = sorted(k for k, v in truth.items() if v == "undisposed")
+    return (truth,
+            f"{len(later)} REVIEW(s) after this REPORT on "
+            f"{row.get('repo')} pr#{row.get('pull_request')}; "
+            + (f"raised again: {', '.join(again)}" if again
+               else "none of these findings raised again"), "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
-         "issue-kind-label": join_issue_kind_label}
+         "issue-kind-label": join_issue_kind_label,
+         "thread-refinding": join_thread_refinding}
+# WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
+# join key as FIELDS, so the subject is the field it names and never a guess.
+SUBJECTS = {"issue": "fetch", "pull_request": "fetch_thread"}
 
 
 # ------------------------------------------------------------------ the corpus
@@ -916,24 +1314,36 @@ def read_log(env=None, cwd=None):
 
 
 def joinable(rows, reg):
-    """The rows a join could label: one reading's, with the join key as fields
-    and an answer the reading actually made. A row whose reading left the
-    registry is counted apart -- it is not lost, it is unjoinable."""
-    out, stray = [], []
+    """(the rows a join could label, the rows of no joinable reading, the rows
+    the real endpoint did not answer).
+
+    A ROW THE REAL ENDPOINT DID NOT ANSWER IS NEVER JOINED. A suite's stub
+    answers whatever its case needs, so a case built from one would be evidence
+    the tracker never produced; and a row written before the `endpoint` field
+    existed cannot say which it was, so it is refused the same way rather than
+    guessed at (DECISION 5716626608). Both are COUNTED and named, never dropped:
+    they are not waiting for anything, because nothing can ever label them.
+
+    A row whose reading left the registry is counted apart too -- it is not
+    lost, it is unjoinable."""
+    out, stray, unreal = [], [], []
     for row in rows:
+        if row.get("endpoint") != REAL:
+            unreal.append(row)
+            continue
         entry = reg.get(row.get("reading"))
         if entry is None or entry.get("join") not in JOINS:
             stray.append(row)
         else:
             out.append(row)
-    return out, stray
+    return out, stray, unreal
 
 
 def cmd_corpus_join(args):
     """Label what the log holds, and count what could not be labelled yet."""
     reg = load_registry()
     rows, how, torn = read_log()
-    rows, stray = joinable(rows, reg)
+    rows, stray, unreal = joinable(rows, reg)
     known = {r: {c.get("source", {}).get("ref") for c in read_corpus(r)}
              for r in reg}
     fetched, added, waiting = {}, 0, []
@@ -942,14 +1352,18 @@ def cmd_corpus_join(args):
         ref = f"{row.get('call')}:{name}"
         if ref in known.get(name, set()):
             continue
-        entry, repo, number = reg[name], row.get("repo"), row.get("issue")
-        if not repo or not number:
-            waiting.append((row, "the row carries no repo and issue fields"))
+        entry, repo = reg[name], row.get("repo")
+        subject = next((s for s in SUBJECTS if row.get(s)), None)
+        if not repo or subject is None:
+            waiting.append((row, f"the row carries no repo and "
+                                 f"{' or '.join(SUBJECTS)} field"))
             continue
-        if (repo, number) not in fetched:
-            fetched[(repo, number)] = args.fetch(repo, number)
-        truth, evidence, why = JOINS[entry["join"]](row,
-                                                    fetched[(repo, number)])
+        number = row[subject]
+        if (subject, repo, number) not in fetched:
+            fetched[(subject, repo, number)] = getattr(
+                args, SUBJECTS[subject])(repo, number)
+        truth, evidence, why = JOINS[entry["join"]](
+            row, fetched[(subject, repo, number)])
         if truth is None:
             waiting.append((row, why))
             continue
@@ -978,7 +1392,7 @@ def cmd_corpus_join(args):
         write_corpus(name, cases)
         known.setdefault(name, set()).add(ref)
         added += 1
-    print(f"read {len(rows) + len(stray)} row(s) from {how}"
+    print(f"read {len(rows) + len(stray) + len(unreal)} row(s) from {how}"
           + (f", {torn} unparsed" if torn else ""))
     print(f"  {added} case(s) written")
     print(f"  {len(waiting)} row(s) not labelled yet, kept in the log")
@@ -986,6 +1400,15 @@ def cmd_corpus_join(args):
         print(f"    {row.get('call')}:{row.get('reading')}  {why}")
     if stray:
         print(f"  {len(stray)} row(s) of no registered reading with a join")
+    if unreal:
+        words = sorted({str(r.get("endpoint")) for r in unreal})
+        print(f"  {len(unreal)} row(s) REFUSED by the join: `endpoint` is "
+              f"{', '.join(words)} and not `{REAL}`, so no later fact of this "
+              f"tracker's can label them")
+        for row in unreal[:10]:
+            print(f"    {row.get('call') or '-'}:"
+                  f"{row.get('reading') or row.get('reader')}  "
+                  f"endpoint {row.get('endpoint')!r}")
     return 0
 
 
@@ -1013,6 +1436,34 @@ def baseline_word(entry, state):
             text, as_text(no)) else "no"
     scored = [(overlap(text, str(v)), k) for k, v in crit.items()]
     return max(scored)[1] if scored else UNKNOWN
+
+
+def settled_of(case):
+    """The word CODE reached for this case, or None. THE ONE READER of the two
+    spellings the corpus carries: `settled` at the top level, which the survey
+    fit writes, and `source.settled`, which `corpus join` writes off the log
+    row. Two readers of this drifted once already -- `report` counted only the
+    join's, so every case the survey's prefilter had cleared read as one Jev
+    answered."""
+    if case.get("settled") is not None:
+        return case["settled"]
+    return (case.get("source") or {}).get("settled")
+
+
+def scored(case):
+    """May the agreement share count this case? THE ONE READER, so the
+    disagreement list and the share cannot disagree about which cases they are
+    over.
+
+    Three ways a case is not scorable, and each is a real one: CODE settled the
+    whole reading, so the model never saw it; nothing has been seen; or the run
+    recorded no WORD, which is every case of a reading asked PER ITEM -- what
+    its per-item answers add up to is the entry's `combine`, and scoring a
+    missing word against a truth that is an object would count every one of
+    them wrong."""
+    seen = last_seen(case)
+    return (not isinstance(settled_of(case), str) and seen is not None
+            and seen.get("word") is not None and case.get("truth") is not None)
 
 
 def last_seen(case):
@@ -1051,7 +1502,7 @@ def evidence_row(entry, cases):
 def agreement(entry, cases):
     """(Jev's share of cases whose last `seen` word is the truth, the token
     baseline's share over the same cases), or (None, None) with nothing seen."""
-    judged = [c for c in cases if last_seen(c) and c.get("truth") is not None]
+    judged = [c for c in cases if scored(c)]
     if not judged:
         return None, None
     jev = sum(1 for c in judged if last_seen(c).get("word") == c["truth"])
@@ -1093,7 +1544,7 @@ def waiting_facts(reg=None):
     The corpus grows only if somebody is told it has stopped growing."""
     reg = load_registry() if reg is None else reg
     rows, _how, _torn = read_log()
-    rows, _stray = joinable(rows, reg)
+    rows, _stray, unreal = joinable(rows, reg)
     known = {f"{c.get('source', {}).get('ref')}"
              for r in reg for c in read_corpus(r)}
     unjoined = [r for r in rows
@@ -1113,7 +1564,63 @@ def waiting_line(reg=None):
             + (f" (oldest {oldest})" if oldest else "")
             + f", {unlabelled} case(s) unlabelled, "
               f"{len(short)} reading(s) short of the evidence row"
-            + (f" ({', '.join(sorted(short))})" if short else ""))
+            # A ROW THE JOIN REFUSES IS NOT WAITING. Nothing can ever label
+            # it, so counting it as waiting would ask a reader to go and fix a
+            # number that cannot move; it is printed apart, with its count.
+            + (f" ({', '.join(sorted(short))})" if short else "")
+            + (f"; {len(unreal)} row(s) never joinable, no `{REAL}` endpoint"
+               if unreal else ""))
+
+
+def spend_lines(env=None, cwd=None):
+    """CALLS A STATE, per reading: the one number that says whether a reader is
+    asking the same state over and over (DECISION 5716060001). It is the ratio
+    the owner set at 1/5 to 1/20, so it is PRINTED rather than asked for.
+
+    A CACHE HIT IS NOT A CALL. It is logged so it is visible, and counted apart:
+    the ratio is over the calls that were actually sent, since that is what the
+    endpoint charges for. A row whose reading asked nothing -- a `skipped` row,
+    or one code settled -- is neither.
+
+    A row is grouped by the reading it names, and an `ask` row names none, so
+    those are grouped by their READER and said to be. Rows with no state to
+    group by at all -- every row written before the hash was logged -- are
+    counted and named rather than silently left out of the denominator."""
+    rows, how, torn = read_log(env=env, cwd=cwd)
+    spent, hits, states, blind = {}, {}, {}, 0
+    stubbed = 0
+    for row in rows:
+        if row.get("skipped") is not None or row.get("settled") is not None:
+            continue
+        # A STUB'S CALL COST NOTHING, so it is not in the ratio. A row from
+        # before the field existed is counted, since the shared log is where
+        # the real ones were and a stub could not write there anyway.
+        if row.get("endpoint") == STUB:
+            stubbed += 1
+            continue
+        who = row.get("reading") or f"(reader) {row.get('reader') or '?'}"
+        key = row.get("state_hash")
+        if key is None and isinstance(row.get("state"), dict):
+            key = digest(row["state"])
+        if key is None:
+            blind += 1
+            continue
+        if row.get("cached"):
+            hits[who] = hits.get(who, 0) + 1
+            continue
+        spent[who] = spent.get(who, 0) + 1
+        states.setdefault(who, set()).add(key)
+    out = [f"calls a state, over {len(rows)} row(s) of {how}"
+           + (f", {torn} unparsed" if torn else "")
+           + (f", {blind} with no state to group by" if blind else "")
+           + (f", {stubbed} from a stubbed endpoint" if stubbed else "")]
+    for who in sorted(set(spent) | set(hits)):
+        sent, distinct = spent.get(who, 0), len(states.get(who, ()))
+        out.append(f"  {who:<28} {sent} sent over {distinct} state(s)"
+                   + (f", {sent / distinct:.1f} a state" if distinct else "")
+                   + (f"; {hits[who]} replayed from the store" if who in hits
+                      else ""))
+    return out
 
 
 def steady_waiting_line(reg=None, now=None):
@@ -1137,6 +1644,8 @@ def cmd_report(args):
     print(steady_waiting_line(reg) if args.steady else waiting_line(reg))
     if args.waiting:
         return 0
+    for line in spend_lines():
+        print(line)
     names = [args.reading] if args.reading else sorted(reg)
     for name in names:
         entry = reg.get(name)
@@ -1155,8 +1664,11 @@ def cmd_report(args):
             froms[src] = froms.get(src, 0) + 1
         print("  by role: " + ", ".join(f"{k} {v}" for k, v in sorted(roles.items())))
         print("  by label: " + ", ".join(f"{k} {v}" for k, v in sorted(froms.items())))
-        bad = [c["id"] for c in cases if last_seen(c)
-               and c.get("truth") is not None
+        # A CASE CODE SETTLED IS NEVER A DISAGREEMENT. The model was not asked,
+        # so the `seen` rows beside it are a record of what it answered before
+        # the prefilter existed, and counting them against the truth would
+        # charge Jev for a state that is no longer sent (DECISION 5715993782).
+        bad = [c["id"] for c in cases if scored(c)
                and last_seen(c).get("word") != c["truth"]]
         print(f"  disagreement: {len(bad)}" + (f"  {', '.join(bad)}" if bad else ""))
         drifted, unplaced = drift_line(entry, cases)
@@ -1165,13 +1677,18 @@ def cmd_report(args):
             print(f"  held to no band ({len(unplaced)}): "
                   + ", ".join(unplaced[:6])
                   + (" ..." if len(unplaced) > 6 else ""))
-        settled = sum(1 for c in cases
-                      if (c.get("source") or {}).get("settled") is not None)
+        # WHOLLY AND PARTLY SETTLED ARE COUNTED APART. For a reading asked per
+        # item the prefilter's word is an OBJECT -- some findings cleared, the
+        # rest asked -- and counting one of those as a case code settled read
+        # this reading as 100% code's when the model answered most of it.
+        settled = sum(1 for c in cases if isinstance(settled_of(c), str))
+        part = sum(1 for c in cases if isinstance(settled_of(c), dict))
         escalated = sum(1 for c in cases if last_seen(c)
                         and last_seen(c).get("word") == UNKNOWN)
         n = len(cases) or 1
         print(f"  code settled {settled}/{len(cases)} ({settled / n:.0%}), "
-              f"Jev escalated {escalated}/{len(cases)} ({escalated / n:.0%})")
+              + (f"{part} settled per item, " if part else "")
+              + f"Jev escalated {escalated}/{len(cases)} ({escalated / n:.0%})")
         jev, base = agreement(entry, cases)
         print("  agreement: "
               + ("nothing seen yet" if jev is None
@@ -1231,8 +1748,11 @@ def relive(name, entry, cases, env=None, root=None):
         timespec="seconds")
     q = {name: question_of(entry)}
     for c in cases:
+        # THE STORE IS OFF HERE. A band is what the same state answers across
+        # runs, so a run that replayed a stored answer would measure the store
+        # and report a drift of zero (DECISION 5716060001).
         r = ask("campaign-jev.py report --live", c["id"], c.get("state") or {},
-                q, env=env, log=False)
+                q, env=env, log=False, cache=False)
         a = r.answers[name]
         c.setdefault("seen", []).append(
             {"model": r.model, "wording": wording(entry), "at": at,
@@ -1301,7 +1821,8 @@ def main(argv):
     p.set_defaults(run=cmd_report)
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])
-    p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue)
+    p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
+                   fetch_thread=fetch_thread)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

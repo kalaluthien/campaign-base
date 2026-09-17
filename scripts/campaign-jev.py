@@ -122,6 +122,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -193,9 +194,10 @@ CHOICE_EDGES = ("floor", "certain_over")
 # otherwise, so a caller prints a reason exactly where there is one.
 Answer = namedtuple("Answer", "word raw why")
 # One call: the answers by question id, the model that answered (empty when
-# none did), the latency in seconds, and the sentence about the log line.
-Reading = namedtuple("Reading", "answers model latency logged cached",
-                     defaults=(False,))
+# none did), the latency in seconds, the sentence about the log line, whether a
+# stored answer was replayed, and which endpoint answered it.
+Reading = namedtuple("Reading", "answers model latency logged cached endpoint",
+                     defaults=(False, "none"))
 
 
 def read_key(env=None):
@@ -348,16 +350,40 @@ def base_root(cwd=None):
 # 127.0.0.1 server or a closed port. The join reads it: a stub's answer replayed
 # as a real one would be a case the tracker never produced (DECISION
 # 5716626608).
-# A THIRD WORD, `none`, FOR A ROW NO CALL WAS MADE FOR. A `skip` row says the
-# reading asked NOTHING -- the input would not read, the registry would not
-# load -- so no endpoint answered it and claiming the real one did would be a
-# row the join could take. It is refused with the stub's, and the join rule is
-# unchanged: only a row a real endpoint answered.
+# A THIRD WORD, `none`, FOR A ROW NO CALL WAS ANSWERED FOR: a `skip`, a state
+# over the budget, no key, an endpoint that did not answer.
+#
+# THE WORD IS A FACT ABOUT THE CALL AND NOT ABOUT THE ENVIRONMENT. It was
+# `stub if CAMPAIGN_JEV_URL is set else real`, which says `real` for every run
+# that merely FORGOT the variable -- a fixture's `gh` shim, a suite's control
+# call with no key, a reader whose endpoint timed out. Each of those wrote
+# `real` on a row no real endpoint had answered, and the join takes such a row
+# on the strength of a call nobody made. So the word is decided where the
+# response comes back, and nothing but a response can earn `real`.
 REAL, STUB, NONE_SENT = "real", "stub", "none"
 
+# WHICH KIND OF RUN SPENT THE CALL, in one plain word on every row this module
+# writes. A PRODUCTION call is a reader answering a question it was asked; a
+# MEASURING run -- `report --live`, the suite's `--live` and its `--record` --
+# asks states it has already asked, with the store off, because that is the only
+# way to see how far the same state moves between runs (DECISION 5716060001).
+#
+# THE TWO ARE NEVER AVERAGED. A measuring run asks the same states ON PURPOSE,
+# so counting its calls with production's made "calls a state" a number about
+# nothing. They used not to be logged at all, which is worse: the calls were
+# spent and invisible. Now they are logged, marked, and counted apart.
+PRODUCTION, MEASURING = "production", "measuring"
+RUN_FIELD = "run"
+RUNS = (PRODUCTION, MEASURING)
 
-def endpoint_word(env=None):
-    return STUB if URL_ENV in (os.environ if env is None else env) else REAL
+
+def endpoint_word(url):
+    """Which endpoint answered, given the URL the response CAME BACK FROM --
+    never a plan to reach one: every caller here holds a decoded response by the
+    time it asks. A suite that points `CAMPAIGN_JEV_URL` at the live endpoint
+    itself is reaching the live endpoint, so the URL and not the variable is
+    what is read."""
+    return REAL if url == DEFAULT_URL else STUB
 
 
 def log_path(env=None, cwd=None):
@@ -407,7 +433,7 @@ def skip(reader, label, why, env=None, cwd=None):
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
-           "endpoint": NONE_SENT, "skipped": why}
+           "endpoint": NONE_SENT, RUN_FIELD: PRODUCTION, "skipped": why}
     return log_call(row, os.environ if env is None else env, cwd)
 
 
@@ -422,6 +448,10 @@ def skip(reader, label, why, env=None, cwd=None):
 # response whole. Nothing durable lives there: a store that is gone costs a
 # call and never an answer, so every path here returns rather than raises.
 CACHE_DIR = "jev-cache"
+# THE TWO KEYS OF A STORE FILE. A file that carries neither is an entry written
+# before the endpoint travelled with the answer: it still replays, and its
+# endpoint is `none`.
+STORED_ENDPOINT, STORED_RESPONSE = "endpoint", "response"
 
 
 def digest(obj):
@@ -450,27 +480,41 @@ def cache_path(key, env=None, cwd=None):
 
 
 def cache_read(key, env=None, cwd=None):
-    """The stored response, or None. NEVER RAISES: a store that will not read
-    is a call to make, not a reading to lose."""
+    """(the stored response, which endpoint answered it), or (None, `none`).
+
+    NEVER RAISES: a store that will not read is a call to make, not a reading to
+    lose. THE ENDPOINT TRAVELS WITH THE ANSWER, because a replay is not a call
+    and the row must still say where the answer came from; an entry written
+    before the word was stored answers `none`, which the join refuses, rather
+    than being read as the live endpoint's."""
     path = cache_path(key, env, cwd)
     if path is None:
-        return None
+        return None, NONE_SENT
     try:
         out = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    return out if isinstance(out, dict) else None
+        return None, NONE_SENT
+    if not isinstance(out, dict):
+        return None, NONE_SENT
+    held = out.get(STORED_RESPONSE)
+    if isinstance(held, dict):
+        word = out.get(STORED_ENDPOINT)
+        return held, word if word in (REAL, STUB) else NONE_SENT
+    return out, NONE_SENT
 
 
-def cache_write(key, out, env=None, cwd=None):
-    """Store one decoded response. NEVER RAISES, and says nothing: a store that
-    could not be written costs the next reader a call it would have made."""
+def cache_write(key, out, word, env=None, cwd=None):
+    """Store one decoded response and the endpoint that answered it. NEVER
+    RAISES, and says nothing: a store that could not be written costs the next
+    reader a call it would have made."""
     path = cache_path(key, env, cwd)
     if path is None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(out, sort_keys=True, ensure_ascii=False),
+        path.write_text(json.dumps({STORED_ENDPOINT: word,
+                                    STORED_RESPONSE: out},
+                                   sort_keys=True, ensure_ascii=False),
                         encoding="utf-8")
     except (OSError, TypeError, ValueError):
         return
@@ -536,7 +580,7 @@ def unknown_all(questions, why):
 
 
 def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
-        log=True, cache=True):
+        log=True, cache=True, run=PRODUCTION):
     """One call, one `Reading`: a branch per question, and the log line's fate.
 
     `reader` names who asked -- a script and its subcommand -- and `label` what
@@ -565,7 +609,11 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     at: a run that measures how far the same state moves between runs must send
     every one of them, so `relive` and the suite's `--live` half set it and
     nothing else does. A hit is logged as a hit and is NOT a call: `report`'s
-    calls-a-state ratio is over the calls that were actually sent."""
+    calls-a-state ratio is over the calls that were actually sent.
+
+    `run` SAYS WHICH KIND OF RUN SPENT THE CALL, and it goes on the row so that
+    `report` can count a measuring run apart from production rather than
+    averaging the two."""
     env = os.environ if env is None else env
     for qid, spec in questions.items():
         if spec["type"] not in (NOUL, CHOICE):
@@ -573,10 +621,10 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
                              f"`{spec['type']}`; this module answers "
                              f"{NOUL} and {CHOICE}")
     started = time.time()
-    hit = False
+    hit, answered_by = False, NONE_SENT
     try:
-        answers, model, why, hit = _answer(state, questions, env, timeout,
-                                           cache, cwd)
+        answers, model, why, hit, answered_by = _answer(
+            state, questions, env, timeout, cache, cwd)
     except Exception as e:  # noqa: BLE001 -- the boundary; the promise is here
         why = (f"the call raised where nothing is meant to "
                f"({e.__class__.__name__}), so nothing was read")
@@ -585,7 +633,7 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
-           "endpoint": endpoint_word(env),
+           "endpoint": answered_by, RUN_FIELD: run,
            "answered": model, "latency": round(latency, 3),
            # THE STATE'S HASH AND NOT THE STATE. The label carries no state on
            # purpose -- an issue body in a scratch log is a copy nobody swept --
@@ -598,12 +646,15 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
         row["why"] = why
     return Reading(answers, model, latency,
                    log_call(row, env, cwd) if log else "not logged here: the "
-                   "row is `judge`'s, one per reading", hit)
+                   "row is `judge`'s, one per reading", hit, answered_by)
 
 
 def _answer(state, questions, env, timeout, cache=True, cwd=None):
     """(the answers, the model that answered, why the whole call failed or "",
-    whether a stored answer was replayed).
+    whether a stored answer was replayed, which endpoint answered).
+
+    EVERY PATH THAT SENDS NOTHING ANSWERS `none`, and that is the whole of the
+    endpoint rule: the word is earned by a response and by nothing else.
     Every path here is one `ask` names; `ask` owns the ones it does not."""
     # THE BUDGET IS READ FIRST, before the key and before the endpoint: an
     # oversize state is the caller's own bug and needs neither to be known.
@@ -612,33 +663,35 @@ def _answer(state, questions, env, timeout, cache=True, cwd=None):
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
-        return unknown_all(questions, why), "", why, False
+        return unknown_all(questions, why), "", why, False, NONE_SENT
     # THE STORE IS READ BEFORE THE KEY AND BEFORE THE ENDPOINT. A hit is an
     # answer this state, this wording and this model already gave, so a reader
     # with no key at all still gets it -- and a cut moved since costs nothing,
     # because the raw probabilities are what was stored and `branch` runs here.
-    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None
+    stored, word = (cache_read(cache_key(state, questions), env, cwd) if cache
+                    else (None, NONE_SENT))
     if stored is not None:
-        return read_answers(stored, questions) + (True,)
+        return read_answers(stored, questions) + (True, word)
     key, why = read_key(env)
     if why:
-        return unknown_all(questions, why), "", why, False
+        return unknown_all(questions, why), "", why, False, NONE_SENT
     url, why = endpoint(env)
     if why:
-        return unknown_all(questions, why), "", why, False
+        return unknown_all(questions, why), "", why, False, NONE_SENT
     out, why = post(request_body(state, questions), key, url, timeout)
     if why:
-        return unknown_all(questions, why), "", why, False
+        return unknown_all(questions, why), "", why, False, NONE_SENT
     if not isinstance(out, dict):
         why = "the response is not an object"
-        return unknown_all(questions, why), "", why, False
+        return unknown_all(questions, why), "", why, False, NONE_SENT
+    word = endpoint_word(url)
     answers, model, why = read_answers(out, questions)
     # ONLY AN ANSWER FROM THE PINNED MODEL IS STORED. One from another version
     # is `unknown` here and would be `unknown` on every replay, so storing it
     # would cache a failure.
     if cache and not why:
-        cache_write(cache_key(state, questions), out, env, cwd)
-    return answers, model, why, False
+        cache_write(cache_key(state, questions), out, word, env, cwd)
+    return answers, model, why, False, word
 
 
 def read_answers(out, questions):
@@ -994,7 +1047,8 @@ def does(entry, word, raw):
 
 
 def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
-          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True, cache=True):
+          reg=None, env=None, cwd=None, timeout=TIMEOUT, log=True, cache=True,
+          run=PRODUCTION):
     """One group, one state, ONE call: a `Verdict` per reading of the group.
 
     `state` carries exactly the fields the group's entries name, and a MISSING
@@ -1080,9 +1134,10 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                 asked[f"{name}#{item}"] = question_of(entry, item)
     if asked:
         reading = ask(reader or "campaign-jev.judge", read, state, asked,
-                      env=env, cwd=cwd, timeout=timeout, log=False, cache=cache)
+                      env=env, cwd=cwd, timeout=timeout, log=False, cache=cache,
+                      run=run)
     else:
-        reading = Reading({}, "", 0.0, "")
+        reading = Reading({}, "", 0.0, "", False, NONE_SENT)
     call = uuid.uuid4().hex[:12]
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="seconds")
@@ -1117,7 +1172,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                "does": verdicts[name].does, "asked": MODEL,
                "answered": reading.model, "latency": round(reading.latency, 3),
                "state_hash": digest(state), "cached": reading.cached,
-               "endpoint": endpoint_word(env),
+               "endpoint": reading.endpoint, RUN_FIELD: run,
                "branch": word, "raw": raw, "why": why,
                "flag": flag(name, raw) if callable(flag) else flag}
         row.update({k: v for k, v in (key or {}).items() if v is not None})
@@ -1366,7 +1421,7 @@ def cmd_corpus_join(args):
     rows, stray, unreal = joinable(rows, reg)
     known = {r: {c.get("source", {}).get("ref") for c in read_corpus(r)}
              for r in reg}
-    fetched, added, waiting = {}, 0, []
+    fetched, added, waiting, unfetched = {}, 0, [], {}
     for row in rows:
         name = row["reading"]
         ref = f"{row.get('call')}:{name}"
@@ -1382,6 +1437,17 @@ def cmd_corpus_join(args):
         if (subject, repo, number) not in fetched:
             fetched[(subject, repo, number)] = getattr(
                 args, SUBJECTS[subject])(repo, number)
+        # A SUBJECT THAT WILL NOT READ AT ALL IS SKIPPED, COUNTED AND NAMED,
+        # and it does not fail the run. It is not "not labelled yet" either:
+        # the shared log holds hundreds of rows whose subject is a suite's
+        # `o/r#274`, a repository that does not exist, and counting those as
+        # waiting asks a reader to go and fix a number that cannot move. Each
+        # fetch is made ONCE per subject, so a repository that is gone costs
+        # one `gh` call however many rows name it.
+        if fetched[(subject, repo, number)] is None:
+            unfetched.setdefault(f"{repo}#{number}", 0)
+            unfetched[f"{repo}#{number}"] += 1
+            continue
         truth, evidence, why = JOINS[entry["join"]](
             row, fetched[(subject, repo, number)])
         if truth is None:
@@ -1418,6 +1484,13 @@ def cmd_corpus_join(args):
     print(f"  {len(waiting)} row(s) not labelled yet, kept in the log")
     for row, why in waiting[:10]:
         print(f"    {row.get('call')}:{row.get('reading')}  {why}")
+    if unfetched:
+        print(f"  {sum(unfetched.values())} row(s) SKIPPED by the join over "
+              f"{len(unfetched)} subject(s) that would not read; nothing on "
+              f"this tracker can ever label them, and the run is unaffected")
+        for name, count in sorted(unfetched.items(),
+                                  key=lambda kv: (-kv[1], kv[0]))[:10]:
+            print(f"    {name}  {count} row(s)")
     if stray:
         print(f"  {len(stray)} row(s) of no registered reading with a join")
     if unreal:
@@ -1561,23 +1634,11 @@ def waiting_line(reg=None):
                if unreal else ""))
 
 
-def spend_lines(env=None, cwd=None):
-    """CALLS A STATE, per reading: the one number that says whether a reader is
-    asking the same state over and over (DECISION 5716060001). It is the ratio
-    the owner set at 1/5 to 1/20, so it is PRINTED rather than asked for.
-
-    A CACHE HIT IS NOT A CALL. It is logged so it is visible, and counted apart:
-    the ratio is over the calls that were actually sent, since that is what the
-    endpoint charges for. A row whose reading asked nothing -- a `skipped` row,
-    or one code settled -- is neither.
-
-    A row is grouped by the reading it names, and an `ask` row names none, so
-    those are grouped by their READER and said to be. Rows with no state to
-    group by at all -- every row written before the hash was logged -- are
-    counted and named rather than silently left out of the denominator."""
-    rows, how, torn = read_log(env=env, cwd=cwd)
-    spent, hits, states, blind = {}, {}, {}, 0
-    stubbed = 0
+def spend_tally(rows):
+    """(sent by who, distinct states by who, hits by who, blind, stubbed) for
+    one set of rows. THE ONE COUNTER, so the all-time window and the window
+    since the run field cannot count differently."""
+    spent, hits, states, blind, stubbed = {}, {}, {}, 0, 0
     for row in rows:
         if row.get("skipped") is not None or row.get("settled") is not None:
             continue
@@ -1599,16 +1660,58 @@ def spend_lines(env=None, cwd=None):
             continue
         spent[who] = spent.get(who, 0) + 1
         states.setdefault(who, set()).add(key)
+    return spent, states, hits, blind, stubbed
+
+
+def spend_lines(env=None, cwd=None):
+    """CALLS A STATE, per reading: the one number that says whether a reader is
+    asking the same state over and over (DECISION 5716060001). It is the ratio
+    the owner set at 1/5 to 1/20, so it is PRINTED rather than asked for.
+
+    A CACHE HIT IS NOT A CALL. It is logged so it is visible, and counted apart:
+    the ratio is over the calls that were actually sent, since that is what the
+    endpoint charges for. A row whose reading asked nothing -- a `skipped` row,
+    or one code settled -- is neither.
+
+    A row is grouped by the reading it names, and an `ask` row names none, so
+    those are grouped by their READER and said to be. Rows with no state to
+    group by at all -- every row written before the hash was logged -- are
+    counted and named rather than silently left out of the denominator.
+
+    THREE WINDOWS, AND THE ALL-TIME ONE IS NEVER HIDDEN. A row cannot be
+    re-marked once written, so the rows from before the `run` field say nothing
+    about which kind of run they came from and the all-time ratio they dominate
+    stands as it is. Beside it, the same count over the rows that DO carry the
+    field, with a MEASURING run and a PRODUCTION call apart: a `--live`,
+    `--record` or `relive` run asks the same states on purpose, so its ratio is
+    a different number about a different thing, and averaging the two would
+    hide whichever moved."""
+    rows, how, torn = read_log(env=env, cwd=cwd)
+    spent, states, hits, blind, stubbed = spend_tally(rows)
     out = [f"calls a state, over {len(rows)} row(s) of {how}"
            + (f", {torn} unparsed" if torn else "")
            + (f", {blind} with no state to group by" if blind else "")
            + (f", {stubbed} from a stubbed endpoint" if stubbed else "")]
-    for who in sorted(set(spent) | set(hits)):
-        sent, distinct = spent.get(who, 0), len(states.get(who, ()))
-        out.append(f"  {who:<28} {sent} sent over {distinct} state(s)"
-                   + (f", {sent / distinct:.1f} a state" if distinct else "")
-                   + (f"; {hits[who]} replayed from the store" if who in hits
-                      else ""))
+
+    def block(head, spent, states, hits):
+        lines = []
+        for who in sorted(set(spent) | set(hits)):
+            sent, distinct = spent.get(who, 0), len(states.get(who, ()))
+            lines.append(f"    {who:<28} {sent} sent over {distinct} state(s)"
+                         + (f", {sent / distinct:.1f} a state" if distinct
+                            else "")
+                         + (f"; {hits[who]} replayed from the store"
+                            if who in hits else ""))
+        return [head] + (lines or ["    nothing"])
+
+    out += block(f"  all time ({len(rows)} row(s))", spent, states, hits)
+    marked = [r for r in rows if r.get(RUN_FIELD) in RUNS]
+    out.append(f"  since the `{RUN_FIELD}` field ({len(marked)} row(s) carry "
+               f"it, of {len(rows)})")
+    for kind in RUNS:
+        part = [r for r in marked if r.get(RUN_FIELD) == kind]
+        sp, st, hi, _b, _s = spend_tally(part)
+        out += block(f"    {kind} ({len(part)} row(s))", sp, st, hi)
     return out
 
 
@@ -1627,7 +1730,7 @@ def cmd_report(args):
             continue
         cases = read_corpus(name)
         if args.live:
-            cases = relive(name, entry, cases)
+            cases = relive(name, entry, cases, whole=args.all)
         print(f"\n{name}  tier {entry['tier']}  group {entry['group']}  "
               f"wording {wording(entry)}  {len(cases)} case(s)")
         roles, froms = {}, {}
@@ -1721,19 +1824,96 @@ def drift_line(entry, cases):
     return (", ".join(out) if out else "none"), unplaced
 
 
-def relive(name, entry, cases, env=None, root=None):
-    """`--live`: re-ask every case and APPEND what came back. Nothing is
+# WHAT A REPEAT RUN ASKS, and it is not every case (DECISION 5716060001: "a
+# repeat run is asked for a sample and for rows in or near the band, not for
+# every case"). Three constants and one seed:
+#
+# NEAR is how close to an edge or to a band's end a recorded value has to sit
+# for its case to be asked EVERY time. Those are the cases a run can actually
+# move a threshold with; a case answering 0.99 against a `confident` band of
+# [0.53, 1.0] has been saying the same thing for five runs and says it again.
+#
+# SAMPLE_SHARE and SAMPLE_FLOOR are what is taken from the rest, SEEDED, so the
+# same cases come back run after run -- a sample redrawn each time would move
+# the band by changing who was asked, which reads exactly like drift.
+NEAR = 0.05
+SAMPLE_SHARE = 0.25
+SAMPLE_FLOOR = 4
+SAMPLE_SEED = "campaign-jev repeat sample"
+
+
+def sample_of(entry, cases):
+    """(the cases a repeat run asks, why each pinned one is pinned). THE ONE
+    READER, because `relive` and the suite's `--live` both ask it and a second
+    copy would sample a different set and then compare the two.
+
+    FOUR KINDS ARE ALWAYS ASKED. A case whose recorded value sits within NEAR
+    of an edge or of a band's end, because that is the case a run can move a
+    threshold with; a case with no recorded value under this wording and model,
+    because nothing is known about it yet; a case whose ROLE is not `case` --
+    the flip and the no-match -- because the live half asserts on each by name
+    and a run that skipped one would assert nothing; and every case of a
+    reading with SAMPLE_FLOOR cases or fewer, since there is nothing to save.
+
+    THE REST IS A SEEDED SAMPLE. It returns the cases in the order given, so a
+    caller prints them in corpus order and not in the order they were drawn."""
+    marks = [v for v in (entry.get("thresholds") or {}).values()
+             if isinstance(v, (int, float))]
+    for band in ((entry.get("bands") or {}).get("declared") or {}).values():
+        marks += [v for v in band if isinstance(v, (int, float))]
+    want, model = wording(entry), (entry.get("bands") or {}).get("model")
+    pinned, rest = {}, []
+    for c in cases:
+        if c.get("role", "case") != "case":
+            pinned[c["id"]] = f"role {c.get('role')}"
+            continue
+        values = [band_value(entry, s.get("raw")) for s in c.get("seen") or []
+                  if s.get("wording") == want and s.get("model") == model]
+        values = [v for v in values if v is not None]
+        if not values:
+            pinned[c["id"]] = "no value recorded under this wording and model"
+            continue
+        close = [m for m in marks if any(abs(v - m) <= NEAR for v in values)]
+        if close:
+            pinned[c["id"]] = (f"within {NEAR} of "
+                               f"{', '.join(format(m, '.2f') for m in sorted(set(close)))}")
+            continue
+        rest.append(c["id"])
+    if len(cases) <= SAMPLE_FLOOR:
+        return list(cases), {c["id"]: "the reading has no more" for c in cases}
+    take = min(len(rest), max(SAMPLE_FLOOR, round(SAMPLE_SHARE * len(rest))))
+    drawn = set(random.Random(SAMPLE_SEED).sample(sorted(rest), take)) if rest \
+        else set()
+    return [c for c in cases if c["id"] in pinned or c["id"] in drawn], pinned
+
+
+def sample_line(entry, cases, asked):
+    """The one sentence a measuring run prints about what it asked, so the
+    sample is read beside the numbers it produced rather than guessed at."""
+    return (f"  asked {len(asked)} of {len(cases)} case(s): every one at or "
+            f"within {NEAR} of an edge or a band's end, every flip and "
+            f"no-match, every one not yet seen under wording "
+            f"{wording(entry)}, and a seeded {SAMPLE_SHARE:.0%} of the rest")
+
+
+def relive(name, entry, cases, env=None, root=None, whole=False):
+    """`--live`: re-ask the repeat sample and APPEND what came back. Nothing is
     replaced -- a band is read from the run history, so a run that overwrote
-    the one before it would erase the evidence of drift."""
+    the one before it would erase the evidence of drift.
+
+    WHICH CASES ARE ASKED IS `sample_of`'s, and `whole` is the way past it."""
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="seconds")
     q = {name: question_of(entry)}
-    for c in cases:
+    asked, _pinned = (list(cases), {}) if whole else sample_of(entry, cases)
+    print(f"  asked {len(asked)} of {len(cases)}" if whole
+          else sample_line(entry, cases, asked))
+    for c in asked:
         # THE STORE IS OFF HERE. A band is what the same state answers across
         # runs, so a run that replayed a stored answer would measure the store
         # and report a drift of zero (DECISION 5716060001).
         r = ask("campaign-jev.py report --live", c["id"], c.get("state") or {},
-                q, env=env, log=False, cache=False)
+                q, env=env, cache=False, run=MEASURING)
         a = r.answers[name]
         c.setdefault("seen", []).append(
             {"model": r.model, "wording": wording(entry), "at": at,
@@ -1793,7 +1973,9 @@ def main(argv):
     p = sub.add_parser("report", help="what is waiting, then each reading")
     p.add_argument("reading", nargs="?")
     p.add_argument("--live", action="store_true",
-                   help="re-ask every case and append what came back")
+                   help="re-ask the repeat sample and append what came back")
+    p.add_argument("--all", action="store_true",
+                   help="with --live, ask every case rather than the sample")
     p.add_argument("--waiting", action="store_true",
                    help="the first line alone, for the heartbeat")
     p.set_defaults(run=cmd_report)

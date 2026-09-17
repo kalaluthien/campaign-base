@@ -724,6 +724,56 @@ def join_reads_the_kind_label(m):
             and got.get("label", {}).get("from") == "join:issue-kind-label"), got
 
 
+def join_skips_a_subject_that_will_not_read(m):
+    """A ROW WHOSE SUBJECT WILL NOT READ IS SKIPPED, COUNTED AND NAMED, and the
+    run carries on: the shared log holds 410 rows naming `o/r#274`, a suite's
+    fixture repository, and calling those "not labelled yet" asks a reader to
+    fix a number that cannot move.
+
+    THE CONTROL IS A ROW OF THE SAME SHAPE WHOSE SUBJECT DOES READ, so what is
+    measured is the fetch and not the row. The fetch is counted too: one call
+    per subject however many rows name it."""
+    asked = []
+    def fetch(repo, number):
+        asked.append((repo, number))
+        return ISSUES.get((repo, number))
+    corpus = ROOT / "corpus-unfetchable"
+    if corpus.exists():
+        for f in corpus.glob("*"):
+            f.unlink()
+    log = ROOT / "unfetchable.log"
+    log.write_text("".join(json.dumps(r) + "\n" for r in [
+        log_row("uuu1", "verb-first", "Cache the weather feed", 8001),
+        log_row("uuu2", "verb-first", "Cache the weather feed", 8001),
+        log_row("uuu3", "verb-first", "Cache the weather feed", 900)]))
+    was, old = m.CORPUS, os.environ.get("CAMPAIGN_JEV_LOG")
+    m.CORPUS = corpus
+    os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            code = m.cmd_corpus_join(types.SimpleNamespace(
+                fetch=fetch, fetch_thread=lambda repo, number: None))
+        ids = sorted(c["id"] for c in m.read_corpus("verb-first"))
+    finally:
+        m.CORPUS = was
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    said = out.getvalue()
+    return (code == 0 and ids == ["verb-first-uuu3"]
+            and "2 row(s) SKIPPED" in said
+            and "kalaluthien/campaign-base#8001  2 row(s)" in said
+            and "0 row(s) not labelled yet" in said
+            and asked.count(("kalaluthien/campaign-base", 8001)) == 1
+            and len(log.read_text().splitlines()) == 3),\
+        (code, ids, asked, said)
+
+
+CASES["a row whose subject will not read is skipped, counted and named"] = join_skips_a_subject_that_will_not_read
+
+
 def join_keeps_what_it_cannot_label(m):
     """A row it cannot label yet STAYS in the log and is counted. A row dropped
     before it is joined is a case nobody will ever have."""
@@ -1420,6 +1470,116 @@ def the_ratio_counts_sent_calls_over_distinct_states(m):
         lines
 
 
+def a_row_says_which_kind_of_run_spent_it(m):
+    """PRODUCTION AND MEASURING, on the row and apart in the ratio. A measuring
+    run asks the same states ON PURPOSE -- the store off, so the noise is
+    measured and not the store -- so counting its calls with production's makes
+    "calls a state" a number about nothing.
+
+    Both writers are exercised: `ask`'s row and `judge`'s, since `judge` writes
+    its own row per reading and a `run` it swallowed would mark every reader's
+    call as production."""
+    read(m)
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5,
+          cache=False, run=m.MEASURING)
+    measuring = json.loads(LOG.read_text().splitlines()[-1])
+    serving()
+    m.judge("issue-shape", STATE, read="a label", env=env(), timeout=5,
+            cache=False, run=m.MEASURING)
+    judged = json.loads(LOG.read_text().splitlines()[-1])
+    serving()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5, cache=False)
+    production = json.loads(LOG.read_text().splitlines()[-1])
+    return (measuring.get("run") == "measuring"
+            and judged.get("run") == "measuring"
+            and production.get("run") == "production"),\
+        (measuring.get("run"), judged.get("run"), production.get("run"))
+
+
+def the_ratio_shows_the_two_runs_apart(m):
+    """OLD ROWS STAY AND CANNOT BE RE-MARKED, so the all-time ratio they
+    dominate is printed as it is and the marked window beside it -- production
+    by itself, measuring by itself. A reader that averaged the two would report
+    a production ratio nobody measured."""
+    LOG.write_text("".join(json.dumps(r) + "\n" for r in [
+        # four calls on one state, from before the field existed
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        {"reading": "verb-first", "state_hash": "aaa", "cached": False},
+        # one production call, one state
+        {"reading": "verb-first", "state_hash": "bbb", "cached": False,
+         "run": "production"},
+        # two measuring calls on one state: the noise run, asking twice
+        {"reading": "verb-first", "state_hash": "ccc", "cached": False,
+         "run": "measuring"},
+        {"reading": "verb-first", "state_hash": "ccc", "cached": False,
+         "run": "measuring"},
+    ]))
+    lines = m.spend_lines(env=env())
+    where = {}
+    head = ""
+    for line in lines:
+        if line.startswith(("  all time", "    production", "    measuring",
+                            "  since the")):
+            head = line.strip().split(" ")[0]
+        elif "verb-first" in line:
+            where.setdefault(head, []).append(line)
+    return (len(where.get("all", [])) == 1
+            and "7 sent over 3 state(s), 2.3 a state" in where["all"][0]
+            and len(where.get("production", [])) == 1
+            and "1 sent over 1 state(s), 1.0 a state" in where["production"][0]
+            and len(where.get("measuring", [])) == 1
+            and "2 sent over 1 state(s), 2.0 a state" in where["measuring"][0]
+            and any("3 row(s) carry it, of 7" in ln for ln in lines)), lines
+
+
+def a_repeat_run_asks_a_sample_and_the_edges(m):
+    """THE RULE, AND WHAT IT KEEPS. A case whose value sits near an edge or a
+    band's end is asked EVERY run, because that is the case a run can move a
+    threshold with; a flip and a no-match are asked every run, because the live
+    half asserts on each by name; a case not yet seen under this wording is
+    asked, because nothing is known about it; and a seeded share of the rest.
+
+    THE SEED IS WHAT MAKES A BAND COMPARABLE between runs, so the same draw is
+    asserted twice rather than only its size."""
+    entry = {"tier": "advise", "group": "g",
+             "question": {"type": "choice", "instructions": "i",
+                          "criteria": {"a": "x", "b": "y", "none": "z"}},
+             "thresholds": {"floor": 0.50, "certain_over": 0.52,
+                            "no_match": "none"},
+             "bands": {"model": MODEL, "wording": "", "measured": "",
+                       "declared": {"confident": [0.53, 1.0],
+                                    "unsure": [0.11, 0.43]}}}
+    def seen(value):
+        return [{"model": MODEL, "wording": m.wording(entry),
+                 "raw": {"type": "choice", "choice": "a", "confidence": value}}]
+    cases = ([{"id": "near-edge", "role": "case", "seen": seen(0.47)},
+              {"id": "near-band-end", "role": "case", "seen": seen(0.55)},
+              # 0.75 sits near no mark, so what pins these two is the ROLE
+              {"id": "a-flip", "role": "flip", "seen": seen(0.75)},
+              {"id": "a-no-match", "role": "no-match", "seen": seen(0.75)},
+              {"id": "unseen", "role": "case", "seen": []}]
+             + [{"id": f"settled-{i:02d}", "role": "case", "seen": seen(0.90)}
+                for i in range(20)])
+    asked, pinned = m.sample_of(entry, cases)
+    ids = [c["id"] for c in asked]
+    again = [c["id"] for c in m.sample_of(entry, cases)[0]]
+    drawn = [i for i in ids if i.startswith("settled-")]
+    return (set(pinned) == {"near-edge", "near-band-end", "a-flip",
+                            "a-no-match", "unseen"}
+            and all(i in ids for i in pinned)
+            and pinned["a-flip"] == "role flip"
+            and pinned["a-no-match"] == "role no-match"
+            and pinned["near-edge"].startswith("within")
+            and len(drawn) == 5 and ids == again
+            and ids == [c["id"] for c in cases if c["id"] in set(ids)]),\
+        (ids, pinned)
+
+
+CASES["a row says which kind of run spent the call"] = a_row_says_which_kind_of_run_spent_it
+CASES["report shows a measuring run and production apart"] = the_ratio_shows_the_two_runs_apart
+CASES["a repeat run asks a seeded sample and every case near an edge"] = a_repeat_run_asks_a_sample_and_the_edges
 CASES["a second identical ask replays and sends nothing"] = a_second_identical_ask_sends_nothing
 CASES["a replayed answer is logged as a hit, not as a call"] = a_hit_is_logged_as_a_hit
 CASES["a changed state misses the store"] = a_changed_state_misses
@@ -1497,18 +1657,63 @@ def a_row_of_no_real_endpoint_is_refused_by_the_join(m):
 
 
 def a_row_says_which_endpoint_answered_it(m):
-    """One plain word, on every row this module writes: `real` or `stub`. It is
-    what the join reads, so a row that did not carry it could be a suite's
-    answer imported as the tracker's own history."""
+    """One plain word, on every row this module writes, and it is a fact about
+    the RESPONSE: `stub` where one came back from a named endpoint, `none`
+    where nothing answered at all, and `real` only for the live one.
+
+    THE DEFECT, AND WHY IT IS NOT A DETAIL: the word was read off the
+    ENVIRONMENT -- `stub` when `CAMPAIGN_JEV_URL` is set, else `real` -- so
+    every run that merely forgot the variable wrote `real`. A fixture's `gh`
+    shim, a control call with no key, a reader whose endpoint timed out: each
+    put a row the join takes into the shared log, on the strength of a call
+    nobody made. The two calls below send nothing at all, and the stub is the
+    control that says the word still moves."""
     read(m)
     stubbed = json.loads(LOG.read_text().splitlines()[-1])
+    # NO URL AND NO KEY: `ask` reaches nothing, and the old rule read the
+    # absent variable as the live endpoint.
     root, log = a_base("endpoint-word")
     m.ask("a suite", "a label", STATE, BOTH, env={"HOME": str(HOME)}, cwd=root,
           timeout=5)
-    real = json.loads(log.read_text().splitlines()[-1])
+    keyless = json.loads(log.read_text().splitlines()[-1])
+    # A CLOSED PORT WITH A KEY: the request is built and nothing answers it.
+    LOG.write_text("")
+    clear_store()
+    m.ask("a suite", "a label", STATE, BOTH, env=env(url=CLOSED), timeout=5)
+    closed = json.loads(LOG.read_text().splitlines()[-1])
     return (stubbed.get("endpoint") == "stub"
-            and real.get("endpoint") == "real"), (stubbed.get("endpoint"),
-                                                  real.get("endpoint"))
+            and keyless.get("endpoint") == "none"
+            and closed.get("endpoint") == "none"
+            and m.endpoint_word(m.DEFAULT_URL) == "real"
+            and m.endpoint_word(URL) == "stub"),\
+        (stubbed.get("endpoint"), keyless.get("endpoint"),
+         closed.get("endpoint"))
+
+
+def a_replay_says_where_the_answer_came_from(m):
+    """A REPLAY IS NOT A CALL, and the row must still say where the answer came
+    from, so the endpoint travels with the response in the store.
+
+    An entry written before it did -- a bare response, which is what the store
+    held until now -- replays and says `none`. Never `real`: the join takes a
+    `real` row, and nothing on disk can say which endpoint filled a file that
+    did not record one."""
+    read(m)
+    first = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    hit = json.loads(LOG.read_text().splitlines()[-1])
+    held = sorted((LOG.parent / "jev-cache").glob("*.json"))
+    for path in held:
+        path.write_text(json.dumps(json.loads(path.read_text())["response"]))
+    second = m.ask("a suite", "a label", STATE, BOTH, env=env(), timeout=5)
+    legacy = json.loads(LOG.read_text().splitlines()[-1])
+    return (len(held) == 1 and first.cached and hit.get("endpoint") == "stub"
+            and second.cached and legacy.get("endpoint") == "none"
+            and second.answers["verb_first"].word == "yes"),\
+        (len(held), first.cached, hit.get("endpoint"), second.cached,
+         legacy.get("endpoint"))
+
+
+CASES["a replayed answer says which endpoint answered it"] = a_replay_says_where_the_answer_came_from
 
 
 def a_skip_row_claims_no_endpoint(m):
@@ -1722,9 +1927,24 @@ MUTATIONS = [
     ("a stub allowed to write the shared log",
      "    if URL_ENV in env:", "    if False:",
      "a stubbed call never writes the shared log"),
-    ("the endpoint never written on a row",
-     "    return STUB if URL_ENV in (os.environ if env is None else env) else REAL",
+    ("the endpoint read off the environment instead of the response",
+     "    return REAL if url == DEFAULT_URL else STUB",
      "    return REAL", "a row says which endpoint answered it"),
+    ("a call that sent nothing claiming the real endpoint answered it",
+     "    key, why = read_key(env)\n    if why:\n"
+     '        return unknown_all(questions, why), "", why, False, NONE_SENT',
+     "    key, why = read_key(env)\n    if why:\n"
+     '        return unknown_all(questions, why), "", why, False, REAL',
+     "a row says which endpoint answered it"),
+    ("the endpoint never stored beside the answer",
+     "        path.write_text(json.dumps({STORED_ENDPOINT: word,",
+     "        path.write_text(json.dumps({STORED_ENDPOINT: REAL,",
+     "a replayed answer says which endpoint answered it"),
+    ("a store entry that names no endpoint replayed as the real one",
+     "        word = out.get(STORED_ENDPOINT)\n"
+     "        return held, word if word in (REAL, STUB) else NONE_SENT",
+     "        return held, REAL",
+     "a replayed answer says which endpoint answered it"),
     ("the join taking a row of any endpoint",
      '        if row.get("endpoint") != REAL:', "        if False:",
      "a row no real endpoint answered is refused by the join, and named"),
@@ -1772,11 +1992,12 @@ MUTATIONS = [
      "the thread join waits for the merge where nothing was re-raised"),
     # --- the store of answers ---
     ("the store never read",
-     "    stored = cache_read(cache_key(state, questions), env, cwd) if cache else None",
-     "    stored = None",
+     "    stored, word = (cache_read(cache_key(state, questions), env, cwd) if cache\n"
+     "                    else (None, NONE_SENT))",
+     "    stored, word = None, NONE_SENT",
      "a second identical ask replays and sends nothing"),
     ("the store never written",
-     "        cache_write(cache_key(state, questions), out, env, cwd)",
+     "        cache_write(cache_key(state, questions), out, word, env, cwd)",
      "        pass", "a second identical ask replays and sends nothing"),
     ("the state left out of the key",
      '    return f"{digest(state)}-{digest(sent)}-{MODEL}"',
@@ -1791,12 +2012,36 @@ MUTATIONS = [
      '    return f"{digest(state)}-{digest(sent)}"',
      "a changed model misses the store"),
     ("the noise switch ignored in `ask`",
-     "if cache else None", "if True else None",
+     "                    else (None, NONE_SENT))",
+     "                    else cache_read(cache_key(state, questions), env, cwd))",
      "the noise switch sends every time"),
     ("the noise switch swallowed by `judge`",
-     "timeout=timeout, log=False, cache=cache)",
-     "timeout=timeout, log=False, cache=True)",
+     "timeout=timeout, log=False, cache=cache,\n                      run=run)",
+     "timeout=timeout, log=False, cache=True,\n                      run=run)",
      "the noise switch sends every time"),
+    ("the marked window folded into the all-time one",
+     '    marked = [r for r in rows if r.get(RUN_FIELD) in RUNS]',
+     "    marked = rows",
+     "report shows a measuring run and production apart"),
+    ("the run word never written on a row",
+     '           "endpoint": answered_by, RUN_FIELD: run,',
+     '           "endpoint": answered_by, RUN_FIELD: PRODUCTION,',
+     "a row says which kind of run spent the call"),
+    ("judge swallowing the run word",
+     '               "endpoint": reading.endpoint, RUN_FIELD: run,',
+     '               "endpoint": reading.endpoint, RUN_FIELD: PRODUCTION,',
+     "a row says which kind of run spent the call"),
+    ("the repeat sample drawn afresh every run",
+     '    drawn = set(random.Random(SAMPLE_SEED).sample(sorted(rest), take)) if rest \\',
+     "    drawn = set(random.Random().sample(sorted(rest), take)) if rest \\",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("a case near an edge left to the sample",
+     "        if close:", "        if False:",
+     "a repeat run asks a seeded sample and every case near an edge"),
+    ("a flip or a no-match left to the sample",
+     '        if c.get("role", "case") != "case":',
+     "        if False:",
+     "a repeat run asks a seeded sample and every case near an edge"),
     ("a hit counted as a call",
      '        if row.get("cached"):\n'
      '            hits[who] = hits.get(who, 0) + 1\n'
@@ -1904,6 +2149,14 @@ MUTATIONS = [
      '    return settled_of(case) is None or case.get("role") == "no-match"',
      "    return True",
      "a case code settled is never named as drift"),
+    ("a subject that will not read counted as waiting",
+     "        if fetched[(subject, repo, number)] is None:",
+     "        if False:",
+     "a row whose subject will not read is skipped, counted and named"),
+    ("the subject fetched once per row instead of once per subject",
+     "        if (subject, repo, number) not in fetched:",
+     "        if True:",
+     "a row whose subject will not read is skipped, counted and named"),
     ("an unplaced case skipped in silence",
      '            unplaced.append(f"{c[\'id\']} ({why})")', "            pass",
      "a case held to no band is listed, never skipped"),
@@ -1929,12 +2182,12 @@ MUTATIONS = [
      '        json.loads(path.read_text(encoding="utf-8")))',
      "a registry file carrying a bad act never loads"),
     ("a skip not logged",
-     '"endpoint": NONE_SENT, "skipped": why}\n    return log_call(',
-     '"endpoint": NONE_SENT, "skipped": why}\n    return "logged to" or log_call(',
+     '"skipped": why}\n    return log_call(',
+     '"skipped": why}\n    return "logged to" or log_call(',
      "a skipped reading is logged as one JSON line naming why"),
     ("a skip row claiming the real endpoint answered it",
-     '           "endpoint": NONE_SENT, "skipped": why}',
-     '           "endpoint": endpoint_word(env), "skipped": why}',
+     '           "endpoint": NONE_SENT, RUN_FIELD: PRODUCTION, "skipped": why}',
+     '           "endpoint": REAL, RUN_FIELD: PRODUCTION, "skipped": why}',
      "a skip row says no endpoint answered it, and the join refuses it"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
@@ -1998,7 +2251,7 @@ def inside(value, declared):
 # not read.
 
 
-def live(record, wording_hash=None):
+def live(record, wording_hash=None, whole=False):
     """THE CORPUS AGAINST THE REAL ENDPOINT, asked with the REGISTRY'S OWN
     question -- never a copy built here, which drifted within one round the
     last time this suite kept one.
@@ -2062,12 +2315,21 @@ def live(record, wording_hash=None):
         declared = (entry.get("bands") or {}).get("declared") or {}
         seen, outside, wrong, nomatch, flips = {}, [], [], [], []
         settled_here = []
-        for c in cases:
+        # WHICH CASES A REPEAT RUN ASKS IS `sample_of`'s, and the reason is its
+        # own: this run is the noise measurement, and asking every case every
+        # time is what put `work-kind` at 24 calls a state. `--all` is the way
+        # past it, for a wording change that has to be measured from scratch.
+        asked, _pinned = (list(cases) if whole else jev.sample_of(entry, cases)[0],
+                          None)
+        print(jev.sample_line(entry, cases, asked) if not whole
+              else f"  asked all {len(cases)} case(s)")
+        for c in asked:
             # THE STORE IS OFF HERE, as it is in `relive`: a band is what the
             # same state answers across runs, and a replayed answer would
             # report a drift of zero (DECISION 5716060001).
             r = jev.ask("campaign-jev-test.py --live", c["id"],
-                        c.get("state") or {}, q, log=False, cache=False)
+                        c.get("state") or {}, q, cache=False,
+                        run=jev.MEASURING)
             model = r.model or model
             a = r.answers[name]
             value = jev.band_value(entry, a.raw)
@@ -2206,7 +2468,8 @@ def live(record, wording_hash=None):
 def main(argv):
     if "--live" in argv:
         at = argv.index("--wording") if "--wording" in argv else None
-        live("--record" in argv, argv[at + 1] if at is not None else None)
+        live("--record" in argv, argv[at + 1] if at is not None else None,
+             "--all" in argv)
         return harness.report()
     pure_branches(load(SOURCE))
     harness.mutate(SOURCE, load, CASES, MUTATIONS)

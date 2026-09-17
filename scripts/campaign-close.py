@@ -1376,9 +1376,15 @@ def step_chore_cleanup(n, say):
     try:
         campaign(argparse.Namespace(campaign_issue=n, close=False, delete=True))
     except Refused as r:
-        # The releases above are already made, and the log is the only reader.
-        if did and r.changed == "nothing was changed":
-            r.changed = did
+        # The releases above are already made, and the log is the only reader:
+        # a refusal that names its own change keeps it, after this one's.
+        if did:
+            r.changed = (did if r.changed == "nothing was changed"
+                         else f"{did}; then {r.changed}")
+        raise
+    except Halt as h:
+        if did:
+            h.question = f"{h.question} ({did})"
         raise
 
 

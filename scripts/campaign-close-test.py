@@ -973,6 +973,29 @@ def case_leave_chore_gate_after_release_says_so(m):
             and "nothing was changed" not in out), out
 
 
+def case_leave_chore_halt_after_release_says_so(m):
+    """A halt of the campaign scope after the release carries what was
+    released too: the halt's line is the log's last."""
+    w = standing()
+    w["settlement"] = settlement()
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    last = out.strip().splitlines()[-1]
+    return (code == 3 and last.startswith("HALT:")
+            and f"released: rc/{N}-a, rc/{N}-b, {CHORE_CLAIM} --" in last), out
+
+
+def case_leave_chore_late_release_says_both(m):
+    """A refusal that names its own change keeps it, after what the chore's
+    release already did: neither line alone is true."""
+    w = standing(released={"rc/10-late": "refusing: no REVIEW names the head\n"})
+    w["live_seq"][1] = live(vacant=[("rc/10-late", "landed as #7")])
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "release",
+                             "rc/10-late")
+    last = out.strip().splitlines()[-1]
+    return (ok and f"released: rc/{N}-a, rc/{N}-b, {CHORE_CLAIM} --" in last
+            and "; then nothing new; the issue was already closed" in last), out
+
+
 def case_leave_chore_unknown_checkout_stands(m):
     """A checkout git will not describe is neither removed nor detached."""
     w = standing(git_what=128)
@@ -1497,6 +1520,10 @@ CASES = {
         case_leave_chore_elsewhere_writes_nothing,
     "chore: a gate refusing after the release says what was already done":
         case_leave_chore_gate_after_release_says_so,
+    "chore: a halt after the release says what was already released":
+        case_leave_chore_halt_after_release_says_so,
+    "chore: a refusal naming its own change keeps it after the release's":
+        case_leave_chore_late_release_says_both,
     "chore: a checkout git will not describe is left as it is":
         case_leave_chore_unknown_checkout_stands,
     "chore: a checkout with no origin read is not asked about and stands":
@@ -2162,8 +2189,14 @@ MUTATIONS = [
      "        pass\n",
      "chore: its own merged claims are vacated and released before any gate"),
     ("chore: a later gate's refusal says what was released",
-     "        if did and r.changed == \"nothing was changed\":\n", "        if False:\n",
+     "        if did:\n            r.changed", "        if False:\n            r.changed",
      "chore: a gate refusing after the release says what was already done"),
+    ("chore: a halt carries the release too", "        if did:\n            h.question",
+     "        if False:\n            h.question",
+     "chore: a halt after the release says what was already released"),
+    ("chore: a refusal's own change is kept, not replaced",
+     'else f"{did}; then {r.changed}")', "else did)",
+     "chore: a refusal naming its own change keeps it after the release's"),
     ("chore: a vacate's refusal says what was released",
      "            step_vacate(branch, path, changed())\n", "            step_vacate(branch, path)\n",
      "chore: a worktree git will not remove is kept, with no force"),

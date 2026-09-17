@@ -1701,10 +1701,11 @@ def cmd_corpus_join(args):
             continue
         # THE READING'S OWN SLICE OF THE STATE, not the group's. One `judge`
         # call carries the union of every reading's fields and its row records
-        # that union, so a group whose two readings name DIFFERENT fields --
-        # `pull-request-thread`, where one reads the report and its findings
-        # and the other the review and the thread -- wrote a case carrying
-        # both. `judge` then RAISES on such a state as an extra field, and
+        # that union, so a group whose readings name DIFFERENT fields --
+        # `pull-request-thread`, where one reads the report and its findings,
+        # one the review and the thread, and two the report alone -- wrote a
+        # case carrying every one of them. `judge` then RAISES on such a state
+        # as an extra field, and
         # `--live` would ask a question about state the band was never
         # measured with. Found by the suite's "every case of a registered
         # reading fits its entry" on the first thread row ever joined.

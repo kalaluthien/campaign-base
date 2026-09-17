@@ -958,9 +958,9 @@ def join_skips_a_subject_that_will_not_read(m):
 
 def join_writes_the_reading_s_own_state_slice(m):
     """ONE `judge` CALL CARRIES THE UNION of every reading's fields, so a group
-    whose two readings name DIFFERENT fields wrote a case carrying both --
-    `judge` RAISES on such a state as an extra field, and `--live` would ask a
-    question about state the band was never measured with.
+    whose readings name DIFFERENT fields wrote a case carrying every one of
+    them -- `judge` RAISES on such a state as an extra field, and `--live`
+    would ask a question about state the band was never measured with.
 
     The control is the other reading of the same group over the SAME row: each
     must get its own half and neither the union."""

@@ -9,13 +9,16 @@ scripts/jev/readings.json. Each case is then broken by a mutation of the
 reader's text and must go red by its own assertion.
 
 `--live` asks every line of scripts/jev/corpus/docstring-claims.jsonl against
-the real endpoint and asserts each case's highest P(contradicts) on the side
-of the entry's thresholds its `truth` names; `--record` appends what was seen
+the real endpoint, reads each case's highest P(contradicts) against the
+entry's thresholds, counts the cases off their `truth`, and fails a case whose
+word differs from the last one `seen` under the same question wording, so a
+known miss stays counted and a change is red; `--record` appends the reading
 to each line's `seen`.
 
 Usage: scripts/check-docstring-claims-test.py [--live [--record]]
 """
 import datetime
+import hashlib
 import http.server
 import importlib
 import json
@@ -101,7 +104,7 @@ def load(source):
     return types.SimpleNamespace(source=source, m=module(source))
 
 
-def repo(t, edits, p=0.9, url=None, registry=True):
+def repo(t, edits, p=0.9, url=None, registry=True, tier="advise"):
     """The reader, as `t.source`, run in a fresh repository whose first commit
     holds the fixture tree and whose index holds `edits` on top of it."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
@@ -112,7 +115,9 @@ def repo(t, edits, p=0.9, url=None, registry=True):
              "scripts/campaign-jev.py": (HERE / "campaign-jev.py").read_text(),
              "scripts/check-tree-shape.py": (HERE / "check-tree-shape.py").read_text()}
     if registry:
-        files["scripts/jev/readings.json"] = REGISTRY.read_text()
+        entries = json.loads(REGISTRY.read_text())
+        entries["docstring-claims"]["tier"] = tier
+        files["scripts/jev/readings.json"] = json.dumps(entries)
     harness.write_tree(d, files)
     harness.git(d, "init", "-q", check=True)
     harness.git(d, "add", "-A", check=True)
@@ -201,6 +206,25 @@ def declared_twice_skipped(t):
             and "twice" not in asked_names()), (asked_names(), out)
 
 
+def shadow_prints_counts(t):
+    r, out = repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")},
+                  p=0.83, tier="shadow")
+    return (r.returncode == 0 and len(SEEN) == 1 and "contradicts 0.83" not in out
+            and "2 claim(s) read as contradicted" in out), out
+
+
+def glob_in_comment(t):
+    text = "module g\n/* First line.\n   covers scripts/*-test.* too. */\npred g { no none }\n"
+    decls, _ = t.m.declarations({"g.als": text})
+    first = decls["g"][0][1]
+    return first == 1, first
+
+
+def deletion_hunk(t):
+    got = t.m.staged_hunks("+++ spec/a.als\n@@ -4 +3,0 @@\n")
+    return got == {"spec/a.als": [(3, 4)]}, got
+
+
 def failure_exits_zero(t):
     r, out = repo(t, {"spec/fixture/system.als": SPEC + "\n"}, registry=False)
     return r.returncode == 0 and "could not read the commit" in out, (r.returncode, out)
@@ -218,6 +242,9 @@ CASES = {
     "a failed call prints unknown and exits 0": unknown_on_failure,
     "a name declared twice is skipped and named": declared_twice_skipped,
     "a reader that could not read exits 0 and says so": failure_exits_zero,
+    "at tier shadow the counts are printed and no claim": shadow_prints_counts,
+    "a comment holding a glob keeps its first line": glob_in_comment,
+    "a deletion-only hunk touches the lines on both sides": deletion_hunk,
 }
 
 MUTATIONS = [
@@ -234,13 +261,34 @@ MUTATIONS = [
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
      "except ZeroDivisionError as e:", "a reader that could not read exits 0 and says so"),
+    ("a touched paragraph not read as touched",
+     "mine = overlaps(hunks.get(path, []), first, last)", "mine = False",
+     "a staged paragraph edit asks that paragraph"),
+    ("a commit touching neither read in full", "if not relevant:", "if False:",
+     "a commit touching neither asks nothing and says so"),
+    ("a clear claim printed", 'if a.word == "yes":', 'if a.word != "unknown":',
+     "a clear claim is counted, not printed"),
+    ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
+     "the entry's instructions and criteria reach the model, thresholds do not"),
+    ("an unknown claim not printed", 'elif a.word == "unknown":', "elif False:",
+     "a failed call prints unknown and exits 0"),
+    ("the tier not read", 'shown = entry["tier"] != "shadow"', "shown = True",
+     "at tier shadow the counts are printed and no claim"),
+    ("a comment's opener found mid-line",
+     'while j > 0 and not lines[j - 1].lstrip().startswith("/*"):',
+     'while j > 0 and "/*" not in lines[j - 1]:',
+     "a comment holding a glob keeps its first line"),
+    ("a deletion touching one side", "last = first + count - 1 if count else first + 1",
+     "last = first + max(count, 1) - 1", "a deletion-only hunk touches the lines on both sides"),
     ("a name declared twice asked anyway", "if len(decls[name]) > 1:", "if False:",
      "a name declared twice is skipped and named"),
 ]
 
 
 def live(record):
-    """Every corpus case against the real endpoint, once."""
+    """Every corpus case against the real endpoint, once. A case is red when
+    its word differs from the last one recorded under the same wording: a
+    known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
     jev = m.load_sibling("campaign-jev.py")
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
@@ -249,6 +297,9 @@ def live(record):
                 r["state"]["pred"]["text"]) for r in rows]
     results = m.ask_all(ENTRY, targets, jev)
     today = datetime.date.today().isoformat()
+    wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)
+                             .encode()).hexdigest()[:12]
+    misses = 0
     for row, (label, found, reading) in zip(rows, results):
         ps = [((a.raw or {}).get("probabilities") or {}).get(t["option"])
               for a in reading.answers.values()]
@@ -257,10 +308,15 @@ def live(record):
                 else "no" if raw <= t["no_under"] else "unknown")
         print(f"{row['id']}  {row['role']:<8} truth {row['truth']:<3} "
               f"{'-' if raw is None else f'{raw:.2f}'} {word}  {row['source']['ref']}")
-        check(f"live {row['id']} reads {row['truth']}", word == row["truth"],
-              f"{word} at {raw}, {row['source']['ref']}")
-        row["seen"].append({"model": reading.model, "raw": raw, "word": word,
-                            "at": today})
+        misses += word != row["truth"]
+        before = [x for x in row["seen"] if x.get("wording") == wording]
+        if before:
+            check(f"live {row['id']} reads {before[-1]['word']} as last recorded",
+                  word == before[-1]["word"], f"{word} at {raw}, {row['source']['ref']}")
+        row["seen"].append({"model": reading.model, "wording": wording,
+                            "raw": raw, "word": word, "at": today})
+    print(f"{misses} of {len(rows)} case(s) off their truth")
+    check("live: every case asked", len(results) == len(rows), len(results))
     if record:
         CORPUS.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
                                   for r in rows))

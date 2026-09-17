@@ -21,8 +21,9 @@ is judged is what the commit holds:
              touching neither asks nothing and says so
 
 THE BRANCH is the caller's, on the entry's thresholds over P(contradicts):
-`yes` is printed as contradicted with its value, `unknown` with its reason,
-`no` counted as clear. Every call is logged by the caller, and the log line's
+`yes` contradicted, `unknown` in the gap or failed, `no` clear. The entry's
+tier decides what is printed: at `advise` each contradicted or unknown claim
+with its value or reason; at `shadow` the counts alone. Every call is logged by the caller, and the log line's
 fate is printed. THE EXIT STATUS IS 0 on every path, a failure of this script
 included: the tier is `shadow`, and a judgment never refuses a commit.
 
@@ -114,7 +115,9 @@ def comment_above(lines, i):
     """The first line of the comment sitting directly above line `i`."""
     j = i
     if j > 0 and lines[j - 1].rstrip().endswith("*/"):
-        while j > 0 and "/*" not in lines[j - 1]:
+        # THE OPENER STARTS ITS LINE: a `/*` inside the text, as a glob like
+        # `scripts/*-test.*` carries, is not where the comment began.
+        while j > 0 and not lines[j - 1].lstrip().startswith("/*"):
             j -= 1
         return max(j - 1, 0)
     while j > 0 and lines[j - 1].lstrip().startswith(("--", "//")):
@@ -230,8 +233,8 @@ def overlaps(ranges, first, last):
 
 def staged_hunks(diff):
     """{path: [(first, last)]} of the new side of every staged hunk, from a
-    diff taken with `--no-prefix`; a pure
-    deletion touches the line it sat before."""
+    diff taken with `--no-prefix`; a pure deletion `+N,0` sat between lines N
+    and N+1, and touches both."""
     out, path = {}, None
     for line in diff.split("\n"):
         if line.startswith("+++ "):
@@ -239,7 +242,8 @@ def staged_hunks(diff):
         elif path and (m := HUNK.match(line)):
             first = int(m.group(1))
             count = int(m.group(2)) if m.group(2) is not None else 1
-            out.setdefault(path, []).append((first, first + max(count, 1) - 1))
+            last = first + count - 1 if count else first + 1
+            out.setdefault(path, []).append((first, last))
     return out
 
 
@@ -315,6 +319,10 @@ def index_texts(paths):
 
 
 def report(results, entry, out):
+    # THE TIER DECIDES WHAT IS SHOWN, per rule-check#455's registry: `shadow`
+    # logs every answer and prints only the counts; `advise` prints each claim
+    # read contradicted or unknown.
+    shown = entry["tier"] != "shadow"
     counts = {"yes": 0, "no": 0, "unknown": 0}
     logged = set()
     for label, found, reading in results:
@@ -324,6 +332,8 @@ def report(results, entry, out):
             counts[a.word] = counts.get(a.word, 0) + 1
             p = ((a.raw or {}).get("probabilities") or {}).get(
                 entry["thresholds"]["option"])
+            if not shown:
+                continue
             if a.word == "yes":
                 print(f"  contradicts {p:.2f}  {label}: {claim}", file=out)
             elif a.word == "unknown":

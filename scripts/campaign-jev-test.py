@@ -367,6 +367,104 @@ CASES["a call that raises where nothing should is unknown"] = raised_where_nothi
 CASES["the call is logged as one JSON line"] = logged_line
 CASES["a log that would not write is reported, not raised"] = log_refused
 
+# ------------------------------------------------- the registry, well-formed
+# THE ENTRY IS THE CONTRACT, so these read the committed file and not a
+# fixture: a registry that would not load, or an entry a reader cannot branch
+# on, is the one failure no live run would ever reach.
+
+
+def entries(m):
+    return m.load_registry()
+
+
+def registry_shape(m):
+    """Every entry carries what a reader branches on, and nothing it cannot."""
+    bad = []
+    for name, e in entries(m).items():
+        for field in ("owner", "tier", "group", "state", "prefilter",
+                      "question", "join", "bands"):
+            if field not in e:
+                bad.append(f"{name}: no `{field}`")
+        if e.get("tier") not in m.TIERS:
+            bad.append(f"{name}: tier `{e.get('tier')}`")
+        if not (e.get("state") or {}).get("fields"):
+            bad.append(f"{name}: no state fields")
+        q = e.get("question") or {}
+        if q.get("type") not in (m.NOUL, m.CHOICE):
+            bad.append(f"{name}: question type `{q.get('type')}`")
+        if not q.get("instructions") or not q.get("criteria"):
+            bad.append(f"{name}: a question with no instructions or criteria")
+    return not bad, bad
+
+
+def thresholds_or_shadow(m):
+    """A reading with no thresholds is legal at `shadow` alone: there is no
+    branch to take, so printing one would be a verdict nobody measured."""
+    bad = []
+    for name, e in entries(m).items():
+        cuts, q = e.get("thresholds") or {}, e.get("question") or {}
+        if not cuts:
+            if e.get("tier") != m.SHADOW:
+                bad.append(f"{name}: no thresholds at tier `{e['tier']}`")
+            continue
+        want = (("yes_over", "no_under") if q.get("type") == m.NOUL
+                else ("floor", "no_match"))
+        for k in want:
+            if k not in cuts:
+                bad.append(f"{name}: no `{k}`")
+        if q.get("type") == m.CHOICE and cuts.get("no_match") not in (
+                q.get("criteria") or {}):
+            bad.append(f"{name}: `no_match` names no option of the set")
+    return not bad, bad
+
+
+def act_declares_its_undo(m):
+    """A reading at `act` says what it does and how it is undone, or it is not
+    at `act`: an irreversible thing on a typed guess is the one answer this
+    module never gives."""
+    bad = []
+    for name, e in entries(m).items():
+        if e.get("tier") != m.ACTS:
+            continue
+        act = e.get("act") or {}
+        for k in ("what", "undo", "act_over", "ask_over"):
+            if k not in act:
+                bad.append(f"{name}: at `act` with no `{k}`")
+    return not bad, bad
+
+
+def wording_is_computed(m):
+    """A declared wording is the hash of the question beside it. A rewording
+    that kept the old hash would keep a band measured for another question."""
+    bad = [f"{n}: declares {e['bands']['wording']}, computed {m.wording(e)}"
+           for n, e in entries(m).items()
+           if (e.get("bands") or {}).get("wording")
+           and e["bands"]["wording"] != m.wording(e)]
+    return not bad, bad
+
+
+def no_question_outside_the_registry(m):
+    """The one home of a question. A script that writes its own would be a
+    second wording nothing measures and no `report` counts."""
+    allowed = {"campaign-jev.py"}
+    found = []
+    for root in [HERE, *sorted((HERE.parent / ".claude" / "skills").glob(
+            "*/scripts"))]:
+        for path in sorted(root.glob("*.py")):
+            if path.name in allowed or path.name.endswith("-test.py"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            if '"instructions"' in text or "'instructions'" in text:
+                found.append(str(path))
+    return not found, found
+
+
+CASES["every registry entry carries what a reader branches on"] = registry_shape
+CASES["a reading with no thresholds is at shadow"] = thresholds_or_shadow
+CASES["a reading at act declares what it does and how it is undone"] = act_declares_its_undo
+CASES["a declared wording is the hash of its question"] = wording_is_computed
+CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
+
 MUTATIONS = [
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
      "a choice under the floor is unknown"),

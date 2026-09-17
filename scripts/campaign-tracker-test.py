@@ -80,10 +80,14 @@ with contextlib.closing(socket.socket()) as _s:
 
 
 def jev_answer(noul=0.95, choice=None, confidence=0.95):
-    """What the stub answers next, in the shape the real endpoint uses."""
-    answers = {"verb_first": {"type": "noul", "noul": noul}}
+    """What the stub answers next, in the shape the real endpoint uses.
+
+    THE QUESTION IDS ARE THE REGISTRY'S NAMES, since `campaign-jev.judge` asks
+    by name: a stub answering under any other key is a response with no answer
+    for the question, which is `unknown`."""
+    answers = {"verb-first": {"type": "noul", "noul": noul}}
     if choice is not None:
-        answers["work_kind"] = {"type": "choice", "choice": choice,
+        answers["work-kind"] = {"type": "choice", "choice": choice,
                                 "confidence": confidence}
     JEV_NEXT["body"] = {"model": "jev-1.13.0", "answers": answers}
     return JEV_URL

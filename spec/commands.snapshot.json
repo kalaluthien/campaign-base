@@ -196,6 +196,8 @@
     ["campaign/session/checks.als", "run", "Cov_ReadBody"],
     ["campaign/session/checks.als", "run", "Cov_Stamp"],
     ["campaign/session/checks.als", "run", "Cov_WriteBodyBySession"],
+    ["campaign/session/checks.als", "run", "HG1_AGuideUnlikeHerdrsTextDiffers"],
+    ["campaign/session/checks.als", "run", "HG1b_AnUnreadableHerdrLicensesNoRewrite"],
     ["campaign/session/checks.als", "run", "R1_LostBodyUpdate"],
     ["campaign/session/checks.als", "run", "R1d_CompareThenWriteAdmitsBothWrites"],
     ["campaign/session/checks.als", "run", "R2_DuplicateCampaign"],

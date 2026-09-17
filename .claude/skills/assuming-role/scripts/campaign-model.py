@@ -39,7 +39,7 @@ this again once it is idle -- a pane already on the model takes `/model`
 again as a no-op.
 
 THE SWITCH, per pane, each step read before the next -- probed on
-rule-check#431, and `.claude/skills/herdr/references/facts.md` holds the facts:
+rule-check#431, and `.claude/skills/driving-herdr/references/facts.md` holds the facts:
 
   1. `herdr agent prompt <pane> "/model <to>"`.
   2. A session with history answers with a `Switch model?` dialog, `Yes`

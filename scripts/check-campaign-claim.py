@@ -150,7 +150,7 @@ or not at all, which only `gh` resolves, are allowed with the sha NOT checked.
 
 A NOTE ON AN ISSUE IS HANDED TO `check-research-bar.py`, A REVIEW ON A PULL
 REQUEST TO `check-finding-sort.py` AND `check-finding-site.py`, AND A REPORT ON
-A PULL REQUEST TO `check-done-test.py`, in the
+A PULL REQUEST TO `check-done-carry.py`, in the
 background from the post's own checkout, once its shape holds, and the verdict
 never waits for any of them or reads it: readings in tier `shadow`
 (sdlc-alloy#458), listed in `SHADOW_READINGS`. What each reads is its script's.
@@ -2852,7 +2852,7 @@ SHADOW_READINGS = {
     ("issue", "NOTE"): ((HERE / "check-research-bar.py",), ISSUE_URL),
     ("pr", "REVIEW"): ((HERE / "check-finding-sort.py",
                         HERE / "check-finding-site.py"), PULL_URL),
-    ("pr", "REPORT"): ((HERE / "check-done-test.py",), PULL_URL),
+    ("pr", "REPORT"): ((HERE / "check-done-carry.py",), PULL_URL),
 }
 
 

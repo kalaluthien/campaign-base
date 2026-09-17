@@ -76,7 +76,7 @@ carried condition asked again with its labelled hunks removed:
   noise      a repeat of 42 states moved 1 verdict of 163 conditions and 0
              of 84 negatives
 
-Usage: scripts/check-done-test.py <pr> [<repo>] < report
+Usage: scripts/check-done-carry.py <pr> [<repo>] < report
 """
 import importlib.machinery
 import importlib.util
@@ -89,7 +89,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SELECT, CLAIM = "done-test-select", "done-test-claim"
 REGISTRY = HERE / "jev" / "readings.json"
-READER = "check-done-test.py"
+READER = "check-done-carry.py"
 TRACKER = "kalaluthien/campaign-base"
 GH_TIMEOUT = 30
 DOD = "## Definition of done"
@@ -203,7 +203,7 @@ def ask_issue(reg, subject, conds, cands, jev, env=None):
 
 def main(argv, stdin=sys.stdin, env=None):
     if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
-        print("Usage: scripts/check-done-test.py <pr> [<repo>] < report",
+        print("Usage: scripts/check-done-carry.py <pr> [<repo>] < report",
               file=sys.stderr)
         return 2
     pr, repo = argv[0], (argv[1] if len(argv) > 1 else "")

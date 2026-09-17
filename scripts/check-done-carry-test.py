@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # witnesses: JudgmentStandsInOrIsHandedUp, JudgmentGuard_Bites
-"""Prove check-done-test.py asks one select call a sub-issue and one claim call a hunk picked, asks nothing else, and never refuses.
+"""Prove check-done-carry.py asks one select call a sub-issue and one claim call a hunk picked, asks nothing else, and never refuses.
 
 THE DEFAULT RUN IS OFFLINE: a stub HTTP server on 127.0.0.1 answers each
 select question with the hunk a case names for its condition, and each claim
@@ -15,7 +15,7 @@ own assertion.
 done-test-claim.jsonl against the real endpoint and prints each answer beside
 its truth; `--record` appends the reading to `seen`.
 
-Usage: scripts/check-done-test-test.py [--live [--record]]
+Usage: scripts/check-done-carry-test.py [--live [--record]]
 """
 import datetime
 import hashlib
@@ -35,7 +35,7 @@ harness = importlib.import_module("suite-harness-test")
 check = harness.check
 
 HERE = Path(__file__).resolve().parent
-SCRIPT = HERE / "check-done-test.py"
+SCRIPT = HERE / "check-done-carry.py"
 SOURCE = SCRIPT.read_text()
 ENTRIES = json.loads((HERE / "jev" / "readings.json").read_text())
 SELECT, CLAIM = ENTRIES["done-test-select"], ENTRIES["done-test-claim"]
@@ -133,7 +133,7 @@ def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
     (d / "bin").mkdir()
-    (d / "check-done-test.py").write_text(t.source)
+    (d / "check-done-carry.py").write_text(t.source)
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
     shutil.copy(HERE / "check-diff-screen.py", d / "check-diff-screen.py")
     (d / "jev" / "readings.json").write_text(json.dumps(
@@ -163,7 +163,7 @@ def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
         for repo in (d, elsewhere):
             repo.mkdir(exist_ok=True)
             harness.git(repo, "init", "-q", check=True)
-    r = subprocess.run([sys.executable, str(d / "check-done-test.py"), *argv],
+    r = subprocess.run([sys.executable, str(d / "check-done-carry.py"), *argv],
                        input=report, capture_output=True, text=True, env=env,
                        cwd=elsewhere)
     log = d / "jev.log" if named_log else d / "runtime" / "jev.log"

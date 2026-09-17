@@ -1951,7 +1951,7 @@ def main():
         rows = logged(pr_note_log, 1, 50)
         check("a NOTE on a pull request starts no reading", rows == [],
               (out(r)[:300], rows))
-        # T2: A REPORT ASKING FOR THE MERGE IS HANDED TO check-done-test.py,
+        # T2: A REPORT ASKING FOR THE MERGE IS HANDED TO check-done-carry.py,
         # after its sha read: the stub gh answers no pull request, so the
         # sha is unchecked and the reader logs the skip for its own read.
         report_log = Path(d) / "report.log"
@@ -1964,7 +1964,7 @@ def main():
               "the done-test reading",
               r.returncode == 0
               and [(x["reader"], x["read"]) for x in rows]
-              == [("check-done-test.py", "tracker#7 REPORT")]
+              == [("check-done-carry.py", "tracker#7 REPORT")]
               and rows[0]["skipped"].startswith("the pull request read failed"),
               (out(r)[:300], rows))
 

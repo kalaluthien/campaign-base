@@ -418,7 +418,7 @@
   "lessons": []
  },
  "done-test-select": {
-  "owner": "scripts/check-done-test.py, started by scripts/check-campaign-claim.py",
+  "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
   "tier": "shadow",
   "group": "done-test-select",
   "state": {
@@ -426,7 +426,7 @@
     "condition",
     "candidateHunks"
    ],
-   "condition": "one Definition of done item of a sub-issue the pull request closes, as check-done-test.py's conditions() cuts it: a case pins one; production sends none in the state, since each condition is its own question of the one call a sub-issue, its text in the instructions",
+   "condition": "one Definition of done item of a sub-issue the pull request closes, as check-done-carry.py's conditions() cuts it: a case pins one; production sends none in the state, since each condition is its own question of the one call a sub-issue, its text in the instructions",
    "candidateHunks": "every hunk of a test file in the pull request's diff (`gh pr diff`), keyed h1..hN in diff order, each its path, a newline and the hunk from its @@ line"
   },
   "prefilter": {
@@ -454,7 +454,7 @@
   "lessons": []
  },
  "done-test-claim": {
-  "owner": "scripts/check-done-test.py, started by scripts/check-campaign-claim.py",
+  "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
   "tier": "shadow",
   "group": "done-test-claim",
   "state": {

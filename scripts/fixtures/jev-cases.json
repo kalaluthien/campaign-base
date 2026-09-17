@@ -1,17 +1,17 @@
 {
  "measured": "2026-09-17",
  "model": "jev-1.13.0",
- "note": "Cases of this tracker's own history, each carrying the WHOLE state `campaign-tracker check` sends -- title and body, untruncated, because the body moves the title's answer (#203 came back 0.57 on its title alone and 0.70 beside its body) and a body cut mid-word is a state this tree never sends. `declared` is the band each group is asserted into, wider than anything any run has observed; `observed` is the last recorded run and is informational. campaign-tracker.py's thresholds must sit strictly between the two declared bands they separate, which `--live` asserts -- so this file is the one home of the numbers and no prose repeats them. Re-measure whenever a question's wording, the state's shape or the pinned model moves: the band belongs to all three.",
+ "note": "Cases of this tracker's own history, each carrying the WHOLE state `campaign-tracker check` sends -- title and body, untruncated, because the body moves the title's answer (#203 came back 0.57 on its title alone and 0.70 beside its body) and a body cut mid-word is a state this tree never sends. `declared` is the band each group is asserted into and is the contract; `observed` is the last recorded run. campaign-tracker.py's thresholds must sit strictly between the two declared bands they separate, which `--live` asserts, so this file is the one home of the numbers and no prose repeats them. Each band's edge facing away from its threshold is the extreme: an answer moving away from a cut is not drift. A per-run history used to sit here by hand and was already short of the runs that had set the edges, which is why there is none: `declared` and `observed` are written by `--record` and read by the assertions, and nothing else is kept. Re-measure whenever a question's WORDING -- `criteria` included -- the state's shape or the pinned model moves, and reset that group's `declared` first: the band belongs to all three, so a union across two wordings is not a band.",
  "groups": {
   "verb-first": {
    "observed": {
     "yes": [
-     0.91,
-     0.96
+     0.82,
+     0.95
     ],
     "no": [
      0.05,
-     0.7
+     0.31
     ]
    },
    "cases": [
@@ -138,30 +138,30 @@
    ],
    "declared": {
     "yes": [
-     0.86,
+     0.8,
      1.0
     ],
     "no": [
      0.0,
-     0.76
+     0.44
     ]
    }
   },
   "work-kind": {
    "observed": {
     "confident": [
-     0.75,
+     0.72,
      1.0
     ],
     "unsure": [
-     0.26,
-     0.39
+     0.23,
+     0.38
     ],
     "no-match": [
      [
       "k-no-match",
       "none",
-      0.99,
+      0.98,
       "unknown"
      ]
     ]
@@ -269,100 +269,5 @@
     ]
    }
   }
- },
- "runs": {
-  "verb-first": {
-   "yes": [
-    [
-     0.9,
-     0.96
-    ],
-    [
-     0.88,
-     0.96
-    ],
-    [
-     0.88,
-     0.96
-    ],
-    [
-     0.9,
-     0.96
-    ],
-    [
-     0.91,
-     0.96
-    ]
-   ],
-   "no": [
-    [
-     0.05,
-     0.7
-    ],
-    [
-     0.05,
-     0.67
-    ],
-    [
-     0.05,
-     0.67
-    ],
-    [
-     0.04,
-     0.7
-    ],
-    [
-     0.05,
-     0.7
-    ]
-   ]
-  },
-  "work-kind": {
-   "confident": [
-    [
-     0.72,
-     1.0
-    ],
-    [
-     0.7,
-     1.0
-    ],
-    [
-     0.73,
-     1.0
-    ],
-    [
-     0.72,
-     1.0
-    ],
-    [
-     0.75,
-     1.0
-    ]
-   ],
-   "unsure": [
-    [
-     0.17,
-     0.41
-    ],
-    [
-     0.18,
-     0.45
-    ],
-    [
-     0.2,
-     0.39
-    ],
-    [
-     0.24,
-     0.36
-    ],
-    [
-     0.26,
-     0.39
-    ]
-   ]
-  },
-  "note": "Five runs of --live on 2026-09-17 under jev-1.13.0, each the [min, max] of that group in that run. `declared` is their union padded by 0.02, widened again to hold the review's own run against the earlier truncated-body fixture (verb-first `no` to 0.74, unsure kinds to 0.26-0.48). The thresholds sit strictly between the two declared bands they separate and at least 0.04 from the worst value any run has produced. EACH BAND HAS ONE EDGE THAT CARRIES THE CLAIM -- the one facing the threshold -- and the other is declared at the extreme: a `no` answered lower, or a `confident` answered higher, says nothing the cut is about, and a band that went red on it would cost a round for a reading that moved the right way. Measured: the `unsure` low edge did fall to 0.14 against a 0.15 declared, which is exactly that false alarm."
  }
 }

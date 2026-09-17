@@ -265,12 +265,47 @@ WORK_KINDS = ("research", "development", "maintenance")
 VERB_FIRST_QUESTION = (
     "Does the issue title in `title` open with an imperative verb naming a "
     "mission to carry out?")
+# THE BOUNDARY, PINNED ON BOTH SIDES. A `noul` takes an optional `criteria` of
+# `true` and `false`, each a `what` and `examples`
+# (https://docs.typesafe.ai/primitives/advanced.md, "Structured Noul
+# criteria"), and this boundary is subtle enough to need it: the first word of
+# half this tracker's titles is a word that is a verb somewhere else.
+#
+# THE EXAMPLES ARE FRESH AND ARE IN NO FIXTURE. An example lifted from
+# `scripts/fixtures/jev-cases.json` would be a case telling the model its own
+# answer, and the band measured after it would be the leak and not the reading.
+#
+# The `false` side carries the near miss on purpose -- a title opening with the
+# NAME of a command reads as an order and is not one -- because that is where
+# the misses sat: the not-verb-first band's top was dragged up by exactly those.
+VERB_FIRST_CRITERIA = {
+    "true": {
+        "what": "The title opens with an imperative verb telling somebody to "
+                "carry out a mission: an order given, not a description of "
+                "one.",
+        "examples": [
+            "Cache the weather feed for ten minutes",
+            "Retire the two queues nothing reads",
+        ],
+    },
+    "false": {
+        "what": "The title opens with anything else -- a noun naming a thing "
+                "or a component, a statement about how something behaves, or "
+                "a question. A first word that is also the NAME of a command, "
+                "a flag or a function is a noun here and not an order.",
+        "examples": [
+            "The nightly job runs twice on the first of the month",
+            "merge waits on a review that never arrives",
+            "Why is the staging cache colder than production's?",
+        ],
+    },
+}
 # The `noul` cuts, and the gap between them is `unknown`: a `noul` near 0.5 says
 # yes and no are equally likely, not that the title is half a mission, so one
-# cut would turn the model's own indecision into a verdict. The gap is narrow
-# because the measured bands leave little room, which is the honest shape and
-# not a comfortable one: a wrong warning costs a reader one glance, where a cut
-# the next run's drift crosses costs a red suite and a round.
+# cut would turn the model's own indecision into a verdict. The gap between
+# them is wide enough to be worth having only because `VERB_FIRST_CRITERIA`
+# pins the boundary: asked with no criteria the same cases left 0.14 between
+# the two bands, and asked with them they leave 0.40.
 #
 # THE NUMBERS THEY WERE MEASURED AGAINST ARE NOT REPEATED HERE.
 # `scripts/fixtures/jev-cases.json` declares a band per group and records every
@@ -278,8 +313,8 @@ VERB_FIRST_QUESTION = (
 # strictly between the two declared bands it separates and every case inside
 # its own. A band restated in this comment would be the copy that drifts --
 # which is what these already were, twice over, while no check read them.
-VERB_FIRST_YES_OVER = 0.83
-VERB_FIRST_NO_UNDER = 0.79
+VERB_FIRST_YES_OVER = 0.70
+VERB_FIRST_NO_UNDER = 0.55
 WORK_KIND_QUESTION = (
     "What kind of work does the sub-issue in `title` and `body` ask for?")
 # THE WORDS ARE `WORK_KINDS`, described as the `assuming-role` skill's own table
@@ -1058,9 +1093,21 @@ def judgment_questions(ask_kind):
     work kind only where no `kind:` label already answers it. Independent
     questions over one state cost the latency of one, and asking for a kind the
     label already carries would invite a reader to trust the model over the
-    owner."""
+    owner.
+
+    ONE CASE PER STATE, MANY QUESTIONS OVER IT: the state is one issue's
+    `{title, body}`, never a batch of issues under invented keys, so each
+    question names the field it is about by its backticked path and no question
+    can read a neighbouring case's text.
+
+    THE BODY IS IN THE STATE FOR THE KIND QUESTION, which cannot be answered
+    from a title -- and it is measurably not free: the same title scored 0.57
+    alone and 0.70 beside its body (rule-check#455). So the verb-first question
+    names `title` by its path, and the bands are measured with the body present
+    because that is the state this actually sends."""
     questions = {"verb_first": {"type": "noul",
                                 "instructions": VERB_FIRST_QUESTION,
+                                "criteria": VERB_FIRST_CRITERIA,
                                 "yes_over": VERB_FIRST_YES_OVER,
                                 "no_under": VERB_FIRST_NO_UNDER}}
     if ask_kind:

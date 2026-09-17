@@ -274,15 +274,21 @@ def post(body, key, url, timeout):
     """(the decoded response, "") or (None, why). Every network and decode
     failure is a sentence, never an exception: the caller's next line is a
     verdict it must still be able to print."""
+    # BUILDING THE REQUEST IS GUARDED, AND SEPARATELY. `Request(...)` parses
+    # the URL and raises ValueError on one with no scheme -- a misconfiguration
+    # that escaped entirely while this sat above the `try`. It gets its own
+    # sentence rather than the one below, because nothing was asked of any
+    # endpoint: "the endpoint did not answer" sends a reader looking at a
+    # service that was never reached, where the fault is the variable.
     try:
-        # BUILDING THE REQUEST IS INSIDE THE TRY. `Request(...)` parses the URL
-        # and raises ValueError on one with no scheme, which is a
-        # misconfiguration -- exactly what this function exists to turn into a
-        # sentence -- and it escaped while it sat one line above the `try`.
         req = urllib.request.Request(
             url, data=json.dumps(body).encode("utf-8"),
             headers={"Authorization": "Bearer " + key,
                      "Content-Type": "application/json"})
+    except ValueError as e:
+        return None, (f"`{URL_ENV}` names no usable endpoint ({e}), so nothing "
+                      f"was asked")
+    try:
         with urllib.request.urlopen(req, timeout=timeout) as fh:
             text = fh.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:

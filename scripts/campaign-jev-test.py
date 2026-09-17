@@ -19,12 +19,16 @@ nothing.
 
 `--live` is the other half and is opt-in: it runs
 `scripts/fixtures/jev-cases.json` -- cases of this tracker's own history, one of
-which is not a unit of work at all -- against the real endpoint and asserts a
-BAND per group, never a float, since the same request comes back a few
-hundredths apart. It reads `campaign-tracker.py`'s thresholds and asserts each
-sits in the GAP between the two bands and on neither: that is what makes the
-thresholds measured rather than chosen. `--record` writes the observed bands,
-the date and the answering model back into the fixture.
+which is not a unit of work at all -- against the real endpoint, asking
+`campaign-tracker.py`'s OWN questions through `judgment_questions` rather than
+rebuilding them, so what is measured is what production sends. It asserts a
+BAND per group and never a float, since the same request comes back a few
+hundredths apart: every case must land in its group's DECLARED band, and each
+of `campaign-tracker.py`'s thresholds must sit strictly between the two
+declared bands it separates. That is what makes a threshold measured rather
+than chosen. `--record` widens the declared bands to hold an excursion and
+writes them, the observed bands, the date and the answering model back into the
+fixture.
 
 Usage: scripts/campaign-jev-test.py [--live [--record]]
 """
@@ -93,8 +97,12 @@ def closed_port():
 
 CLOSED = f"http://127.0.0.1:{closed_port()}/v1/systemone"
 
+NOUL_CRITERIA = {"true": {"what": "it opens with an order",
+                          "examples": ["Cache the feed"]},
+                 "false": {"what": "it opens with anything else",
+                           "examples": ["The feed is cold"]}}
 NOUL_Q = {"type": "noul", "instructions": "Is the title verb-first?",
-          "yes_over": 0.85, "no_under": 0.70}
+          "criteria": NOUL_CRITERIA, "yes_over": 0.85, "no_under": 0.70}
 CHOICE_Q = {"type": "choice", "instructions": "What kind of work is this?",
             "criteria": {"research": "ask", "development": "build",
                          "maintenance": "tidy", "none": "not work at all"},
@@ -196,6 +204,15 @@ CASES = {
         read(m) and SEEN["count"] == 1
         and set(json.loads(SEEN["body"])["questions"]) == set(BOTH),
         (SEEN["count"], sorted(json.loads(SEEN["body"] or "{}").get("questions", {})))),
+    # A `noul`'s CRITERIA MUST REACH THE MODEL. It is optional to the API and
+    # was absent from the question this tree asks, which is what pins a subtle
+    # yes/no boundary; a whitelist that dropped it would leave the question
+    # asked the old way with the new bands measured for the new one.
+    "a noul's criteria reaches the model whole": lambda m: (
+        read(m) and json.loads(SEEN["body"])["questions"]["verb_first"]
+        .get("criteria") == NOUL_CRITERIA,
+        json.loads(SEEN["body"] or "{}").get("questions", {})
+        .get("verb_first", {}).get("criteria")),
     "the thresholds are never sent to the model": lambda m: (
         read(m) and not any(k in json.loads(SEEN["body"])["questions"]["verb_first"]
                             for k in ("yes_over", "no_under")),
@@ -236,8 +253,12 @@ CASES = {
         read(m, key=None).answers["verb_first"].word == "unknown"
         and SEEN["count"] == 0, SEEN["count"]),
     # --- the paths that used to raise instead of answering ---
-    "a URL with no scheme is unknown, not a traceback": unknown_because(
-        "verb_first", "did not answer (ValueError)", url="garbage"),
+    # THE REASON NAMES THE VARIABLE, not the endpoint: nothing was asked of
+    # any endpoint, so "the endpoint did not answer" would send a reader
+    # looking at a service that was never reached.
+    "a URL with no scheme is unknown and blames the variable": unknown_because(
+        "verb_first", "`CAMPAIGN_JEV_URL` names no usable endpoint",
+        url="garbage"),
     "an endpoint set to nothing never reaches the network": lambda m: (
         "set to nothing" in read(m, url="").answers["verb_first"].why
         and SEEN["count"] == 0, (read(m, url="").answers["verb_first"].why,
@@ -369,6 +390,10 @@ MUTATIONS = [
     ("the thresholds sent to the model",
      'if k in ("type", "instructions", "criteria")}',
      "if k not in ()}", "the thresholds are never sent to the model"),
+    ("a noul's criteria dropped from the request",
+     'if k in ("type", "instructions", "criteria")}',
+     'if k in ("type", "instructions")}',
+     "a noul's criteria reaches the model whole"),
     ("the ~/.env fallback dropped",
      'path = Path(env.get("HOME", "~")).expanduser() / ".env"',
      'path = Path("/nonexistent") / ".env"',
@@ -384,10 +409,10 @@ MUTATIONS = [
      "the endpoint's own max_tokens_exceeded reads as too large"),
     # THE FOUR PATHS THAT USED TO RAISE. Each mutation puts the code back the
     # way it was, so the case that found it must go red on exactly that.
-    ("the request built outside the try again",
-     "    try:\n        # BUILDING THE REQUEST IS INSIDE THE TRY.",
-     "    urllib.request.Request(url)\n    try:\n        #",
-     "a URL with no scheme is unknown, not a traceback"),
+    ("the unusable URL reported as an endpoint that did not answer",
+     "    except ValueError as e:\n        return None, (f\"`{URL_ENV}` names no usable endpoint",
+     "    except ZeroDivisionError as e:\n        return None, (f\"`{URL_ENV}` names no usable endpoint",
+     "a URL with no scheme is unknown and blames the variable"),
     ("the ~/.env decode error let out", "    except (OSError, UnicodeDecodeError) as e:",
      "    except OSError as e:", "a ~/.env that is not text is unknown, not a traceback"),
     ("ask's boundary removed",
@@ -418,17 +443,23 @@ def band(values):
 def widened(was, seen, pad=0.02):
     """The declared band: the union of what was declared and THIS RUN PADDED.
 
-    THE PADDING GOES ON THE OBSERVATION, NOT ON THE UNION. Padding the union
-    widens the band by `pad` on every record whether or not anything moved, so
-    a band that nothing had drifted still crept outward until it swallowed a
-    threshold -- growth that reads exactly like drift and is not. This way a
-    run inside the band changes nothing, and only a real excursion widens it."""
+    A RUN INSIDE THE BAND CHANGES NOTHING, and only an excursion widens it, to
+    where it went plus the pad. Padding the observation and unioning that was
+    already better than padding the union -- which grew the band by `pad` on
+    every record whether or not anything moved -- but it still crept whenever a
+    run came within `pad` of an edge from the INSIDE, which is the band working
+    rather than drifting. So the excursion is tested first and the pad applied
+    only to it."""
     if seen is None:
         return was
-    lo = round(max(0.0, seen[0] - pad), 3)
-    hi = round(min(1.0, seen[1] + pad), 3)
-    if was:
-        lo, hi = min(lo, was[0]), max(hi, was[1])
+    if not was:
+        return [round(max(0.0, seen[0] - pad), 3),
+                round(min(1.0, seen[1] + pad), 3)]
+    lo, hi = was
+    if seen[0] < lo:
+        lo = round(max(0.0, seen[0] - pad), 3)
+    if seen[1] > hi:
+        hi = round(min(1.0, seen[1] + pad), 3)
     return [lo, hi]
 
 
@@ -459,10 +490,12 @@ def live(record):
     seen = {"yes": [], "no": []}
     outside = []
     declared = groups["verb-first"].get("declared") or {}
-    q = {"verb_first": {"type": "noul",
-                        "instructions": tracker.VERB_FIRST_QUESTION,
-                        "yes_over": tracker.VERB_FIRST_YES_OVER,
-                        "no_under": tracker.VERB_FIRST_NO_UNDER}}
+    # THE QUESTIONS ARE PRODUCTION'S OWN, asked from `judgment_questions` and
+    # never rebuilt here. A hand-built copy drifted within one round: `check`
+    # gained `criteria` for the `noul` and this measured the question without
+    # it, which would have declared a band for a call nobody makes.
+    asked = tracker.judgment_questions(True)
+    q = {"verb_first": asked["verb_first"]}
     for c in groups["verb-first"]["cases"]:
         # THE STATE IS PRODUCTION'S, title and body together and untruncated:
         # the body moves the title's answer, so a band measured on the title
@@ -490,11 +523,7 @@ def live(record):
     conf = {"confident": [], "unsure": []}
     kout, wrong, nomatch, floor_only = [], [], [], []
     kdeclared = groups["work-kind"].get("declared") or {}
-    q = {"work_kind": {"type": "choice",
-                       "instructions": tracker.WORK_KIND_QUESTION,
-                       "criteria": tracker.WORK_KIND_CRITERIA,
-                       "floor": tracker.WORK_KIND_FLOOR,
-                       "no_match": tracker.WORK_KIND_NO_MATCH}}
+    q = {"work_kind": asked["work_kind"]}
     for c in groups["work-kind"]["cases"]:
         r = jev.ask("campaign-jev-test.py --live", c["id"],
                     {"title": c["title"], "body": c["body"]}, q)

@@ -15,7 +15,12 @@ plus the REPORT's own result lines -- and shows the model what the REPORT
 CLAIMS beside the evidence, which is what the earlier rounds of this reading
 lacked: a REPORT alone says nothing of what a reviewer read in code. The
 cutter, the selection and the claim builder are imported from that script and
-not written twice.
+not written twice. ONE COUPLING RIDES ON THAT: `select_questions` reads the
+literal criteria key `{hunk}`, so this reading's entry spells it that way too,
+though its state field is `candidates` and `r1..rM` are REPORT lines and no
+hunk at all. The key is the placeholder's name, not a claim about what a
+candidate is; `entry_reaches_model` in the suite goes red if either side
+renames it.
 
 WHO RUNS IT: scripts/check-campaign-claim.py, the comment guard, on every
 `gh pr comment` whose first line opens `REPORT`, in the background, from the
@@ -69,8 +74,8 @@ candidate is evidence for, since a candidate id is an option built per state
 and no word of the entry, and done-report-claim.jsonl, each pick with its
 truth. Where this reading is known to be wrong, as seen at jev-1.13.0 on
 2026-09-18 (kalaluthien/campaign-base#458 Cl1), over 54 merged pull requests,
-one a sub-issue, 204 conditions labelled against their own words (114 met, 41
-partly, 32 met by nothing here, 13 events) -- 51 of them T2's labels carried
+one a sub-issue, 204 conditions asked and 200 of them labelled against their
+own words (114 met, 41 partly, 32 met by nothing here, 13 events) -- 51 of them T2's labels carried
 over by (path, text) -- each met condition asked again with its evidence
 removed:
 
@@ -79,8 +84,9 @@ removed:
              the conditions nothing here meets
   the line   THE REPORT LINE IS WHAT MAKES IT WORK: the same picks and the
              same evidence with the line withheld read 0.64 and 0.88. It does
-             not raise a met condition's score -- the mean falls, 0.47 to
-             0.51 -- it pushes the negatives down harder, which is what a
+             not raise a met condition's score -- that mean FALLS, 0.51
+             with the line to 0.47 -- it pushes the negatives down harder,
+             which is what a
              reading that separates does and what a mean cannot show
   baselines  token overlap 0.71 and 0.82; T2's carry over the same conditions
              0.58 and 0.82, its candidates being the test hunks alone
@@ -161,20 +167,34 @@ def report_line(overlap, floor, report, condition):
 
 
 def capped(text, ceiling):
-    """The candidate's text, cut at `ceiling` bytes and said to be cut.
+    """The candidate's text, cut at `ceiling` BYTES of utf-8 and said to be cut.
 
-    WHY A CEILING AT ALL: the whole diff's hunks run a median of 41 KB and a
-    maximum of 204 KB over this tree's merged pull requests, against a 60 KB
-    state budget, so without one a third of them would be skipped unasked.
-    The cut is measured with the rest: a hunk whose evidence sat past it is a
-    miss this reading owns."""
-    return text if len(text) <= ceiling else text[:ceiling] + CUT
+    BYTES AND NOT CHARACTERS, because the state budget this ceiling exists to
+    keep under is bytes: a character cut let 96 of 2733 candidates end past the
+    declared 1200, the longest at 2042 (the REVIEW at 8b6f35a, D1). A cut
+    landing inside a character drops that character rather than emitting half
+    of it.
+
+    WHY A CEILING AT ALL: over the 87 merged pull requests this reading builds
+    a state for, the whole diff's hunks run a median of 36 KB and a maximum of
+    204 KB against a 60 KB state budget, so without one 23 of them (26%) would
+    be skipped unasked; with it, 9. The cut is measured with the rest: a hunk
+    whose evidence sat past it is a miss this reading owns."""
+    raw = text.encode("utf-8")
+    if len(raw) <= ceiling:
+        return text
+    return raw[:ceiling].decode("utf-8", "ignore") + CUT
 
 
 def fact_of(facts, text):
-    """The name of the GitHub fact a settled condition turns on, or ''."""
+    """The name of the GitHub fact a settled condition turns on, or ''.
+
+    The first pattern that matches wins, so the entry's order is the order they
+    are tried in. Case is passed here and not spelled in the patterns, since
+    `fact.closed` is also appended to a cut that already sets the flag, and an
+    inline flag anywhere but the head of a joined pattern is a PatternError."""
     for name, pattern in facts.items():
-        if re.search(pattern, text):
+        if re.search(pattern, text, re.I):
             return name
     return ""
 
@@ -254,10 +274,11 @@ def main(argv, stdin=sys.stdin, env=None):
         # THE MOMENT AND THE EVENT CUT ARE READ FROM THE ENTRY THAT OWNS THEM,
         # never copied: this reading and done-test-select run on the same
         # comment, and two copies of one regex are two that drift. What this
-        # reading adds it declares, and only that: a closed sub-issue is a fact
-        # it reads and an event that one has no use for.
+        # reading adds it declares ONCE, in the one place it is also used: a
+        # closed sub-issue is a fact this reading reads and an event that one
+        # has no use for, so `fact.closed` is both.
         shared = dict(reg[pre["reads_from"]]["prefilter"])
-        shared["event"] = shared["event"] + "|" + pre["event_extra"]
+        shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]
         if not re.search(shared["asks_merge"], report):
             return 0
         jev = load_sibling("campaign-jev.py")

@@ -599,21 +599,21 @@
     "candidates"
    ],
    "condition": "one Definition of done item of a sub-issue the pull request closes, as check-done-carry.py's conditions() cuts it: a case pins one; production sends none in the state, since each condition is its own question of the one call a sub-issue, its text in the instructions",
-   "candidates": "every hunk of the pull request's diff, CODE AND TEST, keyed h1..hN in diff order, and every line of the closing REPORT quoting a suite result, keyed r1..rM in REPORT order; each its path -- a file path, or `the REPORT` -- a newline and the text, cut at `candidate_ceiling` bytes"
+   "candidates": "every hunk of the pull request's diff, CODE AND TEST, keyed h1..hN in diff order, and every line of the closing REPORT quoting a suite result, keyed r1..rM in REPORT order; each its path -- a file path, or `the REPORT` -- a newline and the text, cut at `candidate_ceiling` bytes. The criteria key `{hunk}` is the PLACEHOLDER'S name and says nothing about what a candidate is: it is spelled that way because check-done-carry.py's select_questions(), which this reading imports rather than writing a second one, reads that literal key"
   },
   "prefilter": {
-   "what": "a comment opening REPORT, posted with gh pr comment, that asks for the merge -- the settlement REPORT; a pull request closing no sub-issue with a Definition of done, a diff and a REPORT yielding no candidate, or a state over the budget asks nothing and logs a skip; a condition every clause of which is an event is settled here -- the `reads_from` entry's event cut WIDENED BY `event_extra`, which this reading adds and that one has no use for; it carries no inline flag, since it is appended to a cut that already sets one -- its FACT read from `gh`, and logs a skip carrying what was read",
+   "what": "a comment opening REPORT, posted with gh pr comment, that asks for the merge -- the settlement REPORT; a pull request closing no sub-issue with a Definition of done, a diff and a REPORT yielding no candidate, or a state over the budget asks nothing and logs a skip; a condition every clause of which is an event is settled here -- the `reads_from` entry's event cut WIDENED BY `fact.closed`, the one event this reading adds and that one has no use for -- its FACT read from `gh`, and logs a skip carrying what was read. Every `fact` pattern is matched without case and carries no inline flag, since one of them is appended to a cut that already sets one; the first that matches names the fact, so the order here is the order they are tried in.",
    "reads_from": "done-test-select",
-   "event_extra": "\\b(sub-)?issue\\b[^;]*\\bclosed\\b|\\bclosed\\s+as\\b",
    "fact": {
-    "label": "(?i)\\blabel\\b",
-    "closed": "(?i)\\b(sub-)?issue\\b[^;]*\\bclosed\\b|\\bclosed\\s+as\\b",
-    "comment": "(?i)\\b(NOTE|REPORT|DECISION|REVIEW|BLOCKED)\\b",
-    "merged": "(?i)\\bmerged?\\b"
+    "label": "\\blabel\\b",
+    "closed": "\\b(sub-)?issue\\b[^;]*\\bclosed\\b|\\bclosed\\s+as\\b",
+    "comment": "\\b(NOTE|REPORT|DECISION|REVIEW|BLOCKED)\\b",
+    "merged": "\\bmerged?\\b"
    },
    "result_line": "(?i)\\b\\d+\\s*/\\s*\\d+\\b|\\b\\d+\\s+(suite|case|mutation|finding|defect|refinement|test|check|row|state|condition)s?\\b|\\bnone failed\\b|\\bwent red\\b|\\ball green\\b",
    "report_line_floor": 0.15,
-   "candidate_ceiling": 1200
+   "candidate_ceiling": 1200,
+   "candidate_ceiling_note": "BYTES, cut on the utf-8 encoding, because the state budget this ceiling exists to keep under is bytes"
   },
   "question": {
    "type": "choice",

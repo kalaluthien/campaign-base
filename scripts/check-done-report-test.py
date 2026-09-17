@@ -294,13 +294,29 @@ def two_conditions_one_candidate_one_call(t):
 
 
 def a_long_candidate_is_cut(t):
+    """THE CUT IS BYTES, and the fixture is multi-byte so a character cut fails
+    it: `'x' * n` passes either rule and pinned nothing (the REVIEW at 8b6f35a,
+    D1). An em dash is 3 bytes, so a character cut would send 3x the ceiling."""
     big = (DIFF + "diff --git a/scripts/big.py b/scripts/big.py\n"
-           f"@@ -1 +1 @@\n+{'x' * (CEILING * 2)}\n")
+           f"@@ -1 +1 @@\n+{'\u2014' * CEILING}\n")
     run(t, diff=big)
     cands = SEEN[0]["state"]["candidates"] if SEEN else {}
     got = cands.get("h4", "")
-    return (len(got) == CEILING + len("\n... cut") and got.endswith("\n... cut")
-            and len(cands["h1"]) < CEILING), len(got)
+    body = got[:-len("\n... cut")] if got.endswith("\n... cut") else got
+    return (got.endswith("\n... cut")
+            and len(body.encode("utf-8")) <= CEILING
+            and len(body.encode("utf-8")) > CEILING - 4
+            and len(cands["h1"].encode("utf-8")) < CEILING
+            ), (len(got), len(got.encode("utf-8")))
+
+
+def a_cut_never_splits_a_character(t):
+    """A ceiling landing mid-character: the character goes, and what comes back
+    is still text -- never a lone half of one."""
+    got = [t.m.capped("a" * n + "\u2014" * 10, CEILING) for n in
+           (CEILING - 2, CEILING - 1, CEILING)]
+    return all(g.endswith(t.m.CUT) and len(g[:-len(t.m.CUT)].encode()) <= CEILING
+               and "\ufffd" not in g for g in got), got
 
 
 def a_settled_condition_reads_its_fact(t):
@@ -456,11 +472,11 @@ def facts_are_read_in_order(t):
 
 
 def a_closed_sub_issue_is_an_event_here(t):
-    """`event_extra` widens the shared cut and is this reading's own: with it
-    dropped, a closed sub-issue is no event and the condition is asked."""
+    """`fact.closed` widens the shared cut AND names the fact, one string doing
+    both: with it dropped, a closed sub-issue is no event and is asked."""
     pre = dict(SELECT["prefilter"])
     shared = dict(SHARED["prefilter"])
-    both = dict(shared, event=shared["event"] + "|" + pre["event_extra"])
+    both = dict(shared, event=shared["event"] + "|" + pre["fact"]["closed"])
     carry = t.m.load_sibling(t.m.CARRY)
     text = "The sub-issue is closed as completed."
     return (carry.settled(both, text) and not carry.settled(shared, text)
@@ -586,7 +602,8 @@ CASES = {
     "a condition no REPORT line matches carries the entry's words for that": no_report_line_says_so,
     "a select answering noMatch throughout asks no claim call": no_pick_asks_no_claim,
     "two conditions picking one candidate share one claim call": two_conditions_one_candidate_one_call,
-    "a candidate over the ceiling is cut and says it was": a_long_candidate_is_cut,
+    "a candidate over the ceiling is cut at bytes and says it was": a_long_candidate_is_cut,
+    "a cut landing inside a character drops it, never halves it": a_cut_never_splits_a_character,
     "a settled condition's GitHub fact is read and named in its skip": a_settled_condition_reads_its_fact,
     "a label and a closed fact are one issue read, not two": one_gh_read_a_fact,
     "a fact gh refused is still one skip row, saying it went unread": an_unread_fact_says_so,
@@ -647,11 +664,19 @@ MUTATIONS = [
      '                "{reportLine}", lines.get(cid, ""))',
      "a condition no REPORT line matches carries the entry's words for that"),
     ("the ceiling not applied",
-     "    return text if len(text) <= ceiling else text[:ceiling] + CUT",
-     "    return text",
-     "a candidate over the ceiling is cut and says it was"),
+     '    raw = text.encode("utf-8")\n    if len(raw) <= ceiling:\n        return text',
+     '    raw = text.encode("utf-8")\n    if True:\n        return text',
+     "a candidate over the ceiling is cut at bytes and says it was"),
     ("the cut not said", 'CUT = "\\n... cut"', 'CUT = ""',
-     "a candidate over the ceiling is cut and says it was"),
+     "a candidate over the ceiling is cut at bytes and says it was"),
+    ("the ceiling read as characters, not bytes",
+     '    raw = text.encode("utf-8")\n    if len(raw) <= ceiling:\n        return text\n    return raw[:ceiling].decode("utf-8", "ignore") + CUT',
+     "    return text if len(text) <= ceiling else text[:ceiling] + CUT",
+     "a candidate over the ceiling is cut at bytes and says it was"),
+    ("a cut that halves a character",
+     '    return raw[:ceiling].decode("utf-8", "ignore") + CUT',
+     '    return raw[:ceiling].decode("utf-8", "replace") + CUT',
+     "a cut landing inside a character drops it, never halves it"),
     ("the fact not read",
      '                    read = read_fact(carry.gh, fact, name, pr, number, seen) \\\n                        if fact != "event" else "no fact here reads it"',
      '                    read = "no fact here reads it"',
@@ -676,7 +701,7 @@ MUTATIONS = [
      '        shared = dict(reg[pre["reads_from"]]["prefilter"], asks_merge="(?i)merge")',
      "the merge ask is read from the entry `reads_from` names, not a copy"),
     ("the event cut not widened",
-     '        shared["event"] = shared["event"] + "|" + pre["event_extra"]',
+     '        shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]',
      "        pass",
      "a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked"),
     ("the comment kind not read",

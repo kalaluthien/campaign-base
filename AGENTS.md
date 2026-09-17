@@ -517,8 +517,8 @@ is against acting on somebody else's session, never against reading.
 A delegate is launched by the planner in `<campaign>/repos/<repo>/`. Three
 invariants: **the brief is the sub-issue**, named by a one-sentence prompt, so
 there is nothing to keep in step with it and nothing that dies with a directory;
-the prompt is delivered by **`herdr agent prompt`** and never on the launch
-line, an instance of § The four messages' criterion rather than a second rule;
+the prompt is delivered by **`scripts/campaign-assign.py`**, which sends
+`herdr agent prompt`, and never on the launch line, an instance of § The four messages' criterion rather than a second rule;
 and **read the pane once after every launch**, because the dialogs that halt a
 fresh delegate do not all report `blocked`. The full procedure — the launch
 line and its flags, the outcome names, and the three dialogs — is
@@ -626,11 +626,10 @@ assignment, first or later, the answer to a `BLOCKED`, and any slash command are
 prompts; the four above stay messages. A prompt is the session's own user turn,
 so its hooks run and the relay caveat does not apply; a message is a peer's word,
 which is never the authority — which is exactly why an instruction must not
-travel as one. **Assigning a sub-issue to a session already running is
-`scripts/campaign-assign.py <pane> <sub-issue>`**, and what it refuses and why
-is its docstring's. A delegate's *first* brief is delivered by the launch
-itself (§ Delegate launch) — the same channel, one step of a different
-procedure, so the criterion is unbroken and there is no second rule.
+travel as one. **Assigning a sub-issue to a session is
+`scripts/campaign-assign.py <pane> <sub-issue>`**, a delegate's *first* brief
+included with `--assume-fresh` (§ Delegate launch), and what it refuses and why
+is its docstring's.
 
 ## Merge conditions
 

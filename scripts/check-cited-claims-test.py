@@ -215,6 +215,13 @@ def clear_not_printed(t):
             and "2 clear" in out), out
 
 
+def gap_counted(t):
+    r, out = repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")},
+                  p=0.35)
+    return (r.returncode == 0 and "2 in the gap" in out
+            and "0 claim(s) read as contradicted, 0 clear" in out), out
+
+
 def entry_reaches_model(t):
     repo(t, {"scripts/cites.py": CITING.replace("nothing else", "no other")})
     q = SEEN[0]["questions"]["c0"] if SEEN else {}
@@ -318,6 +325,7 @@ CASES = {
     "a commit touching neither asks nothing and says so": nothing_touched,
     "a contradicted claim is printed with its value, exit 0": contradicted_printed,
     "a clear claim is counted, not printed": clear_not_printed,
+    "a claim between the two edges is counted in the gap": gap_counted,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
     "a failed call prints unknown and exits 0": unknown_on_failure,
     "a name declared twice is skipped and named": declared_twice_skipped,
@@ -354,6 +362,9 @@ MUTATIONS = [
      "a commit touching neither asks nothing and says so"),
     ("a clear claim printed", 'if a.word == "yes":', 'if a.word != "unknown":',
      "a clear claim is counted, not printed"),
+    ("the gap left out of the counts",
+     """{counts['uncertain']} in the gap, {counts['unknown']} """, '{counts["unknown"]} ',
+     "a claim between the two edges is counted in the gap"),
     ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("an unknown claim not printed", 'elif a.word == "unknown":', "elif False:",

@@ -107,6 +107,10 @@ CHOICE_Q = {"type": "choice", "instructions": "What kind of work is this?",
             "criteria": {"research": "ask", "development": "build",
                          "maintenance": "tidy", "none": "not work at all"},
             "floor": 0.60, "no_match": "none"}
+OPTION_Q = {"type": "choice", "instructions": "Is the claim true of the text?",
+            "criteria": {"supports": "true", "contradicts": "false",
+                         "says_nothing": "neither"},
+            "option": "contradicts", "yes_over": 0.50, "no_under": 0.20}
 BOTH = {"verb_first": NOUL_Q, "work_kind": CHOICE_Q}
 STATE = {"title": "Put Jev judgments into orchestration", "body": "- a body"}
 
@@ -186,6 +190,17 @@ def pure_branches(m):
           m.branch(CHOICE_Q, pick("none", 0.99))[0] == "unknown")
     check("branch: no answer at all is unknown",
           m.branch(NOUL_Q, None)[0] == "unknown")
+    probs = lambda c: {"type": "choice", "choice": "supports", "confidence": 0.9,  # noqa: E731
+                       "probabilities": {"supports": 1 - c, "contradicts": c}}
+    check("branch: one option's probability over the cut is yes, whoever won",
+          m.branch(OPTION_Q, probs(0.55))[0] == "yes")
+    check("branch: one option's probability under the cut is no",
+          m.branch(OPTION_Q, probs(0.10))[0] == "no")
+    check("branch: one option's probability in the gap is unknown",
+          m.branch(OPTION_Q, probs(0.35))[0] == "unknown")
+    check("branch: an answer carrying no probabilities is unknown",
+          m.branch(OPTION_Q, {"type": "choice", "choice": "supports",
+                              "confidence": 0.9})[0] == "unknown")
     # AN UNSUPPORTED TYPE IS THE CALLER'S BUG, and it raises rather than
     # wearing the word every failure of the model's already wears.
     try:
@@ -227,6 +242,12 @@ CASES = {
         "verb_first", "in the gap", noul=0.78),
     "a confident fitting option is the option": word(
         "work_kind", "maintenance", confidence=0.95),
+    "a choice cut on one option reads that option's probability": lambda m: (
+        lambda r: (r.answers["claim"].word == "yes", r.answers["claim"]))(
+        read(m, questions={"claim": OPTION_Q}, body={"model": MODEL, "answers": {
+            "claim": {"type": "choice", "choice": "supports", "confidence": 0.3,
+                      "probabilities": {"supports": 0.45, "contradicts": 0.52,
+                                        "says_nothing": 0.03}}}})),
     "a choice under the floor is unknown": unknown_because(
         "work_kind", "under the floor", confidence=0.51),
     "the no-match option is unknown": unknown_because(
@@ -370,6 +391,10 @@ CASES["a log that would not write is reported, not raised"] = log_refused
 MUTATIONS = [
     ("the confidence floor dropped", 'if confidence < spec["floor"]:', "if False:",
      "a choice under the floor is unknown"),
+    ("the option's probability unread",
+     'value = (probabilities.get(spec["option"])',
+     'value = (probabilities.get("supports")',
+     "a choice cut on one option reads that option's probability"),
     ("the no-match option ignored", 'if option == spec["no_match"]:', "if False:",
      "the no-match option is unknown"),
     ("the noul gap closed", 'if value <= spec["no_under"]:', "if True:",

@@ -50,8 +50,9 @@ printed, since the guard does not read this process's output.
 THE EXIT STATUS IS 0 on every path the guard can reach; a usage error, a
 first argument that is not a number, exits 2.
 
-THE CASES are scripts/jev/corpus/done-test-select.jsonl and
-done-test-claim.jsonl. Where this reading is known to be wrong, as seen at
+THE CASES are scripts/jev/corpus/done-test-select.jsonl, the conditions no
+hunk carries, since a hunk id is an option built per state and no word of
+the entry, and done-test-claim.jsonl, each pick with its truth. Where this reading is known to be wrong, as seen at
 jev-1.13.0 on 2026-09-18 (kalaluthien/campaign-base#458 T2), over 48 merged
 pull requests, one a sub-issue, 192 conditions hand-labelled against their own
 words (51 carried, 39 partly, 78 not, 24 events), each carried or partly

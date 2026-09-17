@@ -652,7 +652,7 @@ class Watch:
         if self.shown is None:
             out.insert(0, f"watching {self.slug}: {len(lines)} line(s)")
             added = sorted(ln for ln in lines
-                           if ln.startswith(("drift ", "limit ")))
+                           if ln.startswith(("drift ", "limit ", "jev ")))
             removed = []
         else:
             added, removed = sorted(lines - self.shown), sorted(self.shown - lines)
@@ -714,6 +714,7 @@ class Watch:
         lines |= {f"drift {source} {word}"
                   for source, word in self.last.items()
                   if source.startswith("install ") and word != "current"}
+        lines |= jev_waiting()
         return lines
 
     def drift(self, claims, issues, prs, workers, now):
@@ -748,6 +749,29 @@ class Watch:
                 if w in self.idle_since and now - self.idle_since[w] >= IDLE_AFTER:
                     out.add(f"drift idle-worker {w}")
         return out
+
+
+# THE CORPUS GROWS ONLY IF SOMEBODY IS TOLD IT HAS STOPPED. A Jev reading's log
+# rows become cases when `campaign-jev.py corpus join` runs, and nobody
+# remembers to run it, so the one line naming what is waiting -- rows unjoined
+# and the age of the oldest, cases unlabelled, readings short of the evidence
+# row -- rides on every tick beside the other drifts.
+#
+# IT NEVER FAILS THE HEARTBEAT. The heartbeat is what a planner reads to know
+# the campaign is alive; a reader of a corpus must not be able to take that
+# away, so every failure here is swallowed and the line is simply absent.
+def jev_waiting():
+    try:
+        out = run(str(BASE / "scripts" / "campaign-jev.py"), "report",
+                  "--waiting", timeout=20)
+        first = (out.stdout.splitlines() or [""])[0].strip()
+    except Exception:  # noqa: BLE001 -- a reader of the corpus, never a gate
+        return set()
+    # NOT A `drift` LINE: the drifts are read from the sources this Watch
+    # polls, and a rule of theirs waits for its own source. This is an
+    # independent reader of a file on disk, and wearing their word would put it
+    # inside a rule it is not part of.
+    return {first} if first.startswith("jev waiting") else set()
 
 
 class PollOverrun(BaseException):

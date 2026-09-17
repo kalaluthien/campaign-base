@@ -331,9 +331,13 @@ def claim_subcommands(root):
 # showed -- so the second pattern admits exactly `.claude/skills/<skill>/
 # scripts/fixtures/`, the skill's own scripts directory and no other
 # `scripts/fixtures/` a skill may hold under assets/ or references/.
-# `scripts/jev/corpus/` is the third: each case's state is a comment or a
-# document as it was written, and a NOTE that named its raw output under
-# `runtime/` is the record of that NOTE (sdlc-alloy#458).
+# `scripts/jev/corpus/` is the third: each case's state is an issue body, a
+# comment or a document as it was WRITTEN, so it spells whatever that text
+# spelled -- `scripts/campaign-settlement` before the extension rule,
+# `runtime/holder` before the file was retired, a NOTE naming its own raw
+# output under `runtime/` (rule-check#455, sdlc-alloy#458). A case edited to
+# please R3 is a case of a state nobody ever sent, which is the one thing a
+# regression corpus may not be.
 RECORDED = ("scripts/fixtures/", "scripts/jev/corpus/",
             r"^\.claude/skills/[^/]+/scripts/fixtures/")
 

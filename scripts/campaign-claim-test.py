@@ -281,6 +281,12 @@ def claim(args, path_dir, extra_env=None):
     # the suite green. Measured 2026-09-05 by that deletion.
     env = dict(os.environ, PATH=str(path_dir))
     env.pop("HERDR_ENV", None)
+    # `take` RUNS `campaign-tracker check --plan`, which asks Jev. This machine
+    # has a key in `~/.env` that `campaign-jev.py` finds with no shell exporting
+    # it, so an unnamed endpoint would put a live call -- and an answer that
+    # changes between runs -- inside every claim case here. Port 1 listens for
+    # nothing, which is `unknown`: one line printed, no exit status moved.
+    env["CAMPAIGN_JEV_URL"] = "http://127.0.0.1:1/systemone"
     env.update(extra_env or {})
     return subprocess.run([sys.executable, str(CLAIM), *args],
                           capture_output=True, text=True, env=env)

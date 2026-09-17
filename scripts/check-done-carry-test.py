@@ -41,6 +41,7 @@ SOURCE = SCRIPT.read_text()
 ENTRIES = json.loads((HERE / "jev" / "readings.json").read_text())
 SELECT, CLAIM = ENTRIES["done-test-select"], ENTRIES["done-test-claim"]
 CORPUS = HERE / "jev" / "corpus"
+BUDGET = importlib.import_module("campaign-jev").STATE_BUDGET
 ROOT = Path(tempfile.mkdtemp(prefix="done-test-"))
 REPORT = "REPORT demo-worker-1: pr#9 at abcdef1, asking for the merge\n"
 
@@ -126,12 +127,11 @@ def closing(*numbers, owner="kalaluthien", name="campaign-base"):
 
 
 def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
-        fail=(), named_log=True):
+        fail=()):
     """The finished process; `gh-argv.jsonl` in its directory holds each gh call.
     `fail` names the gh verbs (`pr view`, `issue view`, `pr diff`) that exit 1.
-    `named_log=False` names no log and makes the reader's directory a git
-    repository, run from another one: a stubbed endpoint that names no log
-    must write nothing, neither there nor in the reader's own base."""
+    Every run NAMES a log, because since pr#474 a stubbed endpoint that names
+    none writes nothing at all -- campaign-jev-test.py owns that rule."""
     d = Path(tempfile.mkdtemp(dir=ROOT))
     (d / "jev").mkdir()
     (d / "bin").mkdir()
@@ -158,17 +158,9 @@ def run(t, report=REPORT, argv=("9",), view=None, bodies=None, diff=DIFF,
     env = dict(os.environ, CAMPAIGN_JEV_URL=URL, TYPESAFE_API_KEY="stub",
                CAMPAIGN_JEV_LOG=str(d / "jev.log"), HOME=str(d),
                PATH=f"{d / 'bin'}:{os.environ['PATH']}")
-    elsewhere = None
-    if not named_log:
-        env.pop("CAMPAIGN_JEV_LOG")
-        elsewhere = d / "elsewhere"
-        for repo in (d, elsewhere):
-            repo.mkdir(exist_ok=True)
-            harness.git(repo, "init", "-q", check=True)
     r = subprocess.run([sys.executable, str(d / "check-done-carry.py"), *argv],
-                       input=report, capture_output=True, text=True, env=env,
-                       cwd=elsewhere)
-    log = d / "jev.log" if named_log else d / "runtime" / "jev.log"
+                       input=report, capture_output=True, text=True, env=env)
+    log = d / "jev.log"
     LOGGED[:] = ([json.loads(x) for x in log.read_text().splitlines() if x]
                  if log.exists() else [])
     calls = d / "gh-argv.jsonl"
@@ -255,7 +247,7 @@ def over_budget_skips(t):
     r = run(t, diff=big)
     return (r.returncode == 0 and not SEEN and len(LOGGED) == 2
             and LOGGED[1]["read"] == "tracker#9 REPORT 5 select"
-            and "over the 60000-byte budget" in LOGGED[1].get("skipped", "")), reads()
+            and f"over the {BUDGET}-byte budget" in LOGGED[1].get("skipped", "")), reads()
 
 
 def failed_pr_read_skips(t):
@@ -375,8 +367,10 @@ def every_jev_call_names_the_readers_base(t):
     drive(t, raised, answers=())
     seen += raised.cwds
     named = inner.cwds + over.cwds + seen
+    # `== 2` and not `>= 1`: the settled skip lands first, so only the count
+    # says skipped() itself ran -- with its call cut the case stayed green.
     return (set(named) == {t.m.HERE} and counts == [1, 2, 1, 1, 1, 3]
-            and len(raised.cwds) >= 1), (counts, len(raised.cwds),
+            and len(raised.cwds) == 2), (counts, len(raised.cwds),
                                          sorted(set(map(str, named))))
 
 

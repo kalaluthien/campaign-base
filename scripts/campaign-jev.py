@@ -1537,9 +1537,10 @@ def older_than(at, span, now=None):
 
 
 def waiting_facts(reg=None):
-    """The three ways the corpus stalls, as facts: the rows nobody joined and
-    the oldest one's `at`, the cases nobody labelled, and the readings above
-    `shadow` whose evidence row is short. Both lines below render these.
+    """The ways the corpus stalls, as facts: the rows nobody joined and the
+    oldest one's `at`, the cases nobody labelled, the readings above `shadow`
+    whose evidence row is short, and the rows the join refuses outright. Both
+    lines below render these.
 
     The corpus grows only if somebody is told it has stopped growing."""
     reg = load_registry() if reg is None else reg
@@ -1549,17 +1550,20 @@ def waiting_facts(reg=None):
              for r in reg for c in read_corpus(r)}
     unjoined = [r for r in rows
                 if f"{r.get('call')}:{r.get('reading')}" not in known]
-    oldest = min((r.get("at") or "" for r in unjoined), default="")
+    # A ROW WITH NO `at` IS NOT THE OLDEST ROW. Read as one, its empty string
+    # wins the `min` and hides however old the real oldest row is, so the age
+    # clause below would never fire while such a row sat in the log.
+    oldest = min((r["at"] for r in unjoined if r.get("at")), default="")
     unlabelled = sum(1 for r in reg for c in read_corpus(r)
                      if c.get("truth") is None)
     short = [r for r, e in reg.items()
              if e.get("tier") != SHADOW and evidence_row(e, read_corpus(r))]
-    return unjoined, oldest, unlabelled, short
+    return unjoined, oldest, unlabelled, short, unreal
 
 
 def waiting_line(reg=None):
     """THE FIRST LINE, exact: every count as it stands, for whoever asks."""
-    unjoined, oldest, unlabelled, short = waiting_facts(reg)
+    unjoined, oldest, unlabelled, short, unreal = waiting_facts(reg)
     return (f"jev waiting: {len(unjoined)} log row(s) unjoined"
             + (f" (oldest {oldest})" if oldest else "")
             + f", {unlabelled} case(s) unlabelled, "
@@ -1623,12 +1627,20 @@ def spend_lines(env=None, cwd=None):
     return out
 
 
+def span_text(span):
+    """A span as a reader says it: whole hours as hours, anything else in
+    minutes. Written from the constant, so moving the constant moves the word
+    with it rather than leaving `90m` printed as `1h`."""
+    minutes = int(span.total_seconds() // 60)
+    return f"{minutes // 60}h" if minutes and not minutes % 60 else f"{minutes}m"
+
+
 def steady_waiting_line(reg=None, now=None):
     """THE SAME FIRST LINE FOR A WATCH: which classes are waiting, no count."""
-    unjoined, oldest, unlabelled, short = waiting_facts(reg)
+    unjoined, oldest, unlabelled, short, unreal = waiting_facts(reg)
     parts = []
     if unjoined:
-        aged = (f" (oldest over {int(STALE_AFTER.total_seconds() // 3600)}h)"
+        aged = (f" (oldest over {span_text(STALE_AFTER)})"
                 if older_than(oldest, STALE_AFTER, now) else "")
         parts.append("log rows unjoined" + aged)
     if unlabelled:
@@ -1636,7 +1648,14 @@ def steady_waiting_line(reg=None, now=None):
     if short:
         parts.append("readings short of the evidence row "
                      f"({', '.join(sorted(short))})")
-    return "jev waiting: " + (", ".join(parts) if parts else "nothing")
+    body = ", ".join(parts)
+    # NOT WAITING, AND STILL SAID. Nothing can ever label these rows, so they
+    # are no reader's errand -- but the exact line has named them since
+    # DECISION 5716626608, and a watch that stopped naming them would go quiet
+    # on a log filling with rows no join will ever take.
+    if unreal:
+        body += ("; " if body else "") + f"rows never joinable, no `{REAL}` endpoint"
+    return "jev waiting: " + (body or "nothing")
 
 
 def cmd_report(args):

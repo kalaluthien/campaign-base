@@ -1058,6 +1058,49 @@ def the_watch_line_ages_the_oldest_unjoined_row(m):
     return ("oldest over" not in young and "oldest over" in aged), (young, aged)
 
 
+def the_watch_line_names_rows_the_join_refuses(m):
+    """A row the join refuses is not waiting -- nothing can ever label it --
+    and it is still said, because the exact line has named it since DECISION
+    5716626608 and a watch that went quiet would miss a log filling with rows
+    no join will ever take. One more refused row is still the same line."""
+    now = LOGGED_AT + datetime.timedelta(hours=1)
+    one = [log_row("e001", "verb-first", "A title", 900, endpoint="stub")]
+    two = one + [log_row("e002", "verb-first", "A title", 900, endpoint="stub")]
+    said, exact = waiting(m, one, now=now)
+    again, more = waiting(m, two, now=now)
+    quiet, _exact = waiting(m, [], now=now)
+    return (said == again and "never joinable" in said and exact != more
+            and "never joinable" not in quiet), (said, again, quiet, exact, more)
+
+
+def a_row_with_no_at_is_not_the_oldest(m):
+    """An empty string wins a `min`, so a row carrying no `at` read as the
+    oldest hid how old the real oldest row was, and the age clause never
+    fired while one sat in the log."""
+    rows = [log_row("f001", "verb-first", "A title", 900),
+            log_row("f002", "verb-first", "A title", 900, at=None)]
+    aged, exact = waiting(m, rows, now=LOGGED_AT + m.STALE_AFTER)
+    return ("oldest over" in aged
+            and "(oldest 2026-09-17T00:00:00+00:00)" in exact), (aged, exact)
+
+
+def the_age_word_is_written_from_the_constant(m):
+    """The word follows STALE_AFTER rather than assuming whole hours, so
+    moving the constant to 90 minutes cannot print `over 1h`."""
+    got = [m.span_text(datetime.timedelta(hours=6)),
+           m.span_text(datetime.timedelta(minutes=90)),
+           m.span_text(datetime.timedelta(minutes=30))]
+    return got == ["6h", "90m", "30m"], got
+
+
+CASES["the watch's line names the rows the join refuses, and counts none"] = \
+    the_watch_line_names_rows_the_join_refuses
+CASES["a row carrying no `at` is not read as the oldest unjoined row"] = \
+    a_row_with_no_at_is_not_the_oldest
+CASES["the age word is written from the constant, not from whole hours"] = \
+    the_age_word_is_written_from_the_constant
+
+
 CASES["the watch's line holds no count that moves on each call"] = \
     the_watch_line_holds_no_count_that_moves
 CASES["the watch's line says when waiting starts and when it ends"] = \
@@ -1890,6 +1933,21 @@ MUTATIONS = [
      'path = Path(env.get("HOME", "~")).expanduser() / ".env"',
      'path = Path("/nonexistent") / ".env"',
      "the key is read from ~/.env when the environment has none"),
+    ("the refused rows dropped from the watch's line",
+     '    if unreal:\n        body += ', '    if False:\n        body += ',
+     "the watch's line names the rows the join refuses, and counts none"),
+    ("the refused rows counted on the watch's line",
+     '+ f"rows never joinable, no `{REAL}` endpoint"',
+     '+ f"{len(unreal)} rows never joinable, no `{REAL}` endpoint"',
+     "the watch's line names the rows the join refuses, and counts none"),
+    ("a row with no `at` read as the oldest again",
+     'oldest = min((r["at"] for r in unjoined if r.get("at")), default="")',
+     'oldest = min((r.get("at") or "" for r in unjoined), default="")',
+     "a row carrying no `at` is not read as the oldest unjoined row"),
+    ("the age word assuming whole hours",
+     'return f"{minutes // 60}h" if minutes and not minutes % 60 else f"{minutes}m"',
+     'return f"{minutes // 60}h"',
+     "the age word is written from the constant, not from whole hours"),
     # THE WATCH'S LINE, each of its three transitions broken in turn.
     ("the watch's line carrying the count again",
      '        parts.append("log rows unjoined" + aged)',

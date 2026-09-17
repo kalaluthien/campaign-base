@@ -148,7 +148,18 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   the leave done; its line says when to look and which log
                   says why a pane is still open. Nothing waits for it: end
                   the turn.
-  6-8.            The leave, `worker` steps 3-5, in the foreground for
+  6. idle         The detached run alone, before its `/exit`: `herdr agent
+                  list` every WAIT_EVERY seconds until <pane> reads `idle` or
+                  `done`, or is not listed. `/exit` into a turn still
+                  streaming does not queue: it ended the session 2 s later,
+                  the turn's answer unwritten (rule-check#481 NOTE
+                  5718813306). THE CEILING is WAIT_POLLS polls; AT THE CEILING
+                  `/exit` IS SENT ALL THE SAME and the line says so: a turn
+                  cut short loses its last lines, while a finished worker
+                  left listed is seen by nobody once no watch runs. Another
+                  pane's leave does not wait: its caller read it done, and
+                  a worker's `/exit` queues behind a running tool call.
+  7-9.            The leave, `worker` steps 3-5, in the foreground for
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
                   nothing but the log would read a refusal there.
@@ -983,11 +994,17 @@ def step_delete(path):
     holds("delete", f"{path} is gone")
 
 
+# herdr's words for a pane no turn is running in.
+IDLE = ("idle", "done")
+
+
 def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
-              every=WAIT_EVERY, listed=None):
+              every=WAIT_EVERY, listed=None, idle=False):
     """(gone, what the last poll read). A listing that did not read is not an
     absence, so it is one more poll and never the answer. `listed()` runs on
-    each poll that still lists <pane>, and what it returns joins the note."""
+    each poll that still lists <pane>, and what it returns joins the note.
+    With `idle`, a poll that lists <pane> with no turn running ends the wait
+    too: the detached leave's wait for its own turn, the header's step 6."""
     read, sleep = read or CLAIM.herdr_sessions, sleep or time.sleep
     note = "no poll ran"
     for k in range(polls):
@@ -996,6 +1013,9 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
             note = f"poll {k + 1}: {why}"
         elif not any(row["pane"] == pane for row in sessions.values()):
             return True, f"poll {k + 1}: {pane} is not listed"
+        elif idle and all(row["status"] in IDLE for row in sessions.values()
+                          if row["pane"] == pane):
+            return True, f"poll {k + 1}: {pane} reads idle"
         else:
             extra = listed() if listed else None
             note = f"poll {k + 1}: {pane} is still listed" + (
@@ -1003,6 +1023,16 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
         if k + 1 < polls:
             sleep(every)
     return False, note
+
+
+def step_idle(pane, say):
+    """The detached leave's wait for its own turn to end. Never a refusal:
+    at the ceiling the `/exit` goes all the same (the header, step 6)."""
+    began = time.monotonic()
+    idle, note = wait_gone(pane, idle=True)
+    say("idle", note if idle else
+        f"{note}, {time.monotonic() - began:.0f}s in, the ceiling: "
+        f"{EXIT_TEXT} is sent all the same, and may cut that turn short")
 
 
 def dialog_of(screen):
@@ -1184,6 +1214,7 @@ def spawn(argv, log):
 
 def leave(args, say=holds):
     if args.detached:
+        step_idle(args.pane, say)
         step_leave(args.pane, say)
         return
     n = args.campaign_issue

@@ -73,6 +73,12 @@ and, on a claim, the code the sub-issue names.
    the turn ends, after the `REPORT`. The planner reads the release off the
    ref. The release compacts this pane, so a reused worker does not carry a
    finished transcript into the next sub-issue.
+   **Then leave, unless told another sub-issue follows**: the turn's last
+   call is `scripts/campaign-close.py leave <N>`, which waits for the turn to
+   end, exits this session and closes its tab. Nothing else has to be running
+   for a finished worker to go, and the session's end is what tells the
+   planner, through `.claude/skills/assuming-role/scripts/campaign-push.py`.
+   Stay only when the assignment or the planner's prompt said so.
 
 How to review and to launch: `references/reviewing.md`, `references/launching.md`.
 

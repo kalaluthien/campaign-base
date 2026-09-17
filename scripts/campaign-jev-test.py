@@ -609,6 +609,14 @@ ISSUES = {
             {"name": "kind:development"}]},
     ("kalaluthien/campaign-base", 902): {
         "title": "Still being argued about", "state": "OPEN", "labels": []},
+    # TWO PARENTS FOR THE FILING JOIN: one whose slug the call offered as an
+    # option, and one whose slug it did not.
+    ("kalaluthien/campaign-base", 903): {
+        "title": "Mechanize the written rules", "state": "OPEN",
+        "labels": [{"name": "campaign"}, {"name": "campaign:rule-check"}]},
+    ("kalaluthien/campaign-base", 904): {
+        "title": "Define an SDLC on Alloy specs", "state": "OPEN",
+        "labels": [{"name": "campaign"}, {"name": "campaign:sdlc-alloy"}]},
 }
 
 
@@ -686,7 +694,8 @@ def joined(m, rows):
             fetch_thread=lambda repo, number: THREADS.get((repo, number)))
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
-               ("verb-first", "work-kind", "C-report-disposes-finding")}
+               ("verb-first", "work-kind", "C-report-disposes-finding",
+                "filing-scope-covers")}
     finally:
         m.CORPUS = was
         if old is None:
@@ -722,6 +731,137 @@ def join_reads_the_kind_label(m):
     got = (cases["work-kind"] or [{}])[0]
     return (got.get("truth") == "development"
             and got.get("label", {}).get("from") == "join:issue-kind-label"), got
+
+
+# ------------------------------------------- the filing reading's own three
+# A `choice` WHOSE OPTIONS ARE NOT IN THE ENTRY, an address `noul` read by code
+# before the option it guards, and a join that labels by the parent the create
+# named. Each is asserted on its own, and each has a mutation below.
+SCOPES = {"rule-check": "In: mechanise the written rules",
+          "homeops": "In: this machine's ops"}
+FILING_STATE = {"request": {"title": "Script the upkeep", "body": "- a body"},
+                "campaigns": SCOPES}
+
+
+def filing_entry(m, name="filing-scope-covers"):
+    return m.load_registry()[name]
+
+
+def the_options_are_built_from_the_state(m):
+    """A reading whose options are not knowable until the call names the state
+    field they come from, and `options_of` builds one option per key of it with
+    that key's value as its description."""
+    built = m.options_of(filing_entry(m), FILING_STATE)
+    return (set(built) == {"rule-check", "homeops", "none"}
+            and built["homeops"] == SCOPES["homeops"]), built
+
+
+def the_entry_s_own_option_wins_a_collision(m):
+    """A campaign that ever took the slug `none` must not overwrite the
+    no-match option's description, which is what the whole set is read
+    against."""
+    entry = filing_entry(m)
+    built = m.options_of(entry, {"request": {}, "campaigns": {"none": "a slug"}})
+    return built["none"] == entry["question"]["criteria"]["none"], built
+
+
+def the_built_options_are_what_is_sent(m):
+    """`question_of` is what `ask` and `branch` read, so the built options must
+    reach it -- and `options_from` must not, since it is this tree's own field
+    and no part of the question."""
+    spec = m.question_of(filing_entry(m), state=FILING_STATE)
+    return (set(spec["criteria"]) == {"rule-check", "homeops", "none"}
+            and m.OPTIONS_FROM not in spec), sorted(spec)
+
+
+def verdicts(choice="rule-check", noul=0.04):
+    """One `judge`'s verdicts for the filing group, without a call."""
+    return {"filing-scope-covers": m_Verdict(choice, {"type": "choice",
+                                                      "choice": choice,
+                                                      "confidence": 0.9}),
+            "filing-addresses-judge": m_Verdict(
+                "uncertain", None if noul is None
+                else {"type": "noul", "noul": noul})}
+
+
+class m_Verdict:
+    """The two fields `address_word` reads off a verdict."""
+    def __init__(self, word, raw):
+        self.word, self.raw = word, raw
+
+
+def the_address_routes_an_addressed_state_to_uncertain(m):
+    """rule-check#471 DECISION 5717901390: code reads the address first, and at
+    ADDRESS_OVER or over the guarded reading answers `uncertain`, whatever the
+    `choice` said. The CONTROL is the same option under the same cut with a
+    clean state, which must come back as the option."""
+    reg = m.load_registry()
+    hostile, why = m.address_word(reg, "filing-scope-covers",
+                                  verdicts(noul=m.ADDRESS_OVER))
+    clean, _why = m.address_word(reg, "filing-scope-covers",
+                                 verdicts(noul=m.ADDRESS_OVER - 0.01))
+    return (hostile == m.UNCERTAIN and "at or over" in why
+            and clean == "rule-check"), (hostile, clean, why)
+
+
+def an_address_that_gave_no_value_is_uncertain_too(m):
+    """A guard that did not answer did not rule the text out, and reading its
+    silence as clean is the direction this rule exists to refuse."""
+    word, why = m.address_word(m.load_registry(), "filing-scope-covers",
+                               verdicts(noul=None))
+    return word == m.UNCERTAIN and "gave no value" in why, (word, why)
+
+
+def a_reading_with_no_address_keeps_its_own_word(m):
+    """Every other reading may be asked this and comes back unchanged, which is
+    what lets one reader serve them all. Its own word is a DISTINCT one here,
+    so a reader that fell through to the address branch would be read as
+    changing it rather than as agreeing."""
+    held = verdicts(noul=0.99)
+    held["filing-addresses-judge"] = m_Verdict("yes", {"type": "noul",
+                                                       "noul": 0.99})
+    word, why = m.address_word(m.load_registry(), "filing-addresses-judge",
+                               held)
+    return word == "yes" and why == "", (word, why)
+
+
+def filing_row(call, parent, **kw):
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "filing-scope-covers",
+           "subject": f"kalaluthien/campaign-base#{parent} <- gh issue create",
+           "read": f"kalaluthien/campaign-base#{parent} <- gh issue create",
+           "repo": "kalaluthien/campaign-base", "issue": parent,
+           "state": dict(FILING_STATE), "wording": "0" * 12, "settled": None,
+           "tier": "shadow", "does": "nothing", "asked": MODEL,
+           "answered": MODEL, "latency": 0.5, "branch": "rule-check",
+           "raw": {"type": "choice", "choice": "rule-check", "confidence": 0.9},
+           "why": "", "endpoint": "real", "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_filing_join_labels_by_the_parent_s_slug(m):
+    """The row's own `--parent`, resolved to a slug: the reading runs before
+    the filed issue has a number, so the row's `issue` is the parent and the
+    label is its `campaign:` label."""
+    cases, _lines = joined(m, [filing_row("dddd", 903)])
+    got = (cases["filing-scope-covers"] or [{}])[0]
+    # AND IT IS HELD TO A BAND. The entry carries the no-match option alone,
+    # so a `band_of` reading the entry's own criteria would hold every case of
+    # this reading to no band and call none of them drift, for good.
+    return (got.get("truth") == "rule-check"
+            and got.get("label", {}).get("from") == "join:filing-parent-slug"
+            and got.get("band") == "confident"
+            and set(got.get("state") or {}) == {"request", "campaigns"}), got
+
+
+def a_parent_that_was_never_an_option_is_not_labelled(m):
+    """The options are the campaigns with a directory on the machine that made
+    the call. A parent outside that set is a case no answer could have got
+    right, so it waits rather than being written with a truth the reading
+    cannot answer."""
+    cases, _lines = joined(m, [filing_row("eeee", 904)])
+    return not cases["filing-scope-covers"], cases["filing-scope-covers"]
 
 
 def join_skips_a_subject_that_will_not_read(m):
@@ -789,6 +929,22 @@ def join_writes_the_reading_s_own_state_slice(m):
             and set(got.get("state") or {}) != whole), (got.get("state"), whole)
 
 
+CASES["a choice's options are built from the state field it names"] = \
+    the_options_are_built_from_the_state
+CASES["the entry's own option wins a name collision"] = \
+    the_entry_s_own_option_wins_a_collision
+CASES["the built options are what the question carries"] = \
+    the_built_options_are_what_is_sent
+CASES["an addressed state routes the reading it guards to uncertain"] = \
+    the_address_routes_an_addressed_state_to_uncertain
+CASES["an address that gave no value is uncertain too"] = \
+    an_address_that_gave_no_value_is_uncertain_too
+CASES["a reading that declares no address keeps its own word"] = \
+    a_reading_with_no_address_keeps_its_own_word
+CASES["the filing join labels by the parent the create named"] = \
+    the_filing_join_labels_by_the_parent_s_slug
+CASES["a parent that was never an option is not labelled"] = \
+    a_parent_that_was_never_an_option_is_not_labelled
 CASES["the join writes the reading's own slice of the state"] = join_writes_the_reading_s_own_state_slice
 CASES["a row whose subject will not read is skipped, counted and named"] = join_skips_a_subject_that_will_not_read
 
@@ -1375,12 +1531,7 @@ def every_case_fits_its_entry(m):
         # `choice` cut on ONE option answers yes, no or unknown about that
         # option, exactly as a `noul` does -- so the option cut is read first,
         # and only a `choice` cut on the winner answers an option word.
-        if (entry.get("thresholds") or {}).get("option"):
-            words = {"yes", "no", "none"}
-        elif entry["question"]["type"] == m.CHOICE:
-            words = set(entry["question"]["criteria"]) | {"none"}
-        else:
-            words = {"yes", "no", "none"}
+        option_cut = (entry.get("thresholds") or {}).get("option")
         for c in m.read_corpus(name):
             if c.get("reading") != name:
                 bad.append(f"{c.get('id')}: reading `{c.get('reading')}`")
@@ -1388,6 +1539,18 @@ def every_case_fits_its_entry(m):
             if got != want:
                 bad.append(f"{c.get('id')}: state {sorted(got)}, entry names "
                            f"{sorted(want)}")
+            # A READING WHOSE OPTIONS ARE BUILT IS JUDGED AGAINST THE CASE'S
+            # OWN OPTION SET, not the entry's: the entry holds the no-match
+            # option alone and the rest come from the state the case carries,
+            # so `options_of` -- the one reader of that rule -- is asked with
+            # this case's state. Read per case and not per entry, because two
+            # cases of one reading may have been asked different option sets:
+            # a leave-one-out no-match case is a positive with its own
+            # campaign's option taken away.
+            if option_cut or entry["question"]["type"] != m.CHOICE:
+                words = {"yes", "no", "none"}
+            else:
+                words = set(m.options_of(entry, c.get("state") or {})) | {"none"}
             truth = c.get("truth")
             if isinstance(truth, str) and truth not in words:
                 bad.append(f"{c.get('id')}: truth `{truth}` is no word of "
@@ -2105,6 +2268,45 @@ MUTATIONS = [
      '"flag": flag(name, raw) if callable(flag) else flag}',
      '"flag": flag(name, {}) if callable(flag) else flag}',
      "a flag the reader computes from the answers reaches the log row"),
+    # --- the built options, the address, and the filing join ---
+    ("the built options never built",
+     "    built = ({str(k): str(v) for k, v in given.items()}\n"
+     "             if isinstance(given, dict) else {})",
+     "    built = {}",
+     "a choice's options are built from the state field it names"),
+    ("the entry's own options overwritten by the built ones",
+     "    built.update(criteria)\n    return built",
+     "    criteria.update(built)\n    return criteria",
+     "the entry's own option wins a name collision"),
+    ("the built options never reaching the question",
+     '    if spec.pop(OPTIONS_FROM, None):\n'
+     '        spec["criteria"] = options_of(entry, state)',
+     "    spec.pop(OPTIONS_FROM, None)",
+     "the built options are what the question carries"),
+    ("the address read as an upper edge it never reaches",
+     "    if value >= ADDRESS_OVER:", "    if False:",
+     "an addressed state routes the reading it guards to uncertain"),
+    ("an address that gave no value read as clean",
+     "    if value is None:\n        return UNCERTAIN, (f\"the address "
+     "`{guard}` gave no value, so the state \"",
+     "    if value is None:\n        return word, (f\"the address "
+     "`{guard}` gave no value, so the state \"",
+     "an address that gave no value is uncertain too"),
+    ("every reading read as though it declared an address",
+     "    if not guard:\n        return word, \"\"",
+     "    if False:\n        return word, \"\"",
+     "a reading that declares no address keeps its own word"),
+    ("the filing join reading a label that is not the campaign's",
+     '    slugs = [n[len("campaign:"):] for n in names if n.startswith("campaign:")]',
+     "    slugs = list(names)",
+     "the filing join labels by the parent the create named"),
+    ("a parent outside the option set labelled all the same",
+     "    if slugs[0] not in offered:", "    if False:",
+     "a parent that was never an option is not labelled"),
+    ("a built-option case held against the entry's own options",
+     "    options = options_of(entry, case.get(\"state\"))",
+     '    options = entry["question"].get("criteria") or {}',
+     "the filing join labels by the parent the create named"),
     # --- the thread join ---
     ("the thread read restated here instead of asked for",
      "        found, why = reader.bodies_of(repo, number)",

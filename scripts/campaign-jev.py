@@ -29,6 +29,15 @@ One group is one state and ONE call. The caller refuses a missing or an extra
 state field, because both are the reader's bug: an extra field is state no band
 was measured with, a missing one is a question asked about nothing.
 
+TWO THINGS A COMMITTED FILE CANNOT HOLD, and both are declared there all the
+same. A `choice` whose options are not knowable until the call -- the open
+campaigns, say -- names the state field they are BUILT from with
+`options_from`, and `options_of` is the one reader of that rule. A reading
+whose state holds somebody else's prose names the group-mate that guards it
+with `guarded_by`, and `address_word` is the one reader of THAT rule: at
+`ADDRESS_OVER` or over the guarded reading answers `uncertain`, whatever it
+said (rule-check#471 DECISION 5717901390).
+
 UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
 is never sent and never cut down -- no key, a `~/.env` that is not text,
 `CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
@@ -891,17 +900,61 @@ def wording(entry):
 # the model, so a fan-out whose instructions did not name the item would ask one
 # question n times and get one answer n times.
 ITEM_MARK = "{item}"
+# WHERE A `choice`'s OPTIONS COME FROM WHEN THE ENTRY CANNOT HOLD THEM. An
+# entry names a state field here, and one option is built per key of that
+# field, the key's value being that option's description. The reading that
+# needs it asks which OPEN CAMPAIGN's Scope covers a filing: the option set is
+# the campaigns open on the day of the call and their Scopes are their own
+# prose, neither of which a committed file can state.
+#
+# WHAT THE WORDING THEN PINS is the instructions and the entry's OWN options --
+# the no-match one -- and not the built ones, because `wording()` hashes the
+# entry's question as declared. That is the honest hash for this shape: a band
+# measured under one campaign set is a band over those Scopes, which is said in
+# the entry's `bands` rather than hidden. The built options travel with the
+# case all the same, in the state field they were built from, so a case is
+# re-askable with the option set it was asked under.
+OPTIONS_FROM = "options_from"
 
 
-def question_of(entry, item=None):
+def options_of(entry, state=None):
+    """The `choice` options as the model is sent them: one per key of the state
+    field `options_from` names, plus the entry's own.
+
+    THE ONE READER of that rule, because two ask it -- `question_of`, which
+    sends them, and the suite's "every case fits its entry", which checks a
+    case's truth against the words the reading could have answered. A second
+    copy would let a case be admitted for an option the call never offered.
+
+    THE ENTRY'S OWN WIN A NAME COLLISION, so a campaign that ever took the slug
+    `none` could not overwrite the no-match option's description."""
+    question = entry.get("question") or {}
+    criteria = dict(question.get("criteria") or {})
+    field = question.get(OPTIONS_FROM)
+    if not field:
+        return criteria
+    given = (state or {}).get(field)
+    built = ({str(k): str(v) for k, v in given.items()}
+             if isinstance(given, dict) else {})
+    built.update(criteria)
+    return built
+
+
+def question_of(entry, item=None, state=None):
     """The spec `ask` and `branch` read: the question as sent, plus the cuts,
     which are this tree's reading of the answer and are never sent.
 
     `item` is the key of a reading asked per item, written into the instructions
     where `{item}` stands -- by replacement and not by `format`, so a question
-    holding a brace of its own is not a formatting error."""
+    holding a brace of its own is not a formatting error.
+
+    `state` is what a reading whose options are BUILT is built from; it is
+    ignored by every other reading, so a caller that does not pass it changes
+    nothing for the entries that declare no `options_from`."""
     spec = dict(entry["question"])
     spec.update(entry.get("thresholds") or {})
+    if spec.pop(OPTIONS_FROM, None):
+        spec["criteria"] = options_of(entry, state)
     if item is not None:
         spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))
     return spec
@@ -970,7 +1023,11 @@ def band_of(entry, case):
         if truth in ("yes", "no"):
             return truth, ""
         return None, f"`{truth}` is neither yes nor no"
-    options = entry["question"].get("criteria") or {}
+    # THE CASE'S OWN OPTION SET, not the entry's: a reading whose options are
+    # built holds the no-match option alone in its entry, so reading that
+    # would hold every one of its cases to no band and call none of them
+    # drift. `options_of` is the one reader of that rule.
+    options = options_of(entry, case.get("state"))
     if truth in options and truth != cuts.get("no_match"):
         return "confident", ""
     return None, f"`{truth}` names no option of the set"
@@ -1007,6 +1064,58 @@ def band_value(entry, raw):
     key = NOUL if entry["question"]["type"] == NOUL else "confidence"
     value = raw.get(key)
     return value if isinstance(value, (int, float)) else None
+
+
+# ----------------------------------------------------------- THE ADDRESS NOUL
+# A READING WHOSE STATE HOLDS SOMEBODY ELSE'S PROSE CARRIES A SECOND QUESTION IN
+# THE SAME CALL: does that prose speak to whoever is judging it? rule-check#471
+# step 4 measured it -- all ten hostile states went `uncertain` and no clean
+# twin did -- and DECISION 5717901390 set the rule: code reads the address
+# first, and at 0.5 or over the guarded reading answers `uncertain`, whatever
+# it said. A `criteria` sentence telling the model to ignore such text is NOT a
+# defence and was measured not to be one.
+#
+# THE NUMBER LIVES HERE AND NOWHERE ELSE, and it is not a threshold of the
+# address entry: an entry declaring `yes_over` 0.5 and `no_under` 0.5 is a band
+# with no middle, which `check_edges` refuses. So the address entry declares no
+# cut -- it is at `shadow` and has no word to earn -- and this reads its raw
+# value.
+ADDRESS_OVER = 0.5
+# The entry field naming the group-mate that guards a reading. The next state
+# that carries the address declares it and reuses this reader.
+ADDRESS_FIELD = "guarded_by"
+
+
+def address_word(reg, name, verdicts):
+    """(the word reading `name` reaches once its address has been read, why).
+
+    THE ONE READER of `ADDRESS_OVER`, for every reading that declares a
+    `guarded_by`. A reading that declares none comes back with its own word and
+    an empty reason, so a caller may ask this of any reading.
+
+    AN ADDRESS THAT COULD NOT BE READ IS `uncertain` TOO. The guard is what
+    stands between the answer and text written to move it; a guard that did not
+    answer did not rule that text out, and reading its silence as clean is the
+    direction this rule exists to refuse."""
+    entry = reg.get(name) or {}
+    held = verdicts.get(name)
+    word = held.word if held is not None else UNKNOWN
+    guard = entry.get(ADDRESS_FIELD)
+    if not guard:
+        return word, ""
+    answer = verdicts.get(guard)
+    value = band_value(reg.get(guard) or {},
+                       answer.raw if answer is not None else None)
+    if value is None:
+        return UNCERTAIN, (f"the address `{guard}` gave no value, so the state "
+                           f"was not read for text addressed to whoever judges "
+                           f"it and no word of `{name}` is earned")
+    if value >= ADDRESS_OVER:
+        return UNCERTAIN, (f"the address `{guard}` is {value:.2f}, at or over "
+                           f"{ADDRESS_OVER:.2f}: the state speaks to whoever "
+                           f"judges it, so no word of `{name}` is earned")
+    return word, (f"the address `{guard}` is {value:.2f}, under "
+                  f"{ADDRESS_OVER:.2f}")
 
 
 def does(entry, word, raw):
@@ -1111,7 +1220,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         given = settled.get(name)
         if not per:
             if name not in settled:
-                asked[name] = question_of(entry)
+                asked[name] = question_of(entry, state=state)
             continue
         items = state.get(per)
         if not isinstance(items, dict):
@@ -1131,7 +1240,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         cleared = given or {}
         for item in items:
             if item not in cleared:
-                asked[f"{name}#{item}"] = question_of(entry, item)
+                asked[f"{name}#{item}"] = question_of(entry, item, state)
     if asked:
         reading = ask(reader or "campaign-jev.judge", read, state, asked,
                       env=env, cwd=cwd, timeout=timeout, log=False, cache=cache,
@@ -1244,6 +1353,39 @@ def join_issue_kind_label(row, issue):
                      f"{row.get('issue')}", ""
 
 
+def join_filing_parent_slug(row, issue):
+    """filing-scope-covers: which campaign the filing was actually filed under.
+
+    THE LABEL IS THE ROW'S OWN `--parent`, resolved to a slug. The reading runs
+    at `gh issue create`, before the new issue has a number, so the row's
+    `issue` field is the PARENT the create named and not the filing -- which is
+    why this reads the `campaign:` label of what it fetched rather than
+    anything about a later state. A filer picks the parent by the same reading
+    the model is asked to make, so the parent is the strongest label this tree
+    has for it and it is available at once.
+
+    A PARENT WHOSE SLUG WAS NOT AMONG THE OPTIONS IS NOT LABELLED. The options
+    are the campaigns with a directory on the machine that made the call, and
+    no answer of that call could have named a campaign it was never offered;
+    labelling it anyway would write a case whose truth is a word the reading
+    could not answer, which the suite refuses and a band would be fitted to."""
+    if issue is None:
+        return None, "", "the parent issue did not read"
+    names = [(l or {}).get("name", "") for l in issue.get("labels") or []]
+    slugs = [n[len("campaign:"):] for n in names if n.startswith("campaign:")]
+    if len(slugs) != 1:
+        return None, "", (f"{len(slugs)} `campaign:` label(s) on the parent, so "
+                          f"which campaign it is is not one word")
+    offered = (row.get("state") or {}).get("campaigns") or {}
+    if slugs[0] not in offered:
+        return None, "", (f"the parent is `{slugs[0]}`, which was not among the "
+                          f"{len(offered)} option(s) this call offered "
+                          f"({', '.join(sorted(offered)) or 'none'}): no answer "
+                          f"could have named it")
+    return slugs[0], (f"label `campaign:{slugs[0]}` on {row.get('repo')}#"
+                      f"{row.get('issue')}, the parent the create named"), ""
+
+
 def load_sibling(name):
     """A sibling script as a module, by path: these are scripts, not a package.
     Loaded WHERE IT IS USED and never at import, because the sibling loads this
@@ -1339,7 +1481,8 @@ def join_thread_refinding(row, thread):
 
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
-         "thread-refinding": join_thread_refinding}
+         "thread-refinding": join_thread_refinding,
+         "filing-parent-slug": join_filing_parent_slug}
 # WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
 # join key as FIELDS, so the subject is the field it names and never a guess.
 SUBJECTS = {"issue": "fetch", "pull_request": "fetch_thread"}

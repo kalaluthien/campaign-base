@@ -182,8 +182,11 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   worktree removed, a clone detached, neither forced -- and
                   released, its review reading included. One never merged,
                   one that did not read, one git keeps, or a release that
-                  refuses stops the clean-up; a checkout outside the directory
-                  is left for `live` to refuse. Scope campaign follows with the
+                  refuses stops the clean-up, saying what was already vacated
+                  and released; a checkout outside the directory is left for
+                  `live` to refuse. The binding and `standing` are read before
+                  the first of these writes, and each claim is vacated right
+                  before its own release. Scope campaign follows with the
                   delete given, every gate of it in its own order, and a gate
                   that refuses stops it there and undoes nothing -- the leave
                   has already happened. `standing` never meets `chore`, the
@@ -1268,17 +1271,18 @@ def chore_of(n):
         return None, None, f"could not parse gh issue view ({e.__class__.__name__})"
 
 
-def step_vacate(branch, path):
+def step_vacate(branch, path, changed="nothing was changed"):
     """Take one checkout off a merged claim, so `release` finds nobody
     standing in it. A linked worktree is removed and a clone is detached,
-    neither with a force: git keeps a worktree holding a change, and a detach
-    moves no file."""
+    neither with a force: git keeps a worktree holding a tracked change or an
+    untracked file, and a detach moves no file. IGNORED files go with a
+    removed worktree (measured, git 2.54), as they would with the delete."""
     r = run("git", "-C", path, "rev-parse", "--path-format=absolute",
             "--git-dir", "--git-common-dir")
     dirs = (r.stdout or "").split()
     if r.returncode != 0 or len(dirs) != 2:
         raise Refused("vacate", f"git did not say what {path} is: "
-                                f"{(r.stderr or '').strip()[:120]}")
+                                f"{(r.stderr or '').strip()[:120]}", changed)
     if dirs[0] == dirs[1]:
         did = "detached, a clone's own checkout"
         r = run("git", "-C", path, "switch", "--detach")
@@ -1288,7 +1292,8 @@ def step_vacate(branch, path):
                 path)
     if r.returncode != 0:
         raise Refused("vacate", f"{branch} at {path}: git exited "
-                                f"{r.returncode}: {(r.stderr or '').strip()[:160]}")
+                                f"{r.returncode}: {(r.stderr or '').strip()[:160]}",
+                      changed)
     holds("vacate", f"{branch} at {path}: {did}")
 
 
@@ -1298,8 +1303,18 @@ def step_chore_release(n):
     left, so they stand checked out in the chore's own directory and `live`
     refused the clean-up over them. Only a claim a merged pull request has as
     its head is touched, and only a checkout under that directory; anything
-    else is left for `live` to refuse, which it still does."""
-    slug, directory = slug_of(n), read_directory(n)
+    else is left for `live` to refuse, which it still does.
+
+    THE BINDING AND `standing` ARE READ FIRST, as above every other write of
+    the campaign scope: this deletes refs, from a process nobody watches.
+    EACH CLAIM IS VACATED RIGHT BEFORE ITS OWN RELEASE, so a release that
+    refuses -- commits pushed after the merge, a head no REVIEW names -- costs
+    one checkout and not all of them. Returns what it did, in the words a
+    later refusal reports, because the log is this run's only reader."""
+    slug = slug_of(n)
+    gate_bound(n, want_here=True)
+    directory = read_directory(n)
+    gate_standing(n)
     reading = read_live(n, slug)
     own = [(b, p) for b, _, p in reading["occupied"]
            if directory and Path(p).is_relative_to(directory)]
@@ -1311,19 +1326,30 @@ def step_chore_release(n):
                 f"no merged pull request on {repo} has it as its head"
                 if number is None else "whether it merged did not read")
                 + ", so it is left standing")
-    for branch, path in own:
-        step_vacate(branch, path)
-    done = [b for b, _ in own] + [b for b, _, m in reading["vacant"]
-                                  if m.startswith("landed as")]
-    if done:
+    todo = own + [(b, None) for b, _, m in reading["vacant"]
+                  if m.startswith("landed as")]
+    if todo:
         print(COMPACT_NOTE)
-    for branch in done:
+    done = []
+
+    def changed(off=None):
+        said = ([f"released: {', '.join(done)}"] if done else []) + (
+            [f"taken off its checkout, its ref still standing: {off}"]
+            if off else [])
+        return ("; ".join(said) + f" -- re-run `campaign {n} --delete` once "
+                f"the cause is fixed") if said else "nothing was changed"
+    for branch, path in todo:
+        if path:
+            step_vacate(branch, path, changed())
         why = release_refusal(script(CLAIM_SCRIPT, "release", n, n,
                                      "--branch", branch))
         if why:
-            raise Refused("release", f"{branch}: {why}")
+            raise Refused("release", f"{branch}: {why}",
+                          changed(branch if path else None))
+        done.append(branch)
     holds("release", f"{len(done)} merged claim(s) of the chore released "
                      f"ahead of the gates")
+    return changed() if done else None
 
 
 def step_chore_cleanup(n, say):
@@ -1346,8 +1372,14 @@ def step_chore_cleanup(n, say):
                  f"`{TRACKER_MODULE.CHORE_LABEL}` label pre-authorises the "
                  f"clean-up: its merged claims released, then scope campaign "
                  f"below, with the delete given and every gate of it read")
-    step_chore_release(n)
-    campaign(argparse.Namespace(campaign_issue=n, close=False, delete=True))
+    did = step_chore_release(n)
+    try:
+        campaign(argparse.Namespace(campaign_issue=n, close=False, delete=True))
+    except Refused as r:
+        # The releases above are already made, and the log is the only reader.
+        if did and r.changed == "nothing was changed":
+            r.changed = did
+        raise
 
 
 def leave(args, say=holds):

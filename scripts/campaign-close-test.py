@@ -275,6 +275,9 @@ def answer(w, a):
                                            w.get("lsof", ""), "")
     if a[:2] == ["git", "-C"] and a[3:] == ["worktree", "prune"]:
         return ok("")
+    if a[:2] == ["git", "-C"] and a[3:4] == ["rev-parse"] and w.get("git_what"):
+        return subprocess.CompletedProcess(a, w["git_what"], "/x/.git\n/x/.git\n",
+                                           "not a git repository")
     if a[:2] == ["git", "-C"] and a[3:4] == ["rev-parse"]:
         # A linked worktree's git dir is not the common one; a clone's is.
         linked = "/worktrees/" in a[2]
@@ -282,7 +285,8 @@ def answer(w, a):
                   else f"{a[2]}/.git\n{a[2]}/.git\n")
     if a[:2] == ["git", "-C"] and a[3:] in (["switch", "--detach"],
                                             ["worktree", "remove", a[-1]]):
-        return subprocess.CompletedProcess(a, w.get("git_vacate", 0), "",
+        rc = w.get("git_vacate", {}).get(a[3], 0)
+        return subprocess.CompletedProcess(a, rc, "",
                                            "contains modified or untracked files")
     return subprocess.CompletedProcess(a, 127, "", "not faked")
 
@@ -319,7 +323,8 @@ def drive(m, argv, w):
             return (w["left"] if len(after) > 1 else w["sessions"]), None
         m.CLAIM.herdr_sessions = blocked_read
     m.CLAIM.base_root = lambda: (w["root"], None)
-    m.CLAIM.remote_of = lambda clone: w["origin"]
+    m.CLAIM.remote_of = lambda clone: (None if clone in w.get("no_origin", ())
+                                       else w["origin"])
     m.CLAIM.merged_pr_of = lambda repo, branch: w.get("merged", {}).get(branch)
     m.CLAIM.issue_repo = lambda issue, default: w["lands"].get(
         issue, (TRACKER, None, "lands in the base"))
@@ -897,8 +902,12 @@ def case_leave_chore_releases_first(m):
             and vacates(asked) == [["switch", "--detach"],
                                    ["worktree", "remove", wt]]
             and rel == [f"rc/{N}-a", f"rc/{N}-b", CHORE_CLAIM]
-            and steps(out).index("vacate") < steps(out).index("release")
-            < steps(out).index("bound")
+            and steps(out).index("bound") < steps(out).index("vacate")
+            < steps(out).index("live")
+            and ["vacate" if a[0] == "git" else a[a.index("--branch") + 1]
+                 for a in asked if a in releases(asked)
+                 or a[:2] == ["git", "-C"] and a[3:] in vacates(asked)]
+            == ["vacate", f"rc/{N}-a", "vacate", f"rc/{N}-b", CHORE_CLAIM]
             and f"rc/{N}-a at {clone}" in out), out
 
 
@@ -935,10 +944,51 @@ def case_leave_chore_outside_stands(m):
 def case_leave_chore_dirty_worktree_stands(m):
     """git refuses to remove a worktree holding a change, and no force is
     given: the clean-up stops, and nothing was released."""
-    w = standing(git_vacate=1)
+    w = standing(git_vacate={"worktree": 1})
     ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "vacate",
                              "contains modified or untracked files")
-    return ok and w["dir"].exists() and not releases(asked), out
+    rel = [a[a.index("--branch") + 1] for a in releases(asked)]
+    return (ok and w["dir"].exists() and rel == [f"rc/{N}-a"]
+            and f"released: rc/{N}-a --" in out
+            and "nothing was changed" not in out), out
+
+
+def case_leave_chore_elsewhere_writes_nothing(m):
+    """The binding is read before the first vacate: a chore bound to another
+    machine has nothing taken off a checkout and no ref deleted from here."""
+    w = standing(bound="elsewhere other-mac\n")
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "bound",
+                             "reads `elsewhere")
+    return (ok and not vacates(asked) and not releases(asked)
+            and "nothing was changed" in out), out
+
+
+def case_leave_chore_gate_after_release_says_so(m):
+    """A gate of the campaign scope refusing AFTER the release does not say
+    nothing was changed: the log is the only reader of this run."""
+    w = standing(local=local(rows=[(True, "rc/9-left")], verdict="counted"))
+    code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
+    return (code == 1 and w["dir"].exists() and "REFUSE local-work" in out
+            and f"released: rc/{N}-a, rc/{N}-b, {CHORE_CLAIM} --" in out
+            and "nothing was changed" not in out), out
+
+
+def case_leave_chore_unknown_checkout_stands(m):
+    """A checkout git will not describe is neither removed nor detached."""
+    w = standing(git_what=128)
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "vacate",
+                             "git did not say what")
+    return ok and not vacates(asked) and not releases(asked), out
+
+
+def case_leave_chore_no_origin_stands(m):
+    """A checkout whose origin did not read has no repository to ask whether
+    it merged, which is not a merge."""
+    w = standing()
+    w["no_origin"] = (w["here"][0][1],)
+    ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "chore",
+                             "did not read")
+    return ok and not vacates(asked) and not releases(asked), out
 
 
 def case_leave_chore_release_refuses(m):
@@ -947,7 +997,9 @@ def case_leave_chore_release_refuses(m):
     w = standing(released={f"rc/{N}-b": "refusing: no REVIEW names the head\n"})
     ok, asked, out = refused(m, HANDOVER + ["--detached"], w, "release",
                              "no REVIEW names the head")
-    return ok and w["dir"].exists() and "bound" not in steps(out), out
+    return (ok and w["dir"].exists() and "live" not in steps(out)
+            and f"released: rc/{N}-a; taken off its checkout, its ref still "
+                f"standing: rc/{N}-b" in out), out
 
 
 def case_leave_chore_said_up_front(m):
@@ -1441,6 +1493,14 @@ CASES = {
         case_leave_chore_dirty_worktree_stands,
     "chore: a release that refuses stops the clean-up before the gates":
         case_leave_chore_release_refuses,
+    "chore: a chore bound elsewhere has nothing vacated or released from here":
+        case_leave_chore_elsewhere_writes_nothing,
+    "chore: a gate refusing after the release says what was already done":
+        case_leave_chore_gate_after_release_says_so,
+    "chore: a checkout git will not describe is left as it is":
+        case_leave_chore_unknown_checkout_stands,
+    "chore: a checkout with no origin read is not asked about and stands":
+        case_leave_chore_no_origin_stands,
     "chore: the caller's own pane is told the clean-up follows, and which log":
         case_leave_chore_said_up_front,
     # refusals
@@ -2075,8 +2135,8 @@ MUTATIONS = [
      "say so"),
     ("chore: only a CLOSED one", '    if state != "CLOSED":\n', "    if False:\n",
      "chore: an OPEN chore's leave is just a leave"),
-    ("chore: the release comes before the gates", "    step_chore_release(n)\n    campaign(",
-     "    campaign(",
+    ("chore: the release comes before the gates", "    did = step_chore_release(n)\n",
+     "    did = None\n",
      "chore: its own merged claims are vacated and released before any gate"),
     ("chore: only a merged claim is touched", "        if not isinstance(number, int):\n",
      "        if False:\n",
@@ -2090,9 +2150,30 @@ MUTATIONS = [
     ("chore: a vacate git refused stops it", "    if r.returncode != 0:\n        raise Refused(\"vacate\", f\"{branch} at",
      "    if False:\n        raise Refused(\"vacate\", f\"{branch} at",
      "chore: a worktree git will not remove is kept, with no force"),
-    ("chore: a refused release stops it", "        if why:\n            raise Refused(\"release\", f\"{branch}: {why}\")",
-     "        if False:\n            raise Refused(\"release\", f\"{branch}: {why}\")",
+    ("chore: a refused release stops it", "        if why:\n            raise Refused(\"release\", f\"{branch}: {why}\",",
+     "        if False:\n            raise Refused(\"release\", f\"{branch}: {why}\",",
      "chore: a release that refuses stops the clean-up before the gates"),
+    ("chore: the binding is read before the first write",
+     "    gate_bound(n, want_here=True)\n    directory = read_directory(n)\n    gate_standing(n)\n    reading = read_live(",
+     "    directory = read_directory(n)\n    reading = read_live(",
+     "chore: a chore bound elsewhere has nothing vacated or released from here"),
+    ("chore: each claim is vacated right before its own release",
+     "        if path:\n            step_vacate(branch, path, changed())\n",
+     "        pass\n",
+     "chore: its own merged claims are vacated and released before any gate"),
+    ("chore: a later gate's refusal says what was released",
+     "        if did and r.changed == \"nothing was changed\":\n", "        if False:\n",
+     "chore: a gate refusing after the release says what was already done"),
+    ("chore: a vacate's refusal says what was released",
+     "            step_vacate(branch, path, changed())\n", "            step_vacate(branch, path)\n",
+     "chore: a worktree git will not remove is kept, with no force"),
+    ("chore: an undescribed checkout refuses",
+     "    if r.returncode != 0 or len(dirs) != 2:\n", "    if len(dirs) != 2:\n",
+     "chore: a checkout git will not describe is left as it is"),
+    ("chore: no origin is not a merge",
+     "        number = CLAIM.merged_pr_of(repo, branch) if repo else \"?\"\n",
+     "        number = CLAIM.merged_pr_of(repo, branch) if repo else 1\n",
+     "chore: a checkout with no origin read is not asked about and stands"),
     ("chore: the delete is given", "close=False, delete=True))",
      "close=False, delete=False))",
      "chore: a CLOSED chore's leave goes on to the campaign scope, which "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assign a sub-issue to a session already running, by prompting its pane.
+"""Assign a sub-issue to a session, by prompting its pane.
 
     campaign-assign.py <pane> <sub-issue> [--repo owner/repo]
                        [--assume-fresh] [--force]
@@ -27,8 +27,13 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
                     and the pane's checkout, when it is on `main`, is not
                     behind `origin/main` -- a session launched behind obeys
                     an AGENTS.md already superseded, and nothing reports it.
-                    A checkout on any other branch is said and skipped, since
-                    a claim behind `main` is normal. Neither flag reaches
+                    A checkout on any other branch, or a cwd that is a
+                    directory and no git work tree, is said and skipped, since
+                    a claim behind `main` is normal; a cwd that is no
+                    directory refuses. A sub-issue of no campaign refuses
+                    too, although `take` allows one (the 100-sub-issue cap,
+                    #213): no binding or name can be read for it, so relink
+                    it first. Neither flag reaches
                     these: each is a fact about the launch, not about the
                     transcript. A raw `herdr agent prompt` is read by nothing,
                     so they hold only on this path.
@@ -127,7 +132,8 @@ def run(*args, **kw):
     """A command that is not installed is a failed run, not a traceback."""
     try:
         return subprocess.run(args, capture_output=True, text=True, **kw)
-    except (FileNotFoundError, PermissionError) as e:
+    except (FileNotFoundError, PermissionError,
+            subprocess.TimeoutExpired) as e:
         return subprocess.CompletedProcess(
             args, 127, "", f"{args[0]}: {e.__class__.__name__}: {e}")
 
@@ -213,6 +219,9 @@ def behind_main(cwd):
     behind `origin/main`, after a fetch? Only `main` is read: a claim branch
     behind `main` is normal, and whether it contains `main` is merge
     condition 3's."""
+    if not os.path.isdir(cwd):
+        return (f"pane cwd {cwd!r} is no directory, so its checkout is "
+                f"unread"), None
     r = run("git", "-C", cwd, "branch", "--show-current")
     if r.returncode != 0:
         return None, f"{cwd} is not a git work tree; no checkout to be behind"
@@ -220,7 +229,7 @@ def behind_main(cwd):
     if branch != "main":
         return None, (f"{cwd} is on {branch or 'a detached HEAD'}, not main; "
                       f"skipped")
-    r = run("git", "-C", cwd, "fetch", "-q", "origin", "main")
+    r = run("git", "-C", cwd, "fetch", "-q", "origin", "main", timeout=60)
     if r.returncode != 0:
         return (f"`git -C {cwd} fetch origin main` exited {r.returncode}: "
                 f"{r.stderr.strip()[:160]}; whether it is behind is unread"), None
@@ -231,16 +240,17 @@ def behind_main(cwd):
                 f"{r.returncode}: {r.stderr.strip()[:160]}"), None
     note = f"{cwd} is {count} commit(s) behind origin/main"
     if count != "0":
-        return (f"{note}. Pull it (`git -C {cwd} pull --ff-only`), then "
-                f"retry"), None
+        return (f"{note}. Bring it level, then retry: an install by "
+                f"`scripts/campaign-installed.py reach` (AGENTS.md, Installed "
+                f"repositories), a clone by `git -C {cwd} pull --ff-only`"), None
     return None, note
 
 
 def launch_refusal(m, row, issue):
     """(refusal, None) or (None, (parent, slug)) -- `sessionLaunch`'s
     preconditions over the sub-issue and the pane, each printed as it is read.
-    Every reading here that did not happen refuses: a state, a binding or a
-    parent that could not be read is not one that admits."""
+    Every GitHub reading here that did not happen refuses: a state, a
+    binding or a parent that could not be read is not one that admits."""
     settled, note = m.issue_settled(issue)
     if settled is not False:
         return note, None

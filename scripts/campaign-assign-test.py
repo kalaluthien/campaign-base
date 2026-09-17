@@ -89,11 +89,11 @@ exit 1
 GH = r'''#!%s
 import json, sys
 a, T = sys.argv[1:], "repos/kalaluthien/campaign-base"
-standing, state, labels = %r, %r, %r
+standing, state, labels, parent = %r, %r, %r, %r
 if a[:2] == ["issue", "view"] and "state,stateReason" in a:
     print(state); sys.exit(0)
 if a[:2] == ["issue", "view"] and "parent" in a:
-    print("7"); sys.exit(0)
+    print(parent); sys.exit(0)
 if a[:2] == ["api", T + "/issues/7"]:
     print(json.dumps(labels)); sys.exit(0)
 if a[:3] == ["issue", "view", "7"]:
@@ -114,14 +114,14 @@ BOUND_HERE = ["campaign", "campaign:rc", "bound:here"]
 
 
 def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False,
-          screen=SCREEN % "", state="OPEN ", labels=BOUND_HERE):
+          screen=SCREEN % "", state="OPEN ", labels=BOUND_HERE, parent="7"):
     """A PATH holding only the stubs, and a HOME whose transcript for `sid`
     holds `records` (no file at all when None). PATH is this directory ALONE,
     so a call that escaped the stubs would run nothing rather than silently
     reaching the real herdr and driving somebody's pane. `standing` leaves
     a ref of rc#9 on the remote; `screen` is what `pane read` shows, an empty
     input box by default; `state` is the sub-issue's `state stateReason` and
-    `labels` the campaign issue's."""
+    `labels` the campaign issue's; `parent` its parent, "" for none."""
     d = Path(d)
     b = d / "bin"
     b.mkdir(parents=True, exist_ok=True)
@@ -129,7 +129,7 @@ def shims(d, rows, records=None, prompt_exit=0, sid="S2", standing=False,
     (b / "herdr").write_text(
         HERDR % (str(d / "prompts.log"), listing, prompt_exit, screen))
     (b / "herdr").chmod(0o755)
-    (b / "gh").write_text(GH % (sys.executable, standing, state, labels, T1))
+    (b / "gh").write_text(GH % (sys.executable, standing, state, labels, parent, T1))
     (b / "gh").chmod(0o755)
     (b / "hostname").write_text("#!/bin/sh\necho here\n")
     (b / "hostname").chmod(0o755)
@@ -471,6 +471,21 @@ def launch_cases():
               r.returncode == 1 and "#198 is CLOSED as COMPLETED" in out
               and prompts(closed) == [], f"exit {r.returncode}: {out[:300]}")
 
+        unread = shims(Path(d) / "nostate", rows, COMPACTED, state="")
+        r = assign(["w1:p2", "198", "--force"], unread)
+        out = r.stdout + r.stderr
+        check("...and so is a state that did not read, which is not open",
+              r.returncode == 1 and "returned no state for #198" in out
+              and prompts(unread) == [], f"exit {r.returncode}: {out[:300]}")
+
+        orphan = shims(Path(d) / "orphan", rows, COMPACTED, parent="")
+        r = assign(["w1:p2", "198", "--force"], orphan)
+        out = r.stdout + r.stderr
+        check("a sub-issue of no campaign is refused, since no binding or name "
+              "reads for it",
+              r.returncode == 1 and "sub-issue of no campaign issue" in out
+              and prompts(orphan) == [], f"exit {r.returncode}: {out[:300]}")
+
         away = shims(Path(d) / "away", rows, COMPACTED,
                      labels=["campaign", "campaign:rc", "bound:other"])
         r = assign(["w1:p2", "198", "--force"], away)
@@ -478,6 +493,14 @@ def launch_cases():
         check("a campaign bound to another machine is refused, --force or not",
               r.returncode == 1 and "bound elsewhere" in out
               and prompts(away) == [], f"exit {r.returncode}: {out[:300]}")
+
+        gone = shims(Path(d) / "nocwd",
+                     [agent("S2", "rc-worker-2", "w1:p2", cwd="?")], COMPACTED)
+        r = assign(["w1:p2", "198", "--force"], gone)
+        out = r.stdout + r.stderr
+        check("a pane cwd that is no directory, as herdr's `?`, is refused",
+              r.returncode == 1 and "is no directory" in out
+              and prompts(gone) == [], f"exit {r.returncode}: {out[:300]}")
 
         other = shims(Path(d) / "otherc",
                       [agent("S2", "zz-worker-2", "w1:p2")], COMPACTED)
@@ -502,6 +525,7 @@ def launch_cases():
         check("a pane checkout on main and behind origin/main is refused, "
               "--force or not, naming the count and the checkout",
               r.returncode == 1 and "1 commit(s) behind origin/main" in out
+              and "campaign-installed.py reach" in out
               and str(behind) in out and prompts(late) == [],
               f"exit {r.returncode}: {out[:400]}")
         level = clone_behind(Path(d) / "gl", 0)

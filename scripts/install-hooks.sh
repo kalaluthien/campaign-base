@@ -327,7 +327,10 @@ fi
 # names, which is the walk of a guarded folder the Bash rule refuses.
 # check-read-range.py is its own entry on `Read` alone (rule-check#443): steering
 # a read is no claim question, and a fault in it must not touch the guard.
-# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/driving-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit
+# campaign-push.py is on `Notification` and `SessionEnd` with no matcher
+# (rule-check#481): it reads the payload's own `notification_type` and `reason`,
+# and drops every event it does not push before it imports or lists anything.
+# installs: scripts/check-campaign-claim.py:PreToolUse:Edit|Write|NotebookEdit|Bash|Agent|Skill|Glob|Grep scripts/check-read-range.py:PreToolUse:Read .claude/skills/assuming-role/scripts/campaign-role-brief.py:SessionStart,UserPromptSubmit .claude/skills/using-herdr/scripts/herdr-session-link.py:SessionStart,UserPromptSubmit .claude/skills/assuming-role/scripts/campaign-push.py:Notification,SessionEnd
 #
 # ...and the line below is what the guards of EITHER half import rather than
 # run, which no `# runs:` line can carry: a name there is executed as a guard. Nothing in this
@@ -335,7 +338,7 @@ fi
 # clone reaches them by absolute path -- but the suites that build a fixture
 # from these declarations do, and a fixture missing an import is a guard that
 # tracebacks where it meant to refuse.
-# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py scripts/alloy-check.py
+# imports: .claude/skills/assuming-role/scripts/campaign-name-session.py .claude/skills/assuming-role/scripts/campaign-roles.py scripts/alloy-check.py .claude/skills/assuming-role/scripts/campaign-heartbeat.py scripts/campaign-assign.py scripts/campaign-directory.py
 #
 # REPO-RELATIVE since #227: a script either half names may live under
 # .claude/skills/<skill>/scripts/, so an entry carries the whole path and

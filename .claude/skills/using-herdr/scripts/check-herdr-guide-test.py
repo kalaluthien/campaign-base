@@ -7,7 +7,7 @@ guide.md from its own path, and runs it as a process against a fake `herdr`
 on PATH. The differing guide is the one this repository held at v0.8.2,
 `fixtures/guide-v0.8.2.md`, against a fake printing other text.
 
-Usage: .claude/skills/driving-herdr/scripts/check-herdr-guide-test.py
+Usage: .claude/skills/using-herdr/scripts/check-herdr-guide-test.py
 """
 import importlib
 import os

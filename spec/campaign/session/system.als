@@ -110,7 +110,7 @@ var sig Briefed in Session {}
    alone -- the refusal it keeps for a session with no name needs a row that
    carries the id.
 
-   `.claude/skills/driving-herdr/scripts/herdr-session-link.py` sets it, on
+   `.claude/skills/using-herdr/scripts/herdr-session-link.py` sets it, on
    SessionStart and again on UserPromptSubmit when the record lost it, and only
    for the pane's own session -- a subagent, or a one-shot `claude -p` run
    from the pane's own Bash tool, fires the same hook and writes nothing. So
@@ -153,9 +153,9 @@ sig Ranged, Long, Diff in FileRead {}
 pred steered[r: FileRead] { r not in Ranged and r in Long - Diff }
 
 /* HERDR'S GUIDE IS HERDR'S OWN TEXT, OR IT IS STALE, OR NOBODY CAN TELL.
-   `.claude/skills/driving-herdr/references/guide.md` is what the installed
+   `.claude/skills/using-herdr/references/guide.md` is what the installed
    `herdr --skill` prints, byte for byte, so that an upgrade replaces the file
-   and loses nothing of ours. `.claude/skills/driving-herdr/scripts/check-herdr-guide.py`
+   and loses nothing of ours. `.claude/skills/using-herdr/scripts/check-herdr-guide.py`
    reads that identity and answers one of three words. What makes herdr
    Readable -- a binary on PATH whose `--skill` prints text -- is that
    script's and is not restated.

@@ -722,7 +722,8 @@ REOPENS = {
                         {"at": "2026-09-17T06:00:00Z",
                          "body": "NOTE w-2: reopening over pr#7080, see "
                                  "https://github.com/kalaluthien/campaign-base"
-                                 "/pull/7080 and #708"}]}]},
+                                 "/pull/7080 and #708, beside the longer id "
+                                 "issuecomment-95700000012"}]}]},
 }
 
 
@@ -1208,8 +1209,9 @@ def join_reads_a_reopen_naming_a_url(m):
     never-happened from never-matched (pr#490 REVIEW 5721893225, F2).
 
     THE CONTROL IS THE NEAR MISS, 708: reopened after the merge, naming
-    `pr#7080`, `/pull/7080` and a bare `#708`. A longer number starting with
-    this one is not this one, and a bare `#<n>` names no repository."""
+    `pr#7080`, `/pull/7080`, a bare `#708`, and a comment id that ENDS with the
+    REPORT's. A longer number starting or ending with this one is not this one
+    (pr#490 REVIEW 5722167494, N1), and a bare `#<n>` names no repository."""
     by_url, _l = joined(m, [done_row("dn06", 705)])
     by_id, _l2 = joined(m, [done_row("dn07", 706)])
     near, _l3 = joined(m, [done_row("dn08", 708)])

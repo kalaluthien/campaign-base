@@ -1572,11 +1572,14 @@ def names_of(repo, pull_request, report_comment):
     the same reason AGENTS.md refuses a bare `#N` in prose.
 
     EACH ENDS ON A NON-DIGIT, so `pr#49` does not match `pr#490` and the id of
-    one comment does not match a longer id starting with it."""
+    one comment does not match a longer id starting with it. THE ID ALSO STARTS
+    ON ONE, being the only pattern with no prefix of its own to anchor its left
+    edge, so it does not match a longer id ending with it either."""
     out = [re.compile(rf"pr#{pull_request}(?!\d)"),
            re.compile(re.escape(f"{repo}/pull/{pull_request}") + r"(?!\d)")]
     if report_comment:
-        out.append(re.compile(rf"{re.escape(str(report_comment))}(?!\d)"))
+        out.append(re.compile(
+            rf"(?<!\d){re.escape(str(report_comment))}(?!\d)"))
     return out
 
 

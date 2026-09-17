@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assign a sub-issue to a session already running, by prompting its pane.
+"""Assign a sub-issue to a session, by prompting its pane.
 
     campaign-assign.py <pane> <sub-issue> [--repo owner/repo]
                        [--assume-fresh] [--force]
@@ -21,6 +21,22 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
 
   (no row)          no herdr row names this pane, so there is nothing to
                     prompt and the pane string is probably stale.
+  (launch)          `sessionLaunch`'s preconditions, read before anything is
+                    sent: the sub-issue is open, its campaign is bound to this
+                    machine, the pane's session is named for that campaign,
+                    and the pane's checkout, when it is on `main`, is not
+                    behind `origin/main` -- a session launched behind obeys
+                    an AGENTS.md already superseded, and nothing reports it.
+                    A checkout on any other branch, or a cwd that is a
+                    directory and no git work tree, is said and skipped, since
+                    a claim behind `main` is normal; a cwd that is no
+                    directory refuses. A sub-issue of no campaign refuses
+                    too, although `take` allows one (the 100-sub-issue cap,
+                    #213): no binding or name can be read for it, so relink
+                    it first. Neither flag reaches
+                    these: each is a fact about the launch, not about the
+                    transcript. A raw `herdr agent prompt` is read by nothing,
+                    so they hold only on this path.
   (not idle)        a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.
@@ -116,7 +132,8 @@ def run(*args, **kw):
     """A command that is not installed is a failed run, not a traceback."""
     try:
         return subprocess.run(args, capture_output=True, text=True, **kw)
-    except (FileNotFoundError, PermissionError) as e:
+    except (FileNotFoundError, PermissionError,
+            subprocess.TimeoutExpired) as e:
         return subprocess.CompletedProcess(
             args, 127, "", f"{args[0]}: {e.__class__.__name__}: {e}")
 
@@ -189,15 +206,77 @@ def heartbeat_module():
         "campaign-heartbeat.py"), "campaign_heartbeat")
 
 
-def refs_of(m, hb, issue):
+def refs_of(m, hb, parent, slug):
     """The heartbeat's reader of claim refs and their deletion, over the
     campaign the sub-issue being assigned hangs from: the pane's last
-    sub-issue is of that campaign too, since a worker is named for one."""
-    parent, note, _ = m.issue_parent(issue)
-    slug, note = m.campaign_slug(parent) if parent else (None, note)
-    if slug is None:
-        return lambda n: (None, note)
+    sub-issue is of that campaign too, since a worker is named for one, which
+    `launch_refusal` has already read."""
     return hb.refs_reader(hb.claim_reading(parent, slug, m), slug)
+
+
+def behind_main(cwd):
+    """(refusal or None, note) -- is the checkout at `cwd` on `main` and
+    behind `origin/main`, after a fetch? Only `main` is read: a claim branch
+    behind `main` is normal, and whether it contains `main` is merge
+    condition 3's."""
+    if not os.path.isdir(cwd):
+        return (f"pane cwd {cwd!r} is no directory, so its checkout is "
+                f"unread"), None
+    r = run("git", "-C", cwd, "branch", "--show-current")
+    if r.returncode != 0:
+        return None, f"{cwd} is not a git work tree; no checkout to be behind"
+    branch = r.stdout.strip()
+    if branch != "main":
+        return None, (f"{cwd} is on {branch or 'a detached HEAD'}, not main; "
+                      f"skipped")
+    r = run("git", "-C", cwd, "fetch", "-q", "origin", "main", timeout=60)
+    if r.returncode != 0:
+        return (f"`git -C {cwd} fetch origin main` exited {r.returncode}: "
+                f"{r.stderr.strip()[:160]}; whether it is behind is unread"), None
+    r = run("git", "-C", cwd, "rev-list", "--count", "HEAD..origin/main")
+    count = r.stdout.strip()
+    if r.returncode != 0 or not count.isdigit():
+        return (f"`git -C {cwd} rev-list --count HEAD..origin/main` exited "
+                f"{r.returncode}: {r.stderr.strip()[:160]}"), None
+    note = f"{cwd} is {count} commit(s) behind origin/main"
+    if count != "0":
+        return (f"{note}. Bring it level, then retry: an install by "
+                f"`scripts/campaign-installed.py reach` (AGENTS.md, Installed "
+                f"repositories), a clone by `git -C {cwd} pull --ff-only`"), None
+    return None, note
+
+
+def launch_refusal(m, row, issue):
+    """(refusal, None) or (None, (parent, slug)) -- `sessionLaunch`'s
+    preconditions over the sub-issue and the pane, each printed as it is read.
+    Every GitHub reading here that did not happen refuses: a state, a
+    binding or a parent that could not be read is not one that admits."""
+    settled, note = m.issue_settled(issue)
+    if settled is not False:
+        return note, None
+    print(note)
+    parent, note, _ = m.issue_parent(issue)
+    if parent is None:
+        return f"{note}, so no campaign's binding or name can be read", None
+    why = m.binding_refusal(parent)
+    if why:
+        return f"#{parent}: {why}", None
+    print(f"{note}, bound here")
+    slug, note = m.campaign_slug(parent)
+    if slug is None:
+        return note, None
+    named = m.NAMES.campaign_of(row["name"])
+    if named != slug:
+        said = f"`{named}`" if named else "no campaign"
+        return (f"pane {row['pane']}'s session {row['name']} is of {said}, "
+                f"and #{issue} is of `{slug}`. Name the pane for `{slug}` "
+                f"first, or assign a pane of it"), None
+    print(f"{row['name']} is of `{slug}`")
+    why, note = behind_main(row["cwd"])
+    if why:
+        return why, None
+    print(note)
+    return None, (parent, slug)
 
 
 # THE ONE HOME OF THE ASSIGNMENT SENTENCE'S SHAPE, written by `prompt_for`
@@ -276,6 +355,12 @@ def main():
         print(f"refusing: {why}", file=sys.stderr)
         return 1
 
+    why, campaign = launch_refusal(m, row, issue)
+    if why:
+        print(f"refusing: {why}\n  The sub-issue is not assigned.",
+              file=sys.stderr)
+        return 1
+
     r = run("herdr", "pane", "read", args.pane, "--source", "detection")
     text, why = (input_line(r.stdout) if r.returncode == 0 else
                  (None, f"`herdr pane read` exited {r.returncode}: "
@@ -310,7 +395,7 @@ def main():
         verdict, why = "unread", f"{where}: {why_unread}"
     else:
         verdict, why = hb.compacted_since_ref(reading,
-                                              refs_of(m, hb, issue))
+                                              refs_of(m, hb, *campaign))
         print(f"{verdict}: {why} (read {where})")
     # ONE REMEDY LIST PER VERDICT: `/compact and retry` changes nothing for
     # `unknown`, and --assume-fresh does not reach `stale`.

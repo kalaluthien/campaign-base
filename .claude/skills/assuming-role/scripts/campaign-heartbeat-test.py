@@ -160,6 +160,12 @@ def _(m):
         ["model", "Set model to `Opus 5`"], ["effort", None]])), r
 
 
+@case("last is the latest record of any kind, by time")
+def _(m):
+    r = reading(m, call(6), prompt(2, work(9)), boundary(4), usage(5, 10))
+    return r["last"] == ts(6), r
+
+
 @case("every last is by time, not by position in the file")
 def _(m):
     r = reading(m, prompt(5, work(5)), prompt(1, work(1)), boundary(3),
@@ -367,7 +373,7 @@ NONE = "no limit (herdr lists w1:p2 idle)"
 # by nobody.
 DONE = {"assigned": 9, "assigned_at": ts(1), "compacted": None,
         "compact_asked": None, "compact_refused": None, "other": "hello", "other_at": ts(2), "acted": ts(2), "context": 9000,
-        "context_at": ts(2), "records": 3}
+        "context_at": ts(2), "records": 3, "last": ts(2)}
 
 
 def big(tokens):
@@ -456,8 +462,68 @@ def _(m):
 
 @case("a ref still standing is not retired")
 def _(m):
-    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]))
+    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]),
+                  now=clock(2, 10))
     return v[0] == "keep" and "tk/9-x standing" in v[1], v
+
+
+def clock(minute, later):
+    """`ts(minute)` plus `later` minutes, as the clock `verdict` takes."""
+    import datetime
+    return (datetime.datetime.fromisoformat(ts(minute).replace("Z", "+00:00"))
+            + datetime.timedelta(minutes=later))
+
+
+ASKED = "STATUS from the heartbeat: tk#9 still has a claim"
+
+
+@case("ask: an idle worker, its assigned claim standing, its transcript quiet 30m; the why names N, the ref and the quiet")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]),
+                  now=clock(2, 30))
+    return (v[0] == "ask" and "assigned #9; tk/9-x standing" in v[1]
+            and f"quiet since {ts(2)}, 30m >= 30m" in v[1]), v
+
+
+@case("an idle worker quiet under 30m is not asked, and says so")
+def _(m):
+    v = m.verdict("worker", False, IDLE, NONE, DONE, gone(None, ["tk/9-x"]),
+                  now=clock(2, 29))
+    return v[0] == "keep" and "not asked: quiet since" in v[1], v
+
+
+@case("a working or blocked worker with its claim standing is not asked")
+def _(m):
+    a = m.verdict("worker", False, BUSY, NONE, DONE, gone(None, ["tk/9-x"]),
+                  now=clock(2, 90))
+    b = m.verdict("worker", False, BLOCKED, NONE, DONE, gone(None, ["tk/9-x"]),
+                  now=clock(2, 90))
+    return (a[0], b[0]) == ("keep", "keep"), (a, b)
+
+
+@case("a worker whose latest prompt is the heartbeat's STATUS is not asked again")
+def _(m):
+    asked = dict(DONE, other=ASKED[:80], other_at=ts(3), last=ts(4))
+    v = m.verdict("worker", False, IDLE, NONE, asked, gone(None, ["tk/9-x"]),
+                  now=clock(4, 90))
+    return v[0] == "keep" and f"asked for STATUS at {ts(3)}, no prompt since" in v[1], v
+
+
+@case("a STATUS followed by an assignment is asked again")
+def _(m):
+    asked = dict(DONE, other=ASKED[:80], other_at=ts(3), assigned_at=ts(4),
+                 last=ts(4))
+    v = m.verdict("worker", False, IDLE, NONE, asked, gone(None, ["tk/9-x"]),
+                  now=clock(4, 90))
+    return v[0] == "ask", v
+
+
+@case("the STATUS prompt opens with the mark the ask reads back, and names the claim")
+def _(m):
+    text = m.status_ask("tk", 9, ts(2))
+    got = m.transcript_reading(lines(prompt(3, text)))
+    return (text.startswith(ASKED) and got["other"].startswith(m.STATUS_OPEN)
+            and got["assigned"] is None and "safe to stop" in text), (text, got)
 
 
 @case("no assignment prompt is not retired")
@@ -793,7 +859,7 @@ def wait_for(d, pane, text, before):
 
 def verdicts(out):
     return {ln.split()[1]: ln.split()[0] for ln in out.splitlines()
-            if ln.split() and ln.split()[0] in ("fire", "compact", "retire", "keep")}
+            if ln.split() and ln.split()[0] in ("fire", "compact", "retire", "ask", "keep")}
 
 
 @case("the run gives one verdict per session of the campaign, and no other")
@@ -802,7 +868,7 @@ def _(m):
         code, out, _ = heartbeat(m, fleet(d), "7")
     want = {"w1:p1": "compact", "w1:p2": "retire", "w1:p3": "compact",
             "w1:p4": "fire", "w1:p5": "fire", "w1:p6": "keep",
-            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "keep", "w1:pC": "keep",
+            "w1:p9": "keep", "w1:pA": "keep", "w1:pB": "ask", "w1:pC": "keep",
             "w1:pD": "retire", "w1:pE": "retire"}
     return code == 0 and verdicts(out) == want, out
 
@@ -914,7 +980,9 @@ def _(m):
     return (code == 0 and sent == [] and not closed
             and "would send /compact to w1:p1" in out
             and "would run campaign-close.py worker 7 w1:p2" in out
-            and "would run campaign-limit-reset.py w1:p4 --fire w1:p1" in out), (sent, out)
+            and "would run campaign-limit-reset.py w1:p4 --fire w1:p1" in out
+            and "would send STATUS from the heartbeat: tk#5 still has a claim"
+                " and this pane has written nothing since " + ts(3) in out), (sent, out)
 
 
 @case("--apply sends each action, guarded, to the pane it names")
@@ -924,7 +992,10 @@ def _(m):
         code, out, sent = heartbeat(m, d, "7", "--apply")
     want = {"HERDR_ENV=1 pane=w1:p1 prompt=/compact",
             "HERDR_ENV=1 pane=w1:p3 prompt=/compact"}
-    return code == 0 and want <= set(sent) and "sent /compact to w1:p3" in out, (sent, out)
+    asked = [p for p in sent if p.startswith(
+        "HERDR_ENV=1 pane=w1:pB prompt=STATUS from the heartbeat: tk#5 ")]
+    return (code == 0 and want <= set(sent) and "sent /compact to w1:p3" in out
+            and len(asked) == 1), (sent, out)
 
 
 @case("--apply retires through campaign-close's scope worker, guarded, one run per worker")
@@ -1573,6 +1644,23 @@ MUTATIONS = [
      'if reading["context"] > COMPACT_AT:', "compact: idle at the threshold"),
     ("the own pane skips the idle reading", "is_own = pane == own",
      "is_own = False", "the run gives one verdict per session of the campaign, and no other"),
+    ("ask only an idle worker", "if went is None and idle[0]:", "if went is None:",
+     "a working or blocked worker with its claim standing is not asked"),
+    ("ask only after the quiet", "if quiet.total_seconds() < STUCK_AFTER:", "if False:",
+     "an idle worker quiet under 30m is not asked, and says so"),
+    ("ask only with a ref standing", "if got is None or not got[0]:", "if got is None:",
+     "no deletion read, or the refs unread, is not retired"),
+    ("ask once per quiet stretch", 'and reading["other"].startswith(STATUS_OPEN)', "and False",
+     "a worker whose latest prompt is the heartbeat's STATUS is not asked again"),
+    ("an assignment after the ask", '''if (reading["other_at"] and when(reading["other_at"])
+            > when(reading["assigned_at"])''', 'if (reading["other_at"]',
+     "a STATUS followed by an assignment is asked again"),
+    ("the ask returns ask", 'return "ask", said + passed', 'pass',
+     "ask: an idle worker, its assigned claim standing, its transcript quiet 30m; the why names N, the ref and the quiet"),
+    ("last is every record", '        later("last", ts)\n', "",
+     "last is the latest record of any kind, by time"),
+    ("the ask sends its STATUS", 'text = (status_ask(slug, reading["assigned"], reading["last"])', 'text = ("/compact"',
+     "--apply sends each action, guarded, to the pane it names"),
     ("retire", "if went and not again:", "if False:",
      "retire: a worker, idle, its assigned sub-issue's ref gone, nothing since; the why names N and the refs"),
     ("retire only a worker", 'if role == "worker" and not own:', "if not own:",

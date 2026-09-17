@@ -105,10 +105,12 @@ each line is an event. On one, run the **heartbeat**:
 1. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --apply`.
    It reads every session of the campaign, this planner included, and gives
    each one verdict: `fire` on a limit banner, `compact` at the context
-   threshold, `retire` for a worker done and holding nothing, `keep` for the
-   rest. Its header says what each reads and sends.
+   threshold, `retire` for a worker done and holding nothing, `ask` for an
+   idle worker whose claim stands and whose pane has been quiet 30m -- one
+   `STATUS` prompt -- and `keep` for the rest. Its header says what each
+   reads and sends.
 2. Act on the drift the heartbeat does not: assign an `unclaimed` sub-issue,
-   ask about a `stuck` claim, release a `settled` one.
+   read the answer to an `ask`, release a `settled` one.
 
 **`quiet <slug>` means nothing is left to do**: no other session of the
 campaign listed, no open sub-issue without `backlog` or `standing`, no
@@ -137,7 +139,10 @@ claims group, `landed` refs released first with `campaign-claim release`: a
 claim ref keeps the old slug, and nothing reads that prefix after the rename.
 Rewrite the `.campaign` marker with the label, through its one writer: read the
 directory with `campaign-directory.py <N>`, remove its marker, then
-`campaign-directory.py mark <N> <new slug> <dir>`. The worker's side is in
+`campaign-directory.py mark <N> <new slug> <dir>`. If that answers anything
+but `<dir>`, run `mark <N> <old slug> <dir>` at once, so the directory is not
+left with no marker and invisible to every reader here, and post a `BLOCKED` on
+the campaign issue quoting both answers. The worker's side is in
 [worker](role-worker.md).
 
 1. **The predecessor posts its last comment**, `NOTE <old>: handed off to

@@ -2,13 +2,13 @@
 
 Probed facts for a session that launches, drives, reads or retires a herdr
 pane, arriving from `.claude/skills/assuming-role/references/launching.md`.
-`.claude/skills/herdr/SKILL.md` (vendored from `herdr --skill`) is the
+`guide.md` beside this file (`herdr --skill`, byte for byte) is the
 authority on the happy path; `launching.md` owns the launch procedure; the
 scripts named below own what they read. This file holds only where the happy
 path breaks and nothing else states it. Every fact carries the date it was
 probed; herdr moved 0.8.0 → 0.8.2 across those dates (8/12–8/21 vs. 8/28
-onward), and a fact with no version note was probed against whichever build
-was live that day.
+onward) and to 0.9.0 by 2026-09-17, and a fact with no version note was
+probed against whichever build was live that day.
 
 ## Contents
 
@@ -112,7 +112,8 @@ herdr agent start <name> --kind claude --pane <pane_id> -- <claude args...>
   `agent_prompt_stalled` while the command in fact ran** (probed 2026-09-08
   with `/remote-control`: stalled at 5000 ms, the pane showing the dialog).
   Read the pane before concluding, and dismiss the dialog rather than
-  re-sending.
+  re-sending. The 0.9.0 guide states the general rule, that a stall does not
+  prove non-delivery; this is the case that produces it here.
 - **`/model <m>` and `/effort <e>` switch a running session in place, and
   each rewrites the user's default** -- `model` and `effortLevel` in
   `~/.claude/settings.json`, as the pane says (`saved as your default for new
@@ -227,10 +228,13 @@ The wrapper filter matters — the literal first record is often a
   2026-08-21), so a listed agent is a live process. `agent_status`
   (`idle|working|blocked|done|unknown`) reads the screen: a session pausing
   mid-turn reads `idle`, and `done` means one turn ended. **`idle` and
-  `done` differ by history, not screen** — herdr promotes `idle` to `done`
-  only once it saw the agent `working`, and a session whose first turn ends
-  inside the ~3.1 s `agent start` takes to attach the name reads `idle` for
-  good. Never read `idle` as "took no prompt".
+  `done` differ by history and by who looked, not screen** — herdr promotes
+  `idle` to `done` only once it saw the agent `working`, and a session whose
+  first turn ends inside the ~3.1 s `agent start` takes to attach the name
+  reads `idle` for good. And only where nobody saw it end: the same one-turn
+  prompt read `idle` from a pane split into the focused tab and `done` from a
+  `tab create --no-focus`, and an `agent read` left `done` standing (probed
+  0.9.0, 2026-09-17). Never read `idle` as "took no prompt".
 - **The status rules are data**: a per-agent TOML manifest under
   `~/.local/state/herdr/agent-detection/remote/<agent>.toml`
   (`herdr server agent-manifests` prints which is live; 2026.08.29.1 on

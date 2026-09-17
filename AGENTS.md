@@ -775,8 +775,9 @@ answered no from a question it could not read.
 enough to need no procedure around it, one a hook runs, one CI runs, and one
 two skills call.
 
-**`.claude/skills/herdr/SKILL.md` is vendored**, and the first line of its
-body, under the frontmatter, names the upstream and the tag. An upgrade
-replaces the whole file; any edit breaks the identity that makes that
-replacement safe. `.claude/skills/herdr/scripts/` and
-`.claude/skills/herdr/references/` are ours, and an upgrade leaves them alone.
+**`.claude/skills/driving-herdr/references/guide.md` is herdr's own text**,
+`herdr --skill` byte for byte, and is never edited by hand: any edit breaks
+the identity that makes replacing it safe.
+`.claude/skills/driving-herdr/scripts/check-herdr-guide.py` says whether it still is, naming the herdr it
+read, and its `write` replaces the file whole. Everything else in that skill
+is ours, and a herdr upgrade leaves it alone.

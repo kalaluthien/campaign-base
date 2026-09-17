@@ -26,10 +26,15 @@ sys.path.append(str(HERE))
 harness = importlib.import_module("suite-harness-test")
 check, git = harness.check, harness.git
 
+# FAKE_-PREFIXED, NOT `GH_SLEEP`: the subject holds a shell variable of that
+# name, and reassigning one it INHERITED from the environment keeps it exported
+# -- so a fixture naming it that had its own value overwritten and the fake gh
+# answered at the subject's speed instead of the case's.
 FAKE_GH = '''#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 with open(os.environ["GH_LOG"], "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\\n")
+time.sleep(float(os.environ.get("FAKE_GH_SLEEP", "0")))
 if os.environ.get("GH_FAILS"):
     print("gh: could not connect to api.github.com", file=sys.stderr)
     sys.exit(1)
@@ -42,9 +47,14 @@ FAKE_CLAIM = '#!/bin/sh\necho claim\nexit 0\n'
 FAKE_SCREEN = '#!/bin/sh\nexit 0\n'
 
 
-def run(commits=1, prs="", gh_fails=False, remote_url="https://github.com/x/y.git"):
+def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
+        remote_url="https://github.com/x/y.git"):
     """(completed process, the gh calls recorded) after `commits` commits on a
-    claim branch over a fixture whose origin fetch url is `remote_url`."""
+    claim branch over a fixture whose origin fetch url is `remote_url`.
+
+    `stale` is how many commits the remote's main has moved since this checkout
+    last saw it -- what a worktree holding a claim `campaign-claim take` cut
+    server-side actually has. `gh_sleep` is how long the fake gh takes."""
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "scripts").mkdir()
@@ -68,6 +78,24 @@ def run(commits=1, prs="", gh_fails=False, remote_url="https://github.com/x/y.gi
         git(repo, "remote", "set-url", "--push", "origin", str(bare), check=True)
         git(repo, "remote", "set-url", "origin", remote_url, check=True)
 
+        # THE REMOTE'S MAIN MOVES AND THIS CHECKOUT DOES NOT HEAR: the claim
+        # is cut from the remote's sha, and nothing fetches main afterwards.
+        if stale:
+            work = d / "other"
+            subprocess.run(["git", "clone", "-q", str(bare), str(work)],
+                           check=True, capture_output=True)
+            for i in range(stale):
+                harness.write_tree(work, {f"m{i}.txt": "1"})
+                git(work, "add", "-A", check=True)
+                git(work, "commit", "-qm", f"main {i}", "--no-verify", check=True)
+            git(work, "push", "-q", "origin", "main", check=True)
+            git(repo, "fetch", "-q", str(bare), "main", check=True)
+            git(repo, "merge", "-q", "--ff-only", "FETCH_HEAD", check=True)
+            # ...and then the tracking ref goes stale again, which is the state
+            # a worktree is in from the moment the claim is cut.
+            git(repo, "update-ref", "refs/remotes/origin/main",
+                f"HEAD~{stale}", check=True)
+
         branch = "slug/1-topic"
         git(repo, "checkout", "-qb", branch, check=True)
         for i in range(commits):
@@ -77,7 +105,7 @@ def run(commits=1, prs="", gh_fails=False, remote_url="https://github.com/x/y.gi
 
         log = d / "gh-calls"
         env = dict(os.environ, PATH=f"{d / 'bin'}{os.pathsep}{os.environ['PATH']}",
-                   GH_LOG=str(log), GH_PRS=prs)
+                   GH_LOG=str(log), GH_PRS=prs, FAKE_GH_SLEEP=str(gh_sleep))
         if gh_fails:
             env["GH_FAILS"] = "1"
         r = subprocess.run(["sh", str(d / "scripts" / SCRIPT.name)], cwd=repo,
@@ -114,12 +142,23 @@ def main():
           r.returncode == 0 and "gh pr create" not in r.stdout,
           f"out {r.stdout!r}")
 
-    # ONLY AT THE FIRST COMMIT, or the line is repeated at every commit of a
-    # branch whose session chose not to open one, and stops being read.
+    # A STALE `origin/main` USED TO SILENCE IT (pr#487 review, finding 2).
+    # `campaign-claim take` cuts the ref from the remote's main sha and never
+    # moves this checkout's `origin/main`, so a first-commit count against it
+    # read k+1 in a worktree lagging k commits and the line was never said.
+    # Nothing counts commits now; the question is only whether an open pull
+    # request names the head.
+    r, calls = run(commits=1, stale=2)
+    check("a genuine first commit is announced even with origin/main stale",
+          r.returncode == 0 and "gh pr create" in r.stdout,
+          f"out {r.stdout!r} err {r.stderr!r}")
+
+    # AND SAID AGAIN AT THE NEXT COMMIT, which is the trade: the line is true
+    # every time it prints, where a miss at the first commit is the defect.
     r, calls = run(commits=2)
-    check("a branch past its first commit is not told again, and gh is not asked",
-          r.returncode == 0 and "gh pr create" not in r.stdout and not calls,
-          f"out {r.stdout!r} calls {calls}")
+    check("a later commit with still no pull request is told again",
+          r.returncode == 0 and "gh pr create" in r.stdout,
+          f"out {r.stdout!r}")
 
     # AN UNREAD QUESTION IS NOT A YES. A gh that will not run leaves it unknown,
     # and the cost of saying so twice is one glance.
@@ -128,6 +167,18 @@ def main():
           r.returncode == 0 and "could not tell whether a pull request" in r.stderr
           and "could not connect" in r.stderr and "gh pr create" not in r.stdout,
           f"exit {r.returncode} out {r.stdout!r} err {r.stderr!r}")
+
+    # A BOUND, because this runs inside post-commit: an unbounded gh hangs
+    # every commit on the machine. No `timeout` on PATH here, so the watchdog
+    # is by hand, and what it does when it fires is said and not guessed.
+    r, calls = run(commits=1, gh_sleep=30)
+    check("a gh that does not answer is given up on, said, and does not hang",
+          r.returncode == 0 and "did not answer" in r.stderr
+          and "gh pr create" not in r.stdout,
+          f"exit {r.returncode} out {r.stdout!r} err {r.stderr!r}")
+    # THE NUMBERS ARE STATED, so a reader can time the wait against them.
+    check("...and the message states the tries and the sleep between them",
+          "40 tries of 0.25s" in r.stderr, f"err {r.stderr!r}")
 
     # A NON-GITHUB REMOTE has no pull request to open, and a fixture's local
     # remote is not one -- the same reading the diff screen is scoped by.

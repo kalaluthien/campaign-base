@@ -49,6 +49,70 @@ if ! err=$(mktemp); then
 fi
 trap 'rm -f "$err"' EXIT INT TERM
 
+# THE PULL REQUEST GOES UP AT THE FIRST COMMIT, not when the work is ready
+# (AGENTS.md § Execution mode): the branch is already pushed by the time this
+# runs, so a late pull request only keeps published work out of sight, and an
+# open one is where a review writes its findings. Nothing here opens one -- the
+# title and the body are the session's to write -- so this ANNOUNCES the line
+# and refuses nothing.
+#
+# THE QUESTION IS "DOES ONE NAME THIS HEAD", AND NOTHING ELSE. It was also
+# gated on the branch being one commit ahead of `origin/main`, so the line
+# would be said once; that reading was SILENTLY WRONG, because `campaign-claim
+# take` cuts the ref from the remote's main sha and never moves the local
+# `origin/main`, so in a worktree lagging k commits a genuine first commit
+# counts k+1 and nothing was said at all (rule-check#461, pr#487 review). The
+# count is gone rather than repaired: a fetch to make it honest is a second
+# unbounded network call, and the cost of the two failure modes is not
+# symmetric. Saying it again at the next commit costs a session one glance and
+# is TRUE every time it prints; missing the first commit is the defect this was
+# written to close.
+GH_TRIES=40
+GH_SLEEP=0.25
+
+announce_pull_request() {
+	b=$1
+	# A BOUND, because this runs inside `post-commit` and an unbounded
+	# network call hangs every commit on this machine. Neither `timeout`
+	# nor `gtimeout` is on PATH here, so the watchdog is by hand. The
+	# subshell's own stdout goes to a file and never to this hook's, which
+	# a caller capturing `git commit` would otherwise wait on -- the same
+	# hazard the `nohup` above is shaped around.
+	out=$(mktemp) || return 0
+	sta=$(mktemp) || { rm -f "$out"; return 0; }
+	( gh pr list --head "$b" --state open --json number --jq '.[].number' \
+		>"$out" 2>&1; echo $? >"$sta" ) </dev/null >/dev/null 2>&1 &
+	job=$!
+	n=0
+	while [ "$n" -lt "$GH_TRIES" ] && kill -0 "$job" 2>/dev/null; do
+		sleep "$GH_SLEEP"
+		n=$((n + 1))
+	done
+	if kill -0 "$job" 2>/dev/null; then
+		kill "$job" 2>/dev/null
+		echo "push-campaign-branch: gh did not answer in ${GH_TRIES} tries of ${GH_SLEEP}s, so whether a pull request names $b is unread." >&2
+		echo "  Open one if none does." >&2
+		rm -f "$out" "$sta"
+		return 0
+	fi
+	status=$(cat "$sta" 2>/dev/null)
+	said=$(cat "$out" 2>/dev/null)
+	rm -f "$out" "$sta"
+
+	# AN UNREAD QUESTION IS NOT A YES. A gh that will not run leaves it
+	# unknown and says so; it is never read as "one already names this".
+	if [ "${status:-9}" != 0 ]; then
+		echo "push-campaign-branch: could not tell whether a pull request names $b." >&2
+		echo "$said" | sed 's/^/  /' >&2
+		echo "  Open one if none does." >&2
+		return 0
+	fi
+	[ -z "$said" ] || return 0
+	echo "push-campaign-branch: no open pull request names $b."
+	echo "  AGENTS.md § Execution mode: open it on the first commit, not when the work is ready."
+	echo "  gh pr create --base main --head $b --title <verb-first> --body <Closes ...>"
+}
+
 # No force flag and no --no-verify: a rejected push is news, not something to
 # overrule. An amend or a rebase lands here too, and the right answer for those
 # is to be told, not to have the remote rewritten.
@@ -66,36 +130,7 @@ if git push --quiet origin "$branch" 2>"$err"; then
 		sha=$(git rev-parse HEAD) || exit 0
 		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
 
-		# THE PULL REQUEST GOES UP AT THE FIRST COMMIT, not when the
-		# work is ready (AGENTS.md § Execution mode): the branch is
-		# already pushed by the line above, so a late pull request only
-		# keeps published work out of sight, and an open one is where a
-		# review writes its findings. Nothing here opens one -- the
-		# title and the body are the session's to write -- so this
-		# ANNOUNCES the line and refuses nothing.
-		#
-		# ONLY AT THE FIRST COMMIT, or a branch whose session chose not
-		# to open one yet would be told again at every commit and the
-		# line would stop being read. `origin/main` is what the count
-		# is against; with no such ref there is no count and nothing is
-		# said, rather than a guess.
-		ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null) || ahead=
-		[ "${ahead:-0}" = 1 ] || exit 0
-		# A `gh` THAT WILL NOT RUN IS SAID, NOT ASSUMED. An unread
-		# question is not "a pull request already names this branch":
-		# announcing a second time costs a session one glance, and
-		# staying silent costs the work its visibility.
-		if open=$(gh pr list --head "$branch" --state open --json number \
-				--jq '.[].number' 2>&1); then
-			[ -z "$open" ] || exit 0
-			echo "push-campaign-branch: this is $branch's first commit and no open pull request names it."
-			echo "  AGENTS.md § Execution mode: open it now, not when the work is ready."
-			echo "  gh pr create --base main --head $branch --title <verb-first> --body <Closes ...>"
-		else
-			echo "push-campaign-branch: could not tell whether a pull request names $branch." >&2
-			echo "$open" | sed 's/^/  /' >&2
-			echo "  Open one at this first commit if none does." >&2
-		fi
+		announce_pull_request "$branch"
 		;;
 	esac
 else

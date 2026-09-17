@@ -500,6 +500,12 @@ def main():
           m0.spent_numbers(listing, "machinery", ("w1:p9",))
           == {7: "machinery-planner-7"},
           repr(m0.spent_numbers(listing, "machinery", ("w1:p9",))))
+    check("...and a row herdr listed with no pane is skipped, not read as "
+          "another session",
+          m0.spent_numbers({"sD": {"name": "machinery-worker-3", "pane": "?"}},
+                           "machinery") == {},
+          repr(m0.spent_numbers({"sD": {"name": "machinery-worker-3",
+                                        "pane": "?"}}, "machinery")))
     got = [m0.number_of(n) for n in ("rule-check-worker-53", "some-session", None)]
     check("number_of reads the trailing number, and None off any other name",
           got == [53, None, None], repr(got))

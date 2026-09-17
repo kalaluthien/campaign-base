@@ -36,7 +36,8 @@ returns this line to being a hope.
 
     exit 0   every pair applied, both paths
     exit 1   nothing applied -- a name failed the rule, a pane is named twice,
-             or the arguments are odd
+             a name's `<n>` is one a listed session of that campaign already
+             wears, or the arguments are odd
     exit 2   a herdr call failed partway, or a pane was blocked and got no
              prompt; what was applied is printed
 
@@ -245,7 +246,13 @@ def spent_numbers(sessions, campaign, keep_out=()):
     pair of the same call."""
     out = {}
     for row in sessions.values():
-        if row["pane"] in keep_out:
+        # A ROW WITH NO PANE CANNOT BE SHOWN TO BE SOMEBODY ELSE. `parse_agents`
+        # gives such a row `"?"`, which matches no pane this call names, so it
+        # would be read as another session and the caller refused its own name
+        # -- a false refusal in the one script every session runs at start-up.
+        # Skipped instead: a duplicate hiding on an unidentifiable row is the
+        # cheaper miss.
+        if row["pane"] == "?" or row["pane"] in keep_out:
             continue
         n = number_of(row["name"])
         if n is not None and campaign_of(row["name"]) == campaign:

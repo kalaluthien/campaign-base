@@ -642,7 +642,92 @@ THREADS = {
             {"where": "review", "at": "2026-09-17T01:00:00Z",
              "body": "REVIEW r-1: F1 the ceiling is stated twice, and the "
                      "second copy is the one that drifts"}]},
+    # THE FIX ROUND `report-next-round` READS: a later REVIEW and a REPORT
+    # answering it, both after the row's own `at`.
+    ("kalaluthien/campaign-base", 703): {
+        "state": "MERGED", "comments": [
+            {"where": "review", "at": "2026-09-17T03:00:00Z",
+             "body": "REVIEW r-2: one more finding"},
+            {"where": "comment", "at": "2026-09-17T04:00:00Z",
+             "body": "REPORT w-1: fix round 2 at abc1234"}]},
+    # AND THE ROUND STILL OPEN: a later REVIEW nobody has answered.
+    ("kalaluthien/campaign-base", 704): {
+        "state": "OPEN", "comments": [
+            {"where": "comment", "at": "2026-09-17T03:00:00Z",
+             "body": "REVIEW r-2: one more finding"}]},
 }
+# MERGED, AND NOTHING LATER ON THE THREAD, so only the reopen half can speak.
+# Four of them, one per way a reopen is or is not named.
+for _n in (705, 706, 707, 708):
+    THREADS[("kalaluthien/campaign-base", _n)] = {
+        "state": "MERGED", "comments": [
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: merged"}]}
+
+# WHAT THE LAZY SECOND FETCH ANSWERS, keyed as `fetch_reopen` is called. A
+# REOPEN IS AN EVENT AND NOT A STATE: 701's sub-issue was reopened after the
+# merge and CLOSED AGAIN, which is the ordinary shape here, and a reader of the
+# issue's present state called that "never reopened" (pr#490 REVIEW F1).
+REOPENS = {
+    ("kalaluthien/campaign-base", 701): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 910, "repo": "kalaluthien/campaign-base",
+                    "state": "CLOSED",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: the guard pr#701 said was refusing "
+                                 "lets the third spelling through"}]}]},
+    ("kalaluthien/campaign-base", 702): {"merged_at": "2026-09-17T05:00:00Z",
+                                         "issues": []},
+    ("kalaluthien/campaign-base", 703): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 911, "repo": "kalaluthien/campaign-base",
+                    "state": "CLOSED", "reopened": [], "comments": []}]},
+    # THE PULL REQUEST NAMED BY ITS URL and by nothing else.
+    ("kalaluthien/campaign-base", 705): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 912, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening, the change in https://"
+                                 "github.com/kalaluthien/campaign-base/pull/705"
+                                 " did not hold"}]}]},
+    # THE REPORT NAMED BY ITS COMMENT URL, which carries the id.
+    ("kalaluthien/campaign-base", 706): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 913, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening, the REPORT at https://"
+                                 "github.com/kalaluthien/campaign-base/pull/999"
+                                 "#issuecomment-5700000012 claimed this done"}]}]},
+    # THE NEVER-REOPENED CONTROL: a sub-issue that exists, was never reopened,
+    # and whose comment names the pull request all the same.
+    ("kalaluthien/campaign-base", 707): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 914, "repo": "kalaluthien/campaign-base",
+                    "state": "CLOSED", "reopened": [], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: pr#707 landed it"}]}]},
+    # THE NEAR MISS: reopened after the merge, but what it names is a LONGER
+    # number that starts with this one, and a bare `#708`, which names no
+    # repository.
+    ("kalaluthien/campaign-base", 708): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 915, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening over pr#7080, see "
+                                 "https://github.com/kalaluthien/campaign-base"
+                                 "/pull/7080 and #708, beside the longer id "
+                                 "issuecomment-95700000012"}]}]},
+}
+
+
+REOPENED = []
 
 
 def thread_row(call, number, findings, **kw):
@@ -688,6 +773,15 @@ def joined(m, rows):
     m.CORPUS = corpus
     old = os.environ.get("CAMPAIGN_JEV_LOG")
     os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    # THE LAZY SECOND FETCH IS A MODULE NAME, not one of `args`'s two subject
+    # fetches, so it is replaced here and its calls are counted: a branch that
+    # must not take it is asserted on this list being empty.
+    was_reopen, REOPENED[:] = m.fetch_reopen, []
+
+    def reopen(repo, number):
+        REOPENED.append((repo, number))
+        return REOPENS.get((repo, number))
+    m.fetch_reopen = reopen
     try:
         args = types.SimpleNamespace(
             fetch=lambda repo, number: ISSUES.get((repo, number)),
@@ -695,9 +789,10 @@ def joined(m, rows):
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
-                "filing-scope-covers")}
+                "unverified-done", "filing-scope-covers")}
     finally:
         m.CORPUS = was
+        m.fetch_reopen = was_reopen
         if old is None:
             os.environ.pop("CAMPAIGN_JEV_LOG", None)
         else:
@@ -913,9 +1008,9 @@ def join_skips_a_subject_that_will_not_read(m):
 
 def join_writes_the_reading_s_own_state_slice(m):
     """ONE `judge` CALL CARRIES THE UNION of every reading's fields, so a group
-    whose two readings name DIFFERENT fields wrote a case carrying both --
-    `judge` RAISES on such a state as an extra field, and `--live` would ask a
-    question about state the band was never measured with.
+    whose readings name DIFFERENT fields wrote a case carrying every one of
+    them -- `judge` RAISES on such a state as an extra field, and `--live`
+    would ask a question about state the band was never measured with.
 
     The control is the other reading of the same group over the SAME row: each
     must get its own half and neither the union."""
@@ -1032,6 +1127,149 @@ def fetch_thread_asks_the_thread_s_owner(m):
 
 CASES["the thread join reads a later REVIEW on the review channel"] = join_reads_a_later_review_on_the_review_channel
 CASES["fetch_thread asks the script that owns the thread read"] = fetch_thread_asks_the_thread_s_owner
+
+
+# ------------------------------------ what happened after the REPORT
+# `report-next-round`, the join `unverified-done` enters `unmeasurable`
+# waiting for. Every branch offline, against the stubbed thread fetch and the
+# stubbed LAZY second fetch, whose calls are counted.
+
+
+def done_row(call, number, report="REPORT w-1: fixed at abc1234", **kw):
+    row = thread_row(call, number, {"F1": "a finding"},
+                     reading="unverified-done", report_comment=5700000012,
+                     branch="yes", raw={"type": "noul", "noul": 0.8},
+                     wording="0" * 12)
+    row["state"] = dict(row["state"], report=report)
+    row.update(kw)
+    return row
+
+
+def join_labels_a_fix_round(m):
+    """THE STRONG HALF: a later REVIEW and a REPORT answering it is work that
+    came back, so the claim was not verified. The LAZY SECOND FETCH must not be
+    taken here -- the thread already settled it -- and that is asserted on the
+    call list, not argued."""
+    cases, _lines = joined(m, [done_row("dn01", 703)])
+    got = (cases["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "yes" and got.get("band") == "yes"
+            and got.get("label", {}).get("from") == "join:report-next-round"
+            and "a fix round" in got.get("label", {}).get("evidence", "")
+            and REOPENED == [] and set(got.get("state") or {}) == {"report"}),\
+        (got, REOPENED)
+
+
+def join_waits_on_a_round_nobody_answered(m):
+    """A later REVIEW with NO REPORT after it is not yet a fix round: the round
+    is open and labelling it either way reads a thread still moving. With the
+    pull request open it waits, and the second fetch is not taken."""
+    cases, _lines = joined(m, [done_row("dn02", 704)])
+    return not cases["unverified-done"] and REOPENED == [], \
+        (cases["unverified-done"], REOPENED)
+
+
+def join_takes_the_second_fetch_only_on_a_merge(m):
+    """THE WEAK HALF WAITS FOR THE MERGE, and only then is the reopen asked.
+    702 merged with a later REVIEW nobody answered and closes nothing, so the
+    fetch IS taken and the row labels `no`."""
+    cases, _lines = joined(m, [done_row("dn03", 702)])
+    got = (cases["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "no" and got.get("band") == "no"
+            and "merged with no fix round" in got.get("label", {}).get(
+                "evidence", "")
+            and REOPENED == [("kalaluthien/campaign-base", 702)]), \
+        (got, REOPENED)
+
+
+def join_reads_a_reopened_sub_issue(m):
+    """THE OTHER STRONG HALF: the sub-issue the pull request closes, reopened
+    after the merge with a comment naming that pull request. 701 merged with
+    nothing later on the thread at all, so only the second fetch can say.
+
+    AND ITS SUB-ISSUE IS CLOSED AGAIN, which is the ordinary shape: the work
+    that came back got done and the issue closed once more. Reading the issue's
+    present state called that "never reopened" and wrote `no` with an evidence
+    sentence saying so (pr#490 REVIEW 5721893225, F1). THE CONTROL is 707,
+    whose sub-issue was never reopened and whose comment names the pull request
+    all the same: naming without a reopen is not a reopen."""
+    cases, _lines = joined(m, [done_row("dn04", 701)])
+    got = (cases["unverified-done"] or [{}])[0]
+    control, _l = joined(m, [done_row("dn04b", 707)])
+    never = (control["unverified-done"] or [{}])[0]
+    return (got.get("truth") == "yes"
+            and "910 was reopened" in got.get("label", {}).get("evidence", "")
+            and REOPENED == [("kalaluthien/campaign-base", 707)]
+            and never.get("truth") == "no"), (got, never)
+
+
+def join_reads_a_reopen_naming_a_url(m):
+    """A reopen that names the pull request by ITS URL, and one that names the
+    REPORT by its comment url -- the id is in the url, so the id's own pattern
+    reads both. Matching a literal `pr#<n>` alone made 0-in-217 unable to tell
+    never-happened from never-matched (pr#490 REVIEW 5721893225, F2).
+
+    THE CONTROL IS THE NEAR MISS, 708: reopened after the merge, naming
+    `pr#7080`, `/pull/7080`, a bare `#708`, and a comment id that ENDS with the
+    REPORT's. A longer number starting or ending with this one is not this one
+    (pr#490 REVIEW 5722167494, N1), and a bare `#<n>` names no repository."""
+    by_url, _l = joined(m, [done_row("dn06", 705)])
+    by_id, _l2 = joined(m, [done_row("dn07", 706)])
+    near, _l3 = joined(m, [done_row("dn08", 708)])
+    url = (by_url["unverified-done"] or [{}])[0]
+    ident = (by_id["unverified-done"] or [{}])[0]
+    miss = (near["unverified-done"] or [{}])[0]
+    return (url.get("truth") == "yes" and ident.get("truth") == "yes"
+            and miss.get("truth") == "no"), (url.get("truth"),
+                                             ident.get("truth"),
+                                             miss.get("truth"))
+
+
+def join_asks_one_reopen_per_pull_request(m):
+    """ONE REOPEN FETCH PER PULL REQUEST A JOIN RUN. `cmd_corpus_join` dedups
+    its two SUBJECT fetches in a map `reopen_of` sat outside, so two rows on
+    one pull request paid two `gh pr view`s (pr#490 REVIEW 5721893225, F5).
+
+    Two rows of the SAME pull request, two cases written, ONE fetch."""
+    cases, _lines = joined(m, [done_row("dn09", 701), done_row("dn10", 701)])
+    return (len(cases["unverified-done"]) == 2
+            and REOPENED == [("kalaluthien/campaign-base", 701)]), \
+        (len(cases["unverified-done"]), REOPENED)
+
+
+def join_keeps_a_row_with_no_report(m):
+    """A round with no REPORT is a row code settled and the join cannot label:
+    there is nothing that claimed anything. It STAYS in the log, and the second
+    fetch is not spent on it."""
+    cases, lines = joined(m, [done_row("dn05", 701, report="")])
+    return (not cases["unverified-done"] and lines == 1 and REOPENED == []), \
+        (cases["unverified-done"], lines, REOPENED)
+
+
+def every_declared_join_is_a_join(m):
+    """A `join` naming no function in `JOINS` is a reading whose rows
+    `joinable` files as "of no registered reading with a join" -- counted apart
+    and never labelled, for good, with nothing saying why."""
+    bad = [f"{n}: join `{e['join']}`" for n, e in m.load_registry().items()
+           if e.get("join") and e["join"] not in m.JOINS]
+    return not bad, bad
+
+
+CASES["the REPORT join labels a fix round, and spends no second fetch"] = \
+    join_labels_a_fix_round
+CASES["the REPORT join waits on a round nobody has answered"] = \
+    join_waits_on_a_round_nobody_answered
+CASES["the REPORT join asks the reopen only once the pull request merged"] = \
+    join_takes_the_second_fetch_only_on_a_merge
+CASES["the REPORT join reads a sub-issue reopened after the merge"] = \
+    join_reads_a_reopened_sub_issue
+CASES["the REPORT join reads a reopen naming the pull request by url"] = \
+    join_reads_a_reopen_naming_a_url
+CASES["two rows of one pull request ask the reopen once"] = \
+    join_asks_one_reopen_per_pull_request
+CASES["a row with no REPORT is kept and costs no fetch"] = \
+    join_keeps_a_row_with_no_report
+CASES["every join an entry declares names a function in JOINS"] = \
+    every_declared_join_is_a_join
 
 
 def join_writes_one_case_for_one_row(m):
@@ -1158,15 +1396,21 @@ def thread_answers(**kw):
                                   "says_nothing": 0.0}}
     answers = {"C-report-disposes-finding#F1": picked(kw.get("f1", 0.95)),
                "C-report-disposes-finding#F2": picked(kw.get("f2", 0.10)),
-               "C-review-not-the-author": picked(0.9)}
+               "C-review-not-the-author": picked(0.9),
+               "unverified-done": {"type": "noul", "noul": kw.get("done", 0.7)},
+               "report-addresses-judge": {"type": "noul",
+                                          "noul": kw.get("address", 0.02)}}
     NEXT["status"], NEXT["body"] = 200, {"model": MODEL, "answers": answers}
     SEEN["count"] = 0
 
 
 def a_per_item_reading_is_one_call(m):
-    """Two findings and the other reading of the group: three questions, ONE
-    request, and each question's instructions name its own item, since the id
-    never reaches the model."""
+    """Two findings and the other THREE readings of the group: five questions,
+    ONE request, and each per-item question's instructions name its own item,
+    since the id never reaches the model.
+
+    THE COUNT OF QUESTIONS IS THE GROUP'S AND MOVES WITH IT; the count of
+    REQUESTS is the invariant, and it is 1."""
     LOG.write_text("")
     clear_store()
     thread_answers()
@@ -1176,10 +1420,66 @@ def a_per_item_reading_is_one_call(m):
     v = judged.verdicts["C-report-disposes-finding"]
     named = {qid: "findings.F1" in q["instructions"]
              for qid, q in sent.items() if qid.endswith("#F1")}
-    return (SEEN["count"] == 1 and len(sent) == 3 and v.word is None
+    return (SEEN["count"] == 1 and len(sent) == 5 and v.word is None
             and sorted(v.raw) == ["F1", "F2"] and all(named.values())
             and judged.verdicts["C-review-not-the-author"].word == "supports"),\
         (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
+
+
+def the_done_readings_add_no_state_field(m):
+    """rule-check#455 pr 5, item 1: `unverified-done` and
+    `report-addresses-judge` ride in the call the group already makes, so
+    neither may name a state field the group did not already carry.
+
+    A NEW FIELD WOULD BE A NEW COST AND A SILENT ONE: `judge` builds the union
+    of every entry's fields and RAISES on a state missing one, so the reader
+    would have to build more, and every band measured on the old state would
+    belong to a narrower one. The CONTROL is the group's field set, which must
+    be exactly what `C-report-disposes-finding` and `C-review-not-the-author`
+    already named."""
+    reg = m.load_registry()
+    group = m.group_of(reg, "pull-request-thread")
+    old = set(reg["C-report-disposes-finding"]["state"]["fields"]) \
+        | set(reg["C-review-not-the-author"]["state"]["fields"])
+    new = {n: reg[n]["state"]["fields"]
+           for n in ("unverified-done", "report-addresses-judge")}
+    return (sorted(group) == ["C-report-disposes-finding",
+                              "C-review-not-the-author",
+                              "report-addresses-judge", "unverified-done"]
+            and m.state_fields(group) == old
+            and all(f == ["report"] for f in new.values())), \
+        (sorted(group), sorted(m.state_fields(group)), sorted(old), new)
+
+
+def the_report_address_guards_the_done_reading(m):
+    """rule-check#455 pr 5, item 2: `unverified-done` declares
+    `report-addresses-judge` as its `guarded_by`, so `address_word` -- still
+    the ONE reader of `ADDRESS_OVER` -- answers `uncertain` at 0.5 or over
+    whatever the reading said.
+
+    THE CONTROL is the same held word one hundredth UNDER the cut, which must
+    come back as that word: a reader that always returned `uncertain` would
+    pass the first half alone."""
+    reg = m.load_registry()
+
+    def held(noul):
+        return {"unverified-done": m_Verdict("yes", {"type": "noul",
+                                                     "noul": 0.90}),
+                "report-addresses-judge": m_Verdict(
+                    "yes", {"type": "noul", "noul": noul})}
+    hostile, why = m.address_word(reg, "unverified-done",
+                                  held(m.ADDRESS_OVER))
+    clean, _why = m.address_word(reg, "unverified-done",
+                                 held(m.ADDRESS_OVER - 0.01))
+    silent, silent_why = m.address_word(
+        reg, "unverified-done",
+        {"unverified-done": m_Verdict("yes", {"type": "noul", "noul": 0.90}),
+         "report-addresses-judge": m_Verdict("uncertain", None)})
+    return (hostile == m.UNCERTAIN and "at or over" in why and clean == "yes"
+            and silent == m.UNCERTAIN and "gave no value" in silent_why), \
+        (hostile, clean, silent, why)
+
+
 
 
 def a_cleared_finding_is_never_sent(m):
@@ -1192,7 +1492,8 @@ def a_cleared_finding_is_never_sent(m):
                      settled={"C-report-disposes-finding": {"F1": "disposed"}},
                      env=env(), timeout=5, log=False)
     sent = sorted(json.loads(SEEN["body"])["questions"])
-    return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author"]
+    return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author",
+                     "report-addresses-judge", "unverified-done"]
             and sorted(judged.verdicts["C-report-disposes-finding"].raw)
             == ["F2"]), sent
 
@@ -1228,6 +1529,10 @@ def a_per_item_question_must_name_its_item(m):
 
 
 CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
+CASES["the two done readings add no state field to the thread group"] = \
+    the_done_readings_add_no_state_field
+CASES["an addressed REPORT routes unverified-done to uncertain"] = \
+    the_report_address_guards_the_done_reading
 CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
 CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
 CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item

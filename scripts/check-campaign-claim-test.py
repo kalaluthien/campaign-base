@@ -990,6 +990,33 @@ def main():
               filed.get("body") == "a short body"
               and "body_truncated" not in filed
               and "body_length" not in filed, filed)
+        # AND THE STATE THE READING SENDS SAYS SO TOO (rule-check#455 pr 5,
+        # item 7, from pr#484 REVIEW 5720443119 accepted and not fixed). A
+        # state carrying the cut text with no mark reads -- to the model, and
+        # to every case the join later writes from the row -- as the filing
+        # somebody wrote. ONE FIELD, PRESENT ONLY WHEN SOMETHING WAS CUT, and
+        # the control is the short body's own state, which must carry none.
+        was = len(jevlog.read_text().splitlines()) if jevlog.is_file() else 0
+        ask(f.base, tool="Bash", command=f"gh issue create --title t "
+            f"--parent {tracker} -F huge.md")
+        cut_rows = [json.loads(x) for x in jevlog.read_text().splitlines()[was:]]
+        was = len(jevlog.read_text().splitlines())
+        ask(f.base, tool="Bash", command=f"gh issue create "
+            f"--parent {tracker} --body 'a short body' --title t")
+        whole_rows = [json.loads(x)
+                      for x in jevlog.read_text().splitlines()[was:]]
+        requests = [((x.get("state") or {}).get("request") or {})
+                    for x in cut_rows]
+        check("a filing state the record cut says `cut` on the state itself",
+              len(requests) == 2 and all(q.get("cut") is True for q in requests)
+              and all(len(q.get("body", "")) == keep for q in requests),
+              [sorted(q) for q in requests])
+        check("...and a filing nothing cut carries no such field",
+              len(whole_rows) == 2
+              and all("cut" not in ((x.get("state") or {}).get("request") or {})
+                      for x in whole_rows),
+              [sorted((x.get("state") or {}).get("request") or {})
+               for x in whole_rows])
         # ONE DEADLINE FOR THE WHOLE HOOK CALL, and the endpoint that exercises
         # it is NOT the closed port every other case here uses: a closed port
         # refuses the connection in 0.09s and never reaches any bound, so it
@@ -4380,7 +4407,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 667
+    EXPECTED = 669
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

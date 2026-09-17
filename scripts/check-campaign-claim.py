@@ -4081,10 +4081,18 @@ def read_filings(cwd: Path):
                      f"cost one hook call was spent on the filings before it",
                      cwd=cwd)
             continue
+        # THE STATE SAYS WHEN IT IS NOT THE WHOLE FILING. `filing_of` cuts each
+        # recorded text at `RECORDED_CHARS`, and a state carrying the cut with
+        # no mark reads -- to the model, and to every case the join later
+        # writes from the row -- as the filing somebody wrote (pr#484 REVIEW
+        # 5720443119, accepted and carried to rule-check#455 pr 5). ONE FIELD,
+        # PRESENT ONLY WHEN SOMETHING WAS CUT, so a state that was not cut is
+        # byte for byte the state the bands were measured with.
+        request = {"title": filing.get("title", ""), "body": filing["body"]}
+        if filing.get("title_truncated") or filing.get("body_truncated"):
+            request["cut"] = True
         jev.judge(FILING_GROUP,
-                  {"request": {"title": filing.get("title", ""),
-                               "body": filing["body"]},
-                   "campaigns": scopes},
+                  {"request": request, "campaigns": scopes},
                   read=f"{repo}#{number} <- {label}", reader=FILING_READER,
                   key={"repo": repo, "issue": number}, reg=reg, cwd=cwd,
                   timeout=left,

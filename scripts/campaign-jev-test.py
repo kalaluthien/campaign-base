@@ -51,6 +51,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -634,7 +635,8 @@ def thread_row(call, number, findings, **kw):
                      "review": "REVIEW r-1: ...", "thread": "..."},
            "wording": "0" * 12, "settled": None, "tier": "shadow",
            "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
-           "branch": None, "raw": {}, "why": "", "flag": None}
+           "branch": None, "raw": {}, "why": "", "endpoint": "real",
+           "flag": None}
     row.update(kw)
     return row
 
@@ -648,7 +650,7 @@ def log_row(call, reading, title, number, **kw):
            "wording": "0" * 12, "settled": None, "tier": "advise",
            "does": "show", "asked": MODEL, "answered": MODEL, "latency": 0.5,
            "branch": "yes", "raw": {"type": "noul", "noul": 0.9}, "why": "",
-           "flag": None}
+           "endpoint": "real", "flag": None}
     row.update(kw)
     return row
 
@@ -1325,6 +1327,90 @@ CASES["an answer from another model is never stored"] = an_answer_from_another_m
 CASES["a store that will not read costs a call, not an answer"] = a_store_that_will_not_read_costs_a_call
 CASES["report counts calls sent over distinct states"] = the_ratio_counts_sent_calls_over_distinct_states
 
+# ------------------------------------------- the shared log, and what may join
+# A STUB'S ANSWER IS NOT EVIDENCE. `<base>/runtime/jev.log` is where the corpus
+# grows from, so a run that named its own endpoint never writes there, and the
+# join refuses any row that does not say the REAL endpoint answered it.
+
+
+def a_base(name):
+    """A made base checkout: `base_root` is the parent of the git COMMON dir,
+    so a directory with a `.git` in it is one. The shared log's own rule is
+    then exercised at `<this>/runtime/jev.log` -- the same code path, the same
+    `log_path` branch -- without this machine's own log being touched."""
+    root = ROOT / name
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    (root / "runtime").mkdir(exist_ok=True)
+    log = root / "runtime" / "jev.log"
+    log.write_text('{"a": 1}\n{"a": 2}\n')
+    return root, log
+
+
+def lines(path):
+    return len(path.read_text().splitlines())
+
+
+def a_stub_never_writes_the_shared_log(m):
+    """COUNTED BEFORE AND AFTER, never read by presence: the file is there
+    either way, so only the count can say whether a line was added.
+
+    The control is the same call with no `CAMPAIGN_JEV_URL`, which takes the
+    shared branch and DOES write -- so what the case measures is the endpoint's
+    rule and not a log that was unwritable all along."""
+    root, log = a_base("shared-log")
+    before = lines(log)
+    stub = {"HOME": str(HOME), "CAMPAIGN_JEV_URL": URL,
+            "TYPESAFE_API_KEY": "stub-key"}
+    serving()
+    r = m.ask("a suite", "a label", STATE, BOTH, env=stub, cwd=root, timeout=5)
+    stubbed = lines(log)
+    # THE CONTROL. No URL named, no key and an empty HOME: `ask` answers
+    # `unknown` before it opens a socket, and the row still lands in the shared
+    # log, which is the branch the case above must not have taken.
+    m.ask("a suite", "a label", STATE, BOTH,
+          env={"HOME": str(HOME)}, cwd=root, timeout=5)
+    return (stubbed == before and lines(log) == before + 1
+            and "CAMPAIGN_JEV_URL" in r.logged),\
+        (before, stubbed, lines(log), r.logged)
+
+
+def a_row_of_no_real_endpoint_is_refused_by_the_join(m):
+    """NAMED, not dropped: the output says which row and why. Nothing can ever
+    label it, so it is not waiting either."""
+    real = log_row("rrrr", "verb-first", "Cache the weather feed", 900)
+    stubbed = log_row("ssss", "verb-first", "Cache the weather feed", 900,
+                      endpoint="stub")
+    legacy = log_row("llll", "verb-first", "Cache the weather feed", 900)
+    legacy.pop("endpoint")
+    cases, _lines = joined(m, [real, stubbed, legacy])
+    ids = sorted(c["id"] for c in cases["verb-first"])
+    kept, stray, unreal = m.joinable([real, stubbed, legacy],
+                                     m.load_registry())
+    return (ids == ["verb-first-rrrr"] and not stray
+            and sorted(r["call"] for r in unreal) == ["llll", "ssss"]
+            and [r["call"] for r in kept] == ["rrrr"]), (ids, unreal)
+
+
+def a_row_says_which_endpoint_answered_it(m):
+    """One plain word, on every row this module writes: `real` or `stub`. It is
+    what the join reads, so a row that did not carry it could be a suite's
+    answer imported as the tracker's own history."""
+    read(m)
+    stubbed = json.loads(LOG.read_text().splitlines()[-1])
+    root, log = a_base("endpoint-word")
+    m.ask("a suite", "a label", STATE, BOTH, env={"HOME": str(HOME)}, cwd=root,
+          timeout=5)
+    real = json.loads(log.read_text().splitlines()[-1])
+    return (stubbed.get("endpoint") == "stub"
+            and real.get("endpoint") == "real"), (stubbed.get("endpoint"),
+                                                  real.get("endpoint"))
+
+
+CASES["a row says which endpoint answered it"] = a_row_says_which_endpoint_answered_it
+CASES["a stubbed call never writes the shared log"] = a_stub_never_writes_the_shared_log
+CASES["a row no real endpoint answered is refused by the join, and named"] = a_row_of_no_real_endpoint_is_refused_by_the_join
+
 CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
 CASES["an act never moves a label a person alone moves"] = act_never_moves_a_person_label
 CASES["an act is never a claim, release, merge, close, launch or retire"] = act_is_never_an_event_with_an_actor
@@ -1339,6 +1425,16 @@ CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    # --- the shared log, and what may join ---
+    ("a stub allowed to write the shared log",
+     "    if URL_ENV in env:", "    if False:",
+     "a stubbed call never writes the shared log"),
+    ("the endpoint never written on a row",
+     "    return STUB if URL_ENV in (os.environ if env is None else env) else REAL",
+     "    return REAL", "a row says which endpoint answered it"),
+    ("the join taking a row of any endpoint",
+     '        if row.get("endpoint") != REAL:', "        if False:",
+     "a row no real endpoint answered is refused by the join, and named"),
     # --- one thread, one call, per finding ---
     ("the per-item reading asked once for the whole state",
      '        if not per:\n            if name not in settled:',
@@ -1519,8 +1615,8 @@ MUTATIONS = [
      '    return json.loads(path.read_text(encoding="utf-8"))',
      "a registry file carrying a bad act never loads"),
     ("a skip not logged",
-     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return log_call(',
-     '"reader": reader, "read": label, "asked": MODEL, "skipped": why}\n    return "logged to" or log_call(',
+     '"endpoint": endpoint_word(env), "skipped": why}\n    return log_call(',
+     '"endpoint": endpoint_word(env), "skipped": why}\n    return "logged to" or log_call(',
      "a skipped reading is logged as one JSON line naming why"),
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',

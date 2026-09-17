@@ -94,8 +94,17 @@ never an answer (DECISION 5716060001).
 
 EVERY CALL IS LOGGED, one JSON line to `<base>/runtime/jev.log` -- git-ignored
 scratch -- naming the reader, a SHORT label for what it read (never the state,
-which carries issue bodies), the model that answered, the latency, and per
-question the raw value and the branch taken. `Reading.logged` is the sentence
+which carries issue bodies), the model that answered, the latency, the
+`endpoint` word, and per question the raw value and the branch taken.
+
+EXCEPT A STUBBED ONE. A run that named `CAMPAIGN_JEV_URL` logs only where
+`CAMPAIGN_JEV_LOG` names a file and NEVER to the shared log, and stores nothing
+there either, because the shared log is what the corpus grows from and a
+suite's answers are not the tracker's history. Every row says which endpoint
+answered it, `real` or `stub`, and `corpus join` takes only a `real` one --
+refusing the rest by name, including rows written before the field existed,
+which cannot say (DECISION 5716626608). A refused row is not waiting: nothing
+can label it, so it is counted apart. `Reading.logged` is the sentence
 the caller prints beside the verdict, as `check-campaign-claim.py` prints one
 beside its own: a caller that logged nothing and said nothing reads exactly like
 one that logged.
@@ -327,12 +336,33 @@ def base_root(cwd=None):
     return Path(out.stdout.strip()).parent.resolve()
 
 
+# WHICH ENDPOINT ANSWERED, in one plain word on every row. `real` is the live
+# one; `stub` is any run that named `CAMPAIGN_JEV_URL`, which is a suite's
+# 127.0.0.1 server or a closed port. The join reads it: a stub's answer replayed
+# as a real one would be a case the tracker never produced (DECISION
+# 5716626608).
+REAL, STUB = "real", "stub"
+
+
+def endpoint_word(env=None):
+    return STUB if URL_ENV in (os.environ if env is None else env) else REAL
+
+
 def log_path(env=None, cwd=None):
-    """(the log file, how to name it) or (None, why there is none)."""
+    """(the log file, how to name it) or (None, why there is none).
+
+    A STUBBED CALL NEVER REACHES THE SHARED LOG. `CAMPAIGN_JEV_LOG` names where
+    a run logs and always wins; with no name and a stubbed endpoint there is
+    nowhere to log, because the shared `<base>/runtime/jev.log` is where the
+    corpus grows from and a suite's answers are not evidence. A suite that
+    forgets to name a log therefore writes nothing, which it can see."""
     env = os.environ if env is None else env
     named = env.get(LOG_ENV)
     if named:
         return Path(named), named
+    if URL_ENV in env:
+        return None, (f"`{URL_ENV}` names a stubbed endpoint and no `{LOG_ENV}` "
+                      f"names a log, so nothing is written to the shared one")
     root = base_root(cwd)
     if root is None:
         return None, "under no base checkout, so there is no runtime/ to log to"
@@ -364,7 +394,8 @@ def skip(reader, label, why, env=None, cwd=None):
     as `ask`'s, `skipped` in place of `answers`; returns what `log_call` says."""
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
-           "reader": reader, "read": label, "asked": MODEL, "skipped": why}
+           "reader": reader, "read": label, "asked": MODEL,
+           "endpoint": endpoint_word(env), "skipped": why}
     return log_call(row, os.environ if env is None else env, cwd)
 
 
@@ -396,7 +427,12 @@ def cache_key(state, questions):
 
 
 def cache_path(key, env=None, cwd=None):
-    """The file one key is stored in, or None when there is nowhere to store."""
+    """The file one key is stored in, or None when there is nowhere to store.
+
+    IT RIDES ON `log_path`, so a stubbed call that named no log has nowhere to
+    store and nothing to read: a stub's answer must never be replayed as a real
+    one, and a suite that names `CAMPAIGN_JEV_LOG` gets a store of its own
+    beside that log. One rule, read in one place."""
     log, _how = log_path(env, cwd)
     return None if log is None else log.parent / CACHE_DIR / f"{key}.json"
 
@@ -537,6 +573,7 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     row = {"at": datetime.datetime.now(datetime.timezone.utc)
                          .isoformat(timespec="seconds"),
            "reader": reader, "read": label, "asked": MODEL,
+           "endpoint": endpoint_word(env),
            "answered": model, "latency": round(latency, 3),
            # THE STATE'S HASH AND NOT THE STATE. The label carries no state on
            # purpose -- an issue body in a scratch log is a copy nobody swept --
@@ -1020,6 +1057,7 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                "does": verdicts[name].does, "asked": MODEL,
                "answered": reading.model, "latency": round(reading.latency, 3),
                "state_hash": digest(state), "cached": reading.cached,
+               "endpoint": endpoint_word(env),
                "branch": word, "raw": raw, "why": why,
                "flag": flag(name, raw) if callable(flag) else flag}
         row.update({k: v for k, v in (key or {}).items() if v is not None})
@@ -1214,24 +1252,36 @@ def read_log(env=None, cwd=None):
 
 
 def joinable(rows, reg):
-    """The rows a join could label: one reading's, with the join key as fields
-    and an answer the reading actually made. A row whose reading left the
-    registry is counted apart -- it is not lost, it is unjoinable."""
-    out, stray = [], []
+    """(the rows a join could label, the rows of no joinable reading, the rows
+    the real endpoint did not answer).
+
+    A ROW THE REAL ENDPOINT DID NOT ANSWER IS NEVER JOINED. A suite's stub
+    answers whatever its case needs, so a case built from one would be evidence
+    the tracker never produced; and a row written before the `endpoint` field
+    existed cannot say which it was, so it is refused the same way rather than
+    guessed at (DECISION 5716626608). Both are COUNTED and named, never dropped:
+    they are not waiting for anything, because nothing can ever label them.
+
+    A row whose reading left the registry is counted apart too -- it is not
+    lost, it is unjoinable."""
+    out, stray, unreal = [], [], []
     for row in rows:
+        if row.get("endpoint") != REAL:
+            unreal.append(row)
+            continue
         entry = reg.get(row.get("reading"))
         if entry is None or entry.get("join") not in JOINS:
             stray.append(row)
         else:
             out.append(row)
-    return out, stray
+    return out, stray, unreal
 
 
 def cmd_corpus_join(args):
     """Label what the log holds, and count what could not be labelled yet."""
     reg = load_registry()
     rows, how, torn = read_log()
-    rows, stray = joinable(rows, reg)
+    rows, stray, unreal = joinable(rows, reg)
     known = {r: {c.get("source", {}).get("ref") for c in read_corpus(r)}
              for r in reg}
     fetched, added, waiting = {}, 0, []
@@ -1280,7 +1330,7 @@ def cmd_corpus_join(args):
         write_corpus(name, cases)
         known.setdefault(name, set()).add(ref)
         added += 1
-    print(f"read {len(rows) + len(stray)} row(s) from {how}"
+    print(f"read {len(rows) + len(stray) + len(unreal)} row(s) from {how}"
           + (f", {torn} unparsed" if torn else ""))
     print(f"  {added} case(s) written")
     print(f"  {len(waiting)} row(s) not labelled yet, kept in the log")
@@ -1288,6 +1338,15 @@ def cmd_corpus_join(args):
         print(f"    {row.get('call')}:{row.get('reading')}  {why}")
     if stray:
         print(f"  {len(stray)} row(s) of no registered reading with a join")
+    if unreal:
+        words = sorted({str(r.get("endpoint")) for r in unreal})
+        print(f"  {len(unreal)} row(s) REFUSED by the join: `endpoint` is "
+              f"{', '.join(words)} and not `{REAL}`, so no later fact of this "
+              f"tracker's can label them")
+        for row in unreal[:10]:
+            print(f"    {row.get('call') or '-'}:"
+                  f"{row.get('reading') or row.get('reader')}  "
+                  f"endpoint {row.get('endpoint')!r}")
     return 0
 
 
@@ -1329,6 +1388,22 @@ def settled_of(case):
     return (case.get("source") or {}).get("settled")
 
 
+def scored(case):
+    """May the agreement share count this case? THE ONE READER, so the
+    disagreement list and the share cannot disagree about which cases they are
+    over.
+
+    Three ways a case is not scorable, and each is a real one: CODE settled the
+    whole reading, so the model never saw it; nothing has been seen; or the run
+    recorded no WORD, which is every case of a reading asked PER ITEM -- what
+    its per-item answers add up to is the entry's `combine`, and scoring a
+    missing word against a truth that is an object would count every one of
+    them wrong."""
+    seen = last_seen(case)
+    return (not isinstance(settled_of(case), str) and seen is not None
+            and seen.get("word") is not None and case.get("truth") is not None)
+
+
 def last_seen(case):
     seen = case.get("seen") or []
     return seen[-1] if seen else None
@@ -1365,8 +1440,7 @@ def evidence_row(entry, cases):
 def agreement(entry, cases):
     """(Jev's share of cases whose last `seen` word is the truth, the token
     baseline's share over the same cases), or (None, None) with nothing seen."""
-    judged = [c for c in cases if last_seen(c) and c.get("truth") is not None
-              and settled_of(c) is None]
+    judged = [c for c in cases if scored(c)]
     if not judged:
         return None, None
     jev = sum(1 for c in judged if last_seen(c).get("word") == c["truth"])
@@ -1383,7 +1457,7 @@ def waiting_line(reg=None):
     labelled, and a reading above `shadow` whose evidence row is short."""
     reg = load_registry() if reg is None else reg
     rows, _how, _torn = read_log()
-    rows, _stray = joinable(rows, reg)
+    rows, _stray, unreal = joinable(rows, reg)
     known = {f"{c.get('source', {}).get('ref')}"
              for r in reg for c in read_corpus(r)}
     unjoined = [r for r in rows
@@ -1397,7 +1471,12 @@ def waiting_line(reg=None):
             + (f" (oldest {oldest})" if oldest else "")
             + f", {unlabelled} case(s) unlabelled, "
               f"{len(short)} reading(s) short of the evidence row"
-            + (f" ({', '.join(sorted(short))})" if short else ""))
+            # A ROW THE JOIN REFUSES IS NOT WAITING. Nothing can ever label
+            # it, so counting it as waiting would ask a reader to go and fix a
+            # number that cannot move; it is printed apart, with its count.
+            + (f" ({', '.join(sorted(short))})" if short else "")
+            + (f"; {len(unreal)} row(s) never joinable, no `{REAL}` endpoint"
+               if unreal else ""))
 
 
 def spend_lines(env=None, cwd=None):
@@ -1416,8 +1495,15 @@ def spend_lines(env=None, cwd=None):
     counted and named rather than silently left out of the denominator."""
     rows, how, torn = read_log(env=env, cwd=cwd)
     spent, hits, states, blind = {}, {}, {}, 0
+    stubbed = 0
     for row in rows:
         if row.get("skipped") is not None or row.get("settled") is not None:
+            continue
+        # A STUB'S CALL COST NOTHING, so it is not in the ratio. A row from
+        # before the field existed is counted, since the shared log is where
+        # the real ones were and a stub could not write there anyway.
+        if row.get("endpoint") == STUB:
+            stubbed += 1
             continue
         who = row.get("reading") or f"(reader) {row.get('reader') or '?'}"
         key = row.get("state_hash")
@@ -1433,7 +1519,8 @@ def spend_lines(env=None, cwd=None):
         states.setdefault(who, set()).add(key)
     out = [f"calls a state, over {len(rows)} row(s) of {how}"
            + (f", {torn} unparsed" if torn else "")
-           + (f", {blind} with no state to group by" if blind else "")]
+           + (f", {blind} with no state to group by" if blind else "")
+           + (f", {stubbed} from a stubbed endpoint" if stubbed else "")]
     for who in sorted(set(spent) | set(hits)):
         sent, distinct = spent.get(who, 0), len(states.get(who, ()))
         out.append(f"  {who:<28} {sent} sent over {distinct} state(s)"
@@ -1472,8 +1559,7 @@ def cmd_report(args):
         # so the `seen` rows beside it are a record of what it answered before
         # the prefilter existed, and counting them against the truth would
         # charge Jev for a state that is no longer sent (DECISION 5715993782).
-        bad = [c["id"] for c in cases if last_seen(c)
-               and c.get("truth") is not None and settled_of(c) is None
+        bad = [c["id"] for c in cases if scored(c)
                and last_seen(c).get("word") != c["truth"]]
         print(f"  disagreement: {len(bad)}" + (f"  {', '.join(bad)}" if bad else ""))
         drifted, unplaced = drift_line(entry, cases)
@@ -1482,12 +1568,18 @@ def cmd_report(args):
             print(f"  held to no band ({len(unplaced)}): "
                   + ", ".join(unplaced[:6])
                   + (" ..." if len(unplaced) > 6 else ""))
-        settled = sum(1 for c in cases if settled_of(c) is not None)
+        # WHOLLY AND PARTLY SETTLED ARE COUNTED APART. For a reading asked per
+        # item the prefilter's word is an OBJECT -- some findings cleared, the
+        # rest asked -- and counting one of those as a case code settled read
+        # this reading as 100% code's when the model answered most of it.
+        settled = sum(1 for c in cases if isinstance(settled_of(c), str))
+        part = sum(1 for c in cases if isinstance(settled_of(c), dict))
         escalated = sum(1 for c in cases if last_seen(c)
                         and last_seen(c).get("word") == UNKNOWN)
         n = len(cases) or 1
         print(f"  code settled {settled}/{len(cases)} ({settled / n:.0%}), "
-              f"Jev escalated {escalated}/{len(cases)} ({escalated / n:.0%})")
+              + (f"{part} settled per item, " if part else "")
+              + f"Jev escalated {escalated}/{len(cases)} ({escalated / n:.0%})")
         jev, base = agreement(entry, cases)
         print("  agreement: "
               + ("nothing seen yet" if jev is None

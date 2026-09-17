@@ -337,5 +337,84 @@
   "join": null,
   "bands": {},
   "lessons": []
+ },
+ "diff-screen": {
+  "owner": "scripts/check-diff-screen.py, started by scripts/push-campaign-branch.sh",
+  "tier": "shadow",
+  "group": "diff-screen",
+  "state": {
+   "fields": [
+    "file",
+    "changedTests"
+   ],
+   "file": "one file the commit touched: `path`, and `patch`, that file's diff from the branch's merge-base with origin/main to the commit",
+   "changedTests": "the paths of every test file the same branch diff changes: a `*-test.*` or `*_test.*` script, a `checks.als`, or a file under `test/` or `tests/`"
+  },
+  "nouls": {
+   "behaviour": {
+    "ask": "Does the change in `file.patch` make the code do the wrong thing when it runs, for an input or state it will meet?",
+    "true": "An added or changed line computes, compares, parses or returns something other than what its own name, docstring or comment says: a wrong condition, an off-by-one, a swapped argument, a regex that matches the wrong text, a model predicate that admits a state it forbids.",
+    "true_example": "a hook adds `if kind in ('REPORT', 'REVIEW'):` under a docstring that says every comment kind is read, so NOTE and BLOCKED pass unread",
+    "false": "Every changed line does what its name and prose say, or the change alters no behaviour: prose, comments, renames, data files, formatting.",
+    "false_example": "a patch to AGENTS.md that rewords one paragraph and changes no command it names"
+   },
+   "boundary": {
+    "ask": "Does the change in `file.patch` weaken a boundary: let through something that a guard, hook, gate, permission or validation refused before?",
+    "true": "A refusal, check or precondition is removed, narrowed, made to fail open, or made skippable: a guard's pattern that matches fewer spellings, an exception caught into allow, a gate that now reads a field an actor can set, a spec fact dropped.",
+    "true_example": "check-campaign-claim.py changes a refusal regex from `--no-verify` and its prefixes to the exact word only, so `--no-v` passes",
+    "false": "No refusal or check lets through more than before; the change adds a check, tightens one, or touches no boundary.",
+    "false_example": "a guard gains a new refused spelling and a test case that it is refused"
+   },
+   "failure": {
+    "ask": "Does the change in `file.patch` handle a failure badly: an error, missing file, timeout, bad input or non-zero exit that is swallowed, reported as success, crashes, or leaves partial state?",
+    "true": "A new or changed path where something can fail and the code then reads the failure as an answer, exits 0 or 1 where the caller reads the other, raises a traceback out of a hook, or writes half a file.",
+    "true_example": "a script runs `gh api` and treats an empty stdout from a network error as 'no comments', so a gate reads unreviewed as clean",
+    "false": "Every failure the changed lines can meet is named and reported as a failure, or the change adds no path that can fail.",
+    "false_example": "a reader returns `unknown` with the command's stderr when `git rev-parse` exits non-zero, and its caller prints that word"
+   },
+   "caller": {
+    "ask": "Does the change in `file.patch` break something that reads or calls this file: a changed signature, output line, exit status, file format, field name or cited name that another script, hook, test, document or spec still expects in its old form?",
+    "true": "The patch renames, removes or reshapes something outward-facing -- a function another script imports, a printed word a caller parses, a JSON key, a pred a document cites, a path in settings -- and nothing in the patch shows every reader updated.",
+    "true_example": "campaign-tracker.py changes `bound` to print `here:<machine>` instead of `here`, while campaign-claim.py compares the output with `== 'here'`",
+    "false": "Nothing outward-facing changes shape, or the change is additive and old readers keep working.",
+    "false_example": "a script gains an optional `--json` flag and keeps its default output byte for byte"
+   },
+   "untested": {
+    "ask": "Does the change in `file.patch` change behaviour that no test in `changedTests` targets?",
+    "true": "The patch changes what a script, hook or model does, and `changedTests` names no test file for it -- no `<name>-test.py` beside `<name>.py`, no `checks.als` beside a changed `system.als` -- so the new behaviour could break with every suite green.",
+    "true_example": "scripts/campaign-close.py gains a new gate while changedTests lists only scripts/campaign-claim-test.py",
+    "false": "The patch changes no behaviour (prose, comments, data), is itself a test, or `changedTests` holds the test file that exercises it.",
+    "false_example": "scripts/check-finding-site.py changes and changedTests lists scripts/check-finding-site-test.py"
+   }
+  },
+  "prefilter": {
+   "what": "a commit on a claim the post-commit hook pushed to a GitHub remote; a merge commit asks nothing; a binary file, a file whose branch patch is empty and a patch over the reader's ceiling ask nothing and log a skip"
+  },
+  "question": {
+   "type": "noul",
+   "per": "noul",
+   "instructions": "{ask}",
+   "criteria": {
+    "true": {
+     "what": "{true}",
+     "examples": [
+      "{true_example}"
+     ]
+    },
+    "false": {
+     "what": "{false}",
+     "examples": [
+      "{false_example}"
+     ]
+    }
+   }
+  },
+  "thresholds": {
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {},
+  "lessons": []
  }
 }

@@ -354,6 +354,12 @@ gh issue create -R kalaluthien/campaign-base --parent https://github.com/kalalut
 That one flag is the whole index, and `campaign-tracker index <N>` reads it
 back; `check-campaign-claim.py` refuses a create whose body carries
 `## Lands in` without it, or that would file on another repository. Fill the body from `.claude/skills/opening-campaign/assets/sub-issue.md`.
+**What a create filed is also recorded** — its title, body and parent, on that
+call's `guard.log` row, since a request had no record on this machine at all —
+and read at `shadow` by the `issue-filing` group: which open campaign's Scope
+covers it, over the Scopes the campaign directories here hold — the one
+reading asked of a request rather than of an issue already filed. It prints
+nothing and moves nothing.
 **A member repository receives only the branch and its pull request**, so its
 own issue conventions are never touched, and a repository this account does not
 own, or a sub-issue moving two repositories at once, needs no special case. The

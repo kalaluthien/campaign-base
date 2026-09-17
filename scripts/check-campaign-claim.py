@@ -112,7 +112,17 @@ that repository, never the base's (#389). `gh issue create` is exempt from the c
 number being minted there, and read for its shape instead (rule-check#461):
 refused when it would file on a repository other than the tracker, or its body
 carries `## Lands in` with no `--parent`; `create_findings` says what it does
-not read. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
+not read.
+
+WHAT A CREATE FILED IS RECORDED, on the guard.log row of that call: its
+repository, its `--parent`, its title and its body, or the reason each was not
+read. `FILINGS` says why the row and not a file. The record decides nothing,
+and reading it is `scripts/jev/readings.json`'s `issue-filing` group -- which
+open campaign's Scope covers this filing, at `shadow`, asked after the verdict
+is decided, printed and logged, over the Scopes this machine holds on disk. It
+prints nothing, moves nothing, and swallows every failure of its own.
+
+Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
 WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
@@ -179,6 +189,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -2551,7 +2562,14 @@ BODY_FILE_VALUED = {"-F", "--body-file"}
 # A GNU-style long option takes `--x=v`; a pflag SHORTHAND also takes `-bv`
 # with no separator, and `gh` uses pflag. Named here rather than derived, so
 # `--body` is never split as though it were `-b` + `ody`.
-SHORT_FLAGS = {"-b", "-F", "-c"}
+SHORT_FLAGS = {"-b", "-F", "-c", "-t"}
+# `gh issue create --title`, read for the RECORD and for nothing else: no
+# verdict below turns on a title. It is deliberately NOT in `KNOWN_FLAGS`,
+# which is the set `flag_value` refuses to read as another flag's value --
+# widening that set would change which bodies read as SKIPPED, and so a
+# verdict, for the sake of a record. The cost, named: `--title -b` records the
+# literal `-b` as the title.
+TITLE_VALUED = {"-t", "--title"}
 # Every flag this reader knows, so one is never mistaken for another's value.
 KNOWN_FLAGS = BODY_VALUED | COMMENT_FLAG | BODY_FILE_VALUED
 # What `flag_value` returns when the only candidate value was itself a flag of
@@ -2712,7 +2730,15 @@ def body_text(tokens, heredocs, cwd=None, file_first=False):
         resolved = Path(path) if Path(path).is_absolute() else here / path
         try:
             return resolved.read_text(encoding="utf-8"), None, None
-        except OSError as e:
+        # NOT `OSError` ALONE. `read_text` decodes, so a file that is not UTF-8
+        # raises `UnicodeDecodeError`, which is a `ValueError` and was never
+        # caught: the guard then printed "FAILED and did not judge", exited 0,
+        # and every OTHER gh write in the same command went unread. That was
+        # latent on the refusal path too and not only the record's -- a
+        # `gh issue create -F <png>` with no `--parent` raised here just the
+        # same (pr#484 REVIEW 5720443119). A file this cannot decode is a body
+        # it could not read, which is the answer that already exists.
+        except (OSError, ValueError) as e:
             return None, (f"`{path}` -> {resolved} could not be read "
                           f"({e.__class__.__name__}), so the body was not "
                           f"read either"), None
@@ -2764,6 +2790,99 @@ def create_parent(tokens):
     return parent
 
 
+# WHAT WAS FILED, one entry per `gh issue create` this guard read, in the order
+# it read them. THE MISSING RECORD (rule-check#455 NOTE 5719038761): a request
+# lived only in a transcript and nothing joined it to what happened, because
+# `create_findings` returned the moment it saw `--parent` and never read the
+# body. This is the write that makes one.
+#
+# WHY THE guard.log ROW AND NOT A SIBLING FILE. The row already carries the
+# session id, the time, the tool, the target and 200 bytes of the command, and
+# it is already written once per verdict under the campaign the call was
+# classified into, git-ignored, where `guard-precision.py` and every campaign
+# reader already open it. A filing is the one part of that call the 200-byte
+# `command` cuts off, so what is missing is a FIELD and not a file: a sibling
+# would be a second path to find, a second thing that can be absent, and a
+# second write to say happened or not beside a verdict that says it for the
+# row. `verdictIsDurable` already makes that row one per verdict, which is why
+# a command filing twice puts both filings on the one row rather than writing
+# two.
+FILINGS = []
+# HOW MUCH OF ONE RECORDED TEXT IS KEPT, in characters, and it bounds both the
+# guard.log row and the state the reading sends, because the state carries what
+# was recorded.
+#
+# THE NUMBER COMES OFF THE CORPUS, not off a round one. An issue body on this
+# tracker is written under `campaign-tracker.py`'s `BODY_CEILING`, 2,000
+# characters; over the 146 cases the filing reading was measured on, the
+# longest body is 2,007 and the 95th percentile is 1,998. The one longer text
+# in the built set, 4,509, is not a sub-issue at all. 8,000 is four times the
+# ceiling a body is written to and near twice the longest text ever seen here,
+# so nothing this reading actually meets is cut -- while a body file naming a
+# binary, a log or `/etc/hosts` is.
+#
+# AND IT IS NOT `BODY_CEILING` ITSELF. That ceiling is a rule about what a
+# person may write, and a body over it is a real filing whose text a reader
+# still wants whole; cutting at the rule would truncate exactly the bodies
+# worth reading. This is a bound on what a hook writes to disk, which is a
+# different question and takes a different number.
+RECORDED_CHARS = 8000
+
+
+def filing_of(tokens, heredocs, cwd, parent, repo):
+    """What one `gh issue create` filed, for the record: the repository and the
+    parent it named, its title and its body.
+
+    THE SAME UNREAD CASES AS THE VERDICT'S, each said in its own key rather
+    than left absent -- a body this guard could not see must not read as a
+    filing with no body. The body is read by `body_text`, the reader the
+    refusal beside this one uses, in `gh issue create`'s own `file_first`
+    order; a body-file path the SHELL expands returns before it, for
+    `create_findings`'s reason.
+
+    IT READS AND DECIDES NOTHING. No caller branches on what comes back, so a
+    title that arrives here as one of `flag_value`'s own flag words costs a
+    record and never a verdict.
+
+    AND IT IS BOUNDED. A `--body-file` names any path the shell does not
+    expand, so what arrives here is whatever is at it: a 117 KB body wrote a
+    126 KB guard.log row and two 129 KB states into the Jev log, for a call
+    that sent nothing (pr#484 REVIEW 5720443119). Each text is cut at
+    `RECORDED_CHARS` and the cut is SAID with the length it was cut from, so a
+    reader never mistakes the kept part for the whole; the state the reading
+    sends carries the cut text, which is the same bound applied once."""
+    out = {"repo": repo or "", "parent": parent}
+    title = flag_value(tokens, TITLE_VALUED)
+    if title is SKIPPED:
+        out["title_unread"] = SKIPPED_NOTE
+    elif title is None:
+        out["title_unread"] = "it has no --title, so no title was read"
+    else:
+        _keep(out, "title", title)
+    path = flag_value(tokens, BODY_FILE_VALUED)
+    if isinstance(path, str) and (path.startswith("~") or "$" in path):
+        out["body_unread"] = (f"its body file `{path}` is expanded by the "
+                              f"shell, so this guard never sees the text")
+        return out
+    text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd,
+                                                   file_first=True)
+    if text is not None:
+        _keep(out, "body", text)
+    else:
+        out["body_unread"] = (why_unreadable or why_unjudged
+                              or "it has no --body or --body-file, so no body "
+                                 "was read")
+    return out
+
+
+def _keep(out, field, text):
+    """Write one recorded text, cut at `RECORDED_CHARS` and saying so."""
+    out[field] = text[:RECORDED_CHARS]
+    if len(text) > RECORDED_CHARS:
+        out[f"{field}_truncated"] = True
+        out[f"{field}_length"] = len(text)
+
+
 def create_findings(tokens, heredocs, cwd, root):
     """(what is wrong with this `gh issue create`, what was read) for one
     segment. Refused: a repository other than the tracker -- named by `-R`, or
@@ -2794,6 +2913,28 @@ def create_findings(tokens, heredocs, cwd, root):
         else:
             read.append(f"`-R {named}` is the tracker")
     parent = create_parent(tokens)
+    # THE RECORD IS TAKEN BEFORE THE VERDICT BRANCHES, and for every create this
+    # guard reads rather than for the well-formed ones alone: a create refused
+    # here -- filed off the index, or on the wrong repository -- is exactly a
+    # request whose routing went wrong, and a record that kept those out would
+    # miss the half worth reading.
+    #
+    # NOTHING IT DOES REACHES THE VERDICT, by two things and not one. It adds
+    # to neither `found` nor `read`, so no wording and no exit status of this
+    # function moves; and it is FENCED, so an exception in it is written down
+    # as the reason there is no record rather than escaping `pre()`. The fence
+    # is what was missing: on the `--parent` path this function returns two
+    # lines below and never reads the body again, so a `read_text` that raised
+    # here left the whole command allowed unjudged -- a sibling segment filing
+    # on another repository passed where it is refused (pr#484 REVIEW
+    # 5720443119). `body_text` no longer raises for that case either; this
+    # catches whatever the next reader added here does.
+    try:
+        FILINGS.append(filing_of(tokens, heredocs, cwd, parent, named))
+    except Exception as e:              # noqa: BLE001 -- recorded, not raised
+        FILINGS.append({"repo": named or "", "parent": parent,
+                        "body_unread": f"the record raised "
+                                       f"{e.__class__.__name__}: {e}"})
     if parent is not None:
         read.append(f"it carries --parent {parent}")
         return found, read
@@ -3039,6 +3180,12 @@ def log_verdict(payload, status, target, cwd: Path):
                                                  tool_input.get(SKILL_ARGS))
                                 if v) or "")[:200],
     }
+    # WHAT THE CALL FILED, WHOLE, where `command` is cut at 200 bytes. Written
+    # only when there was one, so every row that carries the key carries a
+    # filing and a reader never has to tell an empty list from a call that
+    # filed nothing. `FILINGS`' comment says why this row and not a file.
+    if FILINGS:
+        row["filings"] = list(FILINGS)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
@@ -3736,6 +3883,10 @@ def pre(payload):
     # production, but a caller that judges two -- a suite, a replay -- would
     # otherwise print the first call's warning beside the second's verdict.
     NOTES.clear()
+    # CLEARED WITH THE NOTES AND FOR THE SAME REASON: one process judges one
+    # call in production, but a caller that judges two -- a suite, a replay --
+    # would otherwise write the first call's filing onto the second's row.
+    FILINGS.clear()
     session_id = payload.get("session_id") or ""
     tool = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
@@ -3763,6 +3914,181 @@ def pre(payload):
     if tool in WALK_TOOLS:
         return walk_tool_call(tool, tool_input, cwd)
     return 0
+
+
+# --------------------------------------------- THE FILING READING, at `shadow`
+# WHICH OPEN CAMPAIGN'S SCOPE COVERS THIS FILING -- AGENTS.md § Routing an
+# arriving request, asked of the one moment where a request is written down in
+# a form a later fact can label: `gh issue create --parent`, whose `--parent` is
+# the filer's own answer to the same question. The reading is
+# `scripts/jev/readings.json`'s `issue-filing` group and its questions live
+# nowhere else; this is a reader of them.
+#
+# IT CHANGES NOTHING AND SAYS NOTHING. It runs after the verdict is decided,
+# printed AND logged, so no ordering between it and the guard's own record can
+# be got wrong; it is at `shadow`, where an answer logs and prints nothing; and
+# every failure of it -- a registry that will not load, a scope that will not
+# read, an endpoint that does not answer -- is swallowed and, where there is
+# something to say, written to the Jev log as a `skip`.
+#
+# THE SCOPES ARE READ OFF THIS MACHINE'S DISK. Listing the open campaigns from
+# GitHub would put a network call in front of every filing inside a PreToolUse
+# hook; the campaign directories and their derived bodies are the local copy of
+# exactly that, and a campaign with no directory here is simply not an option,
+# which the row says rather than guesses at.
+JEV = HERE / "campaign-jev.py"
+FILING_GROUP = "issue-filing"
+FILING_READER = "check-campaign-claim.create"
+# Seconds this reading may cost ONE HOOK CALL -- every filing of it together,
+# not each -- because a command may file more than once and a per-filing bound
+# multiplies: three chained creates against an endpoint that accepts and never
+# answers cost 9.1 seconds (pr#484 REVIEW 5720443119). One deadline is taken
+# when the reading starts, each `judge` is given what is LEFT of it, and a
+# filing with nothing left is logged as not asked.
+#
+# WHAT THE WAIT DELAYS IS THE CREATE ITSELF. A PreToolUse hook runs BEFORE the
+# tool, so the harness holds the `gh issue create` until this returns -- the
+# verdict is already decided and printed by then, but the command has not run.
+# Measured Jev calls take 0.6-1.1s (campaign-jev.py's own `TIMEOUT` comment),
+# so three seconds is three times the slowest measured call and the most a
+# filing waits; campaign-jev's default of ten is right for a script a person is
+# watching and wrong in front of a tool call. A closed endpoint answers at once
+# and never reaches this bound, which is why the suite also holds a socket that
+# accepts and never answers.
+FILING_BUDGET = 3.0
+SCOPE_HEADING = "Scope"
+DERIVED_BODY = Path("runtime") / "campaign-issue-body-derived.md"
+
+
+def parent_target(parent, repo):
+    """(owner/repo, number) for the `--parent` a create named, or (None, why).
+
+    `gh issue create --parent` takes a URL or a bare number; a bare one names
+    the repository the create itself files on, which is `repo`. The number
+    comes back as an INT, the shape every other join key of this tree carries,
+    so a row of this reading and a row of another cannot key differently."""
+    text = str(parent or "").strip().rstrip("/")
+    if not text:
+        return None, "the create names no --parent"
+    if "/issues/" in text:
+        head, tail = text.rsplit("/issues/", 1)
+        number = tail.split("/")[0].lstrip("#")
+        parts = [p for p in head.split("/") if p]
+        if number.isdigit() and len(parts) >= 2:
+            return ("/".join(parts[-2:]), int(number)), ""
+        return None, f"`{text[:80]}` is no issue URL this can read"
+    if text.lstrip("#").isdigit() and repo:
+        return (repo, int(text.lstrip("#"))), ""
+    return None, (f"`{text[:80]}` names no repository and the create names no "
+                  f"`-R`, so the parent is not one issue")
+
+
+def open_campaign_scopes(cwd):
+    """({slug: that campaign issue's `## Scope` text}, [what would not read]).
+
+    ONE ENTRY PER CAMPAIGN DIRECTORY at the base roots above `cwd`, which is
+    this machine's copy of "the open campaigns": a close removes the directory,
+    and `campaign_dirs_at` is the one walk over the markers that says which
+    directory is whose. The `## Scope` is found by `campaign-repos.py`'s
+    `section`, the one reader of how an issue body's sections are found.
+
+    NEITHER HALF RAISES. A directory that will not read, a derived body that is
+    missing and a body with no `## Scope` each come back as a sentence in the
+    second list, which the row carries: a campaign this could not read is a
+    campaign no answer could have named, and that is a fact about the call."""
+    repos = repos_reader()
+    if repos is None:
+        return {}, [f"campaign-repos.py would not load ({REPOS_UNREADABLE}), "
+                    f"so no `## {SCOPE_HEADING}` was read"]
+    scopes, missed, seen = {}, [], set()
+    try:
+        found = list(campaign_dirs_at(cwd))
+    except OSError as e:
+        return {}, [f"the campaign directories would not be walked "
+                    f"({e.__class__.__name__})"]
+    for directory, fields in found:
+        slug = fields[1]
+        if slug in seen:
+            continue
+        seen.add(slug)
+        path = directory / DERIVED_BODY
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as e:
+            missed.append(f"{slug}: {path} would not be read "
+                          f"({e.__class__.__name__})")
+            continue
+        lines = repos.section(text, SCOPE_HEADING)
+        if not lines:
+            missed.append(f"{slug}: {path} carries no `## {SCOPE_HEADING}`")
+            continue
+        scopes[slug] = "\n".join(lines)
+    return scopes, missed
+
+
+def read_filings(cwd: Path):
+    """Ask the `issue-filing` group about each filing this call made.
+
+    ONE CALL A FILING, both questions of the group in it, and the answer is
+    logged and nothing else: the group is at `shadow`. What the reader computed
+    rides on the row as its `flag` -- the options it was able to offer, whether
+    the parent it is labelled by was among them, and what it could not read --
+    while the group's own answer, the `choice` read against the address `noul`,
+    is `campaign-jev.py`'s `address_word` over the two rows of one `call` id
+    and is not stored: a derived value kept beside its inputs is the copy that
+    drifts.
+
+    ONE DEADLINE FOR THE WHOLE CALL, taken here: each `judge` is given what is
+    left of `FILING_BUDGET`, and a filing there is nothing left for is logged
+    as not asked rather than asked with no bound. A per-filing timeout
+    multiplied by the number of creates in one command, which is the shape the
+    hook cannot afford."""
+    if not FILINGS:
+        return
+    deadline = time.monotonic() + FILING_BUDGET
+    jev = load(JEV, "campaign_jev")
+    reg = jev.load_registry()
+    scopes, missed = open_campaign_scopes(cwd)
+    repos = repos_reader()
+    # A create naming no `-R` files on the checkout's own repository, and
+    # `create_findings` has already refused the case where that is not the
+    # base -- so here it is the tracker, named by the one file that owns that
+    # name rather than spelled a second time.
+    default_repo = repos.BASE_REPO if repos is not None else ""
+    for filing in FILINGS:
+        label = f"gh issue create on {filing.get('repo') or 'this checkout'}"
+        target, why = parent_target(filing.get("parent"),
+                                    filing.get("repo") or default_repo)
+        if target is None:
+            jev.skip(FILING_READER, label, why, cwd=cwd)
+            continue
+        repo, number = target
+        if "body" not in filing:
+            jev.skip(FILING_READER, label,
+                     filing.get("body_unread") or "no body was read", cwd=cwd)
+            continue
+        if not scopes:
+            jev.skip(FILING_READER, label,
+                     "no open campaign's `## Scope` could be read on this "
+                     "machine, so the option set would be the no-match option "
+                     "alone" + (f": {'; '.join(missed)}" if missed else ""),
+                     cwd=cwd)
+            continue
+        left = deadline - time.monotonic()
+        if left <= 0:
+            jev.skip(FILING_READER, label,
+                     f"not asked: the {FILING_BUDGET:.1f}s this reading may "
+                     f"cost one hook call was spent on the filings before it",
+                     cwd=cwd)
+            continue
+        jev.judge(FILING_GROUP,
+                  {"request": {"title": filing.get("title", ""),
+                               "body": filing["body"]},
+                   "campaigns": scopes},
+                  read=f"{repo}#{number} <- {label}", reader=FILING_READER,
+                  key={"repo": repo, "issue": number}, reg=reg, cwd=cwd,
+                  timeout=left,
+                  flag={"options": sorted(scopes), "unread": missed})
 
 
 def main() -> int:
@@ -3806,6 +4132,16 @@ def main() -> int:
         cwd = Path(".")
     note = log_verdict(payload, status, LAST.get("target"), cwd)
     print(note, file=sys.stderr if status else sys.stdout)
+    # AND THE FILING READING LAST OF ALL, after the verdict is decided, printed
+    # and written down. It is at `shadow`, so it prints nothing and returns
+    # nothing here; every failure of it is swallowed, because a judgment is an
+    # aside to a verdict that has already been reached and a reading that
+    # raised must not reach the last resort below and be reported as a defect
+    # in the guard.
+    try:
+        read_filings(cwd)
+    except Exception:                  # noqa: BLE001 -- swallowed, by design
+        pass
     return status
 
 

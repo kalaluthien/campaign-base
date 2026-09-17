@@ -757,6 +757,32 @@ def a_blocked_reading_may_only_route(m):
     return ok and not also, (why, why2)
 
 
+def relive_appends_and_never_replaces(m):
+    """`report --live` re-asks a case and APPENDS what came back. A run that
+    overwrote the one before it would erase the evidence of drift, which is the
+    one thing the run history is for."""
+    corpus = ROOT / "relive"
+    corpus.mkdir(exist_ok=True)
+    entry = m.load_registry()["verb-first"]
+    case = {"id": "a-case", "reading": "verb-first",
+            "state": {"title": "Cache the feed", "body": "- a body"},
+            "truth": "yes", "label": {"from": "owner"},
+            "source": {"kind": "fixture"}, "role": "case",
+            "seen": [{"model": MODEL, "wording": "old", "at": "2026-01-01",
+                      "word": "no", "raw": {"type": "noul", "noul": 0.1}}]}
+    serving(noul=0.95)
+    NEXT["body"] = {"model": MODEL,
+                    "answers": {"verb-first": {"type": "noul", "noul": 0.95}}}
+    out = m.relive("verb-first", entry, [case], env=env(), root=corpus)
+    seen = out[0]["seen"]
+    return (len(seen) == 2 and seen[0]["wording"] == "old"
+            and seen[1]["wording"] == m.wording(entry)
+            and seen[1]["word"] == "yes"), seen
+
+
+CASES["report --live appends a run and replaces none"] = relive_appends_and_never_replaces
+
+
 def every_case_fits_its_entry(m):
     """A case of a REGISTERED reading is re-askable: its state carries exactly
     the fields the entry names, and its truth is a word the reading answers.
@@ -912,6 +938,9 @@ MUTATIONS = [
     ("a set-but-empty endpoint read as unset", "    if not url:",
      "    if False:", "an endpoint set to nothing never reaches the network"),
     # THE FOUR BOUNDS ON AN `act`, each dropped in turn (DECISION 5714078253).
+    ("a live run replaces the history", '        c.setdefault("seen", []).append(',
+     '        c["seen"] = []\n        c.setdefault("seen", []).append(',
+     "report --live appends a run and replaces none"),
     ("bound a dropped", '        if verb == "label" and (label in PERSON_LABELS',
      "        if False and (label in PERSON_LABELS",
      "an act never moves a label a person alone moves"),

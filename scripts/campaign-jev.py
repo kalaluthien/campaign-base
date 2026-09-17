@@ -1096,7 +1096,7 @@ def drift_line(entry, cases):
     return ", ".join(out) if out else "none"
 
 
-def relive(name, entry, cases):
+def relive(name, entry, cases, env=None, root=None):
     """`--live`: re-ask every case and APPEND what came back. Nothing is
     replaced -- a band is read from the run history, so a run that overwrote
     the one before it would erase the evidence of drift."""
@@ -1105,13 +1105,13 @@ def relive(name, entry, cases):
     q = {name: question_of(entry)}
     for c in cases:
         r = ask("campaign-jev.py report --live", c["id"], c.get("state") or {},
-                q, log=False)
+                q, env=env, log=False)
         a = r.answers[name]
         c.setdefault("seen", []).append(
             {"model": r.model, "wording": wording(entry), "at": at,
              "word": a.word, "raw": a.raw})
         print(f"  {c['id']:<28} {a.word:<12} {json.dumps(a.raw)}")
-    write_corpus(name, cases)
+    write_corpus(name, cases, root)
     return cases
 
 

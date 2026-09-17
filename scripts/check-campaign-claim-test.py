@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 harness = importlib.import_module("suite-harness-test")
@@ -43,6 +44,13 @@ check = harness.check
 
 HERE = Path(__file__).resolve().parent
 GUARD = HERE / "check-campaign-claim.py"
+# EVERY NOTE A CASE POSTS starts check-research-bar.py in the background, and
+# that reader asks a model: pinned here to a closed port, a stub key and a log
+# of this run's own, so no case reaches the model or the real runtime/jev.log.
+os.environ.update(CAMPAIGN_JEV_URL="http://127.0.0.1:9/v1/systemone",
+                  TYPESAFE_API_KEY="stub",
+                  CAMPAIGN_JEV_LOG=os.path.join(tempfile.mkdtemp(prefix="guard-jev-"),
+                                                "jev.log"))
 CLAIM = HERE / "campaign-claim.py"
 
 
@@ -1763,6 +1771,44 @@ def main():
         r = post("gh issue comment 7 -b 'REPORT demo-worker-1: at abcdef1'")
         check("CONTROL: a REPORT on an issue has no head to pin and is not read",
               r.returncode == 0 and not PIN_READ.search(r.stdout), out(r)[:600])
+
+    # ------------------------------------------------------- sdlc-alloy#458 K1
+    # A NOTE ON AN ISSUE IS HANDED TO check-research-bar.py IN THE BACKGROUND.
+    # The real reader runs: its kind read goes to a `gh` stub calling issue 7
+    # research, and its model calls to a closed port, so each condition logs
+    # one failed call -- the log is what shows the hand-off happened.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        bindir = Path(d) / "ghkind"
+        bindir.mkdir()
+        (bindir / "gh").write_text(
+            "#!/usr/bin/env python3\nimport sys, time\ntime.sleep(2)\n"
+            "if sys.argv[1:3] != ['api', 'repos/kalaluthien/campaign-base/issues/7']:\n"
+            "    sys.exit('gh stub: no answer')\n"
+            "print('[\"kind:research\"]')\n")
+        (bindir / "gh").chmod(0o755)
+        log = Path(d) / "jev.log"
+        env = dict(PATH=f"{bindir}:"
+                   + herdr_stub(d, {"sid-1": "demo-worker-1"})["PATH"],
+                   CAMPAIGN_JEV_URL="http://127.0.0.1:9/v1/systemone",
+                   TYPESAFE_API_KEY="stub", CAMPAIGN_JEV_LOG=str(log))
+        r = ask(f.trees["demo/7-x"], tool="Bash", env=env,
+                command="gh issue comment 7 -b 'NOTE demo-worker-1: 3 runs'")
+        logged_at_return = log.exists()
+        conditions = len(json.loads(
+            (HERE / "jev" / "readings.json").read_text())["research-bar"]["conditions"])
+        for _ in range(100):
+            lines = log.read_text().splitlines() if log.exists() else []
+            if len(lines) >= conditions:
+                break
+            time.sleep(0.2)
+        check("ALLOW a NOTE on an issue at once, and its research-bar reading "
+              "logs one call per condition in the background, after the guard "
+              "returned (the kind read waits 2 s)",
+              r.returncode == 0 and not logged_at_return
+              and len(lines) == conditions
+              and all("check-research-bar.py" in x for x in lines),
+              (out(r)[:300], lines[:2]))
 
     # ---------------------------------------------------------------- #389
     # AN INSTALL'S WORKTREES HOLD CLAIMS, AND ONLY A CHECKOUT OF A MEMBER
@@ -3914,7 +3960,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 613
+    EXPECTED = 614
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

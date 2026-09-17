@@ -121,6 +121,55 @@
   "join": null,
   "bands": {}
  },
+ "research-bar": {
+  "owner": "scripts/check-research-bar.py, started by scripts/check-campaign-claim.py",
+  "tier": "shadow",
+  "group": "research-bar",
+  "state": {
+   "fields": [
+    "condition",
+    "note"
+   ],
+   "condition": "one value of `conditions`, one state per condition",
+   "note": "a NOTE comment posted to a kind:research issue, as the guard read it before the post"
+  },
+  "conditions": {
+   "scope": "names the set its number was measured over -- which cases, rows or window -- and how many",
+   "method": "names how the number was produced -- the runs and the model, script or command -- in its own text",
+   "raw": "names a file or directory where the raw per-case output is kept",
+   "baseline": "runs a baseline -- a cheap alternative or a plain code rule over the same cases -- and reports its number beside the claim's",
+   "negative": "says how its negative cases were made, each differing from a positive only in the thing judged"
+  },
+  "prefilter": {
+   "what": "a comment opening NOTE, on an issue campaign-tracker.py kind reads as research; anything else asks nothing"
+  },
+  "question": {
+   "type": "choice",
+   "per": "condition",
+   "instructions": "Does `note` meet `condition`?",
+   "criteria": {
+    "supports": {
+     "what": "the note makes a claim and does what `condition` asks for it, in its own text",
+     "example": "condition 'runs a baseline'; note 'Jev flags 3 of 46, token overlap flags 39 of 46 on the same cases'"
+    },
+    "contradicts": {
+     "what": "the note makes a claim `condition` applies to and does not do what `condition` asks: a number with no method, a verdict with no baseline, positives with no negative",
+     "example": "condition 'runs a baseline'; note 'Jev separates the names at AUC 0.94, so adopt it' and no other rule's number"
+    },
+    "says_nothing": {
+     "what": "the note makes no claim `condition` applies to: an assignment, a plan, a design choice, a list of options",
+     "example": "condition 'runs a baseline'; note 'step 2 is assigned to worker-33 on claim sdlc-alloy/458-jev-sdlc'"
+    }
+   }
+  },
+  "thresholds": {
+   "option": "contradicts",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": null,
+  "bands": {}
+ },
  "verb-first": {
   "owner": "scripts/campaign-tracker.py check",
   "tier": "advise",

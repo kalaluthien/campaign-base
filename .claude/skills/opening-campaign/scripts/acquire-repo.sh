@@ -33,9 +33,9 @@ EOF
 log() { printf 'acquire-repo: %s\n' "$*" >&2; }
 die() { printf 'acquire-repo: %s\n' "$*" >&2; exit 1; }
 
-# LINE 2 OF EVERY HOOK THIS SCRIPT WRITES, pre-commit and post-commit, and the
-# one thing that says the slot is this script's rather than somebody's; the
-# post-commit is read by that line alone. Two writers of one hook
+# LINE 2 OF EVERY HOOK THIS SCRIPT WRITES, pre-commit, post-commit and post-merge, and
+# the one thing that says the slot is this script's rather than somebody's; the
+# two push hooks are read by that line alone. Two writers of one hook
 # slot, the second refusing the first's output, is what left every delegate clone
 # with no hook at all (#178), so scripts/install-hooks.sh adopts a slot holding
 # this line -- `is_guard_shim` and `is_push_shim` there read it, its
@@ -327,13 +327,15 @@ install_commit_guard() {
 		log "  mv '$hook' '$hook.bak' && <re-run acquire-repo.sh>"
 		die "refusing to overwrite an existing pre-commit hook"
 	fi
-	# Checked before either hook is written, so a refusal leaves neither.
-	if [ -e "$post" ] && [ "$(sed -n 2p "$post")" != "$SHIM_MARKER" ]; then
-		log "$post exists and is not one this script wrote. Read it, then either"
-		log "chain \"$push\" from it by hand, or move it aside and re-run this script:"
-		log "  mv '$post' '$post.bak' && <re-run acquire-repo.sh>"
-		die "refusing to overwrite an existing post-commit hook"
-	fi
+	# Checked before any hook is written, so a refusal leaves none.
+	for p in "$post" "$hooks/post-merge"; do
+		if [ -e "$p" ] && [ "$(sed -n 2p "$p")" != "$SHIM_MARKER" ]; then
+			log "$p exists and is not one this script wrote. Read it, then either"
+			log "chain \"$push\" from it by hand, or move it aside and re-run this script:"
+			log "  mv '$p' '$p.bak' && <re-run acquire-repo.sh>"
+			die "refusing to overwrite an existing ${p##*/} hook"
+		fi
+	done
 
 	# BOTH halves, and the claim gate by ABSOLUTE PATH: a member clone has no
 	# scripts/ of its own to reach it through, so `git rev-parse --show-toplevel`
@@ -369,18 +371,22 @@ install_commit_guard() {
 	# nowhere: a commit there stayed local until pushed by hand (rule-check#370,
 	# issuecomment-5653129069). By absolute path, as the gate is. The commit has
 	# already landed when this runs, so a missing script is said, not refused.
-	printf '%s\n' \
-		'#!/usr/bin/env sh' \
-		"$SHIM_MARKER" \
-		"if [ ! -x \"$push\" ]; then" \
-		"	echo \"post-commit: $push is missing or not executable.\" >&2" \
-		'	echo "  This commit was NOT pushed. Push it yourself, or re-run" >&2' \
-		'	echo "  acquire-repo.sh from a base checkout that has the script." >&2' \
-		'	exit 0' \
-		'fi' \
-		"exec \"$push\"" > "$post"
-	chmod +x "$post"
-	log "installed the post-commit push at $push"
+	# post-merge too: a merge that commits by itself runs it and never
+	# post-commit, so absorbing `main` stayed local (rule-check#461).
+	for p in "$post" "$hooks/post-merge"; do
+		printf '%s\n' \
+			'#!/usr/bin/env sh' \
+			"$SHIM_MARKER" \
+			"if [ ! -x \"$push\" ]; then" \
+			"	echo \"${p##*/}: $push is missing or not executable.\" >&2" \
+			'	echo "  This commit was NOT pushed. Push it yourself, or re-run" >&2' \
+			'	echo "  acquire-repo.sh from a base checkout that has the script." >&2' \
+			'	exit 0' \
+			'fi' \
+			"exec \"$push\"" > "$p"
+		chmod +x "$p"
+		log "installed the ${p##*/} push at $push"
+	done
 }
 
 # ------------------------------------------------------------------- acquire

@@ -268,6 +268,26 @@ def main():
         check("...whose push script is named by its absolute path in the base",
               f'exec "{BASE / "scripts" / "push-campaign-branch.sh"}"' in post,
               repr(post[-160:]))
+        # A merge that commits by itself runs post-merge, never post-commit
+        # (rule-check#461), so absorbing `main` stayed local.
+        def g(*args):
+            return subprocess.run(["git", "-C", str(clone), *args],
+                                  capture_output=True, text=True,
+                                  env=dict(GIT_ENV, HOME=str(home)))
+        g("switch", "-qc", "side", "HEAD~1")
+        (clone / "s").write_text("3")
+        g("add", "s")
+        g("commit", "-qm", "side", "--no-verify")
+        g("switch", "-q", "demo/190-fixture")
+        m = g("merge", "--no-edit", "side")
+        pushed = g("--git-dir", str(remote), "rev-parse",
+                   "refs/heads/demo/190-fixture").stdout.strip()
+        head = g("rev-parse", "HEAD").stdout.strip()
+        check("...and pushes a merge commit through a post-merge",
+              m.returncode == 0 and pushed == head
+              and "pushed demo/190-fixture" in m.stdout + m.stderr,
+              f"remote {pushed[:12]}, clone {head[:12]}; "
+              f"{(m.stdout + m.stderr)[-240:]}")
 
     # ---- THE GUARD'S REFUSAL IS THE HOOK'S ANSWER, not a line it printed on
     # the way to the gate. Before #190 the shim was `exec "$guard"`, so its

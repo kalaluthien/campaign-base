@@ -654,6 +654,22 @@ def main():
                             capture_output=True, text=True)
         check("...and the remote really has it", "demo/1-x" in ls.stdout,
               ls.stdout[:160])
+        # A merge that commits by itself runs post-merge, never post-commit
+        # (rule-check#461): absorbing `main` left the merge commit local while
+        # the branch read as pushed.
+        git(r.root, "switch", "-q", "topic")
+        (r.root / "spec" / "m.txt").write_text("sig M {}\n")
+        git(r.root, "add", "spec/m.txt")
+        git(r.root, "commit", "-qm", "m", "--no-verify")
+        git(r.root, "switch", "-q", "demo/1-x")
+        m = git(r.root, "merge", "--no-edit", "topic")
+        merged = git(r.root, "rev-parse", "HEAD").stdout.strip()
+        pushed = subprocess.run(["git", "ls-remote", "--heads", str(r.remote),
+                                 "demo/1-x"], capture_output=True,
+                                text=True).stdout.split()
+        check("a merge commit on a campaign branch is pushed by the hook",
+              pushed[:1] == [merged] and "pushed demo/1-x" in m.stdout + m.stderr,
+              f"local {merged}, remote {pushed[:1]}; {(m.stdout + m.stderr)[:200]}")
         remote_sha = subprocess.run(["git", "ls-remote", "--heads",
                                      str(r.remote), "demo/1-x"],
                                     capture_output=True, text=True).stdout.split()[0]

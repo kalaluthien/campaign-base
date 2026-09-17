@@ -22,7 +22,9 @@
 # check-commit-claim, the commit half of the claim gate, whose pre-tool-use
 # half is the harness hook below.
 # post-commit pushes a claim branch as soon as it has a commit, so a worker
-# never sits on a finished commit unpushed; it touches no other branch, and
+# never sits on a finished commit unpushed; post-merge runs the same push,
+# because a merge that commits by itself runs post-merge and never post-commit
+# (rule-check#461); it touches no other branch, and
 # push-campaign-branch.sh asks check-commit-claim.py which branch is a claim.
 # A member clone gets the same push from acquire-repo.sh, which ships no
 # installer into it.
@@ -76,6 +78,7 @@ root=$(cd "$(dirname "$common")" && pwd -P)
 hookdir=$common/hooks
 precommit=$hookdir/pre-commit
 postcommit=$hookdir/post-commit
+postmerge=$hookdir/post-merge
 ours="$root/scripts/"
 marker='# Installed by scripts/install-hooks.sh.'
 # What is matched to recognise a hook this script wrote, derived from what is
@@ -191,8 +194,9 @@ check_slot() {
 		echo "nothing read here is lost; replacing it." >&2
 		return 0
 	fi
-	if [ "$slot" = "$postcommit" ] && [ -e "$slot" ] && is_push_shim "$slot"; then
-		echo "adopting: $slot is the post-commit acquire-repo.sh wrote, calling" >&2
+	if { [ "$slot" = "$postcommit" ] || [ "$slot" = "$postmerge" ]; } &&
+		[ -e "$slot" ] && is_push_shim "$slot"; then
+		echo "adopting: $slot is the $(basename "$slot") acquire-repo.sh wrote, calling" >&2
 		echo "push-campaign-branch.sh. The hook written here runs that script," >&2
 		echo "so nothing read here is lost; replacing it." >&2
 		return 0
@@ -207,6 +211,7 @@ check_slot() {
 
 check_slot "$precommit"
 check_slot "$postcommit"
+check_slot "$postmerge"
 
 hook=$precommit
 cat >"$hook" <<HOOK
@@ -260,7 +265,7 @@ HOOK
 chmod +x "$hook"
 echo "installed: $hook"
 
-hook=$postcommit
+for hook in "$postcommit" "$postmerge"; do
 cat >"$hook" <<'HOOK'
 #!/usr/bin/env sh
 # Installed by scripts/install-hooks.sh. Re-run it after changing this file.
@@ -268,7 +273,7 @@ cat >"$hook" <<'HOOK'
 for s in $(sed -n 's/^# runs: //p' "$0"); do
 	x=$(git rev-parse --show-toplevel)/scripts/$s
 	if [ ! -x "$x" ]; then
-		echo "post-commit: $x is missing or not executable." >&2
+		echo "$(basename "$0"): $x is missing or not executable." >&2
 		echo "  This commit was NOT pushed. Push it yourself, or run" >&2
 		echo "  scripts/install-hooks.sh from a checkout that has the script." >&2
 		continue
@@ -280,6 +285,7 @@ HOOK
 
 chmod +x "$hook"
 echo "installed: $hook"
+done
 
 # ---------------------------------------------------- the harness hooks
 #

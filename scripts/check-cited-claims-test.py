@@ -102,6 +102,12 @@ The model is `holds`: an agent holds its own claim.
 | --- | --- |
 | one | `holds` |
 
+| other table | x |
+| --- | --- |
+| two | y |
+- first item
+- second item
+
 ```sh
 `holds` in a fence
 ```
@@ -254,7 +260,9 @@ def reference_units(t):
     got = [u for _, _, u in t.m.units(REFERENCE)]
     return got == ["The model is `holds`: an agent holds its own claim.",
                    "- A list item naming `other` with nothing to anchor it.",
-                   "| stage | in `spec/fixture` |\n| one | `holds` |"], got
+                   "| stage | in `spec/fixture` |\n| one | `holds` |",
+                   "| other table | x |\n| two | y |",
+                   "- first item", "- second item"], got
 
 
 def plain_name_anchored(t):
@@ -274,6 +282,14 @@ def reference_touched(t):
     return (r.returncode == 0
             and asked == ["The model is `holds`: an agent holds its claim."]
             and "reference-claims`: 1 staged" in out), (asked, out)
+
+
+def reference_without_entry_not_read(t):
+    r, out = repo(t, {".claude/skills/x/references/ref.md":
+                      REFERENCE.replace("its own claim", "its claim")},
+                  drop=("reference-claims",))
+    return (r.returncode == 0 and not SEEN
+            and "none a spec/ module or a source; nothing asked" in out), out
 
 
 def skill_body_not_a_source(t):
@@ -313,6 +329,7 @@ CASES = {
     "a plain name counts only where the entry's prefilter anchors it": plain_name_anchored,
     "a staged reference paragraph edit asks that paragraph alone": reference_touched,
     "a skill body outside references/ is no source": skill_body_not_a_source,
+    "a reference edit with no reference entry reads nothing": reference_without_entry_not_read,
     "a reading missing from the registry is named, the other still asked": entry_missing_other_asked,
 }
 
@@ -353,6 +370,15 @@ MUTATIONS = [
      "a name declared twice is skipped and named"),
     ("a table row without its header", 'body = f"{header}\\n{body}"', "pass",
      "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a list item run into the one above", 'elif re.match(r"([-*]|\\d+\\.)\\s", s):',
+     "elif False:",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a header kept past its table", "            header = None\n", "            pass\n",
+     "reference units: a paragraph, an item, a row under its header, no fence"),
+    ("a source read for a reading the registry lacks",
+     "sources[r](p) for r in READINGS if r in registry)",
+     "sources[r](p) for r in READINGS)",
+     "a reference edit with no reference entry reads nothing"),
     ("a fence read as prose", "fence = not fence", "fence = False",
      "reference units: a paragraph, an item, a row under its header, no fence"),
     ("the prefilter's anchor ignored",
@@ -406,7 +432,7 @@ def live_one(m, jev, name, entry, corpus, record):
             check(f"live {row['id']} reads {before[-1]['word']} as last recorded",
                   word == before[-1]["word"], f"{word} at {raw}, {row['source']['ref']}")
         row["seen"].append({"model": reading.model, "wording": wording,
-                            "raw": raw, "word": word, "at": today})
+                            "raw": raw if raw is None else round(raw, 2), "word": word, "at": today})
     print(f"{name}: {misses} of {len(rows)} case(s) off their truth")
     check(f"live {name}: every case asked", len(results) == len(rows), len(results))
     if record:

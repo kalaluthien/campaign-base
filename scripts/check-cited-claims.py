@@ -53,6 +53,10 @@ runs on 2026-09-17, highest P(contradicts) per paragraph:
   false flag  landing-a-change.md, removeDiscipline, 0.51-0.62: the claim
               holds `commitCheck`'s half of the sentence too
   false flag  reviewing.md, review, 0.50-0.51
+  false flag  landing-a-change.md:47, criterion, 0.68-0.75: reuse is "held,
+              not skipped", so "cannot waive its scenario" is true
+  in the gap  landing-a-change.md, S4c_TestRenameBreak 0.38-0.44; criterion
+              in the table rows and at line 32, 0.25-0.33
   missed      flips: commitCheck 0.32-0.35; agentRelease 0.41-0.50 and
               FeaturelessKeeps 0.48-0.50, both on the edge of the gap
 
@@ -478,6 +482,7 @@ def main(argv, out=sys.stdout, env=None):
               f"({e.__class__.__name__}: {e}); nothing asked, exit status "
               f"unmoved", file=out)
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

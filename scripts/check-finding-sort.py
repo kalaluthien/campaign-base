@@ -40,7 +40,7 @@ known to be wrong, as seen at jev-1.13.0 over three runs on 2026-09-17: over
 188-190 times, where a keyword rule agreed 206; on 32 findings hand-labelled
 by reviewing.md's written definition it agreed 20-21, the reviewer's own word
 21 and the keyword rule 14. Those counts take P(defect) at 0.5; at the entry's
-own thresholds, as `--live` scores the corpus, 10-11 of the 32 read `unknown`
+own two edges, as `--live` scores the corpus, 10-11 of the 32 read `uncertain`
 and 14-16 meet their truth, so `--live` without `--record` prints about 18
 off. The reviewer's word is weak truth -- "a test half
 that cannot fail" called a refinement, a false docstring a defect -- which is

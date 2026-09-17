@@ -190,8 +190,8 @@ def pure_branches(m):
           m.branch(NOUL_Q, noul(0.92))[0] == "yes")
     check("branch: a noul under the cut is no",
           m.branch(NOUL_Q, noul(0.61))[0] == "no")
-    check("branch: a noul in the gap is unknown",
-          m.branch(NOUL_Q, noul(0.78))[0] == "unknown")
+    check("branch: a noul between the two edges is uncertain, not unknown",
+          m.branch(NOUL_Q, noul(0.78))[0] == "uncertain")
     check("branch: the cuts are inclusive at both ends",
           m.branch(NOUL_Q, noul(0.85))[0] == "yes"
           and m.branch(NOUL_Q, noul(0.70))[0] == "no")
@@ -209,8 +209,32 @@ def pure_branches(m):
           m.branch(OPTION_Q, probs(0.55))[0] == "yes")
     check("branch: one option's probability under the cut is no",
           m.branch(OPTION_Q, probs(0.10))[0] == "no")
-    check("branch: one option's probability in the gap is unknown",
-          m.branch(OPTION_Q, probs(0.35))[0] == "unknown")
+    check("branch: one option's probability between the edges is uncertain",
+          m.branch(OPTION_Q, probs(0.35))[0] == "uncertain")
+    # THE SECOND EDGE OF A `choice`'s BAND. `floor` alone was a lone cut inside
+    # the measured `confident` band, which is what flips on noise; `certain_over`
+    # is its upper edge and what falls between them is `uncertain`.
+    banded = dict(CHOICE_Q, floor=0.45, certain_over=0.50)
+    check("branch: a choice over the upper edge is the option",
+          m.branch(banded, pick("research", 0.51))[0] == "research")
+    check("branch: a choice between the two edges is uncertain",
+          m.branch(banded, pick("research", 0.47))[0] == "uncertain")
+    check("branch: a choice under the lower edge is still unknown",
+          m.branch(banded, pick("research", 0.44))[0] == "unknown")
+    check("branch: the no-match option is unknown inside the band too",
+          m.branch(banded, pick("none", 0.47))[0] == "unknown")
+    # A READING THAT DECLARES NO EDGE records and judges nothing. Legal at
+    # `shadow` alone, where a reading enters to collect cases.
+    bare_choice = {k: v for k, v in CHOICE_Q.items()
+                   if k not in ("floor", "no_match")}
+    got, why = m.branch(bare_choice, pick("research", 0.31))
+    check("branch: a choice with no cut records the model's own option",
+          got == "research" and "no cut is declared" in why, (got, why))
+    bare_noul = {k: v for k, v in NOUL_Q.items()
+                 if k not in ("yes_over", "no_under")}
+    got, why = m.branch(bare_noul, noul(0.31))
+    check("branch: a noul with no cut is uncertain, since it has no word",
+          got == "uncertain" and "no cut is declared" in why, (got, why))
     check("branch: an answer carrying no probabilities is unknown",
           m.branch(OPTION_Q, {"type": "choice", "choice": "supports",
                               "confidence": 0.9})[0] == "unknown")
@@ -251,8 +275,9 @@ CASES = {
     # --- the branches, through a whole call ---
     "a noul over the cut is yes": word("verb_first", "yes", noul=0.94),
     "a noul under the cut is no": word("verb_first", "no", noul=0.46),
-    "a noul in the gap is unknown": unknown_because(
-        "verb_first", "in the gap", noul=0.78),
+    "a noul between the two edges is uncertain": lambda m: (
+        lambda a: (a.word == "uncertain" and "in the band between" in a.why,
+                   (a.word, a.why)))(read(m, noul=0.78).answers["verb_first"]),
     "a confident fitting option is the option": word(
         "work_kind", "maintenance", confidence=0.95),
     "a choice cut on one option reads that option's probability": lambda m: (
@@ -263,6 +288,23 @@ CASES = {
                                         "says_nothing": 0.03}}}})),
     "a choice under the floor is unknown": unknown_because(
         "work_kind", "under the floor", confidence=0.51),
+    # THE SECOND EDGE, THROUGH A WHOLE CALL. `floor` alone was a lone cut inside
+    # the measured `confident` band; `certain_over` is that band's lower edge
+    # and what falls between the two is `uncertain` -- an answer that happened.
+    "a choice between the two edges is uncertain": lambda m: (
+        lambda a: (a.word == "uncertain" and "sits in the band" in a.why,
+                   (a.word, a.why)))(
+        read(m, questions={"work_kind": dict(CHOICE_Q, floor=0.45,
+                                             certain_over=0.50)},
+             confidence=0.47).answers["work_kind"]),
+    # A READING THAT DECLARES NO EDGE, through a whole call: the model's own
+    # option is recorded and nothing is judged. That is what `shadow` is for.
+    "a reading with no cut records and judges nothing": lambda m: (
+        lambda a: (a.word == "maintenance" and "no cut is declared" in a.why,
+                   (a.word, a.why)))(
+        read(m, questions={"work_kind": {k: v for k, v in CHOICE_Q.items()
+                                         if k not in ("floor", "no_match")}},
+             confidence=0.31).answers["work_kind"]),
     "the no-match option is unknown": unknown_because(
         "work_kind", "no-match option", choice="none", confidence=0.95),
     # --- every failure path ---
@@ -365,9 +407,12 @@ def env_not_text(m):
 
 
 def raised_where_nothing_should(m):
-    """A question spec missing a threshold: `branch` raises KeyError inside the
-    call, and `ask`'s own boundary is the only thing between that and the
-    caller's traceback.
+    """A question spec declaring ONE of its two edges: `branch` raises KeyError
+    inside the call, and `ask`'s own boundary is the only thing between that and
+    the caller's traceback. One edge and not none, because none is a reading
+    that declares no cut at all, which is legal at `shadow` and judges nothing;
+    a half-declared band is the caller's bug and `thresholds_or_shadow` refuses
+    it in the registry.
 
     IT CATCHES RATHER THAN LETTING THE CRASH BE THE RESULT: a case that dies of
     the very exception it is asserting against reports "crashed", which the
@@ -375,7 +420,8 @@ def raised_where_nothing_should(m):
     serving()
     try:
         r = m.ask("a suite", "a label", STATE,
-                  {"verb_first": {"type": "noul", "instructions": "x"}},
+                  {"verb_first": {"type": "noul", "instructions": "x",
+                                  "no_under": 0.2}},
                   env=env(), timeout=5)
     except Exception as e:  # noqa: BLE001 -- the thing under assertion
         return False, f"it raised {e.__class__.__name__} instead of answering"
@@ -994,8 +1040,22 @@ MUTATIONS = [
      "a choice cut on one option reads that option's probability"),
     ("the no-match option ignored", 'if option == spec["no_match"]:', "if False:",
      "the no-match option is unknown"),
-    ("the noul gap closed", 'if value <= spec["no_under"]:', "if True:",
-     "a noul in the gap is unknown"),
+    ("the noul band closed", 'if value <= spec["no_under"]:', "if True:",
+     "a noul between the two edges is uncertain"),
+    # THE BAND'S MIDDLE IS ITS OWN WORD. Answering `unknown` there is what the
+    # two edges were added to stop: a reader cannot tell a reading that did not
+    # happen from one that happened and reached no word.
+    ("the band's middle answered `unknown` again",
+     '        return UNCERTAIN, (f"{what} {value:.2f} sits in the band between "',
+     '        return UNKNOWN, (f"{what} {value:.2f} sits in the band between "',
+     "a noul between the two edges is uncertain"),
+    ("a choice's upper edge dropped",
+     '    if confidence < spec.get("certain_over", 0.0):', "    if False:",
+     "a choice between the two edges is uncertain"),
+    ("a reading with no cut judged all the same",
+     "    if not any(k in spec for k in VALUE_EDGES + CHOICE_EDGES):",
+     "    if False:",
+     "a reading with no cut records and judges nothing"),
     ("a failure answered instead of unknown",
      "return {qid: Answer(UNKNOWN, None, why) for qid in questions}",
      'return {qid: Answer("yes", None, why) for qid in questions}',
@@ -1186,6 +1246,17 @@ def live(record, wording_hash=None):
                   f"makes")
             continue
         cases = jev.read_corpus(name)
+        # A READING WITH NO CASES YET IS SKIPPED AT `shadow` AND SAYS SO. A
+        # reading enters the registry to collect cases until a record labels
+        # them (DECISION 5713929966), so it has no cut and no band; anywhere
+        # else, or with a band declared, having no cases is the failure it
+        # always was.
+        if not cases and entry["tier"] == jev.SHADOW \
+                and not (entry.get("thresholds") or {}) \
+                and not (entry.get("bands") or {}).get("declared"):
+            print(f"  {name}: skipped, no cases yet -- it enters at "
+                  f"`{jev.SHADOW}` with no cut, to collect them")
+            continue
         check(f"live: {name} has cases", bool(cases), len(cases))
         spec = jev.question_of(entry)
         wording = jev.wording(entry)
@@ -1282,16 +1353,23 @@ def live(record, wording_hash=None):
                       cuts["no_under"] <= cuts["yes_over"],
                       (cuts.get("no_under"), cuts.get("yes_over")))
             else:
-                check(f"live: {name}'s floor sits above the whole declared "
+                # THE SAME RULE, WITH THE UPPER EDGE NAMED. A `choice` cut on a
+                # lone `floor` had one number doing both jobs, and it sat inside
+                # the measured `confident` band; `certain_over` is that band's
+                # own lower edge and what falls between the two is `uncertain`.
+                top = cuts.get("certain_over", cuts.get("floor"))
+                check(f"live: {name}'s lower edge sits above the whole declared "
                       f"`unsure` band",
                       bool(declared.get("unsure"))
                       and declared["unsure"][1] < cuts["floor"],
                       (declared.get("unsure"), cuts.get("floor")))
-                check(f"live: {name}'s floor sits below the whole declared "
+                check(f"live: {name}'s upper edge sits below the whole declared "
                       f"`confident` band",
                       bool(declared.get("confident"))
-                      and cuts["floor"] < declared["confident"][0],
-                      (cuts.get("floor"), declared.get("confident")))
+                      and top < declared["confident"][0],
+                      (top, declared.get("confident")))
+                check(f"live: {name}'s two edges do not cross",
+                      cuts["floor"] <= top, (cuts.get("floor"), top))
         if record and not wording_hash:
             # THE BAND IS THE WHOLE RECORDED HISTORY UNDER THIS WORDING, not
             # this run alone: three runs are what a band is made of, and a

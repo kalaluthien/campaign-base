@@ -918,6 +918,24 @@ def main():
         check("a title Jev reads as verb-first is printed and warned about by "
               "nothing", r.returncode == 0 and "verb-first  yes" in r.stdout
               and "imperative verb" not in r.stdout)
+        # BETWEEN THE TWO MEASURED EDGES THE WORD IS `uncertain`, PRINTED AND
+        # WARNING NOTHING (DECISION 5715993782). 0.35 sits in verb-first's band
+        # (0.20, 0.50) and 0.47 in work-kind's (0.45, 0.50): neither reading has
+        # earned its word, and neither is an `unknown` -- the call happened.
+        r = tracker("check", "5", "--plan",
+                    env=shim(good_sub, jev=jev_answer(noul=0.35,
+                                                      choice="research",
+                                                      confidence=0.47)))
+        check("a reading between its two edges prints `uncertain` and warns "
+              "nothing", r.returncode == 0
+              and "verb-first  uncertain:" in r.stdout
+              and "kind suggestion uncertain:" in r.stdout
+              and "imperative verb" not in r.stdout
+              and "SUGGESTION" not in r.stdout
+              and "RESULT   the shape holds" in r.stdout, r.stdout)
+        check("...and an `uncertain` is not reported as an `unknown`",
+              "verb-first  unknown" not in r.stdout, r.stdout)
+
         # THE SUGGESTION IS ASKED FOR ONLY WHERE NO LABEL ANSWERS IT: this
         # sub-issue carries none, and the one below carries `kind:maintenance`.
         r = tracker("check", "5", "--plan",

@@ -1016,8 +1016,8 @@ def issue_shape(repo, number, timeout=None):
 
 def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
     """The lines `check` prints for one reading. A calculation, so every branch
-    -- warned, read, unknown, suggested, settled -- has a case that spends no
-    request.
+    -- warned, read, unknown, uncertain, suggested, settled -- has a case that
+    spends no request.
 
     EVERY LINE SAYS WHAT IT IS. A reader meeting `WARNING` beside the findings
     needs to know which of the two can refuse it, and only one can; a line the
@@ -1035,6 +1035,13 @@ def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
     # tier is rationing.
     if verb.word == "unknown":
         out.append(f"  verb-first  unknown: {verb.why}")
+    # AN `uncertain` IS PRINTED AS THAT WORD AND WARNS NOTHING (DECISION
+    # 5715993782). It is an answer that landed between the two measured edges,
+    # so the `no` it would otherwise have warned about is the one the band says
+    # is not earned -- and a warning nobody can act on is a warning that teaches
+    # a reader to skip them.
+    elif verb.word == "uncertain":
+        out.append(f"  verb-first  uncertain: {verb.why}")
     elif verb.does != "show":
         out.append(f"  verb-first  not shown: tier `{verb.tier}`")
     elif verb.word == "no":
@@ -1051,8 +1058,8 @@ def judgment_lines(verdicts, logged, model, settled_kind, show_kind=True):
     # sub-issue wears a `kind:` label.
     if not show_kind:
         pass
-    elif kind.word == "unknown" and not settled_kind:
-        out.append(f"  kind suggestion unknown: {kind.why}")
+    elif kind.word in ("unknown", "uncertain") and not settled_kind:
+        out.append(f"  kind suggestion {kind.word}: {kind.why}")
     elif settled_kind:
         out.append(f"  kind        `{WORK_KIND_LABEL_PREFIX}{settled_kind}` "
                    f"already, so nothing was asked")

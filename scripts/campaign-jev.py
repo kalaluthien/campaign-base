@@ -33,10 +33,11 @@ UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
 is never sent and never cut down -- no key, a `~/.env` that is not text,
 `CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
 not answer, an HTTP error, a timeout, a body that is not JSON, a response naming
-another model, an answer missing for a question, an answer of another type, a
-raw value the thresholds leave in the gap -- each comes back `unknown` with a
-one-line reason, per question. `ask` is the boundary that holds it: every named
-path above returns rather than raises, and `ask` catches whatever is left and
+another model, an answer missing for a question, an answer of another type --
+each comes back `unknown` with a one-line reason, per question. A raw value the
+two edges leave BETWEEN them is not one of those: it is `uncertain`, an answer
+that happened and reached no word. `ask` is the boundary that holds it: every
+named path above returns rather than raises, and `ask` catches what is left and
 answers `unknown` wearing its exception's class name. The ONE thing that raises
 is a question of an unsupported TYPE, which is the caller's bug and not the
 model's answer. Nothing else may, because a caller prints a verdict on the next
@@ -45,20 +46,22 @@ claim.
 
 THE THRESHOLDS ARE THE CALLER'S, and they are two numbers and not one:
 
-  noul    `yes_over` and `no_under`, and the gap between them is `unknown`. A
-          `noul` near 0.5 means yes and no are equally likely, not a medium
-          degree, so a single cut would turn the model's own indecision into a
-          verdict.
-  choice  `floor` on `confidence`, and the name of the `no_match` option. Both,
-          because a `choice` with no fitting option still picks one: a no-match
-          option alone missed a no-match answered at low confidence, and a floor
-          alone let a confident wrong option through. `confidence` measures how
-          concentrated the distribution is, not whether the option set fits.
+  noul    `yes_over` and `no_under`, and what falls between them is
+          `uncertain`. A `noul` near 0.5 means yes and no are equally likely,
+          not a medium degree, so a single cut would turn the model's own
+          indecision into a verdict.
+  choice  `floor` on `confidence`, the name of the `no_match` option, and where
+          the reading has bands, `certain_over` as the floor's upper edge. The
+          first two both, because a `choice` with no fitting option still picks
+          one: a no-match option alone missed a no-match answered at low
+          confidence, and a floor alone let a confident wrong option through.
+          `confidence` measures how concentrated the distribution is, not
+          whether the option set fits.
   option  a `choice` naming one `option` is instead cut on that option's own
           probability, by `yes_over` and `no_under` as a `noul` is: `yes` the
-          option holds, `no` it does not, the gap `unknown`. For a reading that
-          flags one option -- a claim `contradicts` its evidence -- where the
-          winner and its confidence would hide a strong second.
+          option holds, `no` it does not, between them `uncertain`. For a
+          reading that flags one option -- a claim `contradicts` its evidence
+          -- where the winner and its confidence would hide a strong second.
 
 Every threshold is set from cases of the tree's own history, one of which fits
 no option, and asserted as a BAND: the same request comes back a few hundredths
@@ -143,7 +146,23 @@ TIMEOUT = 10.0
 # reader's and this returns `unknown` naming both numbers.
 STATE_BUDGET = 60_000
 UNKNOWN = "unknown"
+# THE ANSWER THAT LANDED BETWEEN THE EDGES, and it is NOT `unknown`. A lone cut
+# inside a measured band flips on noise, so a reading that has bands takes two
+# edges and says `uncertain` for what falls between them (DECISION 5715993782).
+# The two words are kept apart because they mean different things to a reader:
+# `unknown` is a reading that did not happen -- no key, no answer, a model that
+# is not the pinned one, a confidence under the floor -- and `uncertain` is one
+# that did happen and does not reach a word. `uncertain` warns nothing.
+UNCERTAIN = "uncertain"
 NOUL, CHOICE = "noul", "choice"
+# THE EDGES, by question type. A `noul`, and a `choice` cut on ONE option's own
+# probability, take `yes_over` and `no_under`; an ordinary `choice` takes
+# `floor` -- below it the answer is `unknown` -- and, where it declares one,
+# `certain_over`, the upper edge of the same band. A reading may declare NO
+# edge at all, which `thresholds_or_shadow` admits at `shadow` alone: there the
+# model's own word is recorded and nothing is judged.
+VALUE_EDGES = ("yes_over", "no_under")
+CHOICE_EDGES = ("floor", "certain_over")
 
 # One question's answer: the branch, the raw value as the model returned it, and
 # why the branch is what it is. `why` is filled for `unknown` and empty
@@ -218,7 +237,13 @@ def branch(spec, raw):
     the response carried, or None when it carried none. An unsupported `type`
     RAISES: a question nobody wrote a branch for is the caller's bug, and
     answering `unknown` would hide it behind the word every failure already
-    wears."""
+    wears.
+
+    THE EDGES ARE TWO AND THE MIDDLE IS `uncertain`, never `unknown`. A lone cut
+    inside a measured band flips on noise, so a reading declares the band it was
+    measured over and this answers `uncertain` between the edges -- an answer
+    that happened and reached no word, which a reader prints and warns nothing
+    about. `unknown` stays what it always was: a reading that did not happen."""
     kind = spec["type"]
     if kind not in (NOUL, CHOICE):
         raise ValueError(f"campaign-jev: no branch for a `{kind}` question; "
@@ -235,6 +260,19 @@ def branch(spec, raw):
         value = (probabilities.get(spec["option"])
                  if isinstance(probabilities, dict) else None)
         what = f"P({spec['option']})"
+    # A READING THAT DECLARES NO EDGE records the model's own answer and judges
+    # nothing. Legal at `shadow` alone (`thresholds_or_shadow`), where a reading
+    # enters to collect cases until a record labels them: a cut invented before
+    # the first case is the number every later band gets fitted to. A `choice`
+    # has a word of its own to record; a `noul` has only a number, so there is
+    # no word to earn and it comes back `uncertain`.
+    if not any(k in spec for k in VALUE_EDGES + CHOICE_EDGES):
+        option = raw.get(CHOICE)
+        if kind == CHOICE and isinstance(option, str):
+            return option, "no cut is declared, so the option is recorded and "\
+                           "not judged"
+        return UNCERTAIN, (f"no cut is declared, so this answer is recorded "
+                           f"and not judged")
     if kind == NOUL or "option" in spec:
         if not isinstance(value, (int, float)):
             return UNKNOWN, f"the answer carries no {what} value"
@@ -242,9 +280,9 @@ def branch(spec, raw):
             return "yes", ""
         if value <= spec["no_under"]:
             return "no", ""
-        return UNKNOWN, (f"{what} {value:.2f} sits in the gap between "
-                         f"{spec['no_under']:.2f} and {spec['yes_over']:.2f}, "
-                         f"where yes and no are both live")
+        return UNCERTAIN, (f"{what} {value:.2f} sits in the band between "
+                          f"{spec['no_under']:.2f} and {spec['yes_over']:.2f}, "
+                          f"where neither word is earned")
     option, confidence = raw.get(CHOICE), raw.get("confidence")
     if not isinstance(confidence, (int, float)) or not isinstance(option, str):
         return UNKNOWN, "the answer carries no option and confidence"
@@ -254,6 +292,11 @@ def branch(spec, raw):
     if option == spec["no_match"]:
         return UNKNOWN, (f"the answer is `{option}`, the no-match option: no "
                          f"option of the set fits")
+    if confidence < spec.get("certain_over", 0.0):
+        return UNCERTAIN, (f"`{option}` at confidence {confidence:.2f} sits in "
+                           f"the band between {spec['floor']:.2f} and "
+                           f"{spec['certain_over']:.2f}, where the option is "
+                           f"not yet earned")
     return option, ""
 
 
@@ -715,6 +758,11 @@ def does(entry, word, raw):
         return NOTHING
     if tier == ADVISE:
         return SHOW
+    # AN `uncertain` NEVER ACTS. It is an answer that landed between the two
+    # edges, so the word it would act on is the one the band says is not
+    # earned; at `advise` it is shown, and above that it does nothing.
+    if word == UNCERTAIN:
+        return NOTHING
     act = entry.get("act") or {}
     value = confidence(entry, raw)
     if value is None:

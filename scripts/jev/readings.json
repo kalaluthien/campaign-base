@@ -245,8 +245,8 @@
    }
   },
   "thresholds": {
-   "yes_over": 0.7,
-   "no_under": 0.55
+   "yes_over": 0.5,
+   "no_under": 0.2
   },
   "join": "issue-title-kept",
   "bands": {
@@ -290,7 +290,8 @@
    }
   },
   "thresholds": {
-   "floor": 0.6,
+   "floor": 0.45,
+   "certain_over": 0.5,
    "no_match": "none"
   },
   "join": "issue-kind-label",

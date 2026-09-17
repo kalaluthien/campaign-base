@@ -108,8 +108,11 @@ FILE write the commit gate is what holds. A `gh` write has no landing, so
 clause 2 is its only gate, narrowed by the issue number: `gh issue <verb> <n>`
 needs a claim on `<n>`, found in the base's worktrees or an install's. A `gh pr`
 write naming a MEMBER repository needs a claim checked out in a checkout of
-that repository, never the base's (#389). `gh issue create` is exempt, the
-number being minted there. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
+that repository, never the base's (#389). `gh issue create` is exempt from the claim, the
+number being minted there, and read for its shape instead (rule-check#461):
+refused when it would file on a repository other than the tracker, or its body
+carries `## Lands in` with no `--parent`; `create_findings` says what it does
+not read. Every exit prints what it read and which branch it took, and for a claim that means which clause held, or that neither did, and what was
 read: path, branch, and whether the ref came from `origin/` or the remote.
 
 WHO MERGES (rule-check#442). A `gh pr merge` names its pull request by the
@@ -146,8 +149,9 @@ ride in the refusal. `unknown`, a timeout, and a pull request named by branch
 or not at all, which only `gh` resolves, are allowed with the sha NOT checked.
 
 A NOTE ON AN ISSUE IS HANDED TO `check-research-bar.py`, AND A REVIEW ON A PULL
-REQUEST TO `check-finding-sort.py`, in the background, once its shape holds, and
-the verdict never waits for either or reads it: readings in tier `shadow`
+REQUEST TO `check-finding-sort.py` AND `check-finding-site.py`, in the
+background from the post's own checkout, once its shape holds, and the verdict
+never waits for any of them or reads it: readings in tier `shadow`
 (sdlc-alloy#458), listed in `SHADOW_READINGS`. What each reads is its script's.
 
 A BARE `#N` IS WARNED ABOUT AND NEVER REFUSED. An issue is `<slug>#N` and a
@@ -2286,15 +2290,22 @@ def off_tracker(writes, issue, cwd, root):
 
 def repo_named(tokens):
     """The repository a `gh` segment names with `-R`/`--repo`, in any of
-    pflag's three spellings, or None when it names none."""
+    pflag's three spellings, or None when it names none. The LAST one given,
+    as pflag keeps it; `-R=x` is pflag's shorthand spelling of `x`, and a
+    `github.com/` host is dropped."""
+    named = None
     for j, t in enumerate(tokens):
         if t in ("-R", "--repo"):
-            return tokens[j + 1] if j + 1 < len(tokens) else ""
-        if t.startswith("--repo="):
-            return t[len("--repo="):]
-        if t.startswith("-R") and len(t) > 2:
-            return t[2:]
-    return None
+            named = tokens[j + 1] if j + 1 < len(tokens) else ""
+        elif t.startswith("--repo="):
+            named = t[len("--repo="):]
+        elif t.startswith("-R") and len(t) > 2:
+            named = t[2:].removeprefix("=")
+    # `[HOST/]OWNER/REPO` is gh's form; the host is not the repository.
+    return None if named is None else GITHUB_HOST.sub("", named)
+
+
+GITHUB_HOST = re.compile(r"^(https?://)?github\.com/", re.I)
 
 
 def member_pr(tokens):
@@ -2678,10 +2689,19 @@ def comment_body(tokens, heredocs, cwd=None):
             return _judgeable(text)
     else:
         return None, None, None
+    return body_text(tokens, heredocs, cwd)
+
+
+def body_text(tokens, heredocs, cwd=None, file_first=False):
+    """`comment_body`'s three-tuple for the body a `--body`, a `--body-file` or
+    a heredoc on `--body-file -` gives this segment, whatever it posts.
+    `file_first` is `gh issue create`'s order: a `--body-file` replaces a
+    `--body` given beside it."""
     text = flag_value(tokens, BODY_VALUED)
     if text is SKIPPED:
         return None, None, SKIPPED_NOTE
-    if text is not None:
+    if text is not None and not (
+            file_first and flag_value(tokens, BODY_FILE_VALUED) is not None):
         return _judgeable(text)
     path = flag_value(tokens, BODY_FILE_VALUED)
     if path is SKIPPED:
@@ -2693,8 +2713,8 @@ def comment_body(tokens, heredocs, cwd=None):
             return resolved.read_text(encoding="utf-8"), None, None
         except OSError as e:
             return None, (f"`{path}` -> {resolved} could not be read "
-                          f"({e.__class__.__name__}), so the comment's shape "
-                          f"was not read either"), None
+                          f"({e.__class__.__name__}), so the body was not "
+                          f"read either"), None
     if heredocs:
         return heredocs[0], None, None
     # A `gh pr review --approve` with no body posts a review and no comment; a
@@ -2714,6 +2734,90 @@ def _judgeable(text):
                             f"text and did not judge it")
     return text, None, None
 
+
+# A SUB-ISSUE IS FILED LINKED AND ON THIS TRACKER (rule-check#461 rank 4). The
+# template's `## Lands in` is what marks a body as a sub-issue's; the third kind
+# carries none and stays free to file unlinked.
+LANDS_IN = re.compile(r"^##[ \t]+Lands in[ \t]*$", re.M)
+# `gh issue create`'s valued flags (`gh issue create --help`), so a value is
+# never read as `--parent`: `--title --parent` names no parent.
+CREATE_VALUED = {"-a", "--assignee", "--attach", "--blocked-by", "--blocking",
+                 "-b", "--body", "-F", "--body-file", "-l", "--label",
+                 "-m", "--milestone", "-p", "--project", "--parent",
+                 "--recover", "-R", "--repo", "-T", "--template", "-t",
+                 "--title", "--type"}
+
+
+def create_parent(tokens):
+    """The `--parent` value a `gh issue create` segment gives, or None."""
+    parent, j = None, 0
+    while j < len(tokens):
+        t = tokens[j]
+        if t.startswith("--parent="):
+            parent = t[len("--parent="):] or None
+        elif t in CREATE_VALUED:
+            if t == "--parent" and j + 1 < len(tokens):
+                parent = tokens[j + 1] or None
+            j += 1
+        j += 1
+    return parent
+
+
+def create_findings(tokens, heredocs, cwd, root):
+    """(what is wrong with this `gh issue create`, what was read) for one
+    segment. Refused: a repository other than the tracker -- named by `-R`, or
+    by no `-R` from a checkout that is not the base's, whose `gh` files on its
+    own remote, `off_tracker`'s reading -- and a body carrying `## Lands in`
+    with no `--parent`. The body is read as `comment_body` reads one, and a
+    body file it cannot open is refused, since the same command may write it
+    first; a relative path is read from the payload's cwd, so one a `cd` in
+    the same command moved is refused. NOT READ, and so allowed: a body or a
+    body-file path the shell composes or expands, `--editor`,
+    `--web`, `--template`, the prompt, and `GH_REPO`."""
+    found, read = [], []
+    named = repo_named(tokens)
+    if named is None:
+        if checkout_of(cwd)[0] != root:
+            found.append(f"it names no `-R` from {cwd}, which is not the base's "
+                         f"checkout, so gh files it on that checkout's "
+                         f"repository and not the tracker")
+    else:
+        m = repos_reader()
+        if m is None:
+            found.append(f"it names `-R {named}`, and campaign-repos.py would "
+                         f"not load ({REPOS_UNREADABLE}) to say whether that "
+                         f"is the tracker")
+        elif not m.is_base(named):
+            found.append(f"it names `-R {named}`, and a sub-issue is filed on "
+                         f"{m.BASE_REPO} whatever repository its code lands in")
+        else:
+            read.append(f"`-R {named}` is the tracker")
+    parent = create_parent(tokens)
+    if parent is not None:
+        read.append(f"it carries --parent {parent}")
+        return found, read
+    path = flag_value(tokens, BODY_FILE_VALUED)
+    if isinstance(path, str) and (path.startswith("~") or "$" in path):
+        # THE SHELL EXPANDS IT and this reads no expansion, so a file that is
+        # there would read as missing and be refused.
+        read.append(f"its body file `{path}` is expanded by the shell, so "
+                    f"this guard never sees the text and did not judge it")
+        return found, read
+    text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd,
+                                                   file_first=True)
+    if why_unreadable:
+        found.append(why_unreadable)
+    elif why_unjudged:
+        read.append(why_unjudged)
+    elif text is None:
+        read.append("it has no --body or --body-file, so no body was read")
+    elif LANDS_IN.search(text):
+        found.append("its body carries `## Lands in`, a sub-issue's, and it has "
+                     "no --parent, so no campaign's index would list it")
+    else:
+        read.append("its body carries no `## Lands in`, so it is not a "
+                    "sub-issue and may file unlinked")
+    return found, read
 
 def comment_findings(text):
     """(every way this comment's shape is wrong, the reason the first line was
@@ -2744,8 +2848,9 @@ ISSUE_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/issues/(\d+)")
 # and its first word: (the reader, the URL form naming its target). A reading
 # in tier `shadow` logs and never prints (sdlc-alloy#458 K1 and R3).
 SHADOW_READINGS = {
-    ("issue", "NOTE"): (HERE / "check-research-bar.py", ISSUE_URL),
-    ("pr", "REVIEW"): (HERE / "check-finding-sort.py", PULL_URL),
+    ("issue", "NOTE"): ((HERE / "check-research-bar.py",), ISSUE_URL),
+    ("pr", "REVIEW"): ((HERE / "check-finding-sort.py",
+                        HERE / "check-finding-site.py"), PULL_URL),
 }
 
 
@@ -2760,8 +2865,8 @@ def shadow_reading(tokens, text, cwd, root):
     if words[1:2] != ["comment"]:
         return
     first = text.lstrip().split(" ", 1)[0]
-    reader, form = SHADOW_READINGS.get((words[0], first), (None, None))
-    if reader is None:
+    readers, form = SHADOW_READINGS.get((words[0], first), ((), None))
+    if not readers:
         return
     pick = words[2] if len(words) > 2 else ""
     url = form.search(pick)
@@ -2769,15 +2874,16 @@ def shadow_reading(tokens, text, cwd, root):
     number = url.group(2) if url else pick.lstrip("#")
     if not number.isdigit() or (repo is None and checkout_of(cwd)[0] != root):
         return
-    try:
-        p = subprocess.Popen([sys.executable, str(reader), number]
-                             + ([repo] if repo else []),
-                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
-        p.stdin.write(text.encode("utf-8"))
-        p.stdin.close()
-    except (OSError, ValueError):  # a lone surrogate does not encode
-        pass
+    for reader in readers:
+        try:
+            p = subprocess.Popen([sys.executable, str(reader), number]
+                                 + ([repo] if repo else []), cwd=cwd,
+                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            p.stdin.write(text.encode("utf-8"))
+            p.stdin.close()
+        except (OSError, ValueError):  # a lone surrogate does not encode
+            pass
 
 
 def report_pin(tokens, text, cwd, root):
@@ -3110,6 +3216,23 @@ def bash_call(command, cwd: Path, session_id=""):
             # A form not listed, a heredoc, xargs: read as a write of unknown
             # kind, because nothing downstream reads a gh write.
             stray.append(" ".join(seg)[:60])
+    creates = [(rest, heredocs) for tokens, heredocs, _o, _s in pairs
+               for word, rest in [head(tokens)]
+               if word == "gh" and gh_words(rest)[:2] == ["issue", "create"]]
+    root, how = session_root(cwd) if creates else (None, None)
+    if root is not None and (root / BASE_MARKER).is_file():
+        found = []
+        for rest, heredocs in creates:
+            wrong, read = create_findings(rest, heredocs, cwd, root)
+            found += wrong
+            NOTES.extend(f"gh issue create: {r}." for r in read)
+        if found:
+            return refuse(["gh issue create: a sub-issue filed off the index.",
+                           *[f"  {f}" for f in found],
+                           "File it as AGENTS.md § Sub-issues writes it, on "
+                           "the tracker with `--parent <campaign issue URL>`; "
+                           "an issue that is no sub-issue carries no "
+                           "`## Lands in`."])
     writes = [rest for rest, is_write, _ in gh if is_write]
     if not writes and not stray:
         return allow([f"{what}." for _, _, what in gh] + list(unenforced)

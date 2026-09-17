@@ -296,6 +296,9 @@ CORPUS = HERE / "fixtures" / "guard-allow-corpus.jsonl"
 # 13 since pr#446's fourth DECISION: a read loop's `number:$n` is text the
 # shell expands, so its GraphQL query is unread -- a cost that DECISION took.
 MERGES = 13
+# THE FOURTH DELIBERATE BREAK (rule-check#461): one recorded campaign issue
+# filed from a `/tmp` body file that no longer exists, now refused unread.
+CREATES = 1
 
 
 def guard_module():
@@ -362,6 +365,21 @@ def row_breaks_a_shell_rule(mod, row, cwd):
     pairs, _why = mod.paired_segments(row["command"])
     found, _notes = mod.shell_findings(pairs or [], cwd)
     return bool(found)
+
+
+def row_creates_off_index(mod, row, cwd):
+    """Whether this corpus row files an issue `create_findings` refuses, read
+    by the guard's own reader, for `row_posts_comment`'s reason
+    (rule-check#461)."""
+    if row["tool"] != "Bash":
+        return False
+    pairs, _why = mod.paired_segments(row["command"])
+    for tokens, heredocs, _outer, _shell in pairs or []:
+        word, rest = mod.head(tokens)
+        if word == "gh" and mod.gh_words(rest)[:2] == ["issue", "create"]:
+            if mod.create_findings(rest, heredocs, cwd, cwd)[0]:
+                return True
+    return False
 
 
 def row_merges_by_number(mod, row):
@@ -696,6 +714,78 @@ def main():
         r = ask(f.base, tool="Bash", command="gh issue create --title x")
         check("...and the issue-create allow names the exemption",
               "minted there" in r.stdout, out(r)[:200])
+        # A SUB-ISSUE FILED WITHOUT ITS LINK (rule-check#461 rank 4). The
+        # template's `## Lands in` marks a body as a sub-issue's; filed with no
+        # `--parent` it is in no campaign's index, and filed on another
+        # repository it is off this tracker altogether.
+        tracker = "https://github.com/kalaluthien/campaign-base/issues/272"
+        templated = "## Intent\n\n- x\n\n## Lands in\n\n- the base\n"
+        (f.base / "sub.md").write_text(templated)
+        for cmd in (f"gh issue create --title t --body '{templated}'",
+                    "gh issue create --title t --body-file sub.md",
+                    "gh issue create --title t --body x -F sub.md",
+                    "gh issue create --title t -F sub.md --body x",
+                    f"gh issue create --title t -F {f.base / 'sub.md'}",
+                    f"gh issue create --title t --body-file - <<'EOF'\n{templated}EOF",
+                    f"gh issue create --title --parent --body '{templated}'",
+                    f"gh issue create --title t --parent= --body '{templated}'",
+                    f"gh issue create --title t --type --parent --body '{templated}'",
+                    f"gh issue create -R kalaluthien/campaign-base --title t "
+                    f"--body '{templated}'"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:48]}...`, a templated body with no --parent, is "
+                  f"refused for that",
+                  r.returncode == 2 and "carries `## Lands in`, a sub-issue's, "
+                  "and it has no --parent" in r.stderr, out(r)[:300])
+        for cmd in (f"gh issue create --title t --parent 272 --body '{templated}'",
+                    f"gh issue create --title t --parent={tracker} -F sub.md",
+                    "gh issue create --title t --body 'a third-kind note'",
+                    f"gh issue create --repo=github.com/kalaluthien/campaign-base "
+                    f"--parent 272 --title t --body '{templated}'",
+                    f"gh issue create -R=kalaluthien/campaign-base --parent 272 "
+                    f"--title t --body '{templated}'",
+                    "gh issue create -R o/r -R kalaluthien/campaign-base "
+                    "--title t --body x"):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:48]}...` is allowed: linked, or not a sub-issue",
+                  r.returncode == 0, out(r)[:300])
+        for cmd, named in (("gh issue create -R o/r --title t --body x", "o/r"),
+                           (f"gh issue create --repo other/tracker --parent 272 "
+                            f"--title t --body '{templated}'", "other/tracker"),
+                           ("gh issue create -Ro/r --title t", "o/r"),
+                           ("gh issue create -R kalaluthien/campaign-base -R o/r "
+                            "--title t", "o/r")):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd[:40]}...` files off this tracker and is refused, "
+                  f"naming {named}",
+                  r.returncode == 2 and named in r.stderr
+                  and "kalaluthien/campaign-base" in r.stderr, out(r)[:300])
+        r = ask(f.base, tool="Bash",
+                command="gh issue create --title t --body \"$(cat sub.md)\"")
+        check("a body the shell composes is allowed, saying it was not read",
+              r.returncode == 0 and "composed by the shell" in r.stdout,
+              out(r)[:300])
+        for cmd in ("gh issue create --title t -F ~/sub.md",
+                    'gh issue create --title t -F "$HOME/sub.md"'):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is allowed: the shell expands the path, which is "
+                  f"not read",
+                  r.returncode == 0 and "expanded by the shell" in r.stdout,
+                  out(r)[:300])
+        r = ask(f.base, tool="Bash", command="gh issue create --title t -F gone.md")
+        check("a body file that cannot be read is refused, naming the path: the "
+              "same command may write it first",
+              r.returncode == 2 and "gone.md" in r.stderr, out(r)[:300])
+        member = f.member(branch="main")
+        r = ask(member, tool="Bash",
+                command=f"gh issue create --title t --parent 272 --body '{templated}'")
+        check("a create with no -R from a member clone files on that clone's "
+              "repository and is refused",
+              r.returncode == 2 and "names no `-R`" in r.stderr, out(r)[:300])
+        r = ask(member, tool="Bash", command="gh issue create -R "
+                "kalaluthien/campaign-base --title t --parent 272 --body x")
+        check("...and the same with -R naming the tracker is allowed",
+              r.returncode == 0, out(r)[:300])
         r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
         check("a gh command shlex cannot split is refused, naming why",
               r.returncode == 2 and "would not split" in r.stderr
@@ -1810,8 +1900,11 @@ def main():
               and all("check-research-bar.py" in x for x in lines),
               (out(r)[:300], lines[:2]))
 
-        # R3: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,
-        # one call per finding, labelled with the reviewer's own word.
+        # R3, R4: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,
+        # one call per finding labelled with the reviewer's own word, AND TO
+        # check-finding-site.py, which reads the named file at the named sha IN
+        # THE POST'S CHECKOUT: the sha is the fixture tree's own, which the
+        # directory this suite runs from does not hold.
         def logged(path, want, polls):
             for _ in range(polls):
                 got = path.read_text().splitlines() if path.exists() else []
@@ -1819,19 +1912,31 @@ def main():
                     break
                 time.sleep(0.2)
             return [json.loads(x) for x in got]
+        tree = f.trees["demo/7-x"]
+        head = subprocess.run(["git", "-C", str(tree), "rev-parse", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+        named = next(p for p in subprocess.run(
+            ["git", "-C", str(tree), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True, text=True).stdout.split() if p.endswith(".py"))
         review_log = Path(d) / "review.log"
-        r = ask(f.trees["demo/7-x"], tool="Bash",
+        r = ask(tree, tool="Bash",
                 env=dict(env, CAMPAIGN_JEV_LOG=str(review_log)),
-                command="gh pr comment 7 -b 'REVIEW demo-worker-1: at abcdef1\n\n"
-                        "1. defect, a.py:3 -- the parser drops the last line of "
+                command=f"gh pr comment 7 -b 'REVIEW demo-worker-1: at {head}\n\n"
+                        f"1. defect, {named}:1 -- the parser drops the last line of "
                         "every file it reads\n2. refinement, the docstring names "
                         "a flag the code no longer has'")
-        rows = logged(review_log, 2, 100)
+        rows = logged(review_log, 4, 100)
         check("a REVIEW on a pull request logs one finding-sort call per "
               "finding, labelled with the reviewer's word",
-              sorted(x["read"] for x in rows)
-              == ["tracker#7 REVIEW f1 defect", "tracker#7 REVIEW f2 refinement"]
-              and all(x["reader"] == "check-finding-sort.py" for x in rows),
+              sorted(x["read"] for x in rows if x["reader"] == "check-finding-sort.py")
+              == ["tracker#7 REVIEW f1 defect", "tracker#7 REVIEW f2 refinement"],
+              (out(r)[:300], rows))
+        check("a REVIEW on a pull request logs a finding-site call at the site "
+              "read in the post's checkout, and a skip for a finding naming none",
+              sorted((x["read"], x.get("skipped")) for x in rows
+                     if x["reader"] == "check-finding-site.py")
+              == [("tracker#7 REVIEW f1 " + named + ":1", None),
+                  ("tracker#7 REVIEW f2", "the finding names no path:line")],
               (out(r)[:300], rows))
         # A NOTE ON A PULL REQUEST IS NO RESEARCH NOTE: the stub would call
         # issue 7 research, so a hand-off by first word alone logs within
@@ -3655,11 +3760,17 @@ def main():
             check("the corpus's merges by number are the MERGES last blessed",
                   len(merges) == MERGES, f"{len(merges)} row(s): "
                   + "; ".join(rows[i]["command"][:70] for i in sorted(merges)))
-            other = sorted(set(refused_at) - posts - breaks - merges)
+            creates = {i for i, row in enumerate(rows)
+                       if row_creates_off_index(mod, row, f.base)}
+            check("the corpus's creates off the index are the CREATES last "
+                  "blessed",
+                  len(creates) == CREATES, f"{len(creates)} row(s): "
+                  + "; ".join(rows[i]["command"][:70] for i in sorted(creates)))
+            other = sorted(set(refused_at) - posts - breaks - merges - creates)
             check(f"of the {replayed} recorded allows the guard refuses only "
                   f"comment writes, whose shape #217 changed, the one "
                   f"recorded kill #278 refuses, and the merges by number "
-                  f"#442 refuses",
+                  f"#442 refuses, and the creates off the index #461 refuses",
                   not other, "\n      ".join(refused[i] for i in other[:8]))
             check("...and it does refuse some of them, so the rule bites on "
                   "the record rather than passing it",
@@ -3994,7 +4105,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 616
+    EXPECTED = 644
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

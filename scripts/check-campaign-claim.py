@@ -2737,10 +2737,11 @@ def _judgeable(text):
 LANDS_IN = re.compile(r"^##[ \t]+Lands in[ \t]*$", re.M)
 # `gh issue create`'s valued flags (`gh issue create --help`), so a value is
 # never read as `--parent`: `--title --parent` names no parent.
-CREATE_VALUED = {"-a", "--assignee", "-b", "--body", "-F", "--body-file",
-                 "-l", "--label", "-m", "--milestone", "-p", "--project",
-                 "--parent", "--recover", "-R", "--repo", "-T", "--template",
-                 "-t", "--title"}
+CREATE_VALUED = {"-a", "--assignee", "--attach", "--blocked-by", "--blocking",
+                 "-b", "--body", "-F", "--body-file", "-l", "--label",
+                 "-m", "--milestone", "-p", "--project", "--parent",
+                 "--recover", "-R", "--repo", "-T", "--template", "-t",
+                 "--title", "--type"}
 
 
 def create_parent(tokens):
@@ -2765,7 +2766,9 @@ def create_findings(tokens, heredocs, cwd, root):
     own remote, `off_tracker`'s reading -- and a body carrying `## Lands in`
     with no `--parent`. The body is read as `comment_body` reads one, and a
     body file it cannot open is refused, since the same command may write it
-    first. NOT READ, and so allowed: a body the shell composes, `--editor`,
+    first; a relative path is read from the payload's cwd, so one a `cd` in
+    the same command moved is refused. NOT READ, and so allowed: a body or a
+    body-file path the shell composes or expands, `--editor`,
     `--web`, `--template`, the prompt, and `GH_REPO`."""
     found, read = [], []
     named = repo_named(tokens)
@@ -2788,6 +2791,13 @@ def create_findings(tokens, heredocs, cwd, root):
     parent = create_parent(tokens)
     if parent is not None:
         read.append(f"it carries --parent {parent}")
+        return found, read
+    path = flag_value(tokens, BODY_FILE_VALUED)
+    if isinstance(path, str) and (path.startswith("~") or "$" in path):
+        # THE SHELL EXPANDS IT and this reads no expansion, so a file that is
+        # there would read as missing and be refused.
+        read.append(f"its body file `{path}` is expanded by the shell, so "
+                    f"this guard never sees the text and did not judge it")
         return found, read
     text, why_unreadable, why_unjudged = body_text(tokens, heredocs, cwd)
     if why_unreadable:

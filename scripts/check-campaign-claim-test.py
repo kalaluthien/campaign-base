@@ -727,6 +727,7 @@ def main():
                     f"gh issue create --title t --body-file - <<'EOF'\n{templated}EOF",
                     f"gh issue create --title --parent --body '{templated}'",
                     f"gh issue create --title t --parent= --body '{templated}'",
+                    f"gh issue create --title t --type --parent --body '{templated}'",
                     f"gh issue create -R kalaluthien/campaign-base --title t "
                     f"--body '{templated}'"):
             r = ask(f.base, tool="Bash", command=cmd)
@@ -762,6 +763,13 @@ def main():
         check("a body the shell composes is allowed, saying it was not read",
               r.returncode == 0 and "composed by the shell" in r.stdout,
               out(r)[:300])
+        for cmd in ("gh issue create --title t -F ~/sub.md",
+                    'gh issue create --title t -F "$HOME/sub.md"'):
+            r = ask(f.base, tool="Bash", command=cmd)
+            check(f"`{cmd}` is allowed: the shell expands the path, which is "
+                  f"not read",
+                  r.returncode == 0 and "expanded by the shell" in r.stdout,
+                  out(r)[:300])
         r = ask(f.base, tool="Bash", command="gh issue create --title t -F gone.md")
         check("a body file that cannot be read is refused, naming the path: the "
               "same command may write it first",
@@ -4080,7 +4088,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 638
+    EXPECTED = 641
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

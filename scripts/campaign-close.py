@@ -54,7 +54,7 @@ it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
 delete (`--delete`). Every run re-reads every gate, so a run that stopped
 halfway is run again, never resumed from memory. ONE CLOSE IS NOT STARTED BY A
 PERSON, and it is the only one: a CLOSED chore's clean-up after its worker's
-leave, which the `chore` label pre-authorises (scope leave step 9).
+leave, which the `chore` label pre-authorises (scope leave step 10).
 
 A RELEASE ENQUEUES `/compact` ON THE PANE THAT RUNS THIS when that pane is a
 worker's and none is pending -- `campaign-claim release` decides, and
@@ -166,7 +166,7 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
                   nothing but the log would read a refusal there.
-  9. chore        `gh issue view <N>`, its labels and its state, AFTER the
+  10. chore       `gh issue view <N>`, its labels and its state, AFTER the
                   leave and nowhere else -- the campaign scope's `live` gate
                   refuses while a session of the campaign is listed, and the
                   one that just left was one. Holds when: it read, and either

@@ -786,9 +786,10 @@ def settlement_empty(state):
 
 
 def chore(state="CLOSED", labels=("chore",), **over):
-    """A chore's worker leaving: `whole`'s directory and gates, the leave's
-    two polls, no sub-issue, and the campaign issue's own claim ref landed."""
-    over.setdefault("polls", [(LEAVER, None), (LEFT, None)])
+    """A chore's worker leaving: `whole`'s directory and gates, the detached
+    run's reading of its own turn as over, the leave's two polls, no
+    sub-issue, and the campaign issue's own claim ref landed."""
+    over.setdefault("polls", [(TURN_OVER, None), (LEAVER, None), (LEFT, None)])
     over.setdefault("live", live(vacant=[(CHORE_CLAIM, "landed as #99")]))
     return whole(state=state, labels=labels, settlement=settlement_empty(state),
                  **over)
@@ -809,7 +810,7 @@ def case_leave_chore_cleans_up(m):
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]
             and f"#{N} is a CLOSED chore, and the `chore` label "
                 "pre-authorises the clean-up" in out
-            and steps(out)[:4] == ["exit", "gone", "tab", "chore"]
+            and steps(out)[:5] == ["idle", "exit", "gone", "tab", "chore"]
             and "bound" in steps(out) and "installed" in steps(out)), out
 
 
@@ -820,7 +821,7 @@ def case_leave_ordinary_chains_nothing(m):
     code, out, asked, _ = drive(m, HANDOVER + ["--detached"], w)
     return (code == 0 and w["dir"].exists() and not releases(asked)
             and not [a for a in asked if a[0] == sys.executable]
-            and steps(out) == ["exit", "gone", "tab"]), out
+            and steps(out) == ["idle", "exit", "gone", "tab"]), out
 
 
 def case_leave_chore_open(m):

@@ -335,15 +335,16 @@ their docstrings, not here:
 | shape | `## Intent`, `## Definition of done`, `## Repos`; no `kind:`; `chore` beside `standing`, or off a campaign issue, is refused | `campaign-tracker.py check` |
 | claim | `campaign-claim take <N> <N> <topic>`, one ref in each repository it changes, each under its own topic since the name is how `release` and `live` find its repository, picked by `--repo` among `## Repos` and the base; a campaign issue without `chore` is nobody's to claim | `campaign-claim.py take` |
 | land | each pull request but the last says `Part of kalaluthien/campaign-base#<N>`, the last `Closes`, so the merge that meets the Definition of done closes the issue | GitHub |
-| leave | `campaign-close.py leave <N>` on a CLOSED chore goes on to the campaign scope's gates, then the release and the delete | `campaign-close.py leave` |
+| leave | `campaign-close.py leave <N>` on a CLOSED chore takes each of its merged claims off its checkout under the chore's own directory and releases it, then goes on to the campaign scope's gates and the delete | `campaign-close.py leave` |
 
 **That leave is the one close a person does not start**, the owner's ruling
 (rule-check#475, DECISION 5718434752): their word was the Definition of done
 the merge met, what is left is scratch, and every gate still runs and a
 refusing one stops it. `standing` is a person keeping a campaign open, so the
 two labels never meet. **A chore has no planner and takes no sub-issue**: work
-that needs either is a campaign, and its claim is fast-forwarded onto a pushed
-branch it adopts, which never lands under its old name.
+that needs either is a campaign, and its claim takes in a pushed branch it
+adopts by a merge -- a fast-forward where `main` has not moved past the
+branch's fork -- which never lands under its old name.
 
 ## Sub-issues
 

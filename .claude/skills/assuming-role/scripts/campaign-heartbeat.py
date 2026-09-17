@@ -20,6 +20,13 @@ verdict first, then what it read and from where:
              then its tab closed. A prompt of another shape, or a tool call,
              after it is not work (the owner, rule-check#349, 2026-09-13);
              the line names the last of each it read past
+    ask      a worker, idle, whose last assignment prompt names sub-issue N,
+             with a `<slug>/<N>-` ref standing and nothing written to its
+             transcript for STUCK_AFTER (30m), and whose latest prompt is
+             not already this ask: one `STATUS` prompt (`status_ask`), so
+             the planner asks without pairing a claim by hand. The ask is
+             the latest prompt until someone prompts the pane again, so a
+             quiet stretch is asked once and nothing is stored
     quiet    the own pane, when the campaign has nothing left to do: `/compact`,
              never `/exit`, since a campaign always has a planner. Quiet is
              three readings, each made this run: no session of the campaign
@@ -217,6 +224,9 @@ COMMAND_OPEN, STDOUT_OPEN = "<command-name>/", "<local-command-stdout>"
 # How much of the last prompt of another shape a `retire` line quotes: enough
 # to tell "wait, launch nothing" from work handed over in words.
 OTHER_CHARS = 80
+# The opening of the heartbeat's own `STATUS` prompt, which `ask` reads back
+# as the latest prompt so a quiet worker is asked once and not every run.
+STATUS_OPEN = "STATUS from the heartbeat:"
 
 
 def load(path, name):
@@ -314,6 +324,8 @@ def transcript_reading(lines):
                  names it.
       acted      the last assistant record calling a tool, which `retire`
                  reads past and names as well.
+      last       the latest record of any kind: when the session last wrote,
+                 which `ask` reads as quiet.
       model      the model of the latest assistant record, at `model_at`.
       commands   every slash command the session ran, IN FILE ORDER, as
                  [name, what it printed or None]: `campaign-model.py` reads
@@ -331,7 +343,7 @@ def transcript_reading(lines):
     own context, not this session's."""
     out = {"assigned": None, "assigned_at": None, "compacted": None,
            "compact_asked": None, "compact_refused": None, "other": None, "other_at": None, "acted": None, "context": None,
-           "context_at": None, "records": 0, "model": None, "model_at": None,
+           "context_at": None, "records": 0, "last": None, "model": None, "model_at": None,
            "commands": []}
 
     def later(key, ts):
@@ -363,6 +375,7 @@ def transcript_reading(lines):
         if not isinstance(ts, str):
             continue
         out["records"] += 1
+        later("last", ts)
         kind, msg = r.get("type"), r.get("message") or {}
         if kind == "system" and r.get("subtype") == "compact_boundary":
             later("compacted", ts)
@@ -494,14 +507,48 @@ def banner_word(line):
     return "unread"
 
 
-def verdict(role, own, status, banner, reading, refs):
+def status_ask(slug, n, since):
+    """The `STATUS` prompt `ask` sends: AGENTS.md § The four messages' four
+    questions, about the claim the worker was assigned."""
+    return (f"{STATUS_OPEN} {slug}#{n} still has a claim and this pane has "
+            f"written nothing since {since}. Say what you are doing, what you "
+            f"are blocked on, what exists only on this machine, and whether "
+            f"it is safe to stop.")
+
+
+def quiet_claim(reading, refs, now):
+    """(ask, why) for an idle worker no `retire` took: ask is True when its
+    assigned sub-issue's ref stands, its transcript is STUCK_AFTER quiet, and
+    its latest prompt is not already a heartbeat `STATUS`. Pure."""
+    n = reading["assigned"]
+    if n is None:
+        return False, None
+    got, _ = refs(n)
+    if got is None or not got[0]:
+        return False, None
+    quiet = now - when(reading["last"])
+    if quiet.total_seconds() < STUCK_AFTER:
+        return False, (f"quiet since {reading['last']}, under "
+                       f"{STUCK_AFTER // 60}m")
+    if (reading["other_at"] and when(reading["other_at"])
+            > when(reading["assigned_at"])
+            and reading["other"].startswith(STATUS_OPEN)):
+        return False, (f"asked for STATUS at {reading['other_at']}, "
+                       f"no prompt since")
+    return True, (f"assigned #{n}; {', '.join(got[0])} standing; quiet since "
+                  f"{reading['last']}, {int(quiet.total_seconds() // 60)}m >= "
+                  f"{STUCK_AFTER // 60}m; no STATUS asked since the last prompt")
+
+
+def verdict(role, own, status, banner, reading, refs, now=None):
     """(verdict, why). Pure. `status` is herdr's word for the pane, read
     through campaign-assign's idle reading and never for the own pane;
     `banner` is limit-reset's first line, or None for the own pane;
     `reading` is `transcript_reading`'s dict, or a string saying why there
     is none; `refs` is `ref_went`'s, asked only of another pane's worker,
     idle or WORKING. A worker not retired says why beside the verdict it
-    got."""
+    got. `now` is the clock `ask` measures quiet against, the real one when
+    none is given."""
     idle = (True, None) if own else IDLE_VERDICT({"status": status})
     if not own:
         word = banner_word(banner)
@@ -534,6 +581,12 @@ def verdict(role, own, status, banner, reading, refs):
                                  else "nothing else since") + passed
                               + ("" if idle[0] else
                                  f"; {WORKING}: /exit queues behind the turn"))
+        if went is None and idle[0]:
+            ask, said = quiet_claim(reading, refs, now or datetime.datetime.now(
+                datetime.timezone.utc))
+            if ask:
+                return "ask", said + passed
+            passed += f"; not asked: {said}" if said else ""
         passed += "; not retired: " + (
             f"an assignment prompt at {reading['assigned_at']} after {went}"
             if again else why)
@@ -1185,16 +1238,18 @@ def main(argv=None):
             word, reason = ("keep", f"{pending}; {slug} has nothing left to do"
                             ) if pending else (
                 "quiet", f"{slug} has nothing left to do")
+        text = (status_ask(slug, reading["assigned"], reading["last"])
+                if word == "ask" else ACTIONS.get(word))
         print(f"{word} {pane} {row['name']}: {reason}")
         print(f"  read: herdr {row['status']}; transcript {where}"
               + ("; own pane, banner not read" if is_own
                  else f"; banner {banner}"))
         if word != "keep":
-            todo.append((word, pane))
+            todo.append((word, pane, text))
 
     failed = False
     fired = None
-    for word, pane in todo:
+    for word, pane, text in todo:
         if word == "fire":
             if fired:
                 print(f"fired already for {fired}: one wake per run, since "
@@ -1228,7 +1283,6 @@ def main(argv=None):
                 print(f"  {ln}")
             failed |= not ok
             continue
-        text = ACTIONS[word]
         if not args.apply:
             print(f"would send {text} to {pane}")
             continue

@@ -48,11 +48,20 @@ def git(repo, *args):
 
 # THE REPOSITORY: `a.py` is 100 numbered lines at REVIEWED and has line 50
 # rewritten after it, so a slice read at HEAD differs from one read at the sha.
+# `c/dup.py` is on `origin/main` and `d/dup.py` came after it, so `dup.py` names
+# two files and only the second is one the reviewed branch changed.
 REPO = ROOT / "repo"
-(REPO / "sub").mkdir(parents=True)
+for sub in ("sub", "c", "d"):
+    (REPO / sub).mkdir(parents=True)
 git(REPO, "init", "-q")
 (REPO / "a.py").write_text("".join(f"line{i} = {i}\n" for i in range(1, 101)))
 (REPO / "sub" / "b.py").write_text("x = 1\ny = 2\n")
+(REPO / "c" / "dup.py").write_text("main = 1\n")
+git(REPO, "add", "-A")
+git(REPO, "commit", "-q", "-m", "main")
+git(REPO, "update-ref", "refs/remotes/origin/main", "HEAD")
+OLDER = git(REPO, "rev-parse", "HEAD")
+(REPO / "d" / "dup.py").write_text("branch = 1\n")
 git(REPO, "add", "-A")
 git(REPO, "commit", "-q", "-m", "reviewed")
 REVIEWED = git(REPO, "rev-parse", "HEAD")
@@ -60,11 +69,22 @@ REVIEWED = git(REPO, "rev-parse", "HEAD")
 git(REPO, "commit", "-q", "-am", "fix")
 WANT_A = "\n".join(f"{i}: line{i} = {i}" for i in range(10, 91))
 
-REVIEW = (f"REVIEW demo-worker-1: at {REVIEWED[:7]}, four findings\n\n"
+# The first line names an older sha the checkout also holds before the head,
+# as a narrowed round does.
+REVIEW = (f"REVIEW demo-worker-1: narrowed to {OLDER[:7]}..{REVIEWED[:7]}, at {REVIEWED[:7]}\n\n"
           "1. defect, `a.py:50` -- the loop stops one line short of the end\n"
           "2. refinement -- `b.py:2` names y where the docstring says z\n"
           "3. refinement -- the docstring names a flag the code no longer has\n"
-          "4. defect -- `a.py:400` the parser drops the last line it reads\n")
+          "4. defect -- `a.py:400` the parser drops the last line it reads\n"
+          "5. defect -- `b.py:3` reads past the end\n"
+          "6. refinement -- `dup.py:1` names branch where it means trunk\n"
+          "7. defect -- `e.py:1` imports nothing\n")
+
+# ANOTHER CHECKOUT: a git repository that holds no sha the REVIEW names.
+OTHER = ROOT / "other"
+OTHER.mkdir()
+git(OTHER, "init", "-q")
+git(OTHER, "commit", "-q", "--allow-empty", "-m", "other")
 
 NEXT = {"p": 0.9}
 SEEN = []
@@ -109,6 +129,7 @@ def run(t, review=REVIEW, argv=("468",), registry=True, cwd=REPO):
     (d / "check-finding-site.py").write_text(t.source)
     shutil.copy(HERE / "check-finding-sort.py", d / "check-finding-sort.py")
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
+    shutil.copy(HERE / "check-merge-review.py", d / "check-merge-review.py")
     if registry:
         (d / "jev" / "readings.json").write_text(json.dumps({"finding-site": ENTRY}))
     SEEN.clear()
@@ -126,34 +147,49 @@ def asks_at_the_reviewed_sha(t):
     r = run(t)
     got = {b["state"]["finding"]: b["state"]["slice"] for b in SEEN}
     a = got.get("[label], `a.py:50` -- the loop stops one line short of the end")
-    return (r.returncode == 0 and r.stdout == "" and len(SEEN) == 2
+    return (r.returncode == 0 and r.stdout == "" and len(SEEN) == 3
             and a == WANT_A), (sorted(got), (a or "")[:200], r.stderr[-300:])
 
 
 def resolves_by_suffix(t):
     run(t)
     b = [s["state"]["slice"] for s in SEEN if "b.py:2" in s["state"]["finding"]]
-    # `git show` ends in a newline, so the last numbered line is empty, as measured.
-    return b == ["1: x = 1\n2: y = 2\n3: "], b
+    return b == ["1: x = 1\n2: y = 2"], b
+
+
+def narrows_by_changed_files(t):
+    run(t)
+    d = [s["state"]["slice"] for s in SEEN if "dup.py:1" in s["state"]["finding"]]
+    return d == ["1: branch = 1"], d
 
 
 def labels_the_site(t):
     run(t, argv=("468", "o/r"))
     got = sorted(x["read"] for x in LOGGED if "skipped" not in x)
-    return got == ["o/r#468 REVIEW f1 a.py:50", "o/r#468 REVIEW f2 sub/b.py:2"], got
+    return got == ["o/r#468 REVIEW f1 a.py:50", "o/r#468 REVIEW f2 sub/b.py:2",
+                   "o/r#468 REVIEW f6 d/dup.py:1"], got
 
 
 def skips_what_it_cannot_place(t):
     run(t)
     got = sorted((x["read"], x["skipped"]) for x in LOGGED if "skipped" in x)
     return got == [("tracker#468 REVIEW f3", "the finding names no path:line"),
-                   ("tracker#468 REVIEW f4", f"a.py has no line 400 at {REVIEWED[:12]}")], got
+                   ("tracker#468 REVIEW f4", f"a.py has no line 400 at {REVIEWED[:12]}"),
+                   ("tracker#468 REVIEW f5", f"sub/b.py has no line 3 at {REVIEWED[:12]}"),
+                   ("tracker#468 REVIEW f7", f"e.py is no one file at {REVIEWED[:12]}")], got
 
 
-def unknown_sha_skips_once(t):
-    r = run(t, cwd=ROOT)
+def unknown_sha_skips_each(t):
+    r = run(t, cwd=OTHER)
+    why = "the first line names no sha this checkout holds"
     return (r.returncode == 0 and not SEEN and [(x["read"], x.get("skipped")) for x in LOGGED]
-            == [("tracker#468 REVIEW", "the first line names no sha this checkout holds")]), LOGGED
+            == [(f"tracker#468 REVIEW f{n}", why) for n in range(1, 8)]), LOGGED
+
+
+def reads_the_last_sha_named(t):
+    run(t)
+    a = [s["state"]["slice"] for s in SEEN if "dup.py:1" in s["state"]["finding"]]
+    return a == ["1: branch = 1"], a
 
 
 def other_comment_asks_nothing(t):
@@ -179,9 +215,11 @@ def failure_logs_skip(t):
 CASES = {
     "each finding with a site is asked against the file at the reviewed sha, 40 lines each side": asks_at_the_reviewed_sha,
     "a path written without its directory resolves to the one file ending in it": resolves_by_suffix,
+    "a name several files end in resolves to the one the branch changed": narrows_by_changed_files,
+    "the slice is read at the last sha the first line names": reads_the_last_sha_named,
     "each call is labelled with the finding's number and its resolved site": labels_the_site,
-    "a finding naming no path:line, or a line past the end, logs one skip row each": skips_what_it_cannot_place,
-    "a sha the checkout does not hold asks nothing and logs one skip row": unknown_sha_skips_once,
+    "a finding naming no path:line, a line past the end or no one file logs one skip row each": skips_what_it_cannot_place,
+    "a sha the checkout does not hold asks nothing and logs one skip row a finding": unknown_sha_skips_each,
     "a comment of another kind asks nothing": other_comment_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
     "a reading that raised exits 0, says nothing and logs a skip": failure_logs_skip,
@@ -190,15 +228,25 @@ CASES = {
 MUTATIONS = [
     ("the file read at HEAD", 'git("show", f"{sha}:{path}")', 'git("show", f"HEAD:{path}")',
      "each finding with a site is asked against the file at the reviewed sha, 40 lines each side"),
+    ("the trailing newline counted as a line",
+     'lines = text.removesuffix("\\n").split("\\n") if text else []', 'lines = text.split("\\n")',
+     "a finding naming no path:line, a line past the end or no one file logs one skip row each"),
+    ("several suffix hits not narrowed", "hits = [p for p in hits if p in changed]", "pass",
+     "a name several files end in resolves to the one the branch changed"),
+    ("the first sha named read", "for named in reversed(", "for named in (",
+     "the slice is read at the last sha the first line names"),
     ("no suffix match", 'hits = [p for p in paths if p.endswith("/" + name)]', "hits = []",
      "a path written without its directory resolves to the one file ending in it"),
     ("the site left out of the label", 'asks.append((f"{subject} f{n} {site[0]}:{site[1]}",',
      'asks.append((f"{subject} f{n}",',
      "each call is labelled with the finding's number and its resolved site"),
     ("a finding with no site not logged", "            jev.skip(READER, f\"{subject} f{n}\", got, env)",
-     "            pass", "a finding naming no path:line, or a line past the end, logs one skip row each"),
+     "            pass", "a finding naming no path:line, a line past the end or no one file logs one skip row each"),
     ("an unknown sha read on", "        if not sha:\n", "        if False:\n",
-     "a sha the checkout does not hold asks nothing and logs one skip row"),
+     "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
+    ("one skip for the whole REVIEW", "            for n in range(1, len(cut) + 1):\n",
+     "            for n in range(1, 2):\n",
+     "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
     ("the comment kind not read", 'if not review.lstrip().startswith("REVIEW "):', "if False:",
      "a comment of another kind asks nothing"),
     ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',

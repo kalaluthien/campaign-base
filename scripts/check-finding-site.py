@@ -14,8 +14,10 @@ wait, and runs BEFORE the post, so a REVIEW it then refuses was read too.
 
 WHAT IT READS: the REVIEW on stdin, cut into findings by
 check-finding-sort.py's `findings()`, so finding `f<n>` is one finding in both
-logs, its reviewer's word already masked. The reviewed sha is the first hex
-word of 7-40 characters on the REVIEW's first line. A finding's site is the
+logs, its reviewer's word already masked. The reviewed sha is the LAST word on
+the REVIEW's first line that check-merge-review.py's `SHA` reads as one and
+this checkout holds, since a narrowed round names its range before its head
+(`narrowed to a73fc57..031cd03, at 031cd03`). A finding's site is the
 first `path:line` it names; the path is taken as written when the reviewed sha
 holds it, else the one file there ending in it, else the one of several the
 sha changed since `origin/main`. The slice is that file at the reviewed sha,
@@ -28,9 +30,9 @@ show` in this process's checkout.
              (`tracker#<pr>` with no repo)
   passed     another comment kind, or a REVIEW with no finding, asks nothing
   skipped    one `skipped` row per finding naming no `path:line`, or whose
-             path or line does not resolve at the sha; one for the whole
-             REVIEW when its first line names no sha this checkout holds, or
-             the reading raised
+             path or line does not resolve at the sha, or of a REVIEW whose
+             first line names no sha this checkout holds; one for the whole
+             REVIEW when the reading raised
 
 THE TIER is `shadow`: every call is logged by the caller and nothing is
 printed, since the guard does not read this process's output.
@@ -54,7 +56,8 @@ three runs:
   slices     the enclosing function instead did no better (77-87 of 122 in
              order), and neither did a `choice` of the block first, with
              `none` and a confidence floor, then the claim against the block
-             picked (one run: 68 of 101 pairs in order)
+             picked (one run, across the floors tried: 57-68 of 80-101 pairs
+             in order)
 
 Usage: scripts/check-finding-site.py <pr> [<repo>] < review
 """
@@ -75,7 +78,6 @@ SLICE_HALF = 40
 GIT_TIMEOUT = 20
 
 SITE = re.compile(r"`?((?:[\w.-]+/)*[\w.-]+\.(?:py|sh|als|md|json|jsonl|yml|yaml|html|toml))`?:(\d+)")
-SHA = re.compile(r"\b([0-9a-f]{7,40})\b")
 
 
 def load_sibling(name):
@@ -116,11 +118,22 @@ def site_slice(sha, masked):
     path, line = resolve(sha, site.group(1)), int(site.group(2))
     if path is None:
         return None, f"{site.group(1)} is no one file at {sha[:12]}"
-    lines = (git("show", f"{sha}:{path}") or "").split("\n")
+    text = git("show", f"{sha}:{path}") or ""
+    # `git show` ends in a newline, which is no line of the file.
+    lines = text.removesuffix("\n").split("\n") if text else []
     if not 1 <= line <= len(lines):
         return None, f"{path} has no line {line} at {sha[:12]}"
     lo, hi = max(1, line - SLICE_HALF), min(len(lines), line + SLICE_HALF)
     return (path, line), "\n".join(f"{i}: {lines[i - 1]}" for i in range(lo, hi + 1))
+
+
+def reviewed_sha(first_line):
+    """The last sha the first line names that this checkout holds, or None."""
+    for named in reversed(load_sibling("check-merge-review.py").SHA.findall(first_line)):
+        sha = (git("rev-parse", "--verify", "-q", named + "^{commit}") or "").strip()
+        if sha:
+            return sha
+    return None
 
 
 def questions(entry):
@@ -165,10 +178,11 @@ def main(argv, stdin=sys.stdin, env=None):
         if not cut:
             return 0
         jev = load_sibling("campaign-jev.py")
-        named = SHA.search(review.lstrip().split("\n", 1)[0])
-        sha = named and (git("rev-parse", "--verify", "-q", named.group(1) + "^{commit}") or "").strip()
+        sha = reviewed_sha(review.lstrip().split("\n", 1)[0])
         if not sha:
-            jev.skip(READER, subject, "the first line names no sha this checkout holds", env)
+            for n in range(1, len(cut) + 1):
+                jev.skip(READER, f"{subject} f{n}",
+                         "the first line names no sha this checkout holds", env)
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
         ask_all(entry, cut, sha, subject, jev, env)

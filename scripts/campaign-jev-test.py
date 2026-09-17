@@ -849,6 +849,35 @@ def every_case_is_well_formed(m):
     return not bad, bad[:20]
 
 
+def a_tier_above_shadow_holds_its_evidence_row(m):
+    """DECISION 5713111488's bar, enforced rather than remembered: a reading
+    that PRINTS or ACTS has at least 8 real cases with a known truth, a flip, a
+    no-match, two wordings, three runs, and beats a token-overlap baseline. At
+    `shadow` it costs a reader nothing, so it is collecting cases and the row
+    does not apply yet."""
+    short = {name: m.evidence_row(e, m.read_corpus(name))
+             for name, e in entries(m).items() if e["tier"] != m.SHADOW}
+    return not any(short.values()), {k: v for k, v in short.items() if v}
+
+
+def the_evidence_row_names_what_is_short(m):
+    """The bar counted against a corpus that meets none of it: each part is
+    named on its own, because "short of the evidence row" with no reason sends
+    whoever reads it looking at all six."""
+    entry = entries(m)["verb-first"]
+    thin = [{"id": "one", "reading": "verb-first", "role": "case",
+             "truth": "yes", "state": {}, "label": {"from": "owner"},
+             "source": {"kind": "fixture"}, "seen": []}]
+    short = " | ".join(m.evidence_row(entry, thin))
+    for want in ("under 8", "no flip case", "no no-match case",
+                 "wording(s) seen, under 2", "run(s) recorded, under 3"):
+        if want not in short:
+            return False, (want, short)
+    return True, short
+
+
+CASES["the evidence row names each part that is short"] = the_evidence_row_names_what_is_short
+CASES["a reading above shadow holds its evidence row"] = a_tier_above_shadow_holds_its_evidence_row
 CASES["every case of a registered reading fits its entry"] = every_case_fits_its_entry
 CASES["every case of every corpus file is well formed"] = every_case_is_well_formed
 
@@ -938,6 +967,18 @@ MUTATIONS = [
     ("a set-but-empty endpoint read as unset", "    if not url:",
      "    if False:", "an endpoint set to nothing never reaches the network"),
     # THE FOUR BOUNDS ON AN `act`, each dropped in turn (DECISION 5714078253).
+    ("the eight cases never counted", "    if len(real) < 8:", "    if False:",
+     "the evidence row names each part that is short"),
+    ("a flip no longer required",
+     '    if not any(c.get("role") == "flip" for c in cases):', "    if False:",
+     "the evidence row names each part that is short"),
+    ("a no-match no longer required",
+     '    if not any(c.get("role") == "no-match" for c in cases):',
+     "    if False:", "the evidence row names each part that is short"),
+    ("one wording enough", "    if len(wordings) < 2:", "    if False:",
+     "the evidence row names each part that is short"),
+    ("one run enough", "    if len(runs) < 3:", "    if False:",
+     "the evidence row names each part that is short"),
     ("a live run replaces the history", '        c.setdefault("seen", []).append(',
      '        c["seen"] = []\n        c.setdefault("seen", []).append(',
      "report --live appends a run and replaces none"),

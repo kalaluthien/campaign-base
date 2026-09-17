@@ -656,15 +656,24 @@ THREADS = {
             {"where": "comment", "at": "2026-09-17T03:00:00Z",
              "body": "REVIEW r-2: one more finding"}]},
 }
+# MERGED, AND NOTHING LATER ON THE THREAD, so only the reopen half can speak.
+# Four of them, one per way a reopen is or is not named.
+for _n in (705, 706, 707, 708):
+    THREADS[("kalaluthien/campaign-base", _n)] = {
+        "state": "MERGED", "comments": [
+            {"where": "comment", "at": "2026-09-17T02:00:00Z",
+             "body": "NOTE w-1: merged"}]}
 
-# WHAT THE LAZY SECOND FETCH ANSWERS, keyed as `fetch_reopen` is called. 701's
-# sub-issue was reopened after the merge naming the pull request; 703's was
-# not, and 702's closes nothing.
+# WHAT THE LAZY SECOND FETCH ANSWERS, keyed as `fetch_reopen` is called. A
+# REOPEN IS AN EVENT AND NOT A STATE: 701's sub-issue was reopened after the
+# merge and CLOSED AGAIN, which is the ordinary shape here, and a reader of the
+# issue's present state called that "never reopened" (pr#490 REVIEW F1).
 REOPENS = {
     ("kalaluthien/campaign-base", 701): {
         "merged_at": "2026-09-17T05:00:00Z",
         "issues": [{"number": 910, "repo": "kalaluthien/campaign-base",
-                    "state": "OPEN", "comments": [
+                    "state": "CLOSED",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
                         {"at": "2026-09-17T06:00:00Z",
                          "body": "NOTE w-2: the guard pr#701 said was refusing "
                                  "lets the third spelling through"}]}]},
@@ -673,7 +682,47 @@ REOPENS = {
     ("kalaluthien/campaign-base", 703): {
         "merged_at": "2026-09-17T05:00:00Z",
         "issues": [{"number": 911, "repo": "kalaluthien/campaign-base",
-                    "state": "CLOSED", "comments": []}]},
+                    "state": "CLOSED", "reopened": [], "comments": []}]},
+    # THE PULL REQUEST NAMED BY ITS URL and by nothing else.
+    ("kalaluthien/campaign-base", 705): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 912, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening, the change in https://"
+                                 "github.com/kalaluthien/campaign-base/pull/705"
+                                 " did not hold"}]}]},
+    # THE REPORT NAMED BY ITS COMMENT URL, which carries the id.
+    ("kalaluthien/campaign-base", 706): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 913, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening, the REPORT at https://"
+                                 "github.com/kalaluthien/campaign-base/pull/999"
+                                 "#issuecomment-5700000012 claimed this done"}]}]},
+    # THE NEVER-REOPENED CONTROL: a sub-issue that exists, was never reopened,
+    # and whose comment names the pull request all the same.
+    ("kalaluthien/campaign-base", 707): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 914, "repo": "kalaluthien/campaign-base",
+                    "state": "CLOSED", "reopened": [], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: pr#707 landed it"}]}]},
+    # THE NEAR MISS: reopened after the merge, but what it names is a LONGER
+    # number that starts with this one, and a bare `#708`, which names no
+    # repository.
+    ("kalaluthien/campaign-base", 708): {
+        "merged_at": "2026-09-17T05:00:00Z",
+        "issues": [{"number": 915, "repo": "kalaluthien/campaign-base",
+                    "state": "OPEN",
+                    "reopened": ["2026-09-17T05:30:00Z"], "comments": [
+                        {"at": "2026-09-17T06:00:00Z",
+                         "body": "NOTE w-2: reopening over pr#7080, see "
+                                 "https://github.com/kalaluthien/campaign-base"
+                                 "/pull/7080 and #708"}]}]},
 }
 
 
@@ -1134,13 +1183,55 @@ def join_takes_the_second_fetch_only_on_a_merge(m):
 def join_reads_a_reopened_sub_issue(m):
     """THE OTHER STRONG HALF: the sub-issue the pull request closes, reopened
     after the merge with a comment naming that pull request. 701 merged with
-    nothing later on the thread at all, so only the second fetch can say."""
+    nothing later on the thread at all, so only the second fetch can say.
+
+    AND ITS SUB-ISSUE IS CLOSED AGAIN, which is the ordinary shape: the work
+    that came back got done and the issue closed once more. Reading the issue's
+    present state called that "never reopened" and wrote `no` with an evidence
+    sentence saying so (pr#490 REVIEW 5721893225, F1). THE CONTROL is 707,
+    whose sub-issue was never reopened and whose comment names the pull request
+    all the same: naming without a reopen is not a reopen."""
     cases, _lines = joined(m, [done_row("dn04", 701)])
     got = (cases["unverified-done"] or [{}])[0]
+    control, _l = joined(m, [done_row("dn04b", 707)])
+    never = (control["unverified-done"] or [{}])[0]
     return (got.get("truth") == "yes"
             and "910 was reopened" in got.get("label", {}).get("evidence", "")
+            and REOPENED == [("kalaluthien/campaign-base", 707)]
+            and never.get("truth") == "no"), (got, never)
+
+
+def join_reads_a_reopen_naming_a_url(m):
+    """A reopen that names the pull request by ITS URL, and one that names the
+    REPORT by its comment url -- the id is in the url, so the id's own pattern
+    reads both. Matching a literal `pr#<n>` alone made 0-in-217 unable to tell
+    never-happened from never-matched (pr#490 REVIEW 5721893225, F2).
+
+    THE CONTROL IS THE NEAR MISS, 708: reopened after the merge, naming
+    `pr#7080`, `/pull/7080` and a bare `#708`. A longer number starting with
+    this one is not this one, and a bare `#<n>` names no repository."""
+    by_url, _l = joined(m, [done_row("dn06", 705)])
+    by_id, _l2 = joined(m, [done_row("dn07", 706)])
+    near, _l3 = joined(m, [done_row("dn08", 708)])
+    url = (by_url["unverified-done"] or [{}])[0]
+    ident = (by_id["unverified-done"] or [{}])[0]
+    miss = (near["unverified-done"] or [{}])[0]
+    return (url.get("truth") == "yes" and ident.get("truth") == "yes"
+            and miss.get("truth") == "no"), (url.get("truth"),
+                                             ident.get("truth"),
+                                             miss.get("truth"))
+
+
+def join_asks_one_reopen_per_pull_request(m):
+    """ONE REOPEN FETCH PER PULL REQUEST A JOIN RUN. `cmd_corpus_join` dedups
+    its two SUBJECT fetches in a map `reopen_of` sat outside, so two rows on
+    one pull request paid two `gh pr view`s (pr#490 REVIEW 5721893225, F5).
+
+    Two rows of the SAME pull request, two cases written, ONE fetch."""
+    cases, _lines = joined(m, [done_row("dn09", 701), done_row("dn10", 701)])
+    return (len(cases["unverified-done"]) == 2
             and REOPENED == [("kalaluthien/campaign-base", 701)]), \
-        (got, REOPENED)
+        (len(cases["unverified-done"]), REOPENED)
 
 
 def join_keeps_a_row_with_no_report(m):
@@ -1169,6 +1260,10 @@ CASES["the REPORT join asks the reopen only once the pull request merged"] = \
     join_takes_the_second_fetch_only_on_a_merge
 CASES["the REPORT join reads a sub-issue reopened after the merge"] = \
     join_reads_a_reopened_sub_issue
+CASES["the REPORT join reads a reopen naming the pull request by url"] = \
+    join_reads_a_reopen_naming_a_url
+CASES["two rows of one pull request ask the reopen once"] = \
+    join_asks_one_reopen_per_pull_request
 CASES["a row with no REPORT is kept and costs no fetch"] = \
     join_keeps_a_row_with_no_report
 CASES["every join an entry declares names a function in JOINS"] = \

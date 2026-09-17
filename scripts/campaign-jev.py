@@ -1487,10 +1487,11 @@ def fetch_reopen(repo, number, timeout=30):
     `fetch_thread`. It is taken for ONE BRANCH ONLY -- a pull request that
     merged with no later round -- because that is the one branch the thread
     itself cannot decide: whether the work came back is a fact of the sub-issue,
-    not of the pull request. WHAT IT COSTS: one `gh pr view` plus one
-    `gh issue view` per closing reference, which on this tracker is one, and
-    NOTHING for every other row -- a row with a fix round, a row on an open pull
-    request, and a row with no REPORT never reach it.
+    not of the pull request. WHAT IT COSTS: one `gh pr view` plus one timeline
+    call per closing reference, which on this tracker is one, ONCE PER PULL
+    REQUEST a join run (`reopen_of`), and NOTHING for every other row -- a row
+    with a fix round, a row on an open pull request, and a row with no REPORT
+    never reach it.
 
     IT IS A MODULE-LEVEL NAME so an offline suite replaces it as it replaces
     `fetch_thread`; `cmd_corpus_join` routes the two SUBJECT fetches through
@@ -1498,7 +1499,19 @@ def fetch_reopen(repo, number, timeout=30):
 
     The closing reference's OWN repository is read off its url, never assumed to
     be the pull request's: a member repository's pull request closes a sub-issue
-    on this base's tracker."""
+    on this base's tracker.
+
+    A REOPEN IS AN EVENT AND NOT A STATE, so the timeline is what is read.
+    Reading `gh issue view --json state` instead missed every sub-issue
+    reopened and then CLOSED AGAIN -- which is the ordinary shape here, since
+    work that came back gets done and the issue closes once more -- and the
+    join then labelled the row `no` with an evidence sentence saying no
+    sub-issue was reopened (pr#490 REVIEW 5721893225, F1). `kalaluthien/campaign-base#429`
+    is that shape: reopened twice on 2026-09-14 and CLOSED now.
+
+    IT COSTS WHAT THE STATE READ COST: one `gh pr view` plus ONE call per
+    closing reference, because the timeline carries the comments beside the
+    events and `--paginate` returns them as one array."""
     try:
         head = subprocess.run(
             ["gh", "pr", "view", str(number), "-R", repo, "--json",
@@ -1512,20 +1525,59 @@ def fetch_reopen(repo, number, timeout=30):
             parts = str(ref.get("url") or "").split("/")
             where = ("/".join(parts[3:5]) if len(parts) > 5 else repo) or repo
             one = subprocess.run(
-                ["gh", "issue", "view", str(ref.get("number")), "-R", where,
-                 "--json", "state,comments"],
+                ["gh", "api", "--paginate",
+                 f"repos/{where}/issues/{ref.get('number')}/timeline"],
                 capture_output=True, text=True, timeout=timeout)
             if one.returncode != 0:
                 return None
-            body = json.loads(one.stdout) or {}
-            issues.append({"number": ref.get("number"), "repo": where,
-                           "state": body.get("state") or "",
-                           "comments": [{"at": c.get("createdAt") or "",
-                                         "body": c.get("body") or ""}
-                                        for c in body.get("comments") or []]})
+            rows = json.loads(one.stdout) or []
+            issues.append({
+                "number": ref.get("number"), "repo": where,
+                "reopened": [r.get("created_at") or "" for r in rows
+                             if r.get("event") == "reopened"],
+                "comments": [{"at": r.get("created_at") or "",
+                              "body": r.get("body") or ""}
+                             for r in rows if r.get("event") == "commented"]})
     except Exception:  # noqa: BLE001 -- a reopen that would not read is None
         return None
     return {"merged_at": found.get("mergedAt") or "", "issues": issues}
+
+
+# ONE REOPEN FETCH PER PULL REQUEST A JOIN RUN. `cmd_corpus_join` dedups the
+# SUBJECT fetches in its own `fetched` map, and this one is not a subject, so
+# two rows on one pull request paid two `gh pr view`s (pr#490 REVIEW
+# 5721893225, F5). The run clears this, so it is a run's memo and never a cache
+# across runs -- a reopen that happened between two runs must still be seen.
+REOPEN_SEEN = {}
+
+
+def reopen_of(repo, number):
+    """`fetch_reopen`, memoised for this join run. A `None` is memoised too:
+    a subject that would not read this run will not read on the next row
+    either, and asking again is the cost this exists to stop."""
+    key = (repo, number)
+    if key not in REOPEN_SEEN:
+        REOPEN_SEEN[key] = fetch_reopen(repo, number)
+    return REOPEN_SEEN[key]
+
+
+def names_of(repo, pull_request, report_comment):
+    """The patterns that NAME this pull request or its REPORT in a reopen's
+    own words: `pr#<n>`, the pull request's url on that repository, and the
+    REPORT comment's id -- which is also every form of that comment's url,
+    since the url carries the id.
+
+    NOT A BARE `#<n>`, which names no repository: five campaigns file onto one
+    tracker and a member repository's numbers collide with this one's, which is
+    the same reason AGENTS.md refuses a bare `#N` in prose.
+
+    EACH ENDS ON A NON-DIGIT, so `pr#49` does not match `pr#490` and the id of
+    one comment does not match a longer id starting with it."""
+    out = [re.compile(rf"pr#{pull_request}(?!\d)"),
+           re.compile(re.escape(f"{repo}/pull/{pull_request}") + r"(?!\d)")]
+    if report_comment:
+        out.append(re.compile(rf"{re.escape(str(report_comment))}(?!\d)"))
+    return out
 
 
 def join_report_next_round(row, thread):
@@ -1562,21 +1614,25 @@ def join_report_next_round(row, thread):
     if str(thread.get("state", "")).upper() != "MERGED":
         return None, "", ("no fix round after this REPORT yet, and the pull "
                           "request has not merged")
-    reopen = fetch_reopen(row.get("repo"), row.get("pull_request"))
+    reopen = reopen_of(row.get("repo"), row.get("pull_request"))
     if reopen is None:
         return None, "", "the pull request's closing references did not read"
-    names = [f"pr#{row.get('pull_request')}"]
-    if row.get("report_comment"):
-        names.append(str(row["report_comment"]))
+    merged_at = reopen.get("merged_at") or ""
+    names = names_of(row.get("repo"), row.get("pull_request"),
+                     row.get("report_comment"))
     for issue in reopen.get("issues") or []:
-        if str(issue.get("state", "")).upper() != "OPEN":
+        # THE REOPEN IS AN EVENT AFTER THE MERGE, whatever the issue's state is
+        # now: work that came back gets done and the issue closes again.
+        after = [at for at in issue.get("reopened") or [] if at > merged_at]
+        if not after:
             continue
         for said in issue.get("comments") or []:
-            if (said.get("at") or "") <= (reopen.get("merged_at") or ""):
+            if (said.get("at") or "") <= merged_at:
                 continue
-            if any(n in (said.get("body") or "") for n in names):
+            if any(n.search(said.get("body") or "") for n in names):
                 return "yes", (f"{issue.get('repo')}#{issue.get('number')} was "
-                               f"reopened after {where} merged, naming it"), ""
+                               f"reopened at {after[0]}, after {where} merged, "
+                               f"and named it"), ""
     return "no", (f"{where} merged with no fix round after this REPORT and no "
                   f"sub-issue of it reopened naming it"), ""
 
@@ -1663,6 +1719,10 @@ def joinable(rows, reg):
 def cmd_corpus_join(args):
     """Label what the log holds, and count what could not be labelled yet."""
     reg = load_registry()
+    # THE JOIN'S OWN SECOND FETCH IS MEMOISED FOR THIS RUN, beside the
+    # per-subject `fetched` map below: `reopen_of` is not a subject fetch and
+    # so sat outside it, and two rows on one pull request paid twice.
+    REOPEN_SEEN.clear()
     rows, how, torn = read_log()
     rows, stray, unreal = joinable(rows, reg)
     known = {r: {c.get("source", {}).get("ref") for c in read_corpus(r)}

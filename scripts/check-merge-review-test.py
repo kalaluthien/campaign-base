@@ -683,14 +683,21 @@ def main() -> int:
         # word on the log row, and the question ids the endpoint was actually
         # given. The CONTROL for all three is `checked` above, which pins a sha
         # AND quotes a command and is asked.
+        FLAGS = {}
+
         def linted(body):
-            """(the settled word per reading, the question ids posted)."""
+            """(the settled word per reading, the question ids posted). The
+            rows' `flag` field lands in `FLAGS`, which is where the branch a
+            settled row was settled by is read."""
             fake_gh(bindir, comments=[comment(review), comment(body)])
             counted_run("274", "--repo", "o/r")
             rows = [json.loads(ln) for ln in jevlog.read_text().splitlines()
                     if ln.strip()]
             got = {r["reading"]: r.get("settled") for r in rows
                    if r.get("reading")}
+            FLAGS.clear()
+            FLAGS.update({r["reading"]: r.get("flag") for r in rows
+                          if r.get("reading")})
             return got, (POSTS["questions"][0] if POSTS["questions"] else [])
 
         # THE NO-SHA FIXTURE QUOTES A COMMAND, so only the sha branch can
@@ -701,10 +708,27 @@ def main() -> int:
         check("a REPORT that pins no sha is code's to answer, not Jev's",
               words.get("unverified-done") == "yes"
               and "unverified-done" not in asked, (words, asked))
+        # AND THE ROW SAYS WHICH BRANCH SETTLED IT. A settled row carries the
+        # word and an empty `why` -- `judge` writes no reason for an answer it
+        # never asked -- so nothing on it said which of the three branches it
+        # was (pr#490 REVIEW 5721893225, F4). It rides in `flag`, the field the
+        # reader already computes and `judge` already carries.
+        check("a lint-settled row names the branch that settled it",
+              "pins no sha" in ((FLAGS.get("unverified-done") or {})
+                                .get("lint") or ""),
+              FLAGS.get("unverified-done"))
         words, asked = linted(report)
         check("a REPORT quoting no command and no reach line is code's too",
               words.get("unverified-done") == "yes"
               and "unverified-done" not in asked, (words, asked))
+        # THE CONTROL FOR THE FLAG: a different branch names itself, and the
+        # reading the lint did not settle keeps the flag it always had.
+        check("...and the other branch names itself on the row",
+              "quotes no command" in ((FLAGS.get("unverified-done") or {})
+                                      .get("lint") or "")
+              and "lint" not in (FLAGS.get("C-report-disposes-finding") or {}),
+              (FLAGS.get("unverified-done"),
+               FLAGS.get("C-report-disposes-finding")))
         # AND THE ADDRESS IS STILL ASKED on both `yes` branches: the prose it
         # reads is there, and only the empty round settles it.
         check("...and its address noul is still asked, since the prose is there",
@@ -721,6 +745,22 @@ def main() -> int:
         check("...and a backticked span that is prose is not a command",
               words.get("unverified-done") == "yes"
               and "unverified-done" not in asked, (words, asked))
+        # AN UNCLOSED FENCE RUNS TO THE END OF THE TEXT. Before this the span
+        # pattern needed a closing fence, so a REPORT whose only command sat in
+        # a fence nobody closed matched neither branch and code settled it
+        # `yes` -- the command it quoted never reached Jev (pr#490 REVIEW
+        # 5721893225, F3).
+        words, asked = linted(report + "\n```\npython3 scripts/x-test.py\n")
+        check("a command in an unclosed fence is a quoted command",
+              words.get("unverified-done") is None
+              and "unverified-done" in asked, (words, asked))
+        # THE CONTROL: the same block CLOSED still ends where it ends, so the
+        # fix did not swallow the text after a fence.
+        words, asked = linted(
+            report + "\n```\npython3 scripts/x-test.py\n```\n")
+        check("...and a closed fence still ends at its closing fence",
+              words.get("unverified-done") is None
+              and "unverified-done" in asked, (words, asked))
         fake_gh(bindir, comments=[comment(review)])
         counted_run("274", "--repo", "o/r")
         rows = [json.loads(ln) for ln in jevlog.read_text().splitlines()

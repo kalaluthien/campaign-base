@@ -722,7 +722,7 @@ and ride in one call**, so each new one costs the gate nothing a state:
 `C-report-disposes-finding` over the round's findings, `C-review-not-the-author`
 over who wrote what, and `unverified-done` with its address `noul`
 `report-addresses-judge` over the round's `REPORT` — does it claim a thing done
-with no check that could have failed named beside it. All four are at `shadow`;
+with no check that could have failed named beside it. Each is at `shadow`;
 which questions the group holds is the registry's and is not counted here.
 
 **The push that retires a review does not start the next one, so whoever pushed

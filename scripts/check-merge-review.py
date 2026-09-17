@@ -401,7 +401,14 @@ COMMAND_VERBS = ("uv", "python", "python3", "pytest", "ruff", "git", "gh",
                  "make", "npm", "node", "bash", "sh", "alloy", "alloy-check")
 # A fenced block or a backticked span, whichever the REPORT used. The fence is
 # tried first, so a block is not cut at the first single backtick inside it.
-SPAN = re.compile(r"```+(.+?)```+|`([^`\n]+)`", re.S)
+#
+# AN UNCLOSED FENCE RUNS TO THE END OF THE TEXT, which is what `\Z` is for: a
+# REPORT whose only command sat in a fence nobody closed matched NEITHER branch
+# -- the opening ``` is not an inline span either -- so code settled it `yes`
+# and Jev never saw the command it quoted (pr#490 REVIEW 5721893225, F3). The
+# closing fence is still tried first at every position, so a closed block ends
+# where it ends.
+SPAN = re.compile(r"```+(.+?)(?:```+|\Z)|`([^`\n]+)`", re.S)
 # `campaign-installed.py reach`'s own line, `reached <slug> at <path>: ...`,
 # which AGENTS.md § Installed repositories requires the REPORT of a merge to
 # quote. It is the one check quoted bare rather than in backticks, so it is
@@ -439,6 +446,10 @@ def quotes_a_check(report):
                    "`reached ... at ...` line")
 
 
+# THE FOUR WORDS A LINT SENTENCE MAY OPEN WITH, so a reader counting branches
+# reads a prefix and never parses a reason. `flag_of` puts the sentence on the
+# row; the campaign's own counting script and the suite both key on these.
+LINT_BRANCHES = ("no REPORT", "pins no sha", "quotes no command", "asked")
 # THE WORDS CODE SETTLES `unverified-done` WITH ARE THE READING'S OWN TWO, as
 # `C-report-disposes-finding`'s prefilter settles with `disposed`, one of the
 # two words its join labels a case with. A third word would be a case
@@ -465,19 +476,24 @@ def unverified_lint(report):
 
     THE ADDRESS `noul` IS STILL ASKED on both `yes` branches, because the
     prose it reads is there -- only the empty round settles it. It rides in
-    the same one call either way."""
+    the same one call either way.
+
+    EVERY SENTENCE OPENS WITH ITS BRANCH'S NAME, one of `LINT_BRANCHES`,
+    because `flag_of` puts it on the row and a reader counting branches must
+    not have to parse the reason (pr#490 REVIEW 5721893225, F4)."""
     text = (report or "").strip()
     if not text:
         return ({"unverified-done": "no", "report-addresses-judge": "no"},
-                "the round carries no REPORT: nothing claims anything, and "
-                "there is no prose to be addressed to anybody")
+                "no REPORT: the round carries none, so nothing claims "
+                "anything and there is no prose to be addressed to anybody")
     if not SHA.search(text):
         return ({"unverified-done": "yes"},
-                "the REPORT pins no sha, so no check it names is tied to a "
-                "revision anything can be held to")
+                "pins no sha: no check the REPORT names is tied to a revision "
+                "anything can be held to")
     quoted, why = quotes_a_check(text)
     if not quoted:
-        return {"unverified-done": "yes"}, f"the REPORT pins a sha and {why}"
+        return ({"unverified-done": "yes"},
+                f"quotes no command: the REPORT pins a sha and {why}")
     return {}, f"asked: the REPORT pins a sha and quotes {why}"
 
 
@@ -534,10 +550,21 @@ def thread_state(found, pattern, sort):
                    "report_comment": report[2] if report else None}
 
 
-def flag_of(reading, raw):
+def flag_of(reading, raw, lint=None, why=""):
     """What CODE computed from the answers, and which answer moved it: the
     survey's `1 - P(supports)`, taken as a max over the findings the prefilter
-    did not clear. The model decides no gate."""
+    did not clear. The model decides no gate.
+
+    AND, FOR A READING THE LINT SETTLED, WHICH BRANCH SETTLED IT. A settled row
+    carries the word and an empty `why` -- `judge` writes no reason for an
+    answer it never asked -- so nothing on the row said whether the REPORT
+    pinned no sha, quoted no command, or was not there at all (pr#490 REVIEW
+    5721893225, F4). `flag` is the field the reader already computes and
+    `judge` already carries to the row, so this rides in it and `judge` is not
+    widened; `read_thread` binds `lint` and `why` with `functools.partial`,
+    since `judge` calls a flag as `(reading, raw)`."""
+    if lint and reading in lint:
+        return {"lint": why}
     if reading != "C-report-disposes-finding" or not isinstance(raw, dict):
         return None
     scored = {}
@@ -570,13 +597,13 @@ def read_thread(repo, pr, found, pattern):
         cleared = {item: "disposed"
                    for item in state["findings"]
                    if prefilter_clear(state["report"], item)}
-        lint, _why = unverified_lint(state["report"])
+        lint, why = unverified_lint(state["report"])
         jev.judge(THREAD_GROUP, state, read=f"{repo}#{pr} thread",
                   reader="check-merge-review.py",
                   settled={"C-report-disposes-finding": cleared, **lint},
                   key={"repo": repo, "pull_request": pr,
                        **{k: v for k, v in ids.items() if v is not None}},
-                  flag=flag_of)
+                  flag=functools.partial(flag_of, lint=lint, why=why))
     except Exception as e:                      # noqa: BLE001 -- never the gate's
         try:
             jev.skip("check-merge-review.py", f"{repo}#{pr} thread",

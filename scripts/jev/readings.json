@@ -290,8 +290,8 @@
    }
   },
   "thresholds": {
-   "floor": 0.5,
-   "certain_over": 0.52,
+   "floor": 0.3,
+   "certain_over": 0.5,
    "no_match": "none"
   },
   "join": "issue-kind-label",
@@ -304,9 +304,13 @@
      0.53,
      1.0
     ],
+    "uncertain": [
+     0.32,
+     0.48
+    ],
     "unsure": [
      0.11,
-     0.48
+     0.25
     ]
    }
   }

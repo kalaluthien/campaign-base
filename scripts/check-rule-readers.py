@@ -40,6 +40,11 @@ Firing only inside code separates the two with no allowlist to maintain and no
 judgement about what a paragraph means. Both shapes are read for the same
 reason and both can be exempted the same way, so neither is the special case.
 
+One form reads CODE instead, and is the exception to that line: `jev-drive`,
+whose second reader grows back in a script rather than being pasted from a
+document. Its comment, under FORMS, says what it reads and which gates it
+exempts by name.
+
 A code block that must hold a form anyway -- fenced or indented -- is exempted
 by an HTML comment on the line above it:
 
@@ -309,6 +314,51 @@ FORMS = [
 ]
 
 
+# THE ONE SHELL AROUND A JEV CALL, read in CODE rather than in a fence: the one
+# form here whose second reader is a script, since the copy it stops is not
+# pasted from a document but grown back in a reader (rule-check#506). A reader
+# exports its steps and hands itself to `campaign-jev.py run`; a `judge`,
+# `judge_each`, `judge_chain`, `shielded`, `skip`, `load_registry` or
+# `readers_on` called on campaign-jev from any other script, a loader of it
+# defined by hand, or an event's readers looped by hand, is the drive, loader or event table
+# coming back. Read over tracked `.py` and `.sh` under a `scripts/` directory,
+# a suite and campaign-jev itself apart.
+#
+# THE GATES ARE EXEMPT BY NAME, each for the one reason they share: its reading
+# rides a call the gate already makes, over input the gate already holds, and
+# its exit status is the gate's -- so there is no reader to hand to `run`.
+JEV_DRIVE = (
+    "jev-drive",
+    "scripts/campaign-jev.py",
+    re.compile(r"\b_?jev\w*(\(\))?\.(judge|judge_each|judge_chain|shielded"
+               r"|skip|load_registry|readers_on)\(|\breaders_on\("
+               r"|\bdef\s+_?jev_module\b|\breaders-on\b"),
+    "a caller-side drive, loader or event table of a Jev reading",
+)
+JEV_GATES = {
+    "scripts/campaign-tracker.py": "`check`'s shape and plan readings",
+    "scripts/check-merge-review.py": "the merge gate's thread reading",
+    "scripts/check-campaign-claim.py": "the guard's filing and shell readings",
+    "scripts/campaign-claim.py": "`live --stuck`'s quiet-worker reading",
+    ".claude/skills/assuming-role/scripts/campaign-transcript.py":
+        "read BY campaign-jev's `worker-stuck` join",
+}
+
+
+def jev_script(path):
+    """Whether the jev-drive form reads this path."""
+    return (path.endswith((".py", ".sh")) and "scripts/" in "/" + path
+            and not path.endswith(("-test.py", "campaign-jev.py"))
+            and path not in JEV_GATES)
+
+
+def jev_drive(text):
+    """(line, source) for each line holding the jev-drive form."""
+    for n, line in enumerate(text.splitlines(), 1):
+        if JEV_DRIVE[2].search(line):
+            yield n, line.strip()
+
+
 # An opener is up to three spaces of indent then three or more backticks or
 # tildes. A closer is the same character, at least as many of them, and nothing
 # after it -- so a ``` line inside a ```` block, or a `~~~` line inside a ```
@@ -474,6 +524,7 @@ def main(argv):
         paths, root = given, "."
     else:
         paths = all_tracked
+    scripts = [p for p in paths if jev_script(p)]
     paths = [
         p for p in paths
         if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
@@ -507,6 +558,19 @@ def main(argv):
         print(f"  unreadable: {p} ({why})")
 
     found = 0
+    print(f"check-rule-readers: {len(scripts)} script(s) read for "
+          f"`{JEV_DRIVE[0]}`, {len(JEV_GATES)} gate(s) exempt by name")
+    for p in scripts:
+        try:
+            text = content(root, p, staged and not given)
+        except OSError as exc:
+            broken.append((p, exc.strerror or exc))
+            print(f"  unreadable: {p} ({exc.strerror or exc})")
+            continue
+        for n, src in jev_drive(text or ""):
+            found += 1
+            print(f"{p}:{n}: {JEV_DRIVE[3]} belongs to {JEV_DRIVE[1]} "
+                  f"(a reader yields steps and hands itself to `run`): {src}")
     for p, text in texts:
         for n, token, path, what, src in findings(text):
             found += 1

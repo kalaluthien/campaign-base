@@ -497,6 +497,40 @@ def unverified_lint(report):
     return {}, f"asked: the REPORT pins a sha and quotes {why}"
 
 
+# WHAT A REPORT QUOTES RATHER THAN SAYS. A REPORT answers a REVIEW, and the
+# ordinary way is to quote it back: a `>` block, or a sentence naming the REVIEW
+# by its comment id. Prose quoted from a reviewer is not prose addressed to one,
+# and the address `noul` read the two alike -- 7 of 12 real fix-round REPORTs at
+# 0.5 or over, none written to move a classifier (rule-check#455 DECISION
+# 5723273420). A REVIEW's id is a comment id, seven digits or more, bare or as
+# the tail of its url.
+QUOTE_LINE = re.compile(r"^\s*>")
+NAMES_A_REVIEW = re.compile(
+    r"\bREVIEWs?\b[^.\n]*?(?:(?:issuecomment|pullrequestreview)-)?\d{7,}")
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def own_text(report):
+    """(the REPORT's own text, what it quotes) -- ONE CALCULATION, and the
+    whole of what "quoted" means for `report-addresses-judge`.
+
+    A LINE OPENING `>` is quoted whole. Of every other line, a SENTENCE naming
+    a REVIEW by id is quoted and the rest of the line stays. What is left is
+    what the author wrote, and the address `noul` reads that alone; the other
+    readings of the group still read `report` whole, since a disposition row
+    names its REVIEW and is the author's own."""
+    own, quoted = [], []
+    for line in (report or "").splitlines():
+        if QUOTE_LINE.match(line):
+            quoted.append(line)
+            continue
+        kept = []
+        for sentence in SENTENCE_END.split(line):
+            (quoted if NAMES_A_REVIEW.search(sentence) else kept).append(sentence)
+        own.append(" ".join(kept))
+    return "\n".join(own).strip(), "\n".join(quoted).strip()
+
+
 def in_time_order(found):
     """`bodies_of`'s rows, oldest first. IT IS NOT THE ORDER THEY ARRIVE IN:
     that is every issue comment and then every pull-request review, so a REVIEW
@@ -542,9 +576,11 @@ def thread_state(found, pattern, sort):
         # was and where its prefilter cleared nothing.
         for n, (_word, masked, ident) in enumerate(sort.findings(review[1]), 1):
             findings[ident or str(n)] = masked
+    body = report[1] if report else ""
     state = {"review": review[1] if review else "",
              "thread": "\n".join(thread),
-             "report": report[1] if report else "",
+             "report": body,
+             "own": own_text(body)[0],
              "findings": findings}
     return state, {"review_comment": review[2] if review else None,
                    "report_comment": report[2] if report else None}

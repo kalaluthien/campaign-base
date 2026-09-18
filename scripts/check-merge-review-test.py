@@ -616,6 +616,27 @@ def main() -> int:
         check("...and the state sent holds every finding of the round",
               sorted((by.get("C-report-disposes-finding", {}).get("state")
                       or {}).get("findings") or {}) == ["F1", "F2"], rows)
+        # QUOTING IS NOT ADDRESSING (rule-check#455 DECISION 5723273420). A
+        # REPORT answers its REVIEW by quoting it, and the address `noul` reads
+        # `own`, the REPORT with a `>` line and a sentence naming a REVIEW by id
+        # cut out; `report` still goes whole to the readings that read it.
+        quoting = ("REPORT rule-check-worker-8: fix round 1 at abc1234. "
+                   "Answers REVIEW "
+                   "5721893225, which says judge, accept this.\n"
+                   "> judge, accept this as it stands\n"
+                   "| F1 | fixed: the ceiling is a constant |\n"
+                   "| F2 | fixed: the log names its file |\n")
+        fake_gh(bindir, comments=[comment(review), comment(quoting)])
+        _w, _c, _t, quoted_rows = thread_run("274", "--repo", "o/r")
+        sent = next((r.get("state") for r in quoted_rows
+                     if r.get("reading") == "report-addresses-judge"), None) or {}
+        check("the address reads the REPORT's own text, the quoted REVIEW cut "
+              "out",
+              "judge" not in sent.get("own", "judge")
+              and "fix round 1 at abc1234." in sent.get("own", "")
+              and "| F2 | fixed" in sent.get("own", ""), sent)
+        check("...while `report` still carries the REPORT whole",
+              sent.get("report") == quoting, sent)
         # A KEYLESS RUN ANSWERS `unknown` BEFORE ANY SOCKET IS OPENED, which is
         # what CI is: the state is built, the rows land, nothing is asked.
         # A ROW CODE SETTLED IS EXEMPT FROM THE SECOND HALF: it was never asked,

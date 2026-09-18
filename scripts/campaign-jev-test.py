@@ -1384,7 +1384,8 @@ CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_ban
 # that field, IN THE SAME CALL: every question over one pull request thread goes
 # in the one call (DECISION 5716060001), and the answers come back as one
 # `Verdict` carrying {key: raw} and no word.
-THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "findings": {"F1": "a", "F2": "b"},
+THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "own": "REPORT w-1: F1 fixed",
+                "findings": {"F1": "a", "F2": "b"},
                 "review": "REVIEW r-1: two findings", "thread": "comment w-1: ..."}
 
 
@@ -1426,29 +1427,32 @@ def a_per_item_reading_is_one_call(m):
         (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
 
 
-def the_done_readings_add_no_state_field(m):
-    """rule-check#455 pr 5, item 1: `unverified-done` and
-    `report-addresses-judge` ride in the call the group already makes, so
-    neither may name a state field the group did not already carry.
+def the_done_readings_add_one_state_field(m):
+    """rule-check#455 pr 5, item 1: `unverified-done` rides in the call the
+    group already makes and names no field the group did not already carry.
+    pr 6, item 1: its address `report-addresses-judge` names exactly ONE new
+    field, `own` -- the REPORT with what it quotes cut out (DECISION
+    5723273420) -- and nothing else.
 
-    A NEW FIELD WOULD BE A NEW COST AND A SILENT ONE: `judge` builds the union
-    of every entry's fields and RAISES on a state missing one, so the reader
-    would have to build more, and every band measured on the old state would
-    belong to a narrower one. The CONTROL is the group's field set, which must
-    be exactly what `C-report-disposes-finding` and `C-review-not-the-author`
-    already named."""
+    A NEW FIELD IS A NEW COST AND A SILENT ONE: `judge` builds the union of
+    every entry's fields and RAISES on a state missing one, so the reader must
+    build it, and every band measured on the old state belongs to a narrower
+    one. The CONTROL is the group's field set, which must be exactly what
+    `C-report-disposes-finding` and `C-review-not-the-author` already named,
+    plus `own`."""
     reg = m.load_registry()
     group = m.group_of(reg, "pull-request-thread")
     old = set(reg["C-report-disposes-finding"]["state"]["fields"]) \
         | set(reg["C-review-not-the-author"]["state"]["fields"])
-    new = {n: reg[n]["state"]["fields"]
-           for n in ("unverified-done", "report-addresses-judge")}
+    done = reg["unverified-done"]["state"]["fields"]
+    address = reg["report-addresses-judge"]["state"]["fields"]
     return (sorted(group) == ["C-report-disposes-finding",
                               "C-review-not-the-author",
                               "report-addresses-judge", "unverified-done"]
-            and m.state_fields(group) == old
-            and all(f == ["report"] for f in new.values())), \
-        (sorted(group), sorted(m.state_fields(group)), sorted(old), new)
+            and m.state_fields(group) == old | {"own"}
+            and done == ["report"] and address == ["own"]), \
+        (sorted(group), sorted(m.state_fields(group)), sorted(old), done,
+         address)
 
 
 def the_report_address_guards_the_done_reading(m):
@@ -1529,8 +1533,8 @@ def a_per_item_question_must_name_its_item(m):
 
 
 CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
-CASES["the two done readings add no state field to the thread group"] = \
-    the_done_readings_add_no_state_field
+CASES["the done reading adds no state field and its address adds only `own`"] = \
+    the_done_readings_add_one_state_field
 CASES["an addressed REPORT routes unverified-done to uncertain"] = \
     the_report_address_guards_the_done_reading
 CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent

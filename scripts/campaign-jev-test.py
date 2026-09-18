@@ -487,7 +487,7 @@ def registry_shape(m):
     bad = []
     for name, e in entries(m).items():
         for field in ("owner", "tier", "group", "state", "prefilter",
-                      "question", "join", "bands"):
+                      "question", "join", "bands", "loss"):
             if field not in e:
                 bad.append(f"{name}: no `{field}`")
         if e.get("tier") not in m.TIERS:
@@ -3468,7 +3468,194 @@ CASES["a reading at act declares what it does and how it is undone"] = act_decla
 CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
+
+# ------------------------------------------------------------------- the fit
+def fitted(m, values, loss=None, made=(), log_rows=(), thresholds=None):
+    """`fit --write` over one temp registry, corpus and log: the entry is the
+    tree's own `verb-first` under a typed cut, and `values` is [(truth, [raw,
+    ...])], one a case. Returns (the entry as written, what was printed)."""
+    entry = json.loads(json.dumps(m.load_registry()["verb-first"]))
+    entry["thresholds"] = ({"yes_over": 0.5, "no_under": 0.2}
+                           if thresholds is None else thresholds)
+    entry.pop("fit", None)
+    entry["loss"] = loss or {"wrong_yes": 1, "wrong_no": 1, "why": "a case"}
+    tag = f"fit-{abs(hash(json.dumps([values, list(made)]))) % 99999}"
+    registry, corpus = ROOT / f"{tag}.json", ROOT / tag
+    registry.write_text(json.dumps({"verb-first": entry}))
+    want = m.wording(entry)
+    cases = [{"id": f"c{i}", "reading": "verb-first", "role": "case",
+              "state": {"title": f"title {i}"}, "truth": truth,
+              "label": {"from": "flip-of:c0" if i in made else "hand:a case"},
+              "source": {"kind": "hand", "ref": f"r{i}"},
+              "seen": [{"model": MODEL, "wording": want, "word": "yes",
+                        "raw": {"type": "noul", "noul": v}} for v in raws]}
+             for i, (truth, raws) in enumerate(values)]
+    m.write_corpus("verb-first", cases, corpus)
+    log = ROOT / f"{tag}.log"
+    log.write_text("".join(json.dumps(r) + "\n" for r in log_rows))
+    old = os.environ.get("CAMPAIGN_JEV_LOG")
+    os.environ["CAMPAIGN_JEV_LOG"] = str(log)
+    said = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(said):
+            m.cmd_fit(types.SimpleNamespace(reading=None, write=True,
+                                            registry=str(registry),
+                                            corpus=str(corpus)))
+    finally:
+        if old is None:
+            os.environ.pop("CAMPAIGN_JEV_LOG", None)
+        else:
+            os.environ["CAMPAIGN_JEV_LOG"] = old
+    return json.loads(registry.read_text())["verb-first"], said.getvalue()
+
+
+def spread(low, high, n):
+    return [round(low + (high - low) * i / (n - 1), 3) for i in range(n)]
+
+
+def a_typed_cut_is_replaced_by_the_fitted_one(m):
+    """Ten `no` between 0.02 and 0.20 and ten `yes` between 0.60 and 0.96: the
+    span the data cannot split is (0.20, 0.60), so at 1/1 the cut is 0.40 and
+    the edges sit halfway to each end -- and a dearer wrong yes moves it up."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)])
+    entry, _said = fitted(m, values)
+    fit, cuts = entry["fit"], entry["thresholds"]
+    bad = []
+    if (fit.get("verdict"), fit.get("cut")) != ("fitted", 0.4):
+        bad.append(("the cut", fit))
+    if cuts != {"yes_over": 0.5, "no_under": 0.3}:
+        bad.append(("the edges written", cuts))
+    if fit.get("replaced") != {"no_under": 0.2, "yes_over": 0.5}:
+        bad.append(("the typed cut kept beside it", fit.get("replaced")))
+    if fit.get("counts", {}).get("yes") != 10 or fit["counts"].get("no") != 10:
+        bad.append(("the counts", fit.get("counts")))
+    dear, _said = fitted(m, values, loss={"wrong_yes": 3, "wrong_no": 1,
+                                          "why": "a case"})
+    if dear["fit"].get("cut") != 0.5:
+        bad.append(("a wrong yes three times as dear", dear["fit"]))
+    return not bad, bad
+
+
+def a_reading_under_the_floor_is_unmeasurable(m):
+    """Nine `yes` cases are one under the floor: the verdict carries the
+    counts, no cut is written, and the typed one stays where it was."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 9)])
+    entry, _said = fitted(m, values)
+    fit = entry["fit"]
+    ok = (fit.get("verdict") == "unmeasurable" and "cut" not in fit
+          and fit.get("counts", {}).get("yes") == 9
+          and "floor of 10" in fit.get("why", "")
+          and entry["thresholds"] == {"yes_over": 0.5, "no_under": 0.2})
+    return ok, (fit, entry["thresholds"])
+
+
+def a_made_case_is_scored_and_never_fitted(m):
+    """Two made `yes` cases at 0.30 would pull the cut under them if fitted;
+    held apart, the cut stays at 0.40 and they are scored wrong beside it."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)]
+              + [("yes", [0.30]), ("yes", [0.30])])
+    entry, _said = fitted(m, values, made=(20, 21))
+    fit = entry["fit"]
+    ok = (fit.get("cut") == 0.4 and fit["counts"] == {"yes": 10, "no": 10,
+                                                       "made": 2}
+          and fit["loss_per_case"].get("made") == 1.0)
+    return ok, fit
+
+
+def a_cut_that_beats_no_constant_is_unmeasurable(m):
+    """Both classes spread over the same values: held out, no cut does better
+    than answering one word always, so none is written."""
+    values = ([("no", [v]) for v in spread(0.10, 0.90, 10)]
+              + [("yes", [v]) for v in spread(0.11, 0.91, 10)])
+    entry, _said = fitted(m, values)
+    fit = entry["fit"]
+    ok = (fit.get("verdict") == "unmeasurable"
+          and "one word always" in fit.get("why", "")
+          and entry["thresholds"] == {"yes_over": 0.5, "no_under": 0.2})
+    return ok, (fit, entry["thresholds"])
+
+
+def an_uncut_reading_stays_uncut(m):
+    """A reading left uncut on purpose gets its fit recorded and no threshold:
+    a cut written there would be read by its guard on the next call."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)])
+    entry, _said = fitted(m, values, thresholds={})
+    ok = (entry["fit"].get("verdict") == "fitted" and entry["thresholds"] == {}
+          and "replaced" not in entry["fit"])
+    return ok, entry
+
+
+def a_log_row_is_tied_by_state_and_a_stub_s_is_not(m):
+    """A real-endpoint row whose state is a case's adds one observation to it;
+    the same row from a stub adds none."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)])
+    want = m.wording(m.load_registry()["verb-first"])
+
+    def row(endpoint):
+        return {"reading": "verb-first", "endpoint": endpoint, "call": "k1",
+                "wording": want, "state": {"title": "title 0", "another reading's": "x"},
+                "raw": {"type": "noul", "noul": 0.04}}
+    _e, real = fitted(m, values, log_rows=[row("real")])
+    _e, stub = fitted(m, values, log_rows=[row("stub")])
+    return ("| 1 |" in real and "| 0 |" in stub), (real[-300:], stub[-300:])
+
+
+def a_least_loss_in_two_spans_takes_one_whole(m):
+    """A `yes` at 0.30 under a `no` at 0.40 leaves the least loss, one case,
+    in two spans apart -- (0.20, 0.30) and (0.40, 0.60) -- and two cases
+    between them. The cut sits in the wider, at 0.50, never at the 0.40 the
+    stretch across both would name (pr#507's REVIEW, finding 1)."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [0.30]), ("no", [0.40])]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)])
+    entry, _said = fitted(m, values)
+    fit = entry["fit"]
+    ok = (fit.get("verdict"), fit.get("cut")) == ("fitted", 0.5) \
+        and entry["thresholds"] == {"yes_over": 0.55, "no_under": 0.45}
+    return ok, (fit, entry["thresholds"])
+
+
+CASES["a typed cut is replaced by the fitted one"] = a_typed_cut_is_replaced_by_the_fitted_one
+CASES["a reading under the floor is written unmeasurable with its counts"] = a_reading_under_the_floor_is_unmeasurable
+CASES["a made case is scored beside the fit and never fitted"] = a_made_case_is_scored_and_never_fitted
+CASES["a cut that beats no constant answer is unmeasurable"] = a_cut_that_beats_no_constant_is_unmeasurable
+CASES["a reading left uncut stays uncut, its fit recorded"] = an_uncut_reading_stays_uncut
+CASES["a log row is tied by its state, and a stub's is not"] = a_log_row_is_tied_by_state_and_a_stub_s_is_not
+CASES["least loss reached in two spans apart takes one span whole"] = a_least_loss_in_two_spans_takes_one_whole
+
 MUTATIONS = [
+    # --- the fit (rule-check#505) ---
+    ("the floor never read",
+     "    if min(yes, no) < FIT_FLOOR:", "    if False:",
+     "a reading under the floor is written unmeasurable with its counts"),
+    ("a made case fitted with the found",
+     '             if obs_of.get(c["id"]) and not made(c)]',
+     '             if obs_of.get(c["id"])]',
+     "a made case is scored beside the fit and never fitted"),
+    ("a cut kept though one word always does as well",
+     "    if unseen >= constant:", "    if False:",
+     "a cut that beats no constant answer is unmeasurable"),
+    ("the cut written into an uncut reading",
+     "    return pair if all(k in cuts for k in pair) else None",
+     "    return pair",
+     "a reading left uncut stays uncut, its fit recorded"),
+    ("the two costs never weighed",
+     '    share = loss["wrong_yes"] / (loss["wrong_yes"] + loss["wrong_no"])',
+     "    share = 0.5",
+     "a typed cut is replaced by the fitted one"),
+    ("two spans apart read as one stretch",
+     "    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))",
+     "    low, high = ends[0][0], ends[-1][1]",
+     "least loss reached in two spans apart takes one span whole"),
+    ("a stub's row tied to a case",
+     '        if (row.get("reading") != name or row.get("endpoint") != REAL\n',
+     '        if (row.get("reading") != name\n',
+     "a log row is tied by its state, and a stub's is not"),
     ("the base root read from git alone, so a clone is its own base",
      '        root, _note = load_sibling("check-campaign-claim.py").base_root(\n            start.resolve())',
      '        root = Path(subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True, cwd=str(start)).stdout.strip()).parent',

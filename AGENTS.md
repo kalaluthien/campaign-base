@@ -396,7 +396,7 @@ model here**; so does `take`, which runs `check`, while `bind` reads the shape
 by its own hands and prints no judgment. **Every question is declared once in
 `scripts/jev/readings.json`**, which is its one home -- the wording, how a
 reading asked per item composes that item into it, the state slice, the code
-prefilter, the cuts and the TIER -- and a reader asks by group name. The tier is what an answer may do: `shadow` logs only, `advise` prints,
+prefilter, the cuts, the `loss` each wrong word costs and the TIER -- and a reader asks by group name. **A cut is fitted where it can be measured**: `campaign-jev.py fit --write` derives it from the labelled raw answers and that `loss`; where they are too few, or the fitted cut does no better held out than one word always, it writes `unmeasurable` with its counts and the typed cut stands. The tier is what an answer may do: `shadow` logs only, `advise` prints,
 `act` does the reversible thing its entry names at high confidence and asks at
 medium. Both readings above sit at `advise`, so they warn and suggest: none
 refuses, none moves an exit status, and a call that failed in any way comes

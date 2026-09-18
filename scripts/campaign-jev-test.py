@@ -1914,6 +1914,59 @@ def the_comment_join_labels_a_claim_rewritten_away(m):
         (rewritten, only_own, own_said, why_young, why_file, why_def)
 
 
+def suite_row(call, **kw):
+    """A suite-witness claim row: keyed by the repository, the sha the reading
+    was made on, the SUITE, the scenario and the case the select call picked."""
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "suite-witness-claim",
+           "read": "scripts/x-test.py Held claim t2 the peer is kept",
+           "subject": "scripts/x-test.py Held",
+           "repo": "o/r", "commit": "0" * 40, "path": "scripts/x-test.py",
+           "scenario": "Held", "name": "the peer is kept",
+           "state": {"test_fn": "the peer is kept\n def _(m): ...",
+                     "claim": {"c1": "A held agent keeps its peer."}},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": None, "raw": {}, "why": {}, "endpoint": "real",
+           "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_witness_join_labels_a_case_the_suite_dropped(m):
+    """S5: the mutation run is the truth and nothing records it later, so what
+    this join reads is whether the pairing survived. The case GONE while the
+    suite still names the scenario is the strong half; the case still standing
+    is read as `no` only once somebody OTHER than this reading's own commit has
+    come back to the suite and a window is behind it. A suite gone, and a suite
+    that stopped naming the scenario, are said rather than guessed."""
+    row = suite_row("a")
+    held = "# witnesses: Held\n@case(\"the peer is kept\")\ndef _(m): ...\n"
+    cut = "# witnesses: Held\n@case(\"something else\")\ndef _(m): ...\n"
+    seen = lambda now, others, window: {  # noqa: E731
+        "now": now, "window": window, "own": "9" * 40,
+        "commits": ([{"sha": "9" * 40, "paths": ["scripts/x-test.py"]}]
+                    + [{"sha": "0" * 40, "paths": ["scripts/x-test.py"]}] * others)}
+    dropped, said, _w = m.join_witness_case_kept(row, seen(cut, 0, 3))
+    kept, _e, _w = m.join_witness_case_kept(row, seen(held, 1, 30))
+    young, _e, why_young = m.join_witness_case_kept(row, seen(held, 1, 3))
+    own_only, _e, why_own = m.join_witness_case_kept(row, seen(held, 0, 30))
+    gone, _e, why_gone = m.join_witness_case_kept(row, seen(None, 1, 30))
+    unwitnessed, _e, why_un = m.join_witness_case_kept(
+        row, seen("@case(\"the peer is kept\")\ndef _(m): ...\n", 1, 30))
+    waiting, _e, why_wait = m.join_witness_case_kept(
+        row, {"unmerged": True, "now": held, "window": 0, "commits": []})
+    return (dropped == {"A held agent keeps its peer.": "no"}
+            and "is gone" in said
+            and kept == {"A held agent keeps its peer.": "yes"}
+            and young is None and str(m.COMMIT_WINDOW) in why_young
+            and own_only is None and "0 of them on this suite" in why_own
+            and gone is None and "gone from `origin/main`" in why_gone
+            and unwitnessed is None and "no longer names `Held`" in why_un
+            and waiting is None and "has not reached" in why_wait), \
+        (dropped, kept, young, own_only, gone, unwitnessed, waiting)
+
+
 def a_reading_with_no_join_says_why(m):
     """EVERY ENTRY EITHER DECLARES A JOIN OR SAYS WHY IT HAS NONE
     (sdlc-alloy#458 DECISION 5722176509: "a fact too weak to label: leave
@@ -2253,6 +2306,7 @@ CASES["the join reaches a row keyed by a sha and a path"] = the_join_reaches_a_c
 CASES["the DECISION join labels a condition named as a gap"] = the_decision_join_labels_a_named_condition
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
+CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
 CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
 CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent
@@ -3289,6 +3343,22 @@ MUTATIONS = [
     ("a file gone read as the claim rewritten",
      "    if now is None:", "    if False:",
      "the comment join labels a claim rewritten away"),
+    ("a case still there labelled with nobody having come back",
+     "    if name in text and not (others and window >= COMMIT_WINDOW):",
+     "    if False:",
+     "the witness join labels a case the suite dropped"),
+    ("the reading's own commit counted as somebody coming back to the suite",
+     '    others = len([c for c in seen.get("commits") or []\n'
+     '                  if c.get("sha") != seen.get("own")])',
+     '    others = len(seen.get("commits") or [])',
+     "the witness join labels a case the suite dropped"),
+    ("a suite that stopped naming the scenario labelled anyway",
+     "    if not scenario or scenario not in text:", "    if False:",
+     "the witness join labels a case the suite dropped"),
+    ("a suite gone read as the case dropped",
+     "    text = seen.get(\"now\")\n    if text is None:",
+     "    text = seen.get(\"now\") or \"\"\n    if False:",
+     "the witness join labels a case the suite dropped"),
     ("a per-item reading with no declared shape loaded anyway",
      '    if not isinstance(shape, dict) or shape.get("where") not in WHERE:',
      "    if False:",

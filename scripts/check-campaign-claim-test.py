@@ -3054,6 +3054,121 @@ def main():
               "stops every process matching it" in out(r) and "in no campaign" in out(r),
               out(r)[:400])
 
+    # A RAW `herdr agent prompt` OR `agent start` (rule-check#461, rank 1 of
+    # DECISION 5719727578). pr#467 put four launch checks into
+    # `campaign-assign.py` -- the sub-issue open, its campaign bound here, the
+    # pane named for that campaign, the pane's checkout not behind `main` --
+    # and they hold on that path only, which its own docstring says. So the
+    # two herdr calls that reach a pane without it are the bypass, and the
+    # assignment sentence is read from the pattern `campaign-assign.py` owns,
+    # never a copy of it here.
+    with tempfile.TemporaryDirectory() as d:
+        f = Fixture(d, claims=("demo/7-x",))
+        wt = f.trees["demo/7-x"]
+        sentence = ("Work sub-issue kalaluthien/campaign-base#461 now: run "
+                    "`/x/scripts/campaign-context.py 461 kalaluthien/campaign-base` "
+                    "first, then read its body")
+        for name, command in (
+                ("the plain spelling",
+                 f'herdr agent prompt w40:p2D "{sentence}"'),
+                # READ AS THE WORDS AFTER THE COMMAND, as `agent kill` is: a
+                # global flag before the verb pair must not hide it.
+                ("a flag before the verb pair",
+                 f'herdr --json agent prompt w40:p2D "{sentence}"'),
+                ("a valued global option before it",
+                 f'herdr --session main agent prompt w40:p2D "{sentence}"'),
+                # herdr's own usage line takes the pane by flag too
+                # (using-herdr facts.md), and the sentence is then the only
+                # bare word left after the pair.
+                ("the pane given by `--pane`",
+                 f'herdr agent prompt --pane w40:p2D "{sentence}"'),
+                # EVERY GLOBAL OPTION TAKING A SEPARATE WORD shifts the two
+                # words this reads, so the set that lists them is part of the
+                # rule: `--remote-keybindings` was missing and hid both this
+                # rule and the older `agent kill` one (pr#495 review).
+                ("a valued global option the set had not held",
+                 f'herdr --remote-keybindings local agent prompt w40:p2D '
+                 f'"{sentence}"'),
+                ("inside a shell's -c string",
+                 f"bash -c 'herdr agent prompt w40:p2D \"{sentence}\"'")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"a raw `herdr agent prompt` carrying an assignment is "
+                  f"refused: {name}",
+                  r.returncode == 2 and "campaign-assign.py" in out(r)
+                  and "none of" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # THE PROMPT IS NEVER ON THE LAUNCH LINE (AGENTS.md § Delegate
+        # launch): it skips the same four checks, and herdr word-splits it, so
+        # the delegate has been handed its first word alone while the launch
+        # reads successful. Read at ONE POSITION -- the first word of the `--`
+        # tail -- because a prompt hidden after a variadic `--add-dir`
+        # already dies loudly on "Input must be provided", and a flag table
+        # for the agent's own options would be a second reader of herdr's.
+        for name, command in (
+                ("an assignment sentence",
+                 f'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 f'-- "{sentence}" --model opus'),
+                ("any other prompt, since the rule is the position",
+                 'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 '-- "read AGENTS.md" --model opus'),
+                # THE INCIDENT'S OWN SHAPE (launching.md, 2026-08-28): the
+                # documented flags first and the sentence appended, which
+                # position 0 alone read as a flags-only line.
+                ("the sentence appended after the documented flags",
+                 f'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 f'-- --model opus --session-id u --name demo-worker-9 '
+                 f'"{sentence}"'),
+                ("a shorter prompt appended the same way",
+                 'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 '-- --model opus --add-dir /x "read the brief and start"')):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"a prompt on a `herdr agent start` line is refused: {name}",
+                  r.returncode == 2 and "campaign-assign.py" in out(r)
+                  and "--assume-fresh" in out(r),
+                  f"exit {r.returncode}: {out(r)[:300]}")
+        # A THIRD VERB REACHES A PANE. `pane send-text` types literal text
+        # into it and `send-keys Return` submits it (using-herdr facts.md), so
+        # an assignment goes in that way with none of the four checks either.
+        r = ask(wt, tool="Bash", run_cwd=wt,
+                command=f'herdr pane send-text w40:p2D "{sentence}"')
+        check("`herdr pane send-text` carrying an assignment is refused",
+              r.returncode == 2 and "campaign-assign.py" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", run_cwd=wt,
+                command="herdr --remote-keybindings local agent kill w40:p2D")
+        check("...and the same option no longer hides `agent kill`",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
+        # THE ORDINARY SHAPES IT MUST NOT CATCH, read before the refusals as
+        # this repository's review rule asks. Every prompt into a pane that is
+        # not an assignment stays a prompt: AGENTS.md's two channels make a
+        # `STATUS`, a `STAND DOWN`, the answer to a `BLOCKED` and a slash
+        # command prompts too, and none of them is a launch.
+        for name, command in (
+                ("a `/compact`", 'herdr agent prompt w40:p2D "/compact"'),
+                ("a STATUS", 'herdr agent prompt w40:p2D "STATUS from the '
+                             'heartbeat: demo#7 still has a claim"'),
+                ("a launch line carrying flags only",
+                 "herdr agent start demo-worker-9 --kind claude --pane w40:p2D "
+                 "-- --model opus --effort high"),
+                ("a launch line with no `--` tail at all",
+                 "herdr agent start demo-worker-9 --kind claude --pane w40:p2D"),
+                ("a launch line whose every tail value is one token",
+                 "herdr agent start demo-worker-9 --kind claude --pane w40:p2D "
+                 "-- --model opus --session-id u --name demo-worker-9 "
+                 "--add-dir /x --autocompact 250k"),
+                ("a `send-text` answering a dialog",
+                 'herdr pane send-text w40:p2D "down"'),
+                ("a read of the listing", "herdr agent list"),
+                ("the sanctioned path itself",
+                 "scripts/campaign-assign.py w40:p2D 461"),
+                ("the sentence in a grep",
+                 "grep -rn 'Work sub-issue' AGENTS.md")):
+            r = ask(wt, tool="Bash", command=command, run_cwd=wt)
+            check(f"...while {name} is allowed", r.returncode == 0,
+                  f"exit {r.returncode}: {out(r)[:300]}")
+
     # A WALK OF A GUARDED FOLDER (kalaluthien/campaign-base#278, reopened
     # 2026-09-16). The named case is rule-check-planner-10's call of 2026-09-15
     # 14:48, which raised the Photos and MediaLibrary prompts; the home is this
@@ -4526,7 +4641,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 710
+    EXPECTED = 731
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

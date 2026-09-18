@@ -2207,6 +2207,68 @@ def join_comment_rewritten(row, seen):
                else "each still there"), "")
 
 
+def join_witness_case_kept(row, seen):
+    """suite-witness-claim: did the suite keep the case the claim was tied to?
+
+    THE MUTATION RUN IS THE TRUTH AND NOTHING RECORDS IT LATER. A mutant of
+    the branch the scenario names either reddens the picked case or does not,
+    and that is decided by running it -- `suite-harness-test.py`'s `mutate`,
+    which no `pre-commit` guard starts and which leaves nothing on
+    `origin/main` to read. So the corpus is labelled by that run, at the case's
+    own sha, and what this join reads afterwards is the WEAKER later fact the
+    tree does keep: whether the pairing survived somebody coming back to the
+    suite.
+
+    THE STRONG HALF IS THE CASE GONE while the suite still names the scenario:
+    the claim was tied to a case the suite did not keep, and the reading's
+    `supports` did not survive it. The weak half is the case still standing,
+    and it is read as one only once somebody has come back to the suite and
+    left it -- a later commit ON THE FILE and a window of `COMMIT_WINDOW`
+    commits behind it, as `comment-rewritten` requires.
+
+    TWO STATES ARE NOT LABELLED AT ALL: the suite gone from `origin/main`, and
+    the SCENARIO no longer named anywhere in it -- a suite that stopped
+    witnessing the scenario says nothing about which of its cases the
+    scenario's claim belonged to."""
+    if not seen:
+        return None, "", "the suite's history did not read"
+    if seen.get("unmerged"):
+        return None, "", (f"{row.get('commit', '')[:12]} has not reached "
+                          f"`origin/main`, so no commit after it is a later "
+                          f"fact about this reading")
+    claims = (row.get("state") or {}).get("claim") or {}
+    if not claims:
+        return None, "", "the row carries no claim to label"
+    text = seen.get("now")
+    if text is None:
+        return None, "", (f"`{row.get('path')}` is gone from `origin/main`, so "
+                          f"what happened to the case cannot be read from what "
+                          f"replaced it")
+    scenario = row.get("scenario") or ""
+    if not scenario or scenario not in text:
+        return None, "", (f"`{row.get('path')}` no longer names `{scenario}`, "
+                          f"so what happened to its cases says nothing about "
+                          f"that scenario's claim")
+    name = row.get("name") or ""
+    if not name:
+        return None, "", "the row names no picked case"
+    others = len([c for c in seen.get("commits") or []
+                  if c.get("sha") != seen.get("own")])
+    window = seen.get("window") or 0
+    if name in text and not (others and window >= COMMIT_WINDOW):
+        return None, "", (f"{window} commit(s) on `origin/main` since, "
+                          f"{others} of them on this suite and not this "
+                          f"reading's own; `{name}` is still there and that is "
+                          f"under {COMMIT_WINDOW}")
+    word = "yes" if name in text else "no"
+    return ({str(t): word for t in claims.values()},
+            f"{len(claims)} claim(s) labelled `{word}` on {row.get('path')} "
+            f"`{scenario}` after {row.get('commit', '')[:12]}, {window} "
+            f"commit(s) and {others} on the suite since; "
+            + (f"the case `{name}` is gone" if word == "no"
+               else f"the case `{name}` is still there"), "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
@@ -2214,7 +2276,8 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
          "report-next-round": join_report_next_round,
          "decision-gap": join_decision_gap,
          "done-line-reraised": join_done_line_reraised,
-         "comment-rewritten": join_comment_rewritten}
+         "comment-rewritten": join_comment_rewritten,
+         "witness-case-kept": join_witness_case_kept}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
 # FIELDS, so the subject is the field it names and never a guess. A commit-time

@@ -934,4 +934,102 @@
   "join": "comment-rewritten",
   "bands": {}
  }
+,
+  "suite-witness-select": {
+  "owner": "scripts/check-suite-witness.py --staged",
+  "tier": "shadow",
+  "group": "suite-witness-select",
+  "state": {
+   "fields": [
+    "claim",
+    "candidates"
+   ],
+   "claim": "one sentence of the comment block directly above the declaration of a scenario a suite's `# witnesses:` line names, cut as `model-comment` cuts one: a case pins one; production sends none in the state, since each claim is its own question of the one call a scenario, its text in the instructions",
+   "candidates": "the suite's test functions by AST, keyed t1..tN in file order, each its name, a newline and its body capped at `head_lines`. A function is one when a `*CASES` dict names it, when `@case(\"...\")` decorates it, or when its own name matches `names`; the name is the dict key or the decorator's string where there is one, since a decorated suite calls every function `_`"
+  },
+  "prefilter": {
+   "what": "a staged suite carrying a `# witnesses:` line, or a staged spec module holding a scenario such a suite names; any other commit asks nothing. Four things are settled here and written as skip rows naming which rule took them: a `# witnesses:` name with no declaration under spec/, which has no comment to read; a comment yielding no claim once `model-comment`'s own header and identifier skips have run; a suite yielding no candidate, which is every suite whose cases are declarative tuples rather than functions; and a state over the budget.",
+   "witnesses": "^[ \\t]*#[ \\t]*witnesses:[ \\t]*(.*)$",
+   "names": "^(case_\\w+|\\w+_cases|test_\\w+)$",
+   "head_lines": 40
+  },
+  "question": {
+   "type": "choice",
+   "per": "claim",
+   "instructions": "Which test function in `candidates` exercises this claim about the scenario the suite witnesses, so that the test would fail if the claim did not hold: {claim}",
+   "criteria": {
+    "{test}": "the test function `candidates.{test}`, named {name}",
+    "noMatch": "no test function in `candidates` exercises this claim: none of them tests it, or the claim is about the Alloy model's own mechanics -- which command goes SAT, which clause reddens it -- and no test of the code could carry it"
+   }
+  },
+  "compose": {
+   "where": "question",
+   "as": {
+    "{claim}": "claim"
+   },
+   "criteria": {
+    "from": "candidates",
+    "template": "{test}",
+    "put": {
+     "{test}": "key",
+     "{name}": "first line"
+    }
+   }
+  },
+  "thresholds": {
+   "floor": 0.5,
+   "no_match": "noMatch"
+  },
+  "join": null,
+  "join_why": "nothing later says WHICH test function carried a claim that was carried. The suite's own history records that a case was kept or cut, never that it was the one this claim belongs to, so every case this join could write would wear the `noMatch` option and the band would be fitted to it. The claim call's `witness-case-kept` is where the later fact lands.",
+  "bands": {}
+ },
+  "suite-witness-claim": {
+  "owner": "scripts/check-suite-witness.py --staged",
+  "tier": "shadow",
+  "group": "suite-witness-claim",
+  "state": {
+   "fields": [
+    "claim",
+    "test_fn"
+   ],
+   "claim": "one comment sentence of a scenario whose `suite-witness-select` answer picked this test function: a case pins one; production sends none in the state, its text in the instructions",
+   "test_fn": "the test function `suite-witness-select` picked, its name, a newline and its body capped at the select entry's `head_lines`"
+  },
+  "prefilter": {
+   "what": "a claim whose `suite-witness-select` answer named a test function; one call a picked function, every claim that picked it"
+  },
+  "question": {
+   "type": "choice",
+   "per": "claim",
+   "instructions": "Does the test in `test_fn` show that this claim about the scenario the suite witnesses holds: {claim}",
+   "criteria": {
+    "supports": {
+     "what": "the test exercises what the claim states and would fail if it did not hold",
+     "example": "claim 'a worker holding a claim is not sent `/exit`'; test_fn asserts the heartbeat sent no prompt to a session whose ref is still there"
+    },
+    "contradicts": {
+     "what": "the test exercises the opposite of what the claim states: it asserts behaviour the claim rules out",
+     "example": "claim 'a judgment is stood in for or handed up, never both'; test_fn asserts one reading does both and passes"
+    },
+    "says_nothing": {
+     "what": "the test does not exercise what the claim states: it tests something else, or only touches the same file or topic",
+     "example": "claim 'dropping the `Acting` clause reddens the assert'; test_fn renames a fixture in the guard's suite"
+    }
+   }
+  },
+  "compose": {
+   "where": "question",
+   "as": {
+    "{claim}": "claim"
+   }
+  },
+  "thresholds": {
+   "option": "supports",
+   "yes_over": 0.5,
+   "no_under": 0.2
+  },
+  "join": "witness-case-kept",
+  "bands": {}
+ }
 }

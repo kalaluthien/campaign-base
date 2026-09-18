@@ -1765,9 +1765,13 @@ def cmd_live(args):
     if getattr(args, "stuck", False):
         print(f"\nstuck reading of each worker above, at shadow -- code's word "
               f"or `asked`, never the model's")
-        asked, settled, unread = stuck_column(ours, found, slug)
-        print(f"  {asked} asked, {settled} settled by code, {unread} unread; "
-              f"the answers are in campaign-jev.py's log")
+        # NOT `unread`: that name is the list of unswept repositories the
+        # verdict below reads, and the stuck count once rebound it (pr#501
+        # REVIEW 5725402907) -- `len()` of an int after the counts printed,
+        # or, at 0, an unswept repository's denial dropped and exit 0.
+        asked, settled, no_transcript = stuck_column(ours, found, slug)
+        print(f"  {asked} asked, {settled} settled by code, {no_transcript} "
+              f"unread; the answers are in campaign-jev.py's log")
 
     print(f"\nsessions named for no campaign under the base root "
           f"({len(nameless)}) -- not counted: no campaign's")
@@ -1844,10 +1848,14 @@ def comment_rows(comments, name, since):
     """[{"kind", "own", "minutes"}] for the comments after `since` whose
     first word is a comment kind -- the guard's `COMMENT_KINDS`, read and
     not restated -- `own` when the name after it is this session's."""
+    # AS TIMES, not strings: GitHub writes `Z` at seconds and the transcript
+    # `Z` at milliseconds, and `"Z"` sorts above `"."`, so a comment in the
+    # assignment's own second would read as after it (pr#501 REVIEW).
+    when = _transcript_module().when
     out = []
     for c in comments or []:
         at = c.get("createdAt") or ""
-        if not since or not at or at <= since:
+        if not since or not at or when(at) <= when(since):
             continue
         first = (c.get("body") or "").lstrip().split("\n", 1)[0]
         kind, _, rest = first.partition(" ")

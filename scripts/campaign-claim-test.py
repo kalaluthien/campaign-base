@@ -706,10 +706,11 @@ def stuck_cases(m):
     comments = [{"createdAt": "2026-09-13T10:05:00Z", "body": "NOTE probe-worker-1: x"},
                 {"createdAt": "2026-09-13T10:06:00Z", "body": "REPORT other-worker-2: y"},
                 {"createdAt": "2026-09-13T09:00:00Z", "body": "REPORT probe-worker-1: early"},
+                {"createdAt": "2026-09-13T10:00:00Z", "body": "BLOCKED probe-worker-1: same second"},
                 {"createdAt": "2026-09-13T10:07:00Z", "body": "just prose"},
                 {"createdAt": "2026-09-13T10:08:00Z", "body": "  DECISION owner: z"}]
     rows = m.comment_rows(comments, "probe-worker-1", "2026-09-13T10:00:00.000Z")
-    check("comment rows keep the kinds since the assignment, own by name, and drop prose",
+    check("comment rows keep the kinds since the assignment as times, own by name, and drop prose",
           [(r["kind"], r["own"]) for r in rows]
           == [("NOTE", True), ("REPORT", False), ("DECISION", False)], rows)
     check("no assignment time means no comment counted",
@@ -769,6 +770,11 @@ def stuck_cases(m):
               "probe-planner-9" not in "".join(lines.values())
               and "1 asked, 1 settled by code, 1 unread" in out
               and "shadow" in out, out[-600:])
+        # THE EXIT STATUS, which the first shape of this case never read: the
+        # stuck count rebound `unread`, `live` crashed after the counts
+        # printed, and every line above was still there to match.
+        check("...and live still reaches its verdict and exits 0",
+              "No verdict" in out and r.returncode == 0, out[-400:])
         r = claim(["live", "9999"], path, env)
         check("live without --stuck reads no transcript",
               "stuck reading" not in r.stdout + r.stderr and r.returncode == 0)

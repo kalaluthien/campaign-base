@@ -97,7 +97,14 @@ def candidates(source, prefilter):
     way and `campaign-jev-test` 11 as lambdas: read as functions they vanish,
     and a case a reader cannot name can only come back `noMatch` -- the very
     option the band is declared on. So a value with no `def` behind it carries
-    the VALUE's own source as its body."""
+    the VALUE's own source as its body.
+
+    A CASE IS ALSO NAMED AFTER THE LITERAL CLOSES. `campaign-jev-test` writes
+    108 of its 133 as `CASES["..."] = fn` below the dict, and two of those
+    names are in the literal as a `None` placeholder the later line fills --
+    so the literal alone reads 26 cases, one of them a candidate whose body is
+    the placeholder line. Both forms are collected by name and THE LAST WRITE
+    OF A NAME WINS, which is what Python itself does to that dict."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -110,19 +117,27 @@ def candidates(source, prefilter):
     for n in fns:
         first_of.setdefault(n.name, n)
     label = {}
+    picked = {}
     for n in tree.body:
-        if not (isinstance(n, ast.Assign) and isinstance(n.value, ast.Dict)):
+        if not isinstance(n, ast.Assign):
             continue
-        if not any(isinstance(t, ast.Name) and t.id.endswith("CASES")
-                   for t in n.targets):
-            continue
-        for k, v in zip(n.value.keys, n.value.values):
-            if not (isinstance(k, ast.Constant) and isinstance(k.value, str)):
-                continue
-            if isinstance(v, ast.Name) and v.id in first_of:
-                label[id(first_of[v.id])] = k.value
-            else:
-                inline.append((v, k.value))
+        if isinstance(n.value, ast.Dict) and any(
+                isinstance(t, ast.Name) and t.id.endswith("CASES")
+                for t in n.targets):
+            for k, v in zip(n.value.keys, n.value.values):
+                if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                    picked[k.value] = v
+        for t in n.targets:
+            if (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                    and t.value.id.endswith("CASES")
+                    and isinstance(t.slice, ast.Constant)
+                    and isinstance(t.slice.value, str)):
+                picked[t.slice.value] = n.value
+    for name, v in picked.items():
+        if isinstance(v, ast.Name) and v.id in first_of:
+            label[id(first_of[v.id])] = name
+        else:
+            inline.append((v, name))
     name_rule = re.compile(prefilter["names"])
     head = prefilter["head_lines"]
     out = {}
@@ -154,10 +169,16 @@ def candidates(source, prefilter):
     return out
 
 
-def fit(source, prefilter, budget):
+def fit(source, prefilter, budget, rest):
     """(the candidates, the head the state fits at), ({}, 0) where the suite
     holds no case, or ({}, -1) where its cases do not fit at `head_floor` --
     two different facts, so the skip row says which.
+
+    `rest` IS THE REST OF THE STATE and not a courtesy: `campaign-jev` measures
+    what it is about to post, which is `{claim, candidates}`, so a fit that
+    weighed the candidates alone left the claims unweighed -- and a state over
+    the budget comes back `unknown` with no skip row, the one thing this
+    function exists to write.
 
     A HEAD SHORT ENOUGH FOR THE WORST SUITE IS TOO SHORT FOR THE REST, so the
     cap is squeezed only where it has to be: the entry's `head_lines` first,
@@ -171,7 +192,8 @@ def fit(source, prefilter, budget):
         if not cands:
             return {}, 0
         text = {t: c["name"] + "\n" + c["body"] for t, c in cands.items()}
-        if len(json.dumps({"candidates": text}).encode("utf-8")) <= budget:
+        if len(json.dumps(dict(rest, candidates=text))
+               .encode("utf-8")) <= budget:
             return cands, head
         head //= 2
     return {}, -1
@@ -242,8 +264,6 @@ def main(argv, out=sys.stdout, env=None):
                 continue
             if suite not in staged and not (set(names) & moved):
                 continue
-            cands, head = fit(tree.texts.get(suite, ""), prefilter,
-                              jev.STATE_BUDGET)
             for name in names:
                 if name not in tree.scenarios or name not in defs:
                     skipped += 1
@@ -261,6 +281,12 @@ def main(argv, out=sys.stdout, env=None):
                              cwd=HERE)
                 if not found:
                     continue
+                # the fit is per SCENARIO and not per suite: the claims are
+                # half the state, and they are only known here.
+                cands, head = fit(tree.texts.get(suite, ""), prefilter,
+                                  jev.STATE_BUDGET,
+                                  {"claim": {f"c{i}": c for i, c
+                                             in enumerate(found, 1)}})
                 if not cands:
                     skipped += 1
                     jev.skip(READER, f"{suite} {name}",

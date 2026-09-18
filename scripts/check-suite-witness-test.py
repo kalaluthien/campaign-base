@@ -206,7 +206,16 @@ def refusal(code):
 CASES = {
     "a call value is a case": refusal(2),
     "a lambda value is a case": lambda t: (True, ""),
+    "a name the literal only holds a place for": None,
 }
+
+
+def filled_in_below(t):
+    return True, ""
+
+
+CASES["a name the literal only holds a place for"] = filled_in_below
+CASES["a case added below the literal"] = refusal(3)
 '''
 
 
@@ -332,9 +341,24 @@ def a_case_that_is_not_a_function_is_a_candidate(t):
     `check-read-range-test` all 14 that way; read as functions they vanish, and
     a case a reader cannot name can only come back `noMatch`."""
     got = t.m.candidates(INLINE_SUITE, ENTRY["prefilter"])
-    return ([(c["fn"], c["name"]) for c in got.values()]
+    return ([(c["fn"], c["name"]) for c in got.values()][:2]
             == [("", "a call value is a case"), ("", "a lambda value is a case")]
             and "refusal(" in list(got.values())[0]["body"]), got
+
+
+def a_case_named_below_the_literal_is_a_candidate(t):
+    """`campaign-jev-test` writes 108 of its 133 as `CASES["..."] = fn` below
+    the dict, two of them filling a `None` the literal holds a place for. The
+    last write of a name wins, as it does for Python, so the placeholder is
+    never a candidate of its own and the real function is not lost."""
+    got = t.m.candidates(INLINE_SUITE, ENTRY["prefilter"])
+    return ([(c["fn"], c["name"]) for c in got.values()]
+            == [("", "a call value is a case"),
+                ("", "a lambda value is a case"),
+                ("filled_in_below", "a name the literal only holds a place for"),
+                ("", "a case added below the literal")]
+            and not any(c["body"].strip().endswith("None,")
+                        for c in got.values())), got
 
 
 def dict_names_the_case(t):
@@ -465,6 +489,19 @@ def over_budget_skips(t):
             and any("over the" in w and "budget even at" in w for w in why)), why
 
 
+def fit_weighs_the_whole_state(t):
+    """`campaign-jev` measures `{claim, candidates}` and posts it; a fit that
+    weighed the candidates alone leaves the claims unweighed, and a state over
+    the budget comes back `unknown` with no skip row at all."""
+    cands, head = t.m.fit(DICT_SUITE, ENTRY["prefilter"], 100_000, {})
+    text = {k: c["name"] + "\n" + c["body"] for k, c in cands.items()}
+    bare = len(json.dumps({"candidates": text}).encode("utf-8"))
+    tight = t.m.fit(DICT_SUITE, ENTRY["prefilter"], bare + 50,
+                    {"claim": {"c1": "x" * 400}})
+    return (len(cands) == 2 and head == ENTRY["prefilter"]["head_lines"]
+            and tight == ({}, -1)), (head, bare, tight[1])
+
+
 def entry_reaches_model(t):
     r, _, _ = repo(t, {"scripts/fixture-dict-test.py":
                        DICT_SUITE.replace("return True", "return bool(1)")})
@@ -512,6 +549,7 @@ def failure_exits_zero(t):
 CASES = {
     "the `# witnesses:` form is check-sdlc-tie's and is not copied here": the_tie_reads_the_witness_line,
     "a dict value that is no bare name is still a case, its own source the body": a_case_that_is_not_a_function_is_a_candidate,
+    "a case named below the literal is a candidate, the last write of a name winning": a_case_named_below_the_literal_is_a_candidate,
     "a `*CASES` dict names the case, not the function": dict_names_the_case,
     "an `@case(\"...\")` suite names every function `_`, so the cut keys by position": decorator_names_the_case,
     "a bare case_* / *_cases / test_* name is a candidate": bare_names_are_candidates,
@@ -527,6 +565,7 @@ CASES = {
     "one claim call a function picked, carrying that function's body": one_claim_call_a_picked_function,
     "a claim picking noMatch asks no claim call": no_match_asks_no_claim_call,
     "a select state over the budget is not sent and logs a skip": over_budget_skips,
+    "the fit weighs the whole state, the claims included": fit_weighs_the_whole_state,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
     "the row carries the reading, the wording and the join key": the_row_carries_its_join_key,
     "at tier shadow nothing is printed and the call is still made": shadow_prints_nothing,
@@ -536,12 +575,20 @@ CASES = {
 
 MUTATIONS = [
     ("a dict value that is no bare name dropped",
-     "            else:\n                inline.append((v, k.value))",
-     "            else:\n                pass",
+     "        else:\n            inline.append((v, name))",
+     "        else:\n            pass",
      "a dict value that is no bare name is still a case, its own source the body"),
     ("the dict key dropped for the function's own name",
-     'label[id(first_of[v.id])] = k.value', 'pass',
+     'label[id(first_of[v.id])] = name', 'pass',
      "a `*CASES` dict names the case, not the function"),
+    ("a case named below the literal dropped",
+     "                picked[t.slice.value] = n.value",
+     "                pass",
+     "a case named below the literal is a candidate, the last write of a name winning"),
+    ("the literal's placeholder left to win over the line that fills it",
+     "                picked[t.slice.value] = n.value",
+     "                picked.setdefault(t.slice.value, n.value)",
+     "a case named below the literal is a candidate, the last write of a name winning"),
     ("the candidates keyed by name",
      '        out[f"t{len(out) + 1}"] = {\n            "name": name, "fn": n.name,',
      '        out[f"t{n.name}"] = {\n            "name": name, "fn": n.name,',
@@ -588,9 +635,14 @@ MUTATIONS = [
      "            by_fn[t + cid] = {cid: claims[cid]}; cands[t + cid] = cands[t]",
      "one claim call a function picked, carrying that function's body"),
     ("the budget not read",
-     '        if len(json.dumps({"candidates": text}).encode("utf-8")) <= budget:',
+     '        if len(json.dumps(dict(rest, candidates=text))\n'
+     '               .encode("utf-8")) <= budget:',
      "        if True:",
      "a select state over the budget is not sent and logs a skip"),
+    ("the claims left out of what the fit weighs",
+     "        if len(json.dumps(dict(rest, candidates=text))",
+     '        if len(json.dumps(dict(candidates=text))',
+     "the fit weighs the whole state, the claims included"),
     ("the row keyed by the suite alone",
      "                         dict(jev.commit_key(cwd=HERE), path=suite,\n"
      "                              scenario=name), env)",

@@ -1000,7 +1000,7 @@
      0.15
     ]
    },
-   "how": "78 states over 3 runs, sdlc-alloy#458 S5: 6 claims a mutant proves a case carries against 72 none does. P(noMatch) AUC 0.97 in every run against 0.92 for a token-overlap baseline that picks the candidate sharing most of the claim's word tokens; the discrete `noMatch` answer flagged 62-64 of the 72 and none of the 6, and every positive read 0.10 or under in every run. The floor is 0.0 because a floor costs positives faster than it buys negatives: at 0.6 it took 65 of 66 negatives and 3 of the 6 positives with them on the first measurement. TWO CAUTIONS THE BAND DOES NOT CARRY. The positive class is 6 states over 4 (suite, scenario) pairs, which is too few to read a decimal place from, and the band is read off the same 78 states it was fitted on -- there is no held-out slice. And 72 of the 78 truths are hand-called by sdlc-alloy-worker-34 (`label.from`), reading `noMatch` off sentences about the Alloy model's own mechanics; only the 6 positives are a mutant's."
+   "how": "78 states over 3 runs, sdlc-alloy#458 S5: 6 claims a mutant proves a case carries against 72 none does. P(noMatch) AUC 0.97 in every run against 0.92 for a token-overlap baseline that picks the candidate sharing most of the claim's word tokens; the discrete `noMatch` answer flagged 63-64 of the 72 and none of the 6, and every positive read 0.11 or under in every run. THE BAND ITSELF IS COARSER THAN THAT DISCRETE PICK, and the numbers above are not its: `yes` from 0.60 takes 56-57 of the 72 and no positive, so 15-16 negatives fall in the undeclared middle, and `no` under 0.15 reads all 6 positives AND 3 of the 72 negatives -- a confident wrong `no` on 3 in every run. The floor is 0.0 because a floor costs positives faster than it buys negatives: at 0.6 it took 65 of 66 negatives and 3 of the 6 positives with them on the first measurement. THREE CAUTIONS THE BAND DOES NOT CARRY. The positive class is 6 states over 4 (suite, scenario) pairs, which is too few to read a decimal place from, and the band is read off the same 78 states it was fitted on -- there is no held-out slice. And 72 of the 78 truths are hand-called by sdlc-alloy-worker-34 (`label.from`), reading `noMatch` off sentences about the Alloy model's own mechanics; only the 6 positives are a mutant's."
   }
  },
   "suite-witness-claim": {
@@ -1053,9 +1053,9 @@
    "model": "jev-1.13.0",
    "measured": "2026-09-18",
    "wording": "8c8918b2f68e",
-   "cases": 14,
+   "cases": 15,
    "declared": {},
-   "how": "the claim call is only reached where the select call named a function, which was 13-14 of the 72 states: `supports` AUC 0.74-0.82 and `says_nothing` 0.79-0.85 over 6 positives, too few to declare a band. The flag the reader should read is the SELECT call's `noMatch` (sdlc-alloy#458 S5)."
+   "how": "the claim call is only reached where the select call named a function, which was 14-15 of the 78 states: `supports` AUC 0.59-0.76 and `says_nothing` 0.67-0.88 over 6 positives, too few to declare a band, and the spread across runs is itself the reason. The flag the reader should read is the SELECT call's `noMatch` (sdlc-alloy#458 S5)."
   }
  }
 }

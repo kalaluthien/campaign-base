@@ -304,19 +304,21 @@ def answer(word, line, extra=()):
 
 
 # --------------------------------------------- the pull request thread, at shadow
-# FOUR READINGS OVER THE ONE THREAD THIS FILE ALREADY FETCHED, asked in ONE call
-# through scripts/campaign-jev.py: `C-report-disposes-finding`,
-# `C-review-not-the-author`, `unverified-done` and its address `noul`
-# `report-addresses-judge`. scripts/jev/readings.json holds all four -- the
-# questions, the state slice, the prefilter, the cuts and the tier -- and this
-# reads them and writes none of them.
+# THREE READINGS OVER THE ONE THREAD THIS FILE ALREADY FETCHED, asked in ONE
+# call through scripts/campaign-jev.py: `C-report-disposes-finding`,
+# `C-review-not-the-author` and `unverified-done`. scripts/jev/readings.json
+# holds all three -- the questions, the state slice, the prefilter, the cuts
+# and the tier -- and this reads them and writes none of them.
 #
-# FOUR READINGS, ONE CALL, AND NO NEW STATE FIELD. `unverified-done` and
-# `report-addresses-judge` both read `report`, which `thread_state` already
-# builds for `C-report-disposes-finding`, so the pair costs this gate 0 new
-# calls a state -- counted by check-merge-review-test.py's "one gate run sends
-# one request whatever the group holds", 1 with the group's two readings and 1
-# with its four.
+# THREE READINGS, ONE CALL, AND NO NEW STATE FIELD. `unverified-done` reads
+# `report`, which `thread_state` already builds for
+# `C-report-disposes-finding`, so it costs this gate 0 new calls a state --
+# counted by check-merge-review-test.py's "one gate run sends one request
+# whatever the group holds".
+#
+# THE ADDRESS `noul` IS NOT ASKED HERE. It read a REPORT asking its planner
+# for the merge as text addressed to a judge, and was stopped on this group
+# (rule-check#455 DECISION 5723273420; `unverified-done`'s `bands.unguarded`).
 #
 # WHY HERE: `bodies_of` is THE reader of a pull request's whole thread in this
 # tree -- both channels, each paginated in full -- and `gate` calls it anyway
@@ -461,9 +463,8 @@ def unverified_lint(report):
     CODE FIRST, AND WHAT IT SETTLES IS NEVER SENT (rule-check#455 DECISION
     5721058917, step 4). Three branches:
 
-    NO REPORT AT ALL settles BOTH readings `no`. Nothing claims anything, so
-    no done claim is unverified; and there is no prose, so none of it is
-    addressed to whoever judges it. Neither question is asked.
+    NO REPORT AT ALL settles it `no`. Nothing claims anything, so no done
+    claim is unverified, and the question is not asked.
 
     A REPORT THAT PINS NO SHA settles `unverified-done` `yes`. A check not
     tied to a revision is a check nothing can be held to, which is why
@@ -474,18 +475,14 @@ def unverified_lint(report):
     A REPORT THAT QUOTES NO COMMAND AND NO `reach` LINE settles it `yes` too:
     there is nothing beside the claim that could have failed.
 
-    THE ADDRESS `noul` IS STILL ASKED on both `yes` branches, because the
-    prose it reads is there -- only the empty round settles it. It rides in
-    the same one call either way.
-
     EVERY SENTENCE OPENS WITH ITS BRANCH'S NAME, one of `LINT_BRANCHES`,
     because `flag_of` puts it on the row and a reader counting branches must
     not have to parse the reason (pr#490 REVIEW 5721893225, F4)."""
     text = (report or "").strip()
     if not text:
-        return ({"unverified-done": "no", "report-addresses-judge": "no"},
+        return ({"unverified-done": "no"},
                 "no REPORT: the round carries none, so nothing claims "
-                "anything and there is no prose to be addressed to anybody")
+                "anything")
     if not SHA.search(text):
         return ({"unverified-done": "yes"},
                 "pins no sha: no check the REPORT names is tied to a revision "
@@ -495,40 +492,6 @@ def unverified_lint(report):
         return ({"unverified-done": "yes"},
                 f"quotes no command: the REPORT pins a sha and {why}")
     return {}, f"asked: the REPORT pins a sha and quotes {why}"
-
-
-# WHAT A REPORT QUOTES RATHER THAN SAYS. A REPORT answers a REVIEW, and the
-# ordinary way is to quote it back: a `>` block, or a sentence naming the REVIEW
-# by its comment id. Prose quoted from a reviewer is not prose addressed to one,
-# and the address `noul` read the two alike -- 7 of 12 real fix-round REPORTs at
-# 0.5 or over, none written to move a classifier (rule-check#455 DECISION
-# 5723273420). A REVIEW's id is a comment id, seven digits or more, bare or as
-# the tail of its url.
-QUOTE_LINE = re.compile(r"^\s*>")
-NAMES_A_REVIEW = re.compile(
-    r"\bREVIEWs?\b[^.\n]*?(?:(?:issuecomment|pullrequestreview)-)?\d{7,}")
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-
-
-def own_text(report):
-    """(the REPORT's own text, what it quotes) -- ONE CALCULATION, and the
-    whole of what "quoted" means for `report-addresses-judge`.
-
-    A LINE OPENING `>` is quoted whole. Of every other line, a SENTENCE naming
-    a REVIEW by id is quoted and the rest of the line stays. What is left is
-    what the author wrote, and the address `noul` reads that alone; the other
-    readings of the group still read `report` whole, since a disposition row
-    names its REVIEW and is the author's own."""
-    own, quoted = [], []
-    for line in (report or "").splitlines():
-        if QUOTE_LINE.match(line):
-            quoted.append(line)
-            continue
-        kept = []
-        for sentence in SENTENCE_END.split(line):
-            (quoted if NAMES_A_REVIEW.search(sentence) else kept).append(sentence)
-        own.append(" ".join(kept))
-    return "\n".join(own).strip(), "\n".join(quoted).strip()
 
 
 def in_time_order(found):
@@ -576,11 +539,9 @@ def thread_state(found, pattern, sort):
         # was and where its prefilter cleared nothing.
         for n, (_word, masked, ident) in enumerate(sort.findings(review[1]), 1):
             findings[ident or str(n)] = masked
-    body = report[1] if report else ""
     state = {"review": review[1] if review else "",
              "thread": "\n".join(thread),
-             "report": body,
-             "own": own_text(body)[0],
+             "report": report[1] if report else "",
              "findings": findings}
     return state, {"review_comment": review[2] if review else None,
                    "report_comment": report[2] if report else None}
@@ -616,7 +577,7 @@ def flag_of(reading, raw, lint=None, why=""):
 
 
 def read_thread(repo, pr, found, pattern):
-    """The four readings, asked once over the one thread. Returns nothing, prints
+    """The three readings, asked once over the one thread. Returns nothing, prints
     nothing, and never raises: a judgment is an aside to a verdict `gate` has
     already made, so a traceback here must not cost a merge its gate."""
     jev, why = load(JEV, "campaign_jev")

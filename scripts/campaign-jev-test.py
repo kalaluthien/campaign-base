@@ -1384,8 +1384,7 @@ CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_ban
 # that field, IN THE SAME CALL: every question over one pull request thread goes
 # in the one call (DECISION 5716060001), and the answers come back as one
 # `Verdict` carrying {key: raw} and no word.
-THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "own": "REPORT w-1: F1 fixed",
-                "findings": {"F1": "a", "F2": "b"},
+THREAD_STATE = {"report": "REPORT w-1: F1 fixed", "findings": {"F1": "a", "F2": "b"},
                 "review": "REVIEW r-1: two findings", "thread": "comment w-1: ..."}
 
 
@@ -1398,15 +1397,13 @@ def thread_answers(**kw):
     answers = {"C-report-disposes-finding#F1": picked(kw.get("f1", 0.95)),
                "C-report-disposes-finding#F2": picked(kw.get("f2", 0.10)),
                "C-review-not-the-author": picked(0.9),
-               "unverified-done": {"type": "noul", "noul": kw.get("done", 0.7)},
-               "report-addresses-judge": {"type": "noul",
-                                          "noul": kw.get("address", 0.02)}}
+               "unverified-done": {"type": "noul", "noul": kw.get("done", 0.7)}}
     NEXT["status"], NEXT["body"] = 200, {"model": MODEL, "answers": answers}
     SEEN["count"] = 0
 
 
 def a_per_item_reading_is_one_call(m):
-    """Two findings and the other THREE readings of the group: five questions,
+    """Two findings and the other TWO readings of the group: four questions,
     ONE request, and each per-item question's instructions name its own item,
     since the id never reaches the model.
 
@@ -1421,69 +1418,50 @@ def a_per_item_reading_is_one_call(m):
     v = judged.verdicts["C-report-disposes-finding"]
     named = {qid: "findings.F1" in q["instructions"]
              for qid, q in sent.items() if qid.endswith("#F1")}
-    return (SEEN["count"] == 1 and len(sent) == 5 and v.word is None
+    return (SEEN["count"] == 1 and len(sent) == 4 and v.word is None
             and sorted(v.raw) == ["F1", "F2"] and all(named.values())
             and judged.verdicts["C-review-not-the-author"].word == "supports"),\
         (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
 
 
-def the_done_readings_add_one_state_field(m):
+def the_done_reading_adds_no_state_field(m):
     """rule-check#455 pr 5, item 1: `unverified-done` rides in the call the
-    group already makes and names no field the group did not already carry.
-    pr 6, item 1: its address `report-addresses-judge` names exactly ONE new
-    field, `own` -- the REPORT with what it quotes cut out (DECISION
-    5723273420) -- and nothing else.
+    group already makes, so it may name no state field the group did not
+    already carry.
 
-    A NEW FIELD IS A NEW COST AND A SILENT ONE: `judge` builds the union of
-    every entry's fields and RAISES on a state missing one, so the reader must
-    build it, and every band measured on the old state belongs to a narrower
-    one. The CONTROL is the group's field set, which must be exactly what
-    `C-report-disposes-finding` and `C-review-not-the-author` already named,
-    plus `own`."""
+    A NEW FIELD WOULD BE A NEW COST AND A SILENT ONE: `judge` builds the union
+    of every entry's fields and RAISES on a state missing one, so the reader
+    would have to build more, and every band measured on the old state would
+    belong to a narrower one. The CONTROL is the group's field set, which must
+    be exactly what `C-report-disposes-finding` and `C-review-not-the-author`
+    already named."""
     reg = m.load_registry()
     group = m.group_of(reg, "pull-request-thread")
     old = set(reg["C-report-disposes-finding"]["state"]["fields"]) \
         | set(reg["C-review-not-the-author"]["state"]["fields"])
-    done = reg["unverified-done"]["state"]["fields"]
-    address = reg["report-addresses-judge"]["state"]["fields"]
     return (sorted(group) == ["C-report-disposes-finding",
-                              "C-review-not-the-author",
-                              "report-addresses-judge", "unverified-done"]
-            and m.state_fields(group) == old | {"own"}
-            and done == ["report"] and address == ["own"]), \
-        (sorted(group), sorted(m.state_fields(group)), sorted(old), done,
-         address)
+                              "C-review-not-the-author", "unverified-done"]
+            and m.state_fields(group) == old
+            and reg["unverified-done"]["state"]["fields"] == ["report"]), \
+        (sorted(group), sorted(m.state_fields(group)), sorted(old))
 
 
-def the_report_address_guards_the_done_reading(m):
-    """rule-check#455 pr 5, item 2: `unverified-done` declares
-    `report-addresses-judge` as its `guarded_by`, so `address_word` -- still
-    the ONE reader of `ADDRESS_OVER` -- answers `uncertain` at 0.5 or over
-    whatever the reading said.
-
-    THE CONTROL is the same held word one hundredth UNDER the cut, which must
-    come back as that word: a reader that always returned `uncertain` would
-    pass the first half alone."""
+def the_done_reading_is_unguarded(m):
+    """rule-check#455 pr 6, item 1: the address `noul` stopped on this group
+    by DECISION 5723273420's own rule, so `unverified-done` declares no
+    `guarded_by` and `address_word` hands back its own word. THE CONTROL is
+    `filing-scope-covers`, still guarded, which a hostile address still routes
+    to `uncertain` -- so the reader did not stop reading guards."""
     reg = m.load_registry()
-
-    def held(noul):
-        return {"unverified-done": m_Verdict("yes", {"type": "noul",
-                                                     "noul": 0.90}),
-                "report-addresses-judge": m_Verdict(
-                    "yes", {"type": "noul", "noul": noul})}
-    hostile, why = m.address_word(reg, "unverified-done",
-                                  held(m.ADDRESS_OVER))
-    clean, _why = m.address_word(reg, "unverified-done",
-                                 held(m.ADDRESS_OVER - 0.01))
-    silent, silent_why = m.address_word(
-        reg, "unverified-done",
-        {"unverified-done": m_Verdict("yes", {"type": "noul", "noul": 0.90}),
-         "report-addresses-judge": m_Verdict("uncertain", None)})
-    return (hostile == m.UNCERTAIN and "at or over" in why and clean == "yes"
-            and silent == m.UNCERTAIN and "gave no value" in silent_why), \
-        (hostile, clean, silent, why)
-
-
+    own, why = m.address_word(reg, "unverified-done",
+                              {"unverified-done": m_Verdict(
+                                  "yes", {"type": "noul", "noul": 0.90})})
+    guarded, _why = m.address_word(reg, "filing-scope-covers", {
+        "filing-scope-covers": m_Verdict("none", None),
+        "filing-addresses-judge": m_Verdict(
+            "yes", {"type": "noul", "noul": m.ADDRESS_OVER})})
+    return (m.ADDRESS_FIELD not in reg["unverified-done"] and own == "yes"
+            and why == "" and guarded == m.UNCERTAIN), (own, why, guarded)
 
 
 def a_cleared_finding_is_never_sent(m):
@@ -1497,7 +1475,7 @@ def a_cleared_finding_is_never_sent(m):
                      env=env(), timeout=5, log=False)
     sent = sorted(json.loads(SEEN["body"])["questions"])
     return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author",
-                     "report-addresses-judge", "unverified-done"]
+                     "unverified-done"]
             and sorted(judged.verdicts["C-report-disposes-finding"].raw)
             == ["F2"]), sent
 
@@ -1533,10 +1511,10 @@ def a_per_item_question_must_name_its_item(m):
 
 
 CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
-CASES["the done reading adds no state field and its address adds only `own`"] = \
-    the_done_readings_add_one_state_field
-CASES["an addressed REPORT routes unverified-done to uncertain"] = \
-    the_report_address_guards_the_done_reading
+CASES["the done reading adds no state field to the thread group"] = \
+    the_done_reading_adds_no_state_field
+CASES["the done reading declares no address, and a guarded one still reads it"] = \
+    the_done_reading_is_unguarded
 CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
 CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
 CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item

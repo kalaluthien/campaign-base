@@ -1004,7 +1004,7 @@
      0.15
     ]
    },
-   "how": "78 states over 3 runs, sdlc-alloy#458 S5: 6 claims a mutant proves a case carries against 72 none does. P(noMatch) AUC 0.97 in every run against 0.92 for a token-overlap baseline that picks the candidate sharing most of the claim's word tokens; the discrete `noMatch` answer flagged 63-64 of the 72 and none of the 6, and every positive read 0.11 or under in every run. THE BAND ITSELF IS COARSER THAN THAT DISCRETE PICK, and the numbers above are not its: `yes` from 0.60 takes 56-57 of the 72 and no positive, so 15-16 negatives fall in the undeclared middle, and `no` under 0.15 reads all 6 positives AND 3 of the 72 negatives -- a confident wrong `no` on 3 in every run. The floor is 0.0 because a floor costs positives faster than it buys negatives: at 0.6 it took 65 of 66 negatives and 3 of the 6 positives with them on the first measurement. THREE CAUTIONS THE BAND DOES NOT CARRY. The positive class is 6 states over 4 (suite, scenario) pairs, which is too few to read a decimal place from, and the band is read off the same 78 states it was fitted on -- there is no held-out slice. And 72 of the 78 truths are hand-called by sdlc-alloy-worker-34 (`label.from`), reading `noMatch` off sentences about the Alloy model's own mechanics; only the 6 positives are a mutant's."
+   "how": "78 states over 3 runs, sdlc-alloy#458 S5: 6 claims a mutant proves a case carries against 72 none does. P(noMatch) AUC 0.97 in every run against 0.92 for a token-overlap baseline that picks the candidate sharing most of the claim's word tokens; the discrete `noMatch` answer flagged 63-64 of the 72 and none of the 6, and every positive read 0.11 or under in every run. THE BAND ITSELF IS COARSER THAN THAT DISCRETE PICK, and the numbers above are not its: `yes` from 0.60 takes 56-57 of the 72 and no positive, so 12-13 negatives fall in the undeclared middle, and `no` under 0.15 reads all 6 positives AND 3 of the 72 negatives -- a confident wrong `no` on 3 in every run. The floor is 0.0 because a floor costs positives faster than it buys negatives: at 0.6 it took 65 of 66 negatives and 3 of the 6 positives with them on the first measurement. THREE CAUTIONS THE BAND DOES NOT CARRY. The positive class is 6 states over 4 (suite, scenario) pairs, which is too few to read a decimal place from, and the band is read off the same 78 states it was fitted on -- there is no held-out slice. And 72 of the 78 truths are hand-called by sdlc-alloy-worker-34 (`label.from`), reading `noMatch` off sentences about the Alloy model's own mechanics; only the 6 positives are a mutant's."
   }
  },
   "suite-witness-claim": {
@@ -1061,5 +1061,73 @@
    "declared": {},
    "how": "the claim call is only reached where the select call named a function, which was 14-15 of the 78 states: `supports` AUC 0.59-0.76 and `says_nothing` 0.67-0.88 over 6 positives, too few to declare a band, and the spread across runs is itself the reason. The flag the reader should read is the SELECT call's `noMatch` (sdlc-alloy#458 S5)."
   }
+ },
+  "plan-scenario-select": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "shadow",
+  "group": "plan-scenario-select",
+  "state": {
+   "fields": [
+    "plan",
+    "scenarios"
+   ],
+   "plan": "the sub-issue's `## Plan` section, whole, as the body carries it. It is read at `campaign-claim take`, which runs `check` -- BEFORE ANY SPEC IS WRITTEN, which is the moment the miss happens: the author searches `spec/` by hand, and what they miss is a duplicate scenario or a skipped Spec that needed one",
+   "scenarios": "every command `spec/commands.snapshot.json` lists, keyed s1..sN in snapshot order, each its verb and name, a newline, and the nearest `--` comment line above its declaration in the `checks.als` the snapshot names -- 217 of the 244 have one, and one whose declaration has none carries its name alone. THE HEADING IS SHARED: `-- the floor` sits above a run of commands and belongs to each of them, so the walk up passes another declaration and stops at a block comment, which is the module's own header and about no command. CUT BY ENTITY ONLY WHERE THE PLAN NAMES ONE, and a Plan naming none gets ALL OF THEM: that is the ordinary case and not a fallback. 133 of this tracker's 138 Plans name no entity at all (4 name a `spec/<entity>/...als` path, 1 a declared command in backticks), and the whole state, every command and an empty Plan, is 22,651 bytes against `STATE_BUDGET`'s 60,000 -- per entity the scenarios alone are orchestration 159 commands and 15,961 bytes, sdlc 33/2,523, github 24/2,253, session 18/1,138, directory 10/628. So NO STATE IS SKIPPED FOR WANT OF AN ENTITY, and the entity cut buys a narrower field where it is there to read and nothing where it is not. The word match that would guess one was measured and refused: `session`, `directory` and the rest are ordinary prose here -- a Claude session far more often than the spec entity -- so it would pick an entity off a coincidence (sdlc-alloy#458 NOTE 5724505059)",
+   "why": "the duplicate is invisible at the moment it is made. `spec/` holds 244 commands over 5 entities and nothing reads a Plan against them, so whether one already covers the behaviour is asked of whoever is about to write the Spec, by hand, and the state above is that search made once and recorded"
+  },
+  "prefilter": {
+   "what": "a sub-issue `campaign-tracker check` read that carries a `## Plan`; a campaign issue, a chore, and a sub-issue with no Plan ask nothing and are written as skip rows naming which rule took them. TWO MORE ARE SETTLED RATHER THAN ASKED, and code decides both: a Plan naming a snapshot command by its EXACT name in backticks is that command, passed as `settled` and never sent to the model -- the author already did the search this reading makes; and a tree with no snapshot, or one whose entity cut leaves no command, has nothing to pick from and is a skip row.",
+   "entity": "^spec/(campaign/[a-z]+|sdlc)/",
+   "settled_by_name": "a backticked span of the Plan whose text is the exact `name` of one snapshot command in the cut. Two such spans naming two different commands settle nothing: the author named more than one and which covers the Plan is the question"
+  },
+  "question": {
+   "type": "choice",
+   "options_from": "scenarios",
+   "instructions": "`plan` is the `## Plan` of a unit of work about to be started. Each option but `noMatch` is a scenario `spec/` already declares, and its description is that command's name and the comment line above it. Which scenario already covers the behaviour `plan` describes, so that writing a new one for this Plan would duplicate it?",
+   "criteria": {
+    "noMatch": "no scenario covers this Plan: the behaviour it describes is exercised by none of them, or the Plan changes nothing `spec/` models -- a document, a script, a measurement, a reading -- and no scenario could cover it. NOT this option: a scenario that covers the Plan's behaviour under a different name."
+   }
+  },
+  "thresholds": {},
+  "join": "plan-closing-diff",
+  "bands": {}
+ },
+  "plan-scenario-cover": {
+  "owner": "scripts/campaign-tracker.py check",
+  "tier": "shadow",
+  "group": "plan-scenario-cover",
+  "state": {
+   "fields": [
+    "plan",
+    "scenario"
+   ],
+   "plan": "the same `## Plan` the select call was asked, whole",
+   "scenario": "the one scenario `plan-scenario-select` picked: its verb and name, a newline, and the comment line above its declaration -- the same text the select call carried as that option's description",
+   "why": "THE SECOND CALL IS WHERE THE NOUN IS SEPARATED FROM THE BEHAVIOUR. A `choice` over 244 options picks the nearest one whatever the distance, so a Plan about claims and a scenario about claims land together on the word; this asks whether the pick covers what the Plan DOES. Its own group and its own call because the state is `{plan, scenario}` and not the select's `{plan, scenarios}` -- one call a state (DECISION 5716072632)"
+  },
+  "prefilter": {
+   "what": "a Plan whose `plan-scenario-select` answer named a scenario. A `noMatch` and a state code settled are not asked: there is nothing picked to weigh"
+  },
+  "question": {
+   "type": "noul",
+   "instructions": "Does the scenario in `scenario` exercise the behaviour the `## Plan` in `plan` describes changing, rather than merely naming the same thing?",
+   "criteria": {
+    "true": {
+     "what": "the scenario exercises what the Plan describes doing: a run of it would go through the behaviour the Plan changes",
+     "examples": [
+      "plan 'refuse a release while a worktree holds the claim's ref'; scenario `run S9_ReleaseOccupiedRef` under the comment 'a claim still checked out is not released'"
+     ]
+    },
+    "false": {
+     "what": "the scenario only shares the Plan's noun: the same entity, the same word, a neighbouring step -- and a run of it would never reach what the Plan changes",
+     "examples": [
+      "plan 'record which session named a claim in the guard log'; scenario `run Cov_TakeClaim` under the comment 'the floor: a claim can be taken at all'"
+     ]
+    }
+   }
+  },
+  "thresholds": {},
+  "join": "plan-cover-kept",
+  "bands": {}
  }
 }

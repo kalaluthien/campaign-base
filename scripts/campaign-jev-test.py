@@ -797,12 +797,13 @@ def joined(m, rows):
         args = types.SimpleNamespace(
             fetch=lambda repo, number: ISSUES.get((repo, number)),
             fetch_thread=lambda repo, number: THREADS.get((repo, number)),
-            fetch_commits=lambda repo, sha, path: FILES.get((repo, sha, path)))
+            fetch_commits=lambda repo, sha, path: FILES.get((repo, sha, path)),
+            fetch_guard_log=m.fetch_guard_log)
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
                 "filing-scope-covers", "unverified-done",
-                "model-comment")}
+                "model-comment", "shell-write-unread")}
     finally:
         m.CORPUS = was
         m.fetch_reopen = was_reopen
@@ -1065,6 +1066,92 @@ def join_keeps_what_it_cannot_label(m):
         log_row("eeee", "verb-first", "No key at all", 900, repo=None,
                 issue=None)])
     return (not cases["verb-first"] and lines == 2), (cases["verb-first"], lines)
+
+
+def shell_rows(m):
+    """A guard log of four unread calls, and the reading of each: `aa`
+    changed its tree and a commit was judged there after, `bb` left it as it
+    was, `cc`'s after is the commit gate's own row, unchanged, and `dd`
+    changed a tree the gate reads as no campaign work. `ee`'s tree changed
+    with a second session calling into it between, so whose change it was
+    is unknown; `ff`'s only commit was judged for another session."""
+    guard = ROOT / "guard-shell.log"
+    tree, other, shared, gated = "/b/wt", "/b/plain", "/b/shared", "/b/gated"
+    g = [{"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p0",
+          "command_sha": "aa", "at": "2026-09-18T01:00:00+00:00"},
+         {"session": "s2", "tool": "Edit", "tree": gated, "porcelain": "t0",
+          "at": "2026-09-18T01:00:01+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p1",
+          "command_sha": "bb", "at": "2026-09-18T01:00:02+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p1",
+          "command_sha": "cc", "at": "2026-09-18T01:00:03+00:00"},
+         {"session": "s1", "tool": "pre-commit", "tree": tree, "porcelain":
+          "p1", "verdict": "claim", "at": "2026-09-18T01:00:04+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p2",
+          "at": "2026-09-18T01:00:05+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": other, "porcelain": "q0",
+          "command_sha": "dd", "at": "2026-09-18T01:00:06+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": other, "porcelain": "q1",
+          "at": "2026-09-18T01:00:07+00:00"},
+         {"session": "s1", "tool": "pre-commit", "tree": other,
+          "verdict": "not campaign work", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": shared, "porcelain": "r0",
+          "command_sha": "ee", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s2", "tool": "Bash", "tree": shared, "porcelain": "r0",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": shared, "porcelain": "r1",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "pre-commit", "tree": shared,
+          "porcelain": "r1", "verdict": "claim",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": gated, "porcelain": "t0",
+          "command_sha": "ff", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": gated, "porcelain": "t1",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s2", "tool": "pre-commit", "tree": gated,
+          "porcelain": "t1", "verdict": "claim",
+          "at": "2026-09-18T01:00:08+00:00"}]
+    guard.write_text("".join(json.dumps(r) + "\n" for r in g))
+    rows = []
+    for sha, porcelain, where in (("aa", "p0", tree), ("bb", "p1", tree),
+                                  ("cc", "p1", tree), ("dd", "q0", other),
+                                  ("ee", "r0", shared), ("ff", "t0", gated)):
+        row = log_row(f"s-{sha}", "shell-write-unread", "", 0,
+                      state={"command": "echo x > f", "cwd": where,
+                             "role": "worker"},
+                      session="s1", tree=where, porcelain=porcelain,
+                      command_sha=sha, guard_log=str(guard),
+                      at="2026-09-18T01:00:09+00:00")
+        row.pop("repo")
+        row.pop("issue")
+        rows.append(row)
+    return rows
+
+
+def join_reads_the_tree_after_an_unread_call(m):
+    """shell-write-unread's join: the same session's next call in the same
+    tree is the after, and the commit gate's later verdict on that tree is
+    what makes a changed tree a label."""
+    cases, _lines = joined(m, shell_rows(m))
+    by = {c["id"]: c for c in cases["shell-write-unread"]}
+    got = {k: (by.get(f"shell-write-unread-s-{k}") or {}).get("truth")
+           for k in ("aa", "bb", "cc", "dd", "ee", "ff")}
+    return (got == {"aa": "yes", "bb": "no", "cc": "no", "dd": None,
+                    "ee": None, "ff": None}
+            and (by.get("shell-write-unread-s-aa") or {}).get("label", {})
+            .get("from") == "join:guard-tree-delta"), got
+
+
+def join_waits_for_the_commit_gate(m):
+    """A tree the call changed, with no commit judged on it yet, is not
+    labelled: the gate's verdict is the label, and it has not been given."""
+    rows = shell_rows(m)
+    guard = Path(rows[0]["guard_log"])
+    kept = [r for r in map(json.loads, guard.read_text().splitlines())
+            if r.get("tool") != "pre-commit"]
+    guard.write_text("".join(json.dumps(r) + "\n" for r in kept))
+    cases, _lines = joined(m, rows[:1])
+    return cases["shell-write-unread"] == [], cases["shell-write-unread"]
 
 
 def join_reads_a_later_review_on_the_thread(m):
@@ -1562,6 +1649,8 @@ def a_case_code_settled_is_never_drift(m):
 
 CASES["a case code settled is never named as drift"] = a_case_code_settled_is_never_drift
 CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
+CASES["the shell join reads the same session's next call in the same tree"] = join_reads_the_tree_after_an_unread_call
+CASES["...and waits for the commit gate's verdict on that tree"] = join_waits_for_the_commit_gate
 CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
 CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed
@@ -1585,15 +1674,13 @@ def thread_answers(**kw):
     answers = {"C-report-disposes-finding#F1": picked(kw.get("f1", 0.95)),
                "C-report-disposes-finding#F2": picked(kw.get("f2", 0.10)),
                "C-review-not-the-author": picked(0.9),
-               "unverified-done": {"type": "noul", "noul": kw.get("done", 0.7)},
-               "report-addresses-judge": {"type": "noul",
-                                          "noul": kw.get("address", 0.02)}}
+               "unverified-done": {"type": "noul", "noul": kw.get("done", 0.7)}}
     NEXT["status"], NEXT["body"] = 200, {"model": MODEL, "answers": answers}
     SEEN["count"] = 0
 
 
 def a_per_item_reading_is_one_call(m):
-    """Two findings and the other THREE readings of the group: five questions,
+    """Two findings and the other TWO readings of the group: four questions,
     ONE request, and each per-item question's instructions name its own item,
     since the id is a key of the body and no part of the question.
 
@@ -1608,16 +1695,16 @@ def a_per_item_reading_is_one_call(m):
     v = judged.verdicts["C-report-disposes-finding"]
     named = {qid: "findings.F1" in q["instructions"]
              for qid, q in sent.items() if qid.endswith("#F1")}
-    return (SEEN["count"] == 1 and len(sent) == 5 and v.word is None
+    return (SEEN["count"] == 1 and len(sent) == 4 and v.word is None
             and sorted(v.raw) == ["F1", "F2"] and all(named.values())
             and judged.verdicts["C-review-not-the-author"].word == "supports"),\
         (SEEN["count"], sorted(sent), v.word, sorted(v.raw or {}), named)
 
 
-def the_done_readings_add_no_state_field(m):
-    """rule-check#455 pr 5, item 1: `unverified-done` and
-    `report-addresses-judge` ride in the call the group already makes, so
-    neither may name a state field the group did not already carry.
+def the_done_reading_adds_no_state_field(m):
+    """rule-check#455 pr 5, item 1: `unverified-done` rides in the call the
+    group already makes, so it may name no state field the group did not
+    already carry.
 
     A NEW FIELD WOULD BE A NEW COST AND A SILENT ONE: `judge` builds the union
     of every entry's fields and RAISES on a state missing one, so the reader
@@ -1629,45 +1716,29 @@ def the_done_readings_add_no_state_field(m):
     group = m.group_of(reg, "pull-request-thread")
     old = set(reg["C-report-disposes-finding"]["state"]["fields"]) \
         | set(reg["C-review-not-the-author"]["state"]["fields"])
-    new = {n: reg[n]["state"]["fields"]
-           for n in ("unverified-done", "report-addresses-judge")}
     return (sorted(group) == ["C-report-disposes-finding",
-                              "C-review-not-the-author",
-                              "report-addresses-judge", "unverified-done"]
+                              "C-review-not-the-author", "unverified-done"]
             and m.state_fields(group) == old
-            and all(f == ["report"] for f in new.values())), \
-        (sorted(group), sorted(m.state_fields(group)), sorted(old), new)
+            and reg["unverified-done"]["state"]["fields"] == ["report"]), \
+        (sorted(group), sorted(m.state_fields(group)), sorted(old))
 
 
-def the_report_address_guards_the_done_reading(m):
-    """rule-check#455 pr 5, item 2: `unverified-done` declares
-    `report-addresses-judge` as its `guarded_by`, so `address_word` -- still
-    the ONE reader of `ADDRESS_OVER` -- answers `uncertain` at 0.5 or over
-    whatever the reading said.
-
-    THE CONTROL is the same held word one hundredth UNDER the cut, which must
-    come back as that word: a reader that always returned `uncertain` would
-    pass the first half alone."""
+def the_done_reading_is_unguarded(m):
+    """rule-check#455 pr 6, item 1: the address `noul` stopped on this group
+    by DECISION 5723273420's own rule, so `unverified-done` declares no
+    `guarded_by` and `address_word` hands back its own word. THE CONTROL is
+    `filing-scope-covers`, still guarded, which a hostile address still routes
+    to `uncertain` -- so the reader did not stop reading guards."""
     reg = m.load_registry()
-
-    def held(noul):
-        return {"unverified-done": m_Verdict("yes", {"type": "noul",
-                                                     "noul": 0.90}),
-                "report-addresses-judge": m_Verdict(
-                    "yes", {"type": "noul", "noul": noul})}
-    hostile, why = m.address_word(reg, "unverified-done",
-                                  held(m.ADDRESS_OVER))
-    clean, _why = m.address_word(reg, "unverified-done",
-                                 held(m.ADDRESS_OVER - 0.01))
-    silent, silent_why = m.address_word(
-        reg, "unverified-done",
-        {"unverified-done": m_Verdict("yes", {"type": "noul", "noul": 0.90}),
-         "report-addresses-judge": m_Verdict("uncertain", None)})
-    return (hostile == m.UNCERTAIN and "at or over" in why and clean == "yes"
-            and silent == m.UNCERTAIN and "gave no value" in silent_why), \
-        (hostile, clean, silent, why)
-
-
+    own, why = m.address_word(reg, "unverified-done",
+                              {"unverified-done": m_Verdict(
+                                  "yes", {"type": "noul", "noul": 0.90})})
+    guarded, _why = m.address_word(reg, "filing-scope-covers", {
+        "filing-scope-covers": m_Verdict("none", None),
+        "filing-addresses-judge": m_Verdict(
+            "yes", {"type": "noul", "noul": m.ADDRESS_OVER})})
+    return (m.ADDRESS_FIELD not in reg["unverified-done"] and own == "yes"
+            and why == "" and guarded == m.UNCERTAIN), (own, why, guarded)
 
 
 def a_cleared_finding_is_never_sent(m):
@@ -1681,7 +1752,7 @@ def a_cleared_finding_is_never_sent(m):
                      env=env(), timeout=5, log=False)
     sent = sorted(json.loads(SEEN["body"])["questions"])
     return (sent == ["C-report-disposes-finding#F2", "C-review-not-the-author",
-                     "report-addresses-judge", "unverified-done"]
+                     "unverified-done"]
             and sorted(judged.verdicts["C-report-disposes-finding"].raw)
             == ["F2"]), sent
 
@@ -1718,10 +1789,10 @@ def a_per_item_question_must_name_its_item(m):
 
 
 CASES["every question over one thread goes in one call, one per finding"] = a_per_item_reading_is_one_call
-CASES["the two done readings add no state field to the thread group"] = \
-    the_done_readings_add_no_state_field
-CASES["an addressed REPORT routes unverified-done to uncertain"] = \
-    the_report_address_guards_the_done_reading
+CASES["the done reading adds no state field to the thread group"] = \
+    the_done_reading_adds_no_state_field
+CASES["the done reading declares no address, and a guarded one still reads it"] = \
+    the_done_reading_is_unguarded
 CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
 CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
 CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item

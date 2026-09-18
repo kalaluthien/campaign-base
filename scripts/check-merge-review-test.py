@@ -599,7 +599,7 @@ def main() -> int:
         check("...and logs one row per reading of the group",
               sorted(by) == ["C-report-disposes-finding",
                              "C-review-not-the-author",
-                             "report-addresses-judge", "unverified-done"], rows)
+                             "unverified-done"], rows)
         check("...each carrying the join key as fields, repository beside "
               "every number",
               all(r.get("repo") == "o/r" and r.get("pull_request") == 274
@@ -636,11 +636,11 @@ def main() -> int:
               [r.get("latency") for r in by.values()])
 
         # ---- 0 new calls a state -------------------------------------------
-        # THE CLAIM IS A NUMBER, SO IT IS COUNTED. `unverified-done` and
-        # `report-addresses-judge` ride in the call the group already makes, so
-        # ONE gate run sends ONE request however many readings the group holds.
-        # Measured on this fixture at 1 with the group's two readings and at 1
-        # with its four (rule-check#455 pr 5).
+        # THE CLAIM IS A NUMBER, SO IT IS COUNTED. `unverified-done` rides in
+        # the call the group already makes, so ONE gate run sends ONE request
+        # however many readings the group holds. Measured on this fixture at 1
+        # with the group's two readings, at 1 with its four (rule-check#455
+        # pr 5), and at 1 with its three once the address stopped (pr 6).
         #
         # THE STORE IS CLEARED BEFORE EACH RUN, because a second run over the
         # same state would be answered out of `jev-cache` and send nothing --
@@ -654,7 +654,7 @@ def main() -> int:
                         TYPESAFE_API_KEY="stub-key", **kw)
 
         # A REPORT THE LINT LEAVES FOR JEV -- it pins a sha AND quotes a
-        # command -- so all four readings ride and the count is over the whole
+        # command -- so every reading rides and the count is over the whole
         # group. `report` itself quotes none and is settled by code below.
         checked = report + "\n`scripts/campaign-jev-test.py` 227 pass 0 fail\n"
         fake_gh(bindir, comments=[comment(review), comment(checked)])
@@ -663,10 +663,9 @@ def main() -> int:
         check("one gate run sends one request whatever the group holds",
               POSTS["count"] == 1 and (word, code) == ("reviewed", 0),
               (POSTS["count"], word, code))
-        check("...carrying every reading of the group, the new two included",
+        check("...carrying every reading of the group, the done reading included",
               [q for q in sent if not q.startswith("C-report-disposes")]
-              == ["C-review-not-the-author", "report-addresses-judge",
-                  "unverified-done"], sent)
+              == ["C-review-not-the-author", "unverified-done"], sent)
         # THE CONTROL: a run over a DIFFERENT thread, which the store cannot
         # answer, must move the counter -- otherwise the 1 above is a stub
         # nothing reached rather than an invariant.
@@ -733,11 +732,6 @@ def main() -> int:
               and "lint" not in (FLAGS.get("C-report-disposes-finding") or {}),
               (FLAGS.get("unverified-done"),
                FLAGS.get("C-report-disposes-finding")))
-        # AND THE ADDRESS IS STILL ASKED on both `yes` branches: the prose it
-        # reads is there, and only the empty round settles it.
-        check("...and its address noul is still asked, since the prose is there",
-              words.get("report-addresses-judge") is None
-              and "report-addresses-judge" in asked, (words, asked))
         words, asked = linted(
             report + "\n`reached campaign-base at /x: HEAD 8ca2609 contains "
                      "8ca2609; apply ok`\n")
@@ -772,12 +766,10 @@ def main() -> int:
         words = {r["reading"]: r.get("settled") for r in rows
                  if r.get("reading")}
         asked = POSTS["questions"][0] if POSTS["questions"] else []
-        check("a round with no REPORT settles both new readings `no`",
-              words.get("unverified-done") == "no"
-              and words.get("report-addresses-judge") == "no", words)
-        check("...and asks neither of them",
-              not [q for q in asked
-                   if q in ("unverified-done", "report-addresses-judge")], asked)
+        check("a round with no REPORT settles the done reading `no`",
+              words.get("unverified-done") == "no", words)
+        check("...and does not ask it",
+              "unverified-done" not in asked, asked)
 
         # A THREAD WITH NO REPORT AFTER ITS REVIEW HAS NO ROUND TO JUDGE, and
         # the reading still logs: a call that asked nothing is a fact about the

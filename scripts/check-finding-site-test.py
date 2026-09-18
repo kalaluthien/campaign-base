@@ -266,8 +266,8 @@ MUTATIONS = [
      "        for n in range(1, 2):\n",
      "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
     ("the reading's group not read from the entry",
-     'yield jev.Ask(asks, {"group": reg[READING]["group"]})',
-     'yield jev.Ask(asks, {"group": "issue-shape"})',
+     'group = reg[READING]["group"]',
+     'group = "issue-shape"',
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("the row keyed by a number with no repository",
      'key = {"repo": inp.repo, "pull_request": int(inp.number)} if inp.repo else {}',
@@ -283,7 +283,7 @@ def live(record):
     """Every corpus case against the real endpoint, once. A case is red when
     its word differs from the last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.jev_module()
+    jev = importlib.import_module("campaign-jev")
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)

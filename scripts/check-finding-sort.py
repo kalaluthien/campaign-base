@@ -54,8 +54,10 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "finding-sort"
 READER = "check-finding-sort.py"
+INPUT = "comment REVIEW"
+USAGE = "scripts/check-finding-sort.py <pr> [<repo>] < review"
+READING = "finding-sort"
 MIN_CHARS = 25
 MAX_FINDINGS = 40
 
@@ -113,54 +115,26 @@ def findings(review):
     return out[:MAX_FINDINGS]
 
 
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506)."""
-    return importlib.import_module("campaign-jev")
-
-
-def ask_all(entry, cut, subject, jev, key=None, env=None):
-    """[Verdict] for every finding, asked at once.
-
-    ONE `judge` CALL A FINDING, which is what this entry's `compose` says by
-    `call`: the finding IS the state, so nothing fans out inside a call and the
-    question sent is the entry's own. What the ROW gained is the reading's
-    name, the wording and the KEY -- the repository, the pull request and which
-    finding of the review it was -- so the same thread's next REVIEW can be
-    joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
-    return [j.verdicts[READING] for j in jev.judge_each(
-        [{"state": {"finding": masked}, "read": f"{subject} f{n} {word}",
-          "key": dict(key or {}, finding=n)}
-         for n, (word, masked, _ident) in enumerate(cut, 1)],
-        group=entry["group"], reader=READER, env=env)]
-
-
-def main(argv, stdin=sys.stdin, env=None):
-    if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
-        print("Usage: scripts/check-finding-sort.py <pr> [<repo>] < review",
-              file=sys.stderr)
-        return 2
-    pr, repo = argv[0], (argv[1] if len(argv) > 1 else "")
-    subject = f"{repo or 'tracker'}#{pr} REVIEW"
-    try:
-        jev = jev_module()
-    except Exception:  # noqa: BLE001 -- no log to count a raise in
-        return 0
-    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,
-                                               env), env)
-    return 0
-
-
-def read(pr, repo, subject, stdin, jev, env):
-    review = stdin.read()
-    if not review.lstrip().startswith("REVIEW "):
-        return
-    cut = findings(review)
-    entry = jev.load_registry()[READING]
+def steps(inp, reg, jev):
+    """ONE `judge` CALL A FINDING, which is what this entry's `compose` says by
+    `call`: the finding IS the state. The ROW carries the reading's name, the
+    wording and the KEY -- the repository, the pull request and which finding
+    of the review it was -- so the same thread's next REVIEW can be joined to
+    the answer (sdlc-alloy#458 DECISION 5722176509)."""
     # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no repository
     # names no pull request when a member repository's numbers collide with
     # this tracker's.
-    ask_all(entry, cut, subject, jev,
-            {"repo": repo, "pull_request": int(pr)} if repo else None, env)
+    key = {"repo": inp.repo, "pull_request": int(inp.number)} if inp.repo else {}
+    yield jev.Ask([{"state": {"finding": masked},
+                    "read": f"{inp.subject} f{n} {word}",
+                    "key": dict(key, finding=n)}
+                   for n, (word, masked, _ident) in enumerate(findings(inp.body), 1)],
+                  {"group": reg[READING]["group"]})
+
+
+def main(argv, stdin=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, stdin, env=env)
 
 
 if __name__ == "__main__":

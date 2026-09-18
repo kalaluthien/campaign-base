@@ -132,6 +132,7 @@ def steps(inp, reg, jev):
     the pull request and which finding of the review it was -- so the thread's
     next REVIEW can be joined to the answer (sdlc-alloy#458 DECISION
     5722176509)."""
+    group = reg[READING]["group"]
     cut = jev.load_sibling("check-finding-sort.py").findings(inp.body)
     if not cut:
         return
@@ -154,7 +155,7 @@ def steps(inp, reg, jev):
             asks.append({"state": {"finding": masked, "slice": got},
                          "read": f"{inp.subject} f{n} {site[0]}:{site[1]}",
                          "key": dict(key, finding=n)})
-    yield jev.Ask(asks, {"group": reg[READING]["group"]})
+    yield jev.Ask(asks, {"group": group})
 
 
 def main(argv, stdin=None, env=None):

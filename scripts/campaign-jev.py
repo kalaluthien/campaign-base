@@ -186,7 +186,8 @@ STATE_BUDGET = 60_000
 # refuse with an HTTP 400 that reads exactly like an outage (binary
 # search, sdlc-alloy#458 S7, 2026-09-18). It bites a reading whose
 # options are BUILT FROM THE STATE and so grow with the tree: `spec/`
-# declares 244 commands today, eleven under the ceiling.
+# declared 242 commands at 2026-09-18, thirteen under the ceiling,
+# and that count moves with every spec commit.
 OPTION_BUDGET = 255
 UNKNOWN = "unknown"
 # THE ANSWER THAT LANDED BETWEEN THE EDGES, and it is NOT `unknown`. A lone cut

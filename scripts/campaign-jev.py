@@ -1760,7 +1760,7 @@ def run_reader(reader, argv, stdin=None, out=None, env=None):
     `reader` is its module, or the globals of one handing itself over. A
     reading NEVER REFUSES: 0 on every path but a usage error. A raise is a
     skip row for a detached reader, whose output nobody reads, and the reader's
-    `raised(e)` lines -- a stock line by default -- for a staged one, which a
+    `raised(e, reg)` lines -- a stock line by default -- for a staged one, which a
     commit's author reads."""
     r = types.SimpleNamespace(**reader) if isinstance(reader, dict) else reader
     kind, _, word = r.INPUT.partition(" ")
@@ -1799,7 +1799,8 @@ def run_reader(reader, argv, stdin=None, out=None, env=None):
         try:
             go(None)
         except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
-            said = r.raised(e) if hasattr(r, "raised") else [
+            said = r.raised(e, Registry(load_registry)) if hasattr(
+                r, "raised") else [
                 f"{r.READER.removesuffix('.py')}: could not read the commit "
                 f"({e.__class__.__name__}: {e}); nothing asked, exit status "
                 f"unmoved"]

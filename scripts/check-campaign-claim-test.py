@@ -1071,7 +1071,11 @@ def main():
                           ("git reset --hard", None), ("git stash pop", None),
                           ("touch f", None), ("truncate -s 0 f", None),
                           ("sed -n 1,5p f", "no"), ("find . -name x", "no"),
-                          ("git -C /x status --short", "no")):
+                          ("git -C /x status --short", "no"),
+                          ("git diff --output=p.diff", None),
+                          ("find . -name x | xargs git checkout --", None),
+                          ("find . -exec sh -c 'rm $1' _ {} ;", None),
+                          ("ln -s a b", None), ("tar -xf a.tar", None)):
             got = mod.shell_lint(cmd)[0]
             check(f"shell lint on `{cmd[:30]}` is {word or 'left to Jev'}",
                   got == word, got)
@@ -4522,7 +4526,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 705
+    EXPECTED = 710
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

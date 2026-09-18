@@ -4132,15 +4132,15 @@ def read_filings(cwd: Path):
 # rule-check#471 DECISION 5716551122): does a Bash call allowed unread change a
 # file in the tree it runs in? LINT FIRST, and lint is the planner's list,
 # widened by pr#494's review: a command with no redirect, no in-place edit, no
-# `tee`, `mv`, `cp`, `rm`, `touch` or `truncate`, and no git subcommand but a
-# read is code's `no` and asks nothing. The lint reads the guard's own split,
+# file-writing verb (`SHELL_WORDS`), no `xargs` or `find -exec`, and no git
+# subcommand but a read, nor one with `--output`, is code's `no`. The lint reads the guard's own split,
 # so a heredoc body is data here as everywhere, and `-i` is read only under
 # `sed` and `perl`, where it edits in place; `grep -i` is not a write. An
 # interpreter (`python3 -c`, a script) is not read: it would send most of the
 # build loop to Jev, so what one writes is this lint's named gap.
 #
 # WHAT LINT LEAVES IS ASKED DETACHED. A PreToolUse hook holds the tool until it
-# returns, and lint leaves about one unread call in four (4490 of 16758 rows of
+# returns, and lint leaves about one unread call in four (4542 of 16855 rows of
 # this machine's four guard logs, read 2026-09-18) -- a synchronous call there
 # is a second of wait in front of every `rm` and every commit. The reading is
 # at `shadow`, so nothing waits for it: this process hands the state to a
@@ -4149,11 +4149,13 @@ def read_filings(cwd: Path):
 SHELL_GROUP = "shell-unread"
 SHELL_READER = "check-campaign-claim.shell"
 SHELL_CHARS = 2048
-SHELL_WORDS = {"tee", "mv", "cp", "rm", "touch", "truncate"}
+SHELL_WORDS = {"tee", "mv", "cp", "rm", "touch", "truncate", "ln", "dd",
+               "patch", "tar", "unzip", "rsync"}
 IN_PLACE = {"sed", "perl"}
-# A verb that runs another command, whose operands are read for the words
-# above, and `find`'s own deleting action.
-RUNNERS = {"xargs", "find"}
+# `xargs` runs whatever follows it, and `find` whatever `-exec` names or
+# deletes; neither command line is read, so both are asked whole.
+RUNNERS = {"xargs": None, "find": {"-exec", "-execdir", "-ok", "-okdir",
+                                   "-delete"}}
 REDIRECTS = {">", ">>", "&>", "&>>", ">|"}
 # Git's subcommands that never write a checkout's files. Any other is asked,
 # since `checkout --`, `restore`, `reset --hard`, `stash pop`, `apply`, `mv`
@@ -4187,20 +4189,23 @@ def shell_lint(command):
                 or (t[:1] == "-" and t[1:2] != "-" and "i" in t[1:])
                 for t in rest[1:]):
             return None, f"`{word} -i`"
-        if word in RUNNERS and any(t in SHELL_WORDS | IN_PLACE
-                                   or t == "-delete" for t in rest[1:]):
-            return None, f"`{word}` running a write"
+        if word in RUNNERS and (RUNNERS[word] is None
+                                or RUNNERS[word] & set(rest[1:])):
+            return None, f"`{word}` running a command"
         if word == "git":
             sub = next((t for i, t in enumerate(rest[1:], 1)
                         if not t.startswith("-")
                         and rest[i - 1] not in ("-C", "-c")), "")
             if sub not in GIT_READS:
                 return None, f"`git {sub}`"
+            # `diff`, `log` and `show` write a file with `--output`.
+            if any(t.startswith("--output") for t in rest[1:]):
+                return None, f"`git {sub} --output`"
         for i, t in enumerate(tokens):
             if t in REDIRECTS and tokens[i + 1:i + 2] != ["/dev/null"]:
                 return None, f"a `{t}` redirect"
-    return "no", ("no redirect, in-place edit, tee, mv, cp, rm, touch, "
-                  "truncate, find -delete or git subcommand that writes")
+    return "no", ("no redirect, in-place edit, file-writing verb, xargs, "
+                  "find -exec or -delete, or git subcommand that writes")
 
 
 def tree_state(cwd):

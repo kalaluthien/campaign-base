@@ -96,20 +96,6 @@ def git(*args):
     return p.stdout if p.returncode == 0 else None
 
 
-def questions(entry):
-    """A `noul` question a noul, each the entry's question with that noul's
-    words put in its placeholders."""
-    q, cuts = entry["question"], entry["thresholds"]
-    text = json.dumps({k: q[k] for k in ("type", "instructions", "criteria")})
-    out = {}
-    for name, words in entry["nouls"].items():
-        filled = text
-        for key, value in words.items():
-            filled = filled.replace("{" + key + "}", json.dumps(value)[1:-1])
-        out[name] = dict(json.loads(filled), **cuts)
-    return out
-
-
 def files(commit, base):
     """[(path, why it is skipped or "")] for every file the commit touched."""
     touched = (git("diff-tree", "--no-commit-id", "--name-only", "-r",
@@ -154,8 +140,13 @@ def main(argv, env=None):
                      "origin/main", env, cwd=HERE)
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        asked = questions(entry)
         found, tests = files(commit, base)
+        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN, and the sha this reading
+        # judged is the one it was given, not the one a commit-time reader
+        # would name: this runs over a branch that already has its commits.
+        key = jev.commit_key()
+        key = ({"repo": key["repo"], "commit": commit} if key.get("repo")
+               else {})
 
         def one(item):
             path, why = item
@@ -168,9 +159,20 @@ def main(argv, env=None):
             if why:
                 jev.skip(READER, f"{label} {path}", why, env, cwd=HERE)
                 return
-            jev.ask(READER, f"{label} {path}",
-                    {"file": {"path": path, "patch": patch},
-                     "changedTests": tests}, asked, env=env, cwd=HERE)
+            # ONE `judge` CALL A FILE, a question a noul: the entry's
+            # `compose` fills the whole question -- criteria and examples
+            # included -- from that noul's row of the entry's own `nouls`
+            # table, which is what this file composed by hand until now. What
+            # the ROW gained is the reading's name, the wording and the KEY --
+            # the repository, the sha and the file -- so a later fix commit on
+            # that file can be joined to the answer (sdlc-alloy#458 DECISION
+            # 5722176509).
+            jev.judge(entry["group"],
+                      {"file": {"path": path, "patch": patch},
+                       "changedTests": tests},
+                      read=f"{label} {path}", reader=READER,
+                      key=dict(key, path=path) if key else {"path": path},
+                      env=env, cwd=HERE)
         with ThreadPoolExecutor(WORKERS) as pool:
             list(pool.map(one, found))
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this

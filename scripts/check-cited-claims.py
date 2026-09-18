@@ -70,6 +70,7 @@ import json
 import re
 import subprocess
 import sys
+import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -77,6 +78,11 @@ HERE = Path(__file__).resolve().parent
 READINGS = ("docstring-claims", "reference-claims")
 REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-cited-claims.py --staged"
+# WHAT A CLAIM THE RESPONSE NEVER ANSWERED READS AS, in the shape an answered
+# one has. `judge` hands back the raws it got and nothing for a question the
+# response left out, where `ask` used to fill in an `unknown` per question.
+UNANSWERED = types.SimpleNamespace(
+    word="unknown", raw=None, why="the response carried no answer for this claim")
 REFERENCE = re.compile(r"AGENTS\.md|\.claude/skills/[^/]+/references/.+\.md")
 
 DECL = re.compile(r"^\s*(?:private\s+)?(pred|fun|assert)\s+(\w+)")
@@ -352,25 +358,33 @@ def targets(hunks, texts, decls, cut, prefilter):
             touched, skipped)
 
 
-def questions(entry, found):
-    q = entry["question"]
-    spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
-    spec.update(entry["thresholds"])
-    return {f"c{i}": dict(spec, instructions={"question": q["instructions"],
-                                              "claim": c})
-            for i, c in enumerate(found)}
+def ask_all(entry, states, jev, key, env=None):
+    """[(label, claims, {claim id: Answer}, the log line's fate)] for every
+    state, asked six at a time.
 
-
-def ask_all(entry, states, jev, env=None):
-    """[(label, claims, Reading)] for every state, asked six at a time."""
-    parts, cut = entry["state"]["pred"]["text"], entry["state"]["claims"]
+    ONE `judge` CALL A PARAGRAPH, where it used to be one `ask`. The claims
+    are handed over as the state's `claim` field and the entry's `compose`
+    puts each one's text in its own question -- the shape this file's own
+    `questions` built until now, and campaign-jev-test's "a question composed
+    into the instructions is what the reader sent" holds the two together byte
+    for byte. What the ROW gained is the reading's name, the wording and the
+    KEY: the repository, the sha this commit sits on, the file and the pred.
+    Without those no later fact could ever be joined to it (sdlc-alloy#458
+    DECISION 5722176509)."""
+    cut = entry["state"]["claims"]
 
     def one(target):
-        label, paragraph, name, text = target
+        label, path, paragraph, name, text = target
         found = claims(paragraph, name, cut)
-        state = {"paragraph": paragraph, "pred": {"name": name, "text": text}}
-        return label, found, jev.ask(READER, label, state,
-                                     questions(entry, found), env=env)
+        judged = jev.judge(entry["group"],
+                           {"paragraph": paragraph,
+                            "pred": {"name": name, "text": text},
+                            "claim": {f"c{i}": c for i, c in enumerate(found)}},
+                           read=label, reader=READER,
+                           key=dict(key, path=path, name=name), env=env)
+        reading = next(iter(judged.verdicts))
+        return (label, found, jev.words_of(entry, judged.verdicts[reading]),
+                judged.logged)
     with ThreadPoolExecutor(6) as pool:
         return list(pool.map(one, states))
 
@@ -411,10 +425,13 @@ def report(results, entry, out):
     # made and answered.
     counts = {"yes": 0, "no": 0, "uncertain": 0, "unknown": 0}
     logged = set()
-    for label, found, reading in results:
-        logged.add(reading.logged)
+    for label, found, answers, line in results:
+        logged.add(line)
         for i, claim in enumerate(found):
-            a = reading.answers[f"c{i}"]
+            # AN ITEM WITH NO ANSWER IS STILL COUNTED. `judge` carries back the
+            # raws it got, so a question the response left out reaches here as
+            # a missing key where `ask` used to hand over an `unknown`.
+            a = answers.get(f"c{i}") or UNANSWERED
             counts[a.word] = counts.get(a.word, 0) + 1
             p = ((a.raw or {}).get("probabilities") or {}).get(
                 entry["thresholds"]["option"])
@@ -471,7 +488,7 @@ def main(argv, out=sys.stdout, env=None):
                                               sources[reading],
                                               entry.get("prefilter", {}))
             parts = entry["state"]["pred"]["text"]
-            states = [(f"{p}:{f} `{n}`", para, n,
+            states = [(f"{p}:{f} `{n}`", p, para, n,
                        pred_text(n, parts, decls, fields, spec))
                       for p, f, para, n in found]
             print(f"check-cited-claims `{reading}`: {len(relevant)} staged "
@@ -481,7 +498,8 @@ def main(argv, out=sys.stdout, env=None):
                      if skipped else ""), file=out)
             if states:
                 jev = jev or load_sibling("campaign-jev.py")
-                report(ask_all(entry, states, jev, env), entry, out)
+                report(ask_all(entry, states, jev, jev.commit_key(), env),
+                       entry, out)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
         print(f"check-cited-claims: could not read the commit "
               f"({e.__class__.__name__}: {e}); nothing asked, exit status "

@@ -618,6 +618,10 @@ def main() -> int:
                       or {}).get("findings") or {}) == ["F1", "F2"], rows)
         # A KEYLESS RUN ANSWERS `unknown` BEFORE ANY SOCKET IS OPENED, which is
         # what CI is: the state is built, the rows land, nothing is asked.
+        # A FANNED READING'S `why` IS ONE PER ITEM, so the reason is read out
+        # of the dict as readily as out of the string a whole-reading row has.
+        said = lambda w: (" ".join(w.values()) if isinstance(w, dict)  # noqa: E731
+                          else w) or ""
         # A ROW CODE SETTLED IS EXEMPT FROM THE SECOND HALF: it was never asked,
         # so it has no reason to name a key that was never read. This fixture's
         # REPORT quotes no command, so `unverified-done` is one of those.
@@ -625,7 +629,7 @@ def main() -> int:
         check("a keyless run asks nothing and says so",
               all(r.get("answered") == "" for r in by.values())
               and len(asked_rows) == len(by) - 1
-              and all("TYPESAFE_API_KEY" in (r.get("why") or "")
+              and all("TYPESAFE_API_KEY" in said(r.get("why"))
                       for r in asked_rows), rows)
         check("...and costs the gate no timeout",
               all((r.get("latency") or 0) < 1.0 for r in by.values()),

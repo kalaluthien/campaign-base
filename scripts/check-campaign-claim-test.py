@@ -2179,7 +2179,9 @@ def main():
               "the guard returned (the kind read waits 2 s)",
               r.returncode == 0 and not logged_at_return
               and len(lines) == 1 and "check-research-bar.py" in lines[0]
-              and sorted(json.loads(lines[0])["answers"]) == conditions,
+              # ONE ROW A READING since the reader moved to `judge`, its
+              # per-condition answers under `raw` where `ask` wrote `answers`.
+              and sorted(json.loads(lines[0])["raw"]) == conditions,
               (out(r)[:300], lines[:2]))
 
         # R3, R4: A REVIEW ON A PULL REQUEST IS HANDED TO check-finding-sort.py,

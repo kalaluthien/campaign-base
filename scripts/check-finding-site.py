@@ -136,29 +136,31 @@ def reviewed_sha(first_line):
     return None
 
 
-def questions(entry):
-    q = entry["question"]
-    spec = {k: v for k, v in q.items() if k in ("type", "criteria")}
-    spec.update(entry["thresholds"], instructions=q["instructions"])
-    return {"c": spec}
+def ask_all(entry, cut, sha, subject, jev, key=None, env=None):
+    """Ask every finding with a site at once; log a skip for every other.
 
-
-def ask_all(entry, cut, sha, subject, jev, env=None):
-    """Ask every finding with a site at once; log a skip for every other."""
+    ONE `judge` CALL A FINDING, which is what this entry's `compose` says by
+    `call`: the finding and its slice ARE the state, so nothing fans out inside
+    a call and the question sent is the entry's own. What the ROW gained is the
+    reading's name, the wording and the KEY -- the repository, the pull request
+    and which finding of the review it was -- so the thread's next REVIEW can
+    be joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
     asks = []
     for n, (_word, masked, _ident) in enumerate(cut, 1):
         site, got = site_slice(sha, masked)
         if site is None:
             jev.skip(READER, f"{subject} f{n}", got, env)
         else:
-            asks.append((f"{subject} f{n} {site[0]}:{site[1]}",
+            asks.append((n, f"{subject} f{n} {site[0]}:{site[1]}",
                          {"finding": masked, "slice": got}))
     if not asks:
         return []
 
     def one(item):
-        label, state = item
-        return jev.ask(READER, label, state, questions(entry), env=env).answers["c"]
+        n, label, state = item
+        judged = jev.judge(entry["group"], state, read=label, reader=READER,
+                           key=dict(key or {}, finding=n), env=env)
+        return judged.verdicts[READING]
     with ThreadPoolExecutor(min(8, len(asks))) as pool:
         return list(pool.map(one, asks))
 
@@ -185,7 +187,11 @@ def main(argv, stdin=sys.stdin, env=None):
                          "the first line names no sha this checkout holds", env)
             return 0
         entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        ask_all(entry, cut, sha, subject, jev, env)
+        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
+        # repository names no pull request when a member repository's numbers
+        # collide with this tracker's.
+        ask_all(entry, cut, sha, subject, jev,
+                {"repo": repo, "pull_request": int(pr)} if repo else None, env)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
         try:
             load_sibling("campaign-jev.py").skip(

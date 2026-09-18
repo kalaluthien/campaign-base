@@ -4130,16 +4130,18 @@ def read_filings(cwd: Path):
 
 # THE SHELL WRITE THIS GUARD LETS THROUGH UNREAD (rule-check#455 pr 6, over
 # rule-check#471 DECISION 5716551122): does a Bash call allowed unread change a
-# file in the tree it runs in? LINT FIRST, and lint is the planner's list: a
-# command with no redirect, no in-place edit, no `tee`, `mv`, `cp`, `rm`, `git
-# commit` or `git push` is code's `no` and asks nothing. The lint reads the
-# guard's own split, so a heredoc body is data here as everywhere, and `-i` is
-# read only under `sed` and `perl`, where it edits in place; `grep -i` is not
-# a write.
+# file in the tree it runs in? LINT FIRST, and lint is the planner's list,
+# widened by pr#494's review: a command with no redirect, no in-place edit, no
+# `tee`, `mv`, `cp`, `rm`, `touch` or `truncate`, and no git subcommand but a
+# read is code's `no` and asks nothing. The lint reads the guard's own split,
+# so a heredoc body is data here as everywhere, and `-i` is read only under
+# `sed` and `perl`, where it edits in place; `grep -i` is not a write. An
+# interpreter (`python3 -c`, a script) is not read: it would send most of the
+# build loop to Jev, so what one writes is this lint's named gap.
 #
 # WHAT LINT LEAVES IS ASKED DETACHED. A PreToolUse hook holds the tool until it
-# returns, and lint leaves about one unread call in six (5864 of 33402 rows of
-# this machine's guard logs, 2026-09-05 to 09-18) -- a synchronous call there
+# returns, and lint leaves about one unread call in four (4490 of 16758 rows of
+# this machine's four guard logs, read 2026-09-18) -- a synchronous call there
 # is a second of wait in front of every `rm` and every commit. The reading is
 # at `shadow`, so nothing waits for it: this process hands the state to a
 # child in its own session, with no stdio held, and returns. The role is read
@@ -4147,9 +4149,20 @@ def read_filings(cwd: Path):
 SHELL_GROUP = "shell-unread"
 SHELL_READER = "check-campaign-claim.shell"
 SHELL_CHARS = 2048
-SHELL_WORDS = {"tee", "mv", "cp", "rm"}
+SHELL_WORDS = {"tee", "mv", "cp", "rm", "touch", "truncate"}
 IN_PLACE = {"sed", "perl"}
+# A verb that runs another command, whose operands are read for the words
+# above, and `find`'s own deleting action.
+RUNNERS = {"xargs", "find"}
 REDIRECTS = {">", ">>", "&>", "&>>", ">|"}
+# Git's subcommands that never write a checkout's files. Any other is asked,
+# since `checkout --`, `restore`, `reset --hard`, `stash pop`, `apply`, `mv`
+# and `rm` all do; a list of the writers would miss the next one.
+GIT_READS = {"status", "log", "diff", "show", "rev-parse", "ls-files",
+             "ls-tree", "ls-remote", "grep", "blame", "branch", "tag", "fetch",
+             "remote", "config", "cat-file", "for-each-ref", "rev-list",
+             "describe", "shortlog", "reflog", "merge-base", "help", "version",
+             "check-ignore", "var", "count-objects", "name-rev"}
 # The Jev question for the child, when lint left one. Empty on every other
 # call, so `main` spawns nothing.
 SHELL_ASKS = []
@@ -4168,19 +4181,26 @@ def shell_lint(command):
         word, rest = head(tokens)
         if word in SHELL_WORDS:
             return None, f"`{word}`"
-        if word in IN_PLACE and any(t == "--in-place" or t.startswith("-i")
-                                    for t in rest[1:]):
+        # `-i` bundled among short flags too: `perl -pi -e`, `sed -Ei`.
+        if word in IN_PLACE and any(
+                t.startswith("--in-place")
+                or (t[:1] == "-" and t[1:2] != "-" and "i" in t[1:])
+                for t in rest[1:]):
             return None, f"`{word} -i`"
+        if word in RUNNERS and any(t in SHELL_WORDS | IN_PLACE
+                                   or t == "-delete" for t in rest[1:]):
+            return None, f"`{word}` running a write"
         if word == "git":
             sub = next((t for i, t in enumerate(rest[1:], 1)
                         if not t.startswith("-")
                         and rest[i - 1] not in ("-C", "-c")), "")
-            if sub in ("commit", "push"):
+            if sub not in GIT_READS:
                 return None, f"`git {sub}`"
         for i, t in enumerate(tokens):
             if t in REDIRECTS and tokens[i + 1:i + 2] != ["/dev/null"]:
                 return None, f"a `{t}` redirect"
-    return "no", "no redirect, in-place edit, tee, mv, cp, rm, commit or push"
+    return "no", ("no redirect, in-place edit, tee, mv, cp, rm, touch, "
+                  "truncate, find -delete or git subcommand that writes")
 
 
 def tree_state(cwd):
@@ -4197,7 +4217,10 @@ def tree_state(cwd):
     head_sha, _w, _ = git(["rev-parse", "-q", "--verify", "HEAD"], top)
     # `-uall`, or a new directory is one `?? dir/` line whose stat never
     # moves when a file inside it is rewritten.
-    status, why, _ = git(["status", "--porcelain", "-z", "-uall"], top)
+    # `--no-optional-locks`, or the index refresh takes index.lock and a
+    # peer's `git commit` in the same checkout fails on it.
+    status, why, _ = git(["--no-optional-locks", "status", "--porcelain",
+                          "-z", "-uall"], top)
     if status is None:
         return None, why
     h = hashlib.sha256((head_sha or "").encode() + status.encode())

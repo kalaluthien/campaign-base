@@ -1072,13 +1072,14 @@ def shell_rows(m):
     """A guard log of four unread calls, and the reading of each: `aa`
     changed its tree and a commit was judged there after, `bb` left it as it
     was, `cc`'s after is the commit gate's own row, unchanged, and `dd`
-    changed a tree the gate reads as no campaign work. A second session
-    writes the tree between `aa` and its after, and must not stand in."""
+    changed a tree the gate reads as no campaign work. `ee`'s tree changed
+    with a second session calling into it between, so whose change it was
+    is unknown; `ff`'s only commit was judged for another session."""
     guard = ROOT / "guard-shell.log"
-    tree, other = "/b/wt", "/b/plain"
+    tree, other, shared, gated = "/b/wt", "/b/plain", "/b/shared", "/b/gated"
     g = [{"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p0",
           "command_sha": "aa", "at": "2026-09-18T01:00:00+00:00"},
-         {"session": "s2", "tool": "Edit", "tree": tree, "porcelain": "p0",
+         {"session": "s2", "tool": "Edit", "tree": gated, "porcelain": "t0",
           "at": "2026-09-18T01:00:01+00:00"},
          {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p1",
           "command_sha": "bb", "at": "2026-09-18T01:00:02+00:00"},
@@ -1092,12 +1093,29 @@ def shell_rows(m):
           "command_sha": "dd", "at": "2026-09-18T01:00:06+00:00"},
          {"session": "s1", "tool": "Bash", "tree": other, "porcelain": "q1",
           "at": "2026-09-18T01:00:07+00:00"},
-         {"session": "", "tool": "pre-commit", "tree": other,
-          "verdict": "not campaign work", "at": "2026-09-18T01:00:08+00:00"}]
+         {"session": "s1", "tool": "pre-commit", "tree": other,
+          "verdict": "not campaign work", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": shared, "porcelain": "r0",
+          "command_sha": "ee", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s2", "tool": "Bash", "tree": shared, "porcelain": "r0",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": shared, "porcelain": "r1",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "pre-commit", "tree": shared,
+          "porcelain": "r1", "verdict": "claim",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": gated, "porcelain": "t0",
+          "command_sha": "ff", "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": gated, "porcelain": "t1",
+          "at": "2026-09-18T01:00:08+00:00"},
+         {"session": "s2", "tool": "pre-commit", "tree": gated,
+          "porcelain": "t1", "verdict": "claim",
+          "at": "2026-09-18T01:00:08+00:00"}]
     guard.write_text("".join(json.dumps(r) + "\n" for r in g))
     rows = []
     for sha, porcelain, where in (("aa", "p0", tree), ("bb", "p1", tree),
-                                  ("cc", "p1", tree), ("dd", "q0", other)):
+                                  ("cc", "p1", tree), ("dd", "q0", other),
+                                  ("ee", "r0", shared), ("ff", "t0", gated)):
         row = log_row(f"s-{sha}", "shell-write-unread", "", 0,
                       state={"command": "echo x > f", "cwd": where,
                              "role": "worker"},
@@ -1117,8 +1135,9 @@ def join_reads_the_tree_after_an_unread_call(m):
     cases, _lines = joined(m, shell_rows(m))
     by = {c["id"]: c for c in cases["shell-write-unread"]}
     got = {k: (by.get(f"shell-write-unread-s-{k}") or {}).get("truth")
-           for k in ("aa", "bb", "cc", "dd")}
-    return (got == {"aa": "yes", "bb": "no", "cc": "no", "dd": None}
+           for k in ("aa", "bb", "cc", "dd", "ee", "ff")}
+    return (got == {"aa": "yes", "bb": "no", "cc": "no", "dd": None,
+                    "ee": None, "ff": None}
             and (by.get("shell-write-unread-s-aa") or {}).get("label", {})
             .get("from") == "join:guard-tree-delta"), got
 

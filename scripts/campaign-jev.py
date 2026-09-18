@@ -1924,8 +1924,9 @@ def join_guard_tree_delta(row, rows):
 
     THE AFTER IS THE SAME SESSION'S NEXT ROW IN THE SAME TREE, whatever tool
     made it, since every guard row carries the tree's state taken before its
-    own call. Another session's rows are skipped: a peer's write is not this
-    call's. The same state is `no`.
+    own call. The same state is `no`. A CHANGED tree that another session
+    also called into between the two is not labelled: checkouts are shared,
+    and nothing says whose call changed it.
 
     A CHANGED TREE IS LABELLED ONLY BY THE COMMIT GATE'S LATER VERDICT ON IT
     (rule-check#455 DECISION 5723273420): `yes` once the gate has judged a
@@ -1943,19 +1944,26 @@ def join_guard_tree_delta(row, rows):
     if not mine:
         return None, "", "the guard row this reading was asked on is not in the log"
     at = mine[-1]
-    after = next((g for g in rows[at + 1:]
-                  if g.get("session") == row.get("session")
-                  and g.get("tree") == tree and g.get("porcelain")), None)
-    if after is None:
+    end = next((n for n in range(at + 1, len(rows))
+                if rows[n].get("session") == row.get("session")
+                and rows[n].get("tree") == tree and rows[n].get("porcelain")),
+               None)
+    if end is None:
         return None, "", "no later call of this session in this tree yet"
+    after = rows[end]
     if after["porcelain"] == before:
         return "no", (f"{tree} read the same before this call and before the "
                       f"session's next ({after.get('tool')}, {after.get('at')})"
                       ), ""
+    if any(g.get("tree") == tree and g.get("session") != row.get("session")
+           for g in rows[at + 1:end]):
+        return None, "", "another session called into this tree before it changed"
     gate = next((g for g in rows[at + 1:] if g.get("tool") == "pre-commit"
-                 and g.get("tree") == tree), None)
+                 and g.get("tree") == tree
+                 and g.get("session") == row.get("session")), None)
     if gate is None:
-        return None, "", "the tree changed and no commit has been judged on it yet"
+        return None, "", ("the tree changed and this session has had no "
+                          "commit judged on it yet")
     if gate.get("verdict") == "not campaign work":
         return None, "", "the commit gate reads this tree as no campaign work"
     return "yes", (f"{tree} changed by the session's next call "

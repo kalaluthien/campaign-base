@@ -1982,6 +1982,31 @@ def the_comment_join_labels_a_claim_rewritten_away(m):
         (rewritten, only_own, own_said, why_young, why_file, why_def)
 
 
+def the_spec_row_join_labels_a_command_removed(m):
+    """dead-reader: a command gone from its module is `dead`; one still there
+    is `live` only once a later commit on the module and a full window are
+    behind it; a module gone is not labelled."""
+    row = commit_row("a", "dead-reader", {}, name="R1e_CloseOnlyStillLoses",
+                     path="spec/x/checks.als")
+    kept = "run R1d_Kept for 3 expect 1\nrun R1e_CloseOnlyStillLoses for 3 expect 1\n"
+    seen = lambda now, touched, window: {  # noqa: E731
+        "now": now, "window": window, "own": "9" * 40,
+        "commits": ([{"sha": "9" * 40, "paths": ["spec/x/checks.als"]}]
+                    + [{"sha": "0" * 40, "paths": ["spec/x/checks.als"]}] * touched)}
+    read = lambda got: m.join_spec_row_removed(row, got)  # noqa: E731
+    gone, _e, _w = read(seen("run R1d_Kept for 3 expect 1\n"
+                             "-- run R1e_CloseOnlyStillLoses was here\n", 0, 1))
+    live, _e, _w = read(seen(kept, 1, 30))
+    young, _e, why_young = read(seen(kept, 1, 3))
+    only_own, _e, why_own = read(seen(kept, 0, 30))
+    no_file, _e, why_file = read(seen(None, 1, 30))
+    return (gone == "dead" and live == "live" and young is None
+            and str(m.COMMIT_WINDOW) in why_young and only_own is None
+            and "0 of them on this module" in why_own
+            and no_file is None and "gone from `origin/main`" in why_file), \
+        (gone, live, why_young, why_own, why_file)
+
+
 def suite_row(call, **kw):
     """A suite-witness claim row: keyed by the repository, the sha the reading
     was made on, the SUITE, the scenario and the case the select call picked."""
@@ -2523,6 +2548,7 @@ CASES["the join reaches a row keyed by a sha and a path"] = the_join_reaches_a_c
 CASES["the DECISION join labels a condition named as a gap"] = the_decision_join_labels_a_named_condition
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
+CASES["the spec-row join labels a command removed"] = the_spec_row_join_labels_a_command_removed
 CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
 CASES["a corpus row is labelled by the entry's own join"] = a_corpus_row_is_labelled_by_the_entrys_own_join
 CASES["a choice over the option ceiling is unknown"] = a_choice_over_the_option_ceiling_is_unknown
@@ -3560,6 +3586,16 @@ MUTATIONS = [
     ("a definition gone read as the claim rewritten",
      "    if name and name not in now:", "    if False:",
      "the comment join labels a claim rewritten away"),
+    ("a command still there labelled live with nobody back",
+     "    if there and not (touched and window >= COMMIT_WINDOW):", "    if False:",
+     "the spec-row join labels a command removed"),
+    ("a removed command labelled live",
+     'word = "live" if there else "dead"', 'word = "live"',
+     "the spec-row join labels a command removed"),
+    ("a module gone labelled as a removal",
+     '    if (now := seen.get("now")) is None:',
+     '    if (now := seen.get("now") or "") is None:',
+     "the spec-row join labels a command removed"),
     ("a file gone read as the claim rewritten",
      "    if now is None:", "    if False:",
      "the comment join labels a claim rewritten away"),

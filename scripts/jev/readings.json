@@ -1297,5 +1297,101 @@
    "cases": "144 real hunks of merged maintenance pull requests labelled by hand (60 asked_behaviour, 38 form_only, 18 unasked_behaviour, 28 unclear and unscored), 60 made by moving a hunk under a sibling sub-issue's Intent, 15 made by one behaviour edit inside a form-only hunk: 93 negatives (unasked or made) and 98 positives (form_only or asked)",
    "how": "NO BAND: FEW CASES, LONG SHADOW. NO CUT IS DECLARED, so the word is the option the model picked; the flag reads P(unasked_behaviour), which the reader writes as the row's `flag`. AUC 0.80 over all (real 0.85, sibling 0.85, one edit 0.55), but the cut that flags every negative is 0.00, so it flags 98 of 98 positives too. Measured beside it on the same states: a form_only/changes_behaviour/unclear choice read on P(changes_behaviour), AUC 0.74 and 98/98 at the all-negatives cut; a noul 'does hunk change what anything does' AUC 0.61 (one edit 0.31); a noul 'does intent ask for it' read as 1-P, AUC 0.82 and 97/98; the two nouls combined 0.78 and 89/98; token overlap of intent and hunk 0.66 and 96/98; changed-line count 0.56. The paired rise of P(unasked) from a hunk to its made negative is 50 of 60 under a sibling Intent but 11 of 15 for one edit: it reads whether the Intent names the change, not whether behaviour changed. Repeat of 30 states with the store off: at most 0.08-0.11 apart, 2 word flips. Calls: 479 over 230 distinct states, 2.1 a state for the measurement (every alternative re-asked each state); the reader sends 1 a hunk. It orders and does not filter, so this stays at shadow collecting cases (sdlc-alloy#458 C2)."
   }
+ },
+ "dead-premise": {
+  "owner": "scripts/spec-dead-count.py --mode ruling, run by a survey session by hand",
+  "tier": "shadow",
+  "group": "dead-premise",
+  "state": {
+   "fields": [
+    "row",
+    "fact"
+   ],
+   "row": "one command of spec/ as the tree holds it: the pred or assert it runs and its comment, the command line, then each pred, fun and assert of its entity it names, one level (`spec-dead-count.py`'s `row_of`)",
+   "fact": "what code read from the record the row's premise would leave: every `bound:` label on the tracker's campaign issues for another machine, the tracker's NOTEs whose first line reports a hand-off for a handoff, the kind references' `optional = ...` lines for a narrowed profile"
+  },
+  "prefilter": {
+   "what": "a command no `Cov_`, whose row matches one of `PREMISES` in order -- a handoff word, `narrowing`, or another machine read off a scope of 2 or more `Machine`, `coLocated`, `Elsewhere` or 'two machines'; every other command asks nothing. The fact is fetched once a premise a run, and a gh call that fails raises and logs nothing"
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "`row` is one command of this base's Alloy spec, with the definitions it names. `fact` is what code found in this base's own records. Does `fact` show that the situation `row` needs has happened here?",
+   "criteria": {
+    "shown": {
+     "what": "`row` needs an uncommon situation -- another machine, a hand-off between sessions, a narrowed stage profile -- and `fact` records it happening here at least once",
+     "example": "`row` checks a planner handing its work to a successor; `fact` lists a NOTE 'handing off to rule-check-planner-10'"
+    },
+    "not_shown": {
+     "what": "`row` needs such a situation and nothing in `fact` records it happening: `fact` shows only the ordinary case, or records something else",
+     "example": "`row` runs over `exactly 2 Machine`; `fact` lists one machine on every campaign issue"
+    },
+    "no_premise": {
+     "what": "`row` needs no uncommon situation: it holds or fails on one machine, with no hand-off and the ordinary profile, whatever `fact` says"
+    },
+    "unclear": {
+     "what": "`row` or `fact` is cut off too far to say"
+    }
+   }
+  },
+  "compose": {
+   "where": "call"
+  },
+  "thresholds": {},
+  "join": null,
+  "join_why": "removal says a row died, not why: a premise row removed as a rejected candidate or a duplicate would be labelled not_shown wrongly, and a kept row is shown or no_premise alike. sdlc-alloy#343's reason code per row is the truth, which is what the corpus holds",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "declared": {},
+   "wording": "095b3fee8d49",
+   "cases": "31 rows of sdlc-alloy#343 read at fcfc1a9 with the fact fetched as of 2026-09-14: 13 ruled not_shown (11 two-machine, 2 narrowing), 6 ruled shown (the handoff family), 6 made by giving a handoff row the machine fact (swap), 6 made by giving a machine row the handoff fact (swap-keep): 25 not_shown against 6 shown",
+   "how": "NO BAND: FEW CASES. NO CUT IS DECLARED, so the word is the option the model picked; the flag reads P(not_shown), which the reader writes as the row's `flag`. AUC 0.97 (repeat 0.98): real 1.00, swap 1.00, swap-keep 0.89 (0.92); the cut at the lowest not_shown flags 2 of 6 shown (repeat 1). The low end is swap-keep: a machine row handed the handoff fact reads shown at P(not_shown) 0.08-0.42, since any event the fact lists passes for the premise. Measured beside it on the same states: P(not_shown)+P(no_premise) 0.96; a noul 'does fact show it' read as 1-P 0.76 (swap-keep 0.00); token overlap of row and fact 0.88. Round 1, with no fact: the premise answer crossed in 4 of 4 runs. Repeat with the store off: at most 0.14 apart, p90 0.06, 6 of 158 words flipped over both groups. Calls: 158 a run over 63 states, 2.5 a state (every variant); the reader sends 1 a row. It orders real and swapped rows and trips on a fact of another kind, so it stays at shadow (sdlc-alloy#458)."
+  }
+ },
+ "dead-reader": {
+  "owner": "scripts/spec-dead-count.py --mode ruling, run by a survey session by hand",
+  "tier": "shadow",
+  "group": "dead-reader",
+  "state": {
+   "fields": [
+    "row",
+    "fact"
+   ],
+   "row": "one command of spec/ as the tree holds it: the pred or assert it runs and its comment, the command line, then each pred, fun and assert of its entity it names, one level (`spec-dead-count.py`'s `row_of`)",
+   "fact": "for the command and each definition its row names, the files outside spec/ naming it, the snapshot left out: `spec-dead-count.py defs`'s mentions, at most six a name"
+  },
+  "prefilter": {
+   "what": "a command no suite's `# witnesses:` line and no html form's `data-refines` names (`unwitnessed`), no `Cov_`: alloy-check's gate keeps a `Cov_` whatever it duplicates. A witnessed command asks nothing. Duplicate is not asked: sdlc-alloy#343 ruled one pair 'not one', and a `Cov_` names no pair (DECISION 5726744824)"
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "`row` is one command of this base's Alloy spec, with the definitions it names; no test suite declares it. `fact` lists the files outside the spec that name it and each definition it names. Should `row` stay in the spec?",
+   "criteria": {
+    "live": {
+     "what": "a script, AGENTS.md or a skill file `fact` lists relies on a rule `row` checks, or `row` is the only command that goes red when a rule the spec keeps is weakened",
+     "example": "`row` is `S22a`, a run that is satisfiable only while `backlogDiscipline` is as weak as the design says; no other command catches it made too strong"
+    },
+    "dead": {
+     "what": "`row` exercises a rule the spec's own comment calls rejected, superseded or replaced; or nothing `fact` lists relies on what it checks and another command already shows it",
+     "example": "`row` runs `writeBodyAtCloseOnly`, whose comment calls it 'the rejected candidate'"
+    },
+    "unclear": {
+     "what": "`row` or `fact` is cut off too far to say"
+    }
+   }
+  },
+  "compose": {
+   "where": "call"
+  },
+  "thresholds": {},
+  "join": "spec-row-removed",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "declared": {},
+   "wording": "499be87d349d",
+   "cases": "32 unwitnessed commands of sdlc-alloy#343 read at fcfc1a9: 24 ruled dead (the C and N rows pr#433's e2c3db0 removed), 2 made by removing the one reader from a kept row's fact, 6 kept (the 3 owner restores and the 3 `_Bites` no suite witnesses; the other 4 are witnessed and ask nothing): 26 dead against 6 live. The 23 `Cov_` kept for alloy-check's gate are neither and are left out",
+   "how": "NO BAND: IT DOES NOT SEPARATE. NO CUT IS DECLARED; the flag reads P(dead). AUC 0.64 (repeat 0.69), made rows 0.83; live reads 0.45-0.87, so the cut at the lowest dead flags 6 of 6 live. Measured beside it: a rejected/unread/live/unclear choice on P(rejected) 0.55 (0.60) and P(rejected)+P(unread) 0.57 (0.53); a noul 'should it go' 0.55 (0.61); token overlap of row and fact 0.54; the count of names with a reader 0.55. Round 1, with no fact: 0.66. Why: a kept row lives as the only command that goes red when its rule is weakened, which no list of readers shows; S22a reads 0.87. Repeat with the store off as in dead-premise. It stays at shadow collecting cases; a fact that says which command alone fails a weakened rule is the next thing to fetch (sdlc-alloy#458)."
+  }
  }
 }

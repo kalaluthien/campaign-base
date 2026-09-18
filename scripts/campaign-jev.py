@@ -2366,6 +2366,48 @@ def join_witness_case_kept(row, seen):
                else f"the case `{name}` is still there"), "")
 
 
+def join_spec_row_removed(row, seen):
+    """dead-reader: did the survey that came after remove the command?
+
+    THE REMOVAL COMMIT IS THE RULING. A survey rules each row and the owner
+    vetoes the table; what the tree does next is the ruling carried out, so a
+    command gone from its module on `origin/main` is `dead`. The weak half is
+    the command still there, read as `live` only once somebody has come back
+    to the module and left it -- a later commit ON THE FILE and a window of
+    `COMMIT_WINDOW` commits behind it, as `comment-rewritten` requires.
+
+    A MODULE GONE IS NOT LABELLED: its commands moved or went with it, and
+    which cannot be read from what replaced it. Nor is a rename told from a
+    removal -- a command restored under a new name reads `dead`, which is why
+    the corpus is labelled by the survey's rows and this only extends it."""
+    if seen is None:
+        return None, "", "the module's history did not read"
+    if seen.get("unmerged"):
+        return None, "", (f"{row.get('commit', '')[:12]} has not reached "
+                          f"`origin/main`, so no commit after it is a later "
+                          f"fact about this reading")
+    name = row.get("name") or ""
+    if not name:
+        return None, "", "the row names no command"
+    if (now := seen.get("now")) is None:
+        return None, "", (f"`{row.get('path')}` is gone from `origin/main`, so "
+                          f"where `{name}` went cannot be read from what "
+                          f"replaced it")
+    own = seen.get("own")
+    touched = len([c for c in seen.get("commits") or [] if c.get("sha") != own])
+    window = seen.get("window") or 0
+    there = re.search(r"^\s*(?:check|run)\s+" + re.escape(name) + r"\b", now, re.M)
+    if there and not (touched and window >= COMMIT_WINDOW):
+        return None, "", (f"{window} commit(s) on `origin/main` since, "
+                          f"{touched} of them on this module and not this "
+                          f"reading's own; `{name}` is still there and that is "
+                          f"under {COMMIT_WINDOW}")
+    word = "live" if there else "dead"
+    return (word, f"`{name}` in {row.get('path')} after "
+            f"{row.get('commit', '')[:12]}, {window} commit(s) and {touched} on "
+            f"the module since: " + ("still there" if there else "removed"), "")
+
+
 TRANSCRIPT_MODULE = (HERE.parent / ".claude" / "skills" / "assuming-role"
                      / "scripts" / "campaign-transcript.py")
 
@@ -2587,7 +2629,8 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
          "witness-case-kept": join_witness_case_kept,
          "stuck-reprompt": join_stuck_reprompt,
          "plan-closing-diff": join_plan_closing_diff,
-         "plan-cover-kept": join_plan_cover_kept}
+         "plan-cover-kept": join_plan_cover_kept,
+         "spec-row-removed": join_spec_row_removed}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
 # FIELDS, so the subject is the field it names and never a guess. A commit-time

@@ -19,13 +19,14 @@ Launch in `<campaign>/repos/<repo>/`.
   prompt has to be short either way, and a `gh issue view` is the shortest thing
   that carries a whole brief. Nothing is written, nothing goes stale against the
   issue, and the brief outlives the machine.
-- **No prompt on the launch line at all**, variadic flag or not: the brief is
+- **No prompt on the launch line at all**, wherever it sits: the brief is
   delivered afterwards, by the script "Delivering the prompt" below names, and
-  `scripts/check-campaign-claim.py` refuses a launch line whose `--` tail
-  opens with a word rather than a flag. One put after `--add-dir` or
-  `--allowedTools` is swallowed as one of their values and the run dies on
-  "Input must be provided", which is loud; one put before them is silent, and
-  that is the half the guard reads.
+  `scripts/check-campaign-claim.py` refuses a launch line carrying one -- its
+  docstring says by what marks. Only a prompt swallowed by a variadic
+  `--add-dir` or `--allowedTools` fails loudly, on "Input must be provided";
+  one appended after the ordinary flags is simply accepted as the session's
+  first prompt, which is silent and is the shape the incident below took
+  (both probed with `claude -p`, pr#495 review).
 - **Pass `--add-dir <base> [<other paths the sub-issue names>]` for a MEMBER
   repository.** Its delegate's cwd is `<campaign>/repos/<repo>/`, and the claim
   script under `<base>/scripts/` lies outside it, so without the flag its first
@@ -86,12 +87,14 @@ and a checkout on `main` behind `origin/main`; its docstring says what else.
 Both are prompts into the pane, which is the criterion in `AGENTS.md` § The
 four messages.
 
-A prompt put on the launch line is
-word-split: a launch ending with a whole sentence delivered its first word alone,
-and the delegate reported it had been given no brief while the launch looked
-successful. **A raw `herdr agent prompt` carrying the assignment sentence is
-refused the same way**, and by the same reader, since the four checks above
-live on this script's path and nowhere else.
+A prompt put on the launch line reaches the delegate outside
+those four checks, and a launch ending with a whole sentence is how that
+happened on 2026-08-28. (Whether herdr word-split it is not settled: `agent
+start` single-quotes each `--` argument, and the word-splitting measured that
+day was `pane run`'s -- `.claude/skills/using-herdr/references/facts.md`. The
+refusal stands on the skipped checks alone.) **A raw `herdr agent prompt`, and
+a `herdr pane send-text`, carrying the assignment sentence are refused the
+same way**, and by the same reader.
 
 This form submits and returns; it does not wait. Every waiting behaviour belongs
 to `--wait`, which it does not pass. **If you add `--wait`, add a `--timeout`

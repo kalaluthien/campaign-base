@@ -2965,6 +2965,13 @@ def main():
                 # bare word left after the pair.
                 ("the pane given by `--pane`",
                  f'herdr agent prompt --pane w40:p2D "{sentence}"'),
+                # EVERY GLOBAL OPTION TAKING A SEPARATE WORD shifts the two
+                # words this reads, so the set that lists them is part of the
+                # rule: `--remote-keybindings` was missing and hid both this
+                # rule and the older `agent kill` one (pr#495 review).
+                ("a valued global option the set had not held",
+                 f'herdr --remote-keybindings local agent prompt w40:p2D '
+                 f'"{sentence}"'),
                 ("inside a shell's -c string",
                  f"bash -c 'herdr agent prompt w40:p2D \"{sentence}\"'")):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
@@ -2986,12 +2993,36 @@ def main():
                  f'-- "{sentence}" --model opus'),
                 ("any other prompt, since the rule is the position",
                  'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
-                 '-- "read AGENTS.md" --model opus')):
+                 '-- "read AGENTS.md" --model opus'),
+                # THE INCIDENT'S OWN SHAPE (launching.md, 2026-08-28): the
+                # documented flags first and the sentence appended, which
+                # position 0 alone read as a flags-only line.
+                ("the sentence appended after the documented flags",
+                 f'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 f'-- --model opus --session-id u --name demo-worker-9 '
+                 f'"{sentence}"'),
+                ("a shorter prompt appended the same way",
+                 'herdr agent start demo-worker-9 --kind claude --pane w40:p2D '
+                 '-- --model opus --add-dir /x "read the brief and start"')):
             r = ask(wt, tool="Bash", command=command, run_cwd=wt)
             check(f"a prompt on a `herdr agent start` line is refused: {name}",
                   r.returncode == 2 and "campaign-assign.py" in out(r)
                   and "--assume-fresh" in out(r),
                   f"exit {r.returncode}: {out(r)[:300]}")
+        # A THIRD VERB REACHES A PANE. `pane send-text` types literal text
+        # into it and `send-keys Return` submits it (using-herdr facts.md), so
+        # an assignment goes in that way with none of the four checks either.
+        r = ask(wt, tool="Bash", run_cwd=wt,
+                command=f'herdr pane send-text w40:p2D "{sentence}"')
+        check("`herdr pane send-text` carrying an assignment is refused",
+              r.returncode == 2 and "campaign-assign.py" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+        r = ask(wt, tool="Bash", run_cwd=wt,
+                command="herdr --remote-keybindings local agent kill w40:p2D")
+        check("...and the same option no longer hides `agent kill`",
+              r.returncode == 2 and "has not agreed to stop" in out(r),
+              f"exit {r.returncode}: {out(r)[:300]}")
+
         # THE ORDINARY SHAPES IT MUST NOT CATCH, read before the refusals as
         # this repository's review rule asks. Every prompt into a pane that is
         # not an assignment stays a prompt: AGENTS.md's two channels make a
@@ -3006,6 +3037,12 @@ def main():
                  "-- --model opus --effort high"),
                 ("a launch line with no `--` tail at all",
                  "herdr agent start demo-worker-9 --kind claude --pane w40:p2D"),
+                ("a launch line whose every tail value is one token",
+                 "herdr agent start demo-worker-9 --kind claude --pane w40:p2D "
+                 "-- --model opus --session-id u --name demo-worker-9 "
+                 "--add-dir /x --autocompact 250k"),
+                ("a `send-text` answering a dialog",
+                 'herdr pane send-text w40:p2D "down"'),
                 ("a read of the listing", "herdr agent list"),
                 ("the sanctioned path itself",
                  "scripts/campaign-assign.py w40:p2D 461"),
@@ -4487,7 +4524,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 683
+    EXPECTED = 690
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

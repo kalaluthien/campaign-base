@@ -36,10 +36,10 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
                     it first. Neither flag reaches
                     these: each is a fact about the launch, not about the
                     transcript. They hold on this path only, which is why
-                    `check-campaign-claim.py` refuses the two herdr calls that
-                    go round it -- an `agent prompt` carrying the sentence
-                    `ASSIGNMENT` below matches, and an `agent start` whose
-                    `--` tail opens with a prompt.
+                    `check-campaign-claim.py` refuses the three herdr calls
+                    that go round it -- an `agent prompt` or a `pane
+                    send-text` carrying the sentence `ASSIGNMENT` below
+                    matches, and an `agent start` line carrying a prompt.
   (not idle)        a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.

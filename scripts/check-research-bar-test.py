@@ -220,8 +220,9 @@ MUTATIONS = [
      '{"issue": int(issue)}, env)',
      "the row carries the reading, the wording and the join key"),
     ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
+     "    jev.shielded(READER, subject, lambda: read(issue, repo, subject, stdin, jev,\n"
+     "                                               env), env)",
+     "    read(issue, repo, subject, stdin, jev, env)",
      "a reader that could not read exits 0, says nothing and logs a skip"),
     ("a failed kind read taken for a kind",
      '    if p.returncode == 0 or (p.returncode == 1 and kind == "none"):', "    if True:",
@@ -230,8 +231,8 @@ MUTATIONS = [
      '(p.returncode == 1 and kind == "none")', "p.returncode == 1",
      "a tracker that raised, exit 1 and no word, logs one skip row"),
     ("a skip logged for a kind that is not research",
-     '        if kind != "research":\n            return 0',
-     '        if kind != "research":\n            jev.skip(READER, subject, "x", env)\n            return 0',
+     '    if kind != "research":\n        return',
+     '    if kind != "research":\n        jev.skip(READER, subject, "x", env)\n        return',
      "an issue with no kind logs nothing"),
 ]
 
@@ -240,7 +241,7 @@ def live(record):
     """Every corpus case against the real endpoint, once. A case is red when
     its word differs from the last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)

@@ -287,8 +287,9 @@ def issue_in_its_own_repository(t):
                                     "kalaluthien/campaign-base"], r.gh
 
 
-class RecordingJev:
-    """A jev double that answers nothing and keeps the `cwd` of every call.
+def RecordingJev():
+    """A copy of the real campaign-jev whose `judge` answers nothing and whose
+    `judge` and `skip` keep the `cwd` of every call.
 
     The shared log is where `cwd` used to be observable, and since pr#474 a
     stubbed endpoint that names no log writes nothing at all -- on purpose, so
@@ -296,28 +297,23 @@ class RecordingJev:
     reader's side of the rule is asserted where the reader makes it: every
     call names the reader's OWN base, never the process's cwd, which is what
     puts a production row in that reader's `runtime/jev.log` when a session
-    runs it from some other checkout. Its budget is `BUDGET`, this file's one
-    reading of the real one, since a copy of its own passes a moved budget."""
+    runs it from some other checkout. A COPY OF THE MODULE and not a double:
+    what surrounds the call -- the budget, the chain, the skip on a raise --
+    is campaign-jev's since rule-check#506, and a double would be a second
+    copy of it that passes where the real one moved."""
+    jev = importlib.import_module("campaign-jev").load_sibling("campaign-jev.py")
+    jev.cwds = []
 
-    STATE_BUDGET = BUDGET    # the real one, read once at the top of this file
-
-    def __init__(self):
-        self.cwds = []
-
-    def judge(self, group, state, read="", reader="", key=None, env=None,
-              cwd=None):
-        self.cwds.append(cwd)
+    def judge(group, state, cwd=None, **_kw):
+        jev.cwds.append(cwd)
         return types.SimpleNamespace(verdicts={group: types.SimpleNamespace(
             raw={cid: {"choice": "h1"} for cid in state.get("condition") or {}},
             why={})})
 
-    def words_of(self, entry, verdict):
-        return {cid: types.SimpleNamespace(raw=raw)
-                for cid, raw in (verdict.raw or {}).items()}
-
-    def skip(self, reader, label, why, env=None, cwd=None):
-        self.cwds.append(cwd)
-
+    def skip(reader, label, why, env=None, cwd=None):
+        jev.cwds.append(cwd)
+    jev.judge, jev.skip = judge, skip
+    return jev
 
 NO_DOD = "## Intent\n\n- x\n"
 NO_TEST_DIFF = ("diff --git a/scripts/tool.py b/scripts/tool.py\n"
@@ -329,8 +325,8 @@ def drive(t, jev, answers, diff=DIFF, body=BODY):
 
     `answers` names the gh verbs that fail. The real `load_sibling` still
     answers for check-diff-screen.py, whose TEST names a test path."""
-    real, real_gh = t.m.load_sibling, t.m.gh
-    t.m.load_sibling = lambda n: jev if n == "campaign-jev.py" else real(n)
+    real, real_gh = t.m.jev_module, t.m.gh
+    t.m.jev_module = lambda: jev
     t.m.gh = lambda *a: (
         ("", "gh double: refused") if " ".join(a[:2]) in answers else
         (json.dumps(closing(5)), "") if a[:2] == ("pr", "view") else
@@ -338,7 +334,7 @@ def drive(t, jev, answers, diff=DIFF, body=BODY):
     try:
         return t.m.main(["9"], io.StringIO(REPORT))
     finally:
-        t.m.load_sibling, t.m.gh = real, real_gh
+        t.m.jev_module, t.m.gh = real, real_gh
 
 
 def every_jev_call_names_the_readers_base(t):
@@ -435,58 +431,60 @@ CASES = {
 }
 
 MUTATIONS = [
-    ("a call a condition",
-     '                    {"candidateHunks": text, "condition": conds},',
-     '                    {"candidateHunks": text,\n'
-     '                     "condition": dict(list(conds.items())[:1])},',
-     "a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing"),
-    ("a claim call for noMatch", "        if h in cands:", "        if h:",
-     "a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing"),
-    ("a claim call a condition",
-     "            by_hunk.setdefault(h, {})[cid] = conds[cid]",
-     "            by_hunk[h + cid] = {cid: conds[cid]}; cands[h + cid] = cands[h]",
-     "two conditions picking one hunk share one claim call"),
-    ("the prefilter not read", "                if settled(prefilter, text):", "                if False:",
-     "a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing"),
+    ('a call a condition',
+     '        SELECT, {"candidateHunks": text, "condition": conds},',
+     '        SELECT, {"candidateHunks": text, "condition": dict(list(conds.items())[:1])},',
+     'a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing'),
+    ('a claim call for noMatch',
+     '        if h in cands else None,',
+     '        if h else None,',
+     'a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing'),
+    ('the prefilter not read',
+     '            if settled(prefilter, text):',
+     '            if False:',
+     'a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing'),
     ("every file a candidate", "if not test.search(path) or len(body) < 2:", "if len(body) < 2:",
      "the candidates are the test file's hunks, each its path and hunk"),
     ("the path dropped from a candidate",
      'text = {h: c["path"] + "\\n" + c["text"] for h, c in cands.items()}',
      'text = {h: c["text"] for h, c in cands.items()}',
      "the candidates are the test file's hunks, each its path and hunk"),
-    ("the conditions never handed to the select call",
-     '                    {"candidateHunks": text, "condition": conds},',
-     '                    {"candidateHunks": text,\n'
-     '                     "condition": {c: "" for c in conds}},',
+    ('the conditions never handed to the select call',
+     '{"candidateHunks": text, "condition": conds},',
+     '{"candidateHunks": text, "condition": {c: "" for c in conds}},',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the candidates never handed to the select call",
-     '                    {"candidateHunks": text, "condition": conds},',
-     '                    {"candidateHunks": {}, "condition": conds},',
+    ('the candidates never handed to the select call',
+     '{"candidateHunks": text, "condition": conds},',
+     '{"candidateHunks": {}, "condition": conds},',
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("the merge ask not read", 'if not re.search(prefilter["asks_merge"], report):', "if False:",
      "a REPORT not asking for the merge asks and logs nothing"),
     ("the comment kind not read", 'if not report.lstrip().startswith("REPORT "):', "if False:",
      "a comment of another kind asks nothing"),
-    ("an issue with no DoD asked", "            elif DOD in body:", "            elif True:",
-     "a pull request closing no Definition of done logs one skip"),
-    ("no test hunk not skipped", "        if not cands:", "        if False:",
-     "a diff changing no test file logs one skip"),
-    ("the budget not read",
-     '    if len(json.dumps({"candidateHunks": text}).encode("utf-8")) > jev.STATE_BUDGET:',
-     "    if False:",
-     "a select state over the budget is not sent and logs a skip"),
-    ("a failed pr read taken for one",
-     '        view, why = gh("pr", "view", pr, *target, "--json", "closingIssuesReferences")\n        if why:',
-     '        view, why = gh("pr", "view", pr, *target, "--json", "closingIssuesReferences")\n        if False:',
-     "a failed pull request read logs one skip"),
-    ("a failed issue read unlogged",
-     '                jev.skip(READER, f"{subject} {ref[\'number\']}",\n                         f"the issue read failed: {why}", env, cwd=HERE)',
-     "                pass",
-     "a failed issue read logs a skip for that issue"),
-    ("a failed diff read taken for one",
-     '        diff, why = gh("pr", "diff", pr, *target)\n        if why:',
-     '        diff, why = gh("pr", "diff", pr, *target)\n        if False:',
-     "a failed diff read logs one skip"),
+    ('an issue with no DoD asked',
+     '        elif DOD in body:',
+     '        elif True:',
+     'a pull request closing no Definition of done logs one skip'),
+    ('no test hunk not skipped',
+     '    if not cands:',
+     '    if False:',
+     'a diff changing no test file logs one skip'),
+    ('the budget not read',
+     '    if jev.over_budget({"candidateHunks": text}):',
+     '    if False:',
+     'a select state over the budget is not sent and logs a skip'),
+    ('a failed pr read taken for one',
+     '"closingIssuesReferences")\n    if why:',
+     '"closingIssuesReferences")\n    if False:',
+     'a failed pull request read logs one skip'),
+    ('a failed issue read unlogged',
+     '            jev.skip(reader, f"{subject} {ref[\'number\']}",\n                     f"the issue read failed: {why}", env, cwd=HERE)',
+     '            pass',
+     'a failed issue read logs a skip for that issue'),
+    ('a failed diff read taken for one',
+     '    diff, why = gh("pr", "diff", pr, *target)\n    if why:',
+     '    diff, why = gh("pr", "diff", pr, *target)\n    if False:',
+     'a failed diff read logs one skip'),
     ("the repository dropped", 'target = ["-R", repo or TRACKER]', 'target = ["-R", TRACKER]',
      "a member pull request is read in its repository, its tracker issue in the tracker"),
     ("the issue read in the pull request's repository", '"-R", name,', '*target,',
@@ -494,23 +492,21 @@ MUTATIONS = [
     ("the issue read in the tracker always", '"-R", name,', '"-R", TRACKER,',
      "an issue is read in its own repository"),
     ("the log resolved from the process's cwd, at a main() skip",
-     '                             "test could carry", env, cwd=HERE)',
-     '                             "test could carry", env)',
+     '                         "test could carry", env, cwd=HERE)',
+     '                         "test could carry", env)',
      "every jev call names the reader's own base, not the process cwd"),
     ("the log resolved from the process's cwd",
-     "                    read=f\"{subject} select\", reader=READER, key=key,\n"
-     "                    env=env, cwd=HERE)",
-     "                    read=f\"{subject} select\", reader=READER, key=key,\n"
-     "                    env=env)",
+     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,\n        cwd=HERE)',
+     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env)',
      "every jev call names the reader's own base, not the process cwd"),
     ("the table header kept", "            if not rule.match(line) and not header:", "            if not rule.match(line):",
      "a condition is a list item with its lines, or a table row"),
     ("no tracker default", 'target = ["-R", repo or TRACKER]', 'target = ["-R", repo] if repo else []',
      "with no repository gh is told the tracker"),
-    ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
-     "a reader that raised exits 0, says nothing and logs a skip"),
+    ('the failure boundary removed',
+     '    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,\n                                               env), env, cwd=HERE)',
+     '    read(pr, repo, subject, stdin, jev, env)',
+     'a reader that raised exits 0, says nothing and logs a skip'),
     ("a continuation line dropped", '            out[-1] += " " + re.sub(', "            out[-1] += \"\" and re.sub(",
      "a condition is a list item with its lines, or a table row"),
     ("the table rule kept", "            if not rule.match(line) and not header:", "            if not header:",
@@ -527,7 +523,7 @@ def live(record):
     asked as the reader asks it: one condition's question over the case's own
     state. Prints each answer beside its truth; `--record` appends it."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     today = datetime.date.today().isoformat()
     for name, entry in (("done-test-select", SELECT), ("done-test-claim", CLAIM)):
         path = CORPUS / f"{name}.jsonl"

@@ -175,7 +175,7 @@ def cut_definitions(t):
 
 
 def s1(t):
-    return t.m.load_sibling("check-cited-claims.py")
+    return t.m.jev_module().load_sibling("check-cited-claims.py")
 
 
 def body_has_no_comment(t):
@@ -433,14 +433,14 @@ MUTATIONS = [
     ("a settled sentence left unlogged",
      "jev.skip(READER, f\"{path} `{name}`: {sentence}\", why, env=env)", "pass",
      "a sentence code settled is written as a skip row naming the rule"),
-    ("the row keyed by the file alone",
-     "key=dict(key, path=path, name=name), env=env)",
-     "key={\"path\": path}, env=env)",
-     "the row carries the reading, the wording and the join key"),
-    ("the definition never named on the row",
-     "key=dict(key, path=path, name=name), env=env)",
-     "key=dict(key, path=path), env=env)",
-     "the row carries the reading, the wording and the join key"),
+    ('the row keyed by the file alone',
+     '"read": label, "key": dict(key, path=path, name=name)}',
+     '"read": label, "key": {"path": path}}',
+     'the row carries the reading, the wording and the join key'),
+    ('the definition never named on the row',
+     '"read": label, "key": dict(key, path=path, name=name)}',
+     '"read": label, "key": dict(key, path=path)}',
+     'the row carries the reading, the wording and the join key'),
     ("a commit touching no spec module read in full",
      "if not staged:", "if False:",
      "a commit touching no spec module asks nothing and says so"),
@@ -459,8 +459,8 @@ def live(record):
     its word differs from the last one recorded under the same wording: a
     known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
-    jev = m.load_sibling("campaign-jev.py")
-    s1_mod = m.load_sibling("check-cited-claims.py")
+    jev = m.jev_module()
+    s1_mod = m.jev_module().load_sibling("check-cited-claims.py")
     rows_ = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     states = [(r["id"], [r["state"]["claim"]], r["state"]["body"]) for r in rows_]

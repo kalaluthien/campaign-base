@@ -301,14 +301,15 @@ MUTATIONS = [
     ("the whole branch read", "for path in filter(None, touched):", "for path in stat:",
      "only the commit's own files are read, not the rest of the branch"),
     ("the reading's group not read from the entry",
-     'jev.judge(entry["group"],', 'jev.judge("issue-shape",',
+     'group=entry["group"], reader=READER, env=env, cwd=HERE)',
+     'group="issue-shape", reader=READER, env=env, cwd=HERE)',
      "one call carries the five nouls, each its own words, thresholds unsent"),
     ("the path dropped from the label",
-     'read=f"{label} {path}", reader=READER,', "read=label, reader=READER,",
+     '"read": f"{label} {path}",', '"read": label,',
      "the log label is the branch, the sha and the path"),
     ("the row keyed by the sha alone",
-     'key=dict(key, path=path) if key else {"path": path},',
-     "key=key,",
+     '"key": dict(key, path=path) if key else {"path": path}}',
+     '"key": key}',
      "the row carries the reading, the wording and the join key"),
     ("an empty branch patch sent", "if path not in stat:", "if False:",
      "an empty branch patch, a binary and a patch over the ceiling each log a skip"),
@@ -317,7 +318,7 @@ MUTATIONS = [
     ("no ceiling", "if not why and len(patch) > PATCH_CEILING:", "if False:",
      "an empty branch patch, a binary and a patch over the ceiling each log a skip"),
     ("no merge-base passes silently",
-     '            jev.skip(READER, label, "no merge-base with origin/HEAD or "\n                     "origin/main", env, cwd=HERE)\n',
+     '        jev.skip(READER, label, "no merge-base with origin/HEAD or "\n                 "origin/main", env, cwd=HERE)\n',
      "",
      "a commit with no merge-base logs one skip"),
     ("only origin/main read", 'DEFAULT_BRANCH = ("origin/HEAD", "origin/main")',
@@ -326,11 +327,13 @@ MUTATIONS = [
     ("the branch read from HEAD again", "branch = argv[1] if len(argv) > 1 else (", "branch = (",
      "the label carries the branch the hook passed, not HEAD's"),
     ("the log found from the checkout",
-     "                      env=env, cwd=HERE)", "                      env=env)",
+     "        group=entry[\"group\"], reader=READER, env=env, cwd=HERE)",
+     "        group=entry[\"group\"], reader=READER, env=env)",
      "with no log named, rows land in the reader's own base, not the checkout it reads"),
     ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
+     "    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,\n"
+     "                 cwd=HERE)",
+     "    read(argv, subject, jev, env)",
      "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
@@ -350,6 +353,10 @@ def hook(origin, pushable=True, sleep=0):
     (scripts / "check-diff-screen.py").write_text(
         f"#!/usr/bin/env python3\nimport sys, time\nopen({str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n"
         f"time.sleep({sleep})\n")
+    # THE REGISTRY STAND-IN: the screen is the reader a push starts.
+    (scripts / "campaign-jev.py").write_text(
+        "#!/bin/sh\n[ \"$1 $2\" = \"readers-on push\" ] && "
+        "echo \"$(dirname \"$0\")/check-diff-screen.py\"\n")
     for s in scripts.iterdir():
         s.chmod(0o755)
     git(d, "init", "-q", "--bare", str(bare))
@@ -389,7 +396,7 @@ def live(record):
     call; a case reads as its highest noul. Red when its word differs from the
     last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     # THE COMPOSED QUESTIONS, not `question`: that holds only placeholders, so

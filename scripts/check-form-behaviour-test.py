@@ -349,11 +349,8 @@ MUTATIONS = [
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
     ("the test rule dropped", "if test.search(path):", "if False:",
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
-    ("the patch read from the parent", 'git("diff", *screen.PATCH_FORM, base,',
-     'git("diff", *screen.PATCH_FORM, commit + "^",',
-     "the hunks are the branch patch's, not HEAD's alone"),
-    ("the hunk left out of the key", "key=dict(key, path=path, hunk=header) if key",
-     "key=dict(key, path=path) if key",
+    ("the hunk left out of the key", '"key": dict(key, path=path, hunk=header) if key',
+     '"key": dict(key, path=path) if key',
      "the row carries the reading and the repository, sha, path and hunk"),
     ("the flag read off another option", 'FLAG = "unasked_behaviour"', 'FLAG = "asked_behaviour"',
      "an asked row's flag is P(unasked_behaviour)"),
@@ -364,25 +361,24 @@ MUTATIONS = [
      "a shell option, an Alloy comment and a module docstring are asked, not settled"),
     ("an insertion applied before line N", "at = start - 1 if count else start", "at = start - 1",
      "a -N,0 insertion hunk is applied after line N"),
-    ("a skip not logged", 'jev.skip(READER, f"{label} {path}", why, env, cwd=HERE)\n                continue',
-     'continue', "a binary logs a skip"),
     ("the kind not read", "if kind != KIND:", "if False:",
      "a claim of another kind asks and logs nothing"),
-    ("no claim still read", "if number is None:\n            return 0\n", "pass\n",
+    ("no claim still read", "if number is None:\n        return\n", "pass\n",
      "a branch that is no claim asks, reads and logs nothing"),
     ("an unread issue passes silently",
-     '            jev.skip(READER, label, f"sub-issue {number} did not read "\n'
-     '                     f"({e.__class__.__name__})", env, cwd=HERE)\n', "",
+     '        jev.skip(READER, label, f"sub-issue {number} did not read "\n'
+     '                 f"({e.__class__.__name__})", env, cwd=HERE)\n', "",
      "a sub-issue that did not read logs one skip"),
     ("no Intent asked anyway", "if not intent:", "if intent is None:",
      "a sub-issue with an empty Intent logs one skip"),
     ("no merge-base passes silently",
-     '            jev.skip(READER, label, "no merge-base with origin/HEAD or "\n'
-     '                     "origin/main", env, cwd=HERE)\n', "",
+     '        jev.skip(READER, label, "no merge-base with origin/HEAD or "\n'
+     '                 "origin/main", env, cwd=HERE)\n', "",
      "a commit with no merge-base logs one skip"),
     ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
+     "    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,\n"
+     "                 cwd=HERE)",
+     "    read(argv, subject, jev, env)",
      "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
@@ -398,6 +394,11 @@ def hook(origin, pushable=True):
     (scripts / "check-commit-claim.py").write_text(
         "#!/usr/bin/env python3\nimport sys\nprint('claim demo/9-topic')\nsys.exit(0)\n")
     (scripts / "check-diff-screen.py").write_text("#!/bin/sh\nexit 0\n")
+    # THE REGISTRY STAND-IN: both readers a push starts.
+    (scripts / "campaign-jev.py").write_text(
+        "#!/bin/sh\n[ \"$1 $2\" = \"readers-on push\" ] && "
+        "printf '%s\\n' \"$(dirname \"$0\")/check-diff-screen.py\" "
+        "\"$(dirname \"$0\")/check-form-behaviour.py\"\n")
     (scripts / "check-form-behaviour.py").write_text(
         f"#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
     for s in scripts.iterdir():
@@ -430,7 +431,7 @@ def hook_cases():
 def live(record):
     """Every corpus case against the real endpoint, once. Red when its word
     differs from the last one recorded under the same wording."""
-    jev = load(SOURCE).m.load_sibling("campaign-jev.py")
+    jev = load(SOURCE).m.jev_module()
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     wording = jev.wording(ENTRY)
     today = datetime.date.today().isoformat()

@@ -223,8 +223,8 @@ RULING_MUTATIONS = [
      FLAGS),
     ("the key relative to spec/", 'row, path = row_of(n, table), "spec/" + m',
      "row, path = row_of(n, table), m", KEY),
-    ("the key without the command", "key=dict(key, path=path, name=name)",
-     "key=dict(key, path=path)", KEY),
+    ("the key without the command", '"key": dict(key, path=path, name=name)',
+     '"key": dict(key, path=path)', KEY),
 ]
 
 

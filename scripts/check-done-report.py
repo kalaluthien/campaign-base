@@ -107,20 +107,15 @@ removed:
 
 Usage: scripts/check-done-report.py <pr> [<repo>] < report
 """
-import importlib.machinery
-import importlib.util
-import json
+import importlib
 import re
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SELECT, CLAIM = "done-report-select", "done-report-claim"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-done-report.py"
 CARRY = "check-done-carry.py"
-TRACKER = "kalaluthien/campaign-base"
-DOD = "## Definition of done"
 # EVERY PATH IS A CANDIDATE'S PATH: this reading's candidates are the whole
 # diff, where check-done-carry.py's are the test files alone. The cutter is
 # that script's, given the screen that lets everything through.
@@ -129,14 +124,9 @@ REPORT_PATH = "the REPORT"
 CUT = "\n... cut"
 
 
-def load_sibling(name):
-    """A sibling script as a module, by path: these are scripts, not a package."""
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506)."""
+    return importlib.import_module("campaign-jev")
 
 
 def result_lines(pattern, report):
@@ -246,28 +236,22 @@ def ask_issue(reg, subject, conds, cands, lines, jev, key=None, env=None):
     ceiling = reg[SELECT]["prefilter"]["candidate_ceiling"]
     text = {k: capped(c["path"] + "\n" + c["text"], ceiling)
             for k, c in cands.items()}
-    if len(json.dumps({"candidates": text}).encode("utf-8")) > jev.STATE_BUDGET:
+    if jev.over_budget({"candidates": text}):
         jev.skip(READER, f"{subject} select", f"the {len(cands)} candidates are "
                  f"over the {jev.STATE_BUDGET}-byte budget", env, cwd=HERE)
         return {}
-    got = jev.judge(reg[SELECT]["group"],
-                    {"candidates": text, "condition": conds},
-                    read=f"{subject} select", reader=READER, key=key,
-                    env=env, cwd=HERE)
-    picked = {cid: (a.raw or {}).get("choice") for cid, a in
-              jev.words_of(reg[SELECT], got.verdicts[SELECT]).items()}
-    by_cand = {}
-    for cid, h in picked.items():
-        if h in cands:
-            by_cand.setdefault(h, {})[cid] = conds[cid]
     none = reg[CLAIM]["question"]["no_report_line"]
-    for h, asked in sorted(by_cand.items()):
-        jev.judge(reg[CLAIM]["group"],
-                  {"evidence": text[h], "condition": asked,
-                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},
-                  read=f"{subject} claim {h} {cands[h]['path']}", reader=READER,
-                  key=key, env=env, cwd=HERE)
-    return picked
+    return jev.judge_chain(
+        SELECT, {"candidates": text, "condition": conds},
+        lambda h, asked: {
+            "group": reg[CLAIM]["group"],
+            "state": {"evidence": text[h], "condition": asked,
+                      "reportLine": {cid: lines.get(cid) or none
+                                     for cid in asked}},
+            "read": f"{subject} claim {h} {cands[h]['path']}"}
+        if h in cands else None,
+        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,
+        cwd=HERE)
 
 
 def main(argv, stdin=sys.stdin, env=None):
@@ -278,92 +262,66 @@ def main(argv, stdin=sys.stdin, env=None):
     pr, repo = argv[0], (argv[1] if len(argv) > 1 else "")
     subject = f"{repo or 'tracker'}#{pr} REPORT"
     try:
-        report = stdin.read()
-        if not report.lstrip().startswith("REPORT "):
-            return 0
-        reg = json.loads(REGISTRY.read_text(encoding="utf-8"))
-        pre = reg[SELECT]["prefilter"]
-        # THE MOMENT AND THE EVENT CUT ARE READ FROM THE ENTRY THAT OWNS THEM,
-        # never copied: this reading and done-test-select run on the same
-        # comment, and two copies of one regex are two that drift. What this
-        # reading adds it declares ONCE, in the one place it is also used: a
-        # closed sub-issue is a fact this reading reads and an event that one
-        # has no use for, so `fact.closed` is both.
-        shared = dict(reg[pre["reads_from"]]["prefilter"])
-        shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]
-        if not re.search(shared["asks_merge"], report):
-            return 0
-        jev = load_sibling("campaign-jev.py")
-        carry = load_sibling(CARRY)
-        target = ["-R", repo or TRACKER]
-        view, why = carry.gh("pr", "view", pr, *target, "--json",
-                             "closingIssuesReferences")
-        if why:
-            jev.skip(READER, subject, f"the pull request read failed: {why}",
-                     env, cwd=HERE)
-            return 0
-        bodies = []
-        for ref in json.loads(view)["closingIssuesReferences"]:
-            name = f"{ref['repository']['owner']['login']}/{ref['repository']['name']}"
-            body, why = carry.gh("issue", "view", str(ref["number"]), "-R", name,
-                                 "--json", "body", "--jq", ".body")
-            if why:
-                jev.skip(READER, f"{subject} {ref['number']}",
-                         f"the issue read failed: {why}", env, cwd=HERE)
-            elif DOD in body:
-                bodies.append((name, ref["number"], body))
-        if not bodies:
-            jev.skip(READER, subject, "the pull request closes no issue with a "
-                     "Definition of done", env, cwd=HERE)
-            return 0
-        diff, why = carry.gh("pr", "diff", pr, *target)
-        if why:
-            jev.skip(READER, subject, f"the diff read failed: {why}", env, cwd=HERE)
-            return 0
-        cands = carry.hunks(diff, ANY)
-        cands.update(result_lines(pre["result_line"], report))
-        if not cands:
-            jev.skip(READER, subject, "the diff has no hunk and the REPORT "
-                     "quotes no result, so there is no evidence to weigh",
-                     env, cwd=HERE)
-            return 0
-        seen = {}
-        for name, number, body in bodies:
-            conds, lines = {}, {}
-            for k, text in enumerate(carry.conditions(body), 1):
-                cid = f"c{k}"
-                if carry.settled(shared, text):
-                    fact = fact_of(pre["fact"], text) or "event"
-                    read = read_fact(carry.gh, fact, name, pr, number, seen) \
-                        if fact != "event" else "no fact here reads it"
-                    jev.skip(READER, f"{subject} {number} {cid}",
-                             f"an event, settled by the GitHub fact `{fact}`: "
-                             f"{read}", env, cwd=HERE)
-                else:
-                    conds[cid] = text
-                    lines[cid] = report_line(jev.overlap,
-                                             pre["report_line_floor"],
-                                             report, text)
-            if conds:
-                # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
-                # repository names no issue when a member repository's numbers
-                # collide with this tracker's.
-                ask_issue(reg, f"{subject} {number}", conds, cands, lines, jev,
-                          {"repo": repo, "issue": int(number),
-                           "pull_request": int(pr)} if repo else None, env)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
-        skipped(subject, e, env)
+        jev = jev_module()
+    except Exception:  # noqa: BLE001 -- no log to count a raise in
+        return 0
+    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,
+                                               env), env, cwd=HERE)
     return 0
 
 
-def skipped(subject, e, env):
-    """The skip row for a reading that raised, written if the log can be."""
-    try:
-        load_sibling("campaign-jev.py").skip(
-            READER, subject, f"the reading raised {e.__class__.__name__}", env,
-            cwd=HERE)
-    except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
-        pass
+def read(pr, repo, subject, stdin, jev, env):
+    report = stdin.read()
+    if not report.lstrip().startswith("REPORT "):
+        return
+    reg = jev.load_registry()
+    pre = reg[SELECT]["prefilter"]
+    # THE MOMENT AND THE EVENT CUT ARE READ FROM THE ENTRY THAT OWNS THEM,
+    # never copied: this reading and done-test-select run on the same comment,
+    # and two copies of one regex are two that drift. What this reading adds
+    # it declares ONCE, in the one place it is also used: a closed sub-issue
+    # is a fact this reading reads and an event that one has no use for, so
+    # `fact.closed` is both.
+    shared = dict(reg[pre["reads_from"]]["prefilter"])
+    shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]
+    if not re.search(shared["asks_merge"], report):
+        return
+    carry = jev.load_sibling(CARRY)
+    got = carry.closing(jev, READER, subject, pr, repo, env)
+    if got is None:
+        return
+    bodies, diff = got
+    cands = carry.hunks(diff, ANY)
+    cands.update(result_lines(pre["result_line"], report))
+    if not cands:
+        jev.skip(READER, subject, "the diff has no hunk and the REPORT "
+                 "quotes no result, so there is no evidence to weigh",
+                 env, cwd=HERE)
+        return
+    seen = {}
+    for name, number, body in bodies:
+        conds, lines = {}, {}
+        for k, text in enumerate(carry.conditions(body), 1):
+            cid = f"c{k}"
+            if carry.settled(shared, text):
+                fact = fact_of(pre["fact"], text) or "event"
+                read = read_fact(carry.gh, fact, name, pr, number, seen) \
+                    if fact != "event" else "no fact here reads it"
+                jev.skip(READER, f"{subject} {number} {cid}",
+                         f"an event, settled by the GitHub fact `{fact}`: "
+                         f"{read}", env, cwd=HERE)
+            else:
+                conds[cid] = text
+                lines[cid] = report_line(jev.overlap,
+                                         pre["report_line_floor"],
+                                         report, text)
+        if conds:
+            # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
+            # repository names no issue when a member repository's numbers
+            # collide with this tracker's.
+            ask_issue(reg, f"{subject} {number}", conds, cands, lines, jev,
+                      {"repo": repo, "issue": int(number),
+                       "pull_request": int(pr)} if repo else None, env)
 
 
 if __name__ == "__main__":

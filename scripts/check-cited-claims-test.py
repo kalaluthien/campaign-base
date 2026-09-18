@@ -376,10 +376,10 @@ MUTATIONS = [
      "if not (mine or name in touched):",
      "if not mine:",
      "a staged pred edit asks every paragraph citing it"),
-    ("the claims never handed to the call",
-     '"claim": {f"c{i}": c for i, c in enumerate(found)}},',
+    ('the claims never handed to the call',
+     '"claim": {f"c{i}": c for i, c in enumerate(got)}},',
      '"claim": {}},',
-     "a contradicted claim is printed with its value, exit 0"),
+     'a contradicted claim is printed with its value, exit 0'),
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
      "except ZeroDivisionError as e:", "a reader that could not read exits 0 and says so"),
@@ -393,14 +393,14 @@ MUTATIONS = [
     ("the gap left out of the counts",
      """{counts['uncertain']} in the gap, {counts['unknown']} """, '{counts["unknown"]} ',
      "a claim between the two edges is counted in the gap"),
-    ("the row keyed by the file alone",
-     "key=dict(key, path=path, name=name), env=env)",
-     'key={"path": path}, env=env)',
-     "the row carries the reading, the wording and the join key"),
-    ("the pred never named on the row",
-     "key=dict(key, path=path, name=name), env=env)",
-     "key=dict(key, path=path), env=env)",
-     "the row carries the reading, the wording and the join key"),
+    ('the row keyed by the file alone',
+     '"read": label, "key": dict(key, path=path, name=name)}',
+     '"read": label, "key": {"path": path}}',
+     'the row carries the reading, the wording and the join key'),
+    ('the pred never named on the row',
+     '"read": label, "key": dict(key, path=path, name=name)}',
+     '"read": label, "key": dict(key, path=path)}',
+     'the row carries the reading, the wording and the join key'),
     ("an unknown claim not printed", 'elif a.word == "unknown":', "elif False:",
      "a failed call prints unknown and exits 0"),
     ("the tier not read", 'shown = entry["tier"] != "shadow"', "shown = True",
@@ -447,7 +447,7 @@ def live(record):
     its word differs from the last one recorded under the same wording: a
     known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     for reading in m.READINGS:
         live_one(m, jev, reading, ENTRIES[reading], CORPUS / f"{reading}.jsonl",
                  record)

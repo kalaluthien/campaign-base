@@ -48,23 +48,19 @@ every made negative without flagging every positive.
 Usage: scripts/check-form-behaviour.py [<commit> [<branch>]]
 """
 import ast
-import importlib.machinery
-import importlib.util
+import importlib
 import json
 import re
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READING = "form-behaviour"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-form-behaviour.py"
 KIND = "maintenance"
 FLAG = "unasked_behaviour"
 GH_TIMEOUT = 30
-WORKERS = 8
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", re.M)
 # A COMMENT LINE, BY THE FILE'S LANGUAGE, and only where a comment says no
 # rule. A marker read in every file settled `--squash` in a shell line and
@@ -79,14 +75,9 @@ COMMENT = {
 }
 
 
-def load_sibling(name):
-    """A sibling script as a module, by path: these are scripts, not a package."""
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506)."""
+    return importlib.import_module("campaign-jev")
 
 
 def hunks(patch):
@@ -163,101 +154,75 @@ def main(argv, env=None):
         return 2
     subject = argv[0] if argv else "HEAD"
     try:
-        screen = load_sibling("check-diff-screen.py")
-        git = screen.git
-        branch = argv[1] if len(argv) > 1 else (
-            git("symbolic-ref", "--quiet", "--short", "HEAD") or "").strip()
-        number = load_sibling("campaign-claim.py").issue_of_branch(
-            branch, branch.split("/", 1)[0])
-        if number is None:
-            return 0
-        jev = load_sibling("campaign-jev.py")
-        repos = load_sibling("campaign-repos.py")
-        commit = (git("rev-parse", "--verify", "-q", subject + "^{commit}")
-                  or "").strip()
-        label = f"{branch} {commit[:12] or subject}"
-        try:
-            names, body = sub_issue(number, repos.BASE_REPO)
-        except Exception as e:  # noqa: BLE001 -- an unread issue is a skip
-            jev.skip(READER, label, f"sub-issue {number} did not read "
-                     f"({e.__class__.__name__})", env, cwd=HERE)
-            return 0
-        kind, _why = load_sibling("campaign-tracker.py").work_kind_of(names)
-        if kind != KIND:
-            return 0
-        if not commit:
-            jev.skip(READER, label, "the commit does not resolve", env, cwd=HERE)
-            return 0
-        intent = repos.section(body, "Intent")
-        if not intent:
-            jev.skip(READER, label, f"sub-issue {number} has no ## Intent",
-                     env, cwd=HERE)
-            return 0
-        intent = "\n".join(intent)
-        base = next((b.strip() for b in (git("merge-base", commit, ref)
-                                             for ref in screen.DEFAULT_BRANCH)
-                     if b), "")
-        if not base:
-            jev.skip(READER, label, "no merge-base with origin/HEAD or "
-                     "origin/main", env, cwd=HERE)
-            return 0
-        entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        found, _tests = screen.files(commit, base)
-        key = jev.commit_key()
-        key = ({"repo": key["repo"], "commit": commit} if key.get("repo")
-               else {})
-        asks = []
-        for path, why in found:
-            patch = "" if why else git("diff", *screen.PATCH_FORM, base,
-                                       commit, "--", path)
-            if patch is None:
-                why = "git diff failed"
-            elif not why and len(patch) > screen.PATCH_CEILING:
-                why = (f"a patch of {len(patch)} chars, over "
-                       f"{screen.PATCH_CEILING}")
-            if why:
-                jev.skip(READER, f"{label} {path}", why, env, cwd=HERE)
-                continue
-            before = git("show", f"{base}:{path}") if path.endswith(".py") \
-                else None
-            for header, text, start, count in hunks(patch):
-                asks.append((path, header, text, settled_by(
-                    path, text, start, count, before, screen.TEST)))
-
-        def flagged(_reading, raw):
-            """P(unasked_behaviour), the one option the flag reads; no cut is
-            declared on it, so the row keeps the number and not a word."""
-            p = ((raw or {}).get("probabilities") or {}).get(FLAG)
-            return {"code": p, "moved_by": FLAG} if p is not None else None
-
-        def one(item):
-            path, header, text, rule = item
-            # ONE `judge` CALL A HUNK, or none where code settled it: the row
-            # then carries `settled: form_only` and the rule in its `flag`.
-            jev.judge(entry["group"],
-                      {"intent": intent, "hunk": {"path": path, "text": text}},
-                      read=f"{label} {path} {header}", reader=READER,
-                      settled={READING: "form_only"} if rule else None,
-                      flag={"code": "form_only", "moved_by": rule} if rule
-                      else flagged,
-                      key=dict(key, path=path, hunk=header) if key
-                      else {"path": path, "hunk": header},
-                      env=env, cwd=HERE)
-        with ThreadPoolExecutor(WORKERS) as pool:
-            list(pool.map(one, asks))
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
-        skipped(subject, e, env)
+        jev = jev_module()
+    except Exception:  # noqa: BLE001 -- no log to count a raise in
+        return 0
+    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,
+                 cwd=HERE)
     return 0
 
 
-def skipped(subject, e, env):
-    """The skip row for a reading that raised, written if the log can be."""
+def read(argv, subject, jev, env):
+    screen = jev.load_sibling("check-diff-screen.py")
+    git = screen.git
+    branch = argv[1] if len(argv) > 1 else (
+        git("symbolic-ref", "--quiet", "--short", "HEAD") or "").strip()
+    number = jev.load_sibling("campaign-claim.py").issue_of_branch(
+        branch, branch.split("/", 1)[0])
+    if number is None:
+        return
+    repos = jev.load_sibling("campaign-repos.py")
+    commit = (git("rev-parse", "--verify", "-q", subject + "^{commit}")
+              or "").strip()
+    label = f"{branch} {commit[:12] or subject}"
     try:
-        load_sibling("campaign-jev.py").skip(
-            READER, subject, f"the reading raised {e.__class__.__name__}", env,
-            cwd=HERE)
-    except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
-        pass
+        names, body = sub_issue(number, repos.BASE_REPO)
+    except Exception as e:  # noqa: BLE001 -- an unread issue is a skip
+        jev.skip(READER, label, f"sub-issue {number} did not read "
+                 f"({e.__class__.__name__})", env, cwd=HERE)
+        return
+    kind, _why = jev.load_sibling("campaign-tracker.py").work_kind_of(names)
+    if kind != KIND:
+        return
+    if not commit:
+        jev.skip(READER, label, "the commit does not resolve", env, cwd=HERE)
+        return
+    intent = repos.section(body, "Intent")
+    if not intent:
+        jev.skip(READER, label, f"sub-issue {number} has no ## Intent",
+                 env, cwd=HERE)
+        return
+    intent = "\n".join(intent)
+    base = screen.merge_base(commit)
+    if not base:
+        jev.skip(READER, label, "no merge-base with origin/HEAD or "
+                 "origin/main", env, cwd=HERE)
+        return
+    entry = jev.load_registry()[READING]
+    found, _tests = screen.files(commit, base)
+    key = jev.commit_key()
+    key = {"repo": key["repo"], "commit": commit} if key.get("repo") else {}
+    asks = []
+    for path, patch in screen.patches(jev, READER, label, found, base, commit,
+                                      env):
+        before = git("show", f"{base}:{path}") if path.endswith(".py") \
+            else None
+        for header, text, start, count in hunks(patch):
+            rule = settled_by(path, text, start, count, before, screen.TEST)
+            # ONE `judge` CALL A HUNK, or none where code settled it: the row
+            # then carries `settled: form_only` and the rule in its `flag`;
+            # otherwise the flag is P(unasked_behaviour), the one option it
+            # reads.
+            asks.append({
+                "state": {"intent": intent, "hunk": {"path": path, "text": text}},
+                "read": f"{label} {path} {header}",
+                "settled": {READING: "form_only"} if rule else None,
+                "flag": {"code": "form_only", "moved_by": rule} if rule
+                else jev.option_flag(FLAG),
+                "key": dict(key, path=path, hunk=header) if key
+                else {"path": path, "hunk": header}})
+    jev.judge_each(asks, group=entry["group"], reader=READER, env=env,
+                   cwd=HERE)
 
 
 if __name__ == "__main__":

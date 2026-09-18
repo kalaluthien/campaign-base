@@ -53,15 +53,13 @@ was seen at.
 
 Usage: scripts/check-model-comment.py --staged
 """
-import json
+import importlib
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READING = "model-comment"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-model-comment.py --staged"
 S1 = "check-cited-claims.py"
 # A `fact` beside S1's three: see the docstring. S1's own `DECL` stays what it
@@ -146,17 +144,14 @@ def ask_all(entry, states, jev, key, env=None):
     and the definition. Without those a row could never be joined to what
     happened to that comment afterwards, which is why every one of them parked
     in the log for good (sdlc-alloy#458 DECISION 5722176509)."""
-    def one(state):
-        label, path, name, found, body = state
-        judged = jev.judge(entry["group"],
-                           {"claim": {f"c{i}": c for i, c in enumerate(found)},
-                            "body": body},
-                           read=label, reader=READER,
-                           key=dict(key, path=path, name=name), env=env)
-        return (label, found, jev.words_of(entry, judged.verdicts[READING]),
-                judged.logged)
-    with ThreadPoolExecutor(6) as pool:
-        return list(pool.map(one, states))
+    judged = jev.judge_each(
+        [{"state": {"claim": {f"c{i}": c for i, c in enumerate(found)},
+                    "body": body},
+          "read": label, "key": dict(key, path=path, name=name)}
+         for label, path, name, found, body in states],
+        workers=6, group=entry["group"], reader=READER, env=env)
+    return [(label, found, jev.words_of(entry, j.verdicts[READING]), j.logged)
+            for (label, _path, _name, found, _body), j in zip(states, judged)]
 
 
 def main(argv, out=sys.stdout, env=None):
@@ -164,13 +159,14 @@ def main(argv, out=sys.stdout, env=None):
         print("Usage: scripts/check-model-comment.py --staged", file=sys.stderr)
         return 2
     try:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        jev = jev_module()
+        registry = jev.load_registry()
         if READING not in registry:
             print(f"check-model-comment: no entry `{READING}` in the "
                   f"registry; nothing asked", file=out)
             return 0
         entry = registry[READING]
-        s1 = load_sibling(S1)
+        s1 = jev.load_sibling(S1)
         # `--no-prefix` PINNED, as S1 pins it: a user's `diff.noprefix` changes
         # what `+++` carries, and a parser reading `b/` found no file at all.
         hunks = s1.staged_hunks(s1.git("diff", "--cached", "-U0", "-M",
@@ -183,7 +179,6 @@ def main(argv, out=sys.stdout, env=None):
             return 0
         texts = s1.index_texts([p for p in s1.git("ls-files", "-z").split("\0")
                                 if SPEC.fullmatch(p)])
-        jev = load_sibling("campaign-jev.py")
         states, skipped = [], 0
         for path, name, comment, body, first, last in definitions(texts, s1):
             if not s1.overlaps(hunks.get(path, []), first, last):
@@ -208,17 +203,11 @@ def main(argv, out=sys.stdout, env=None):
     return 0
 
 
-def load_sibling(name):
-    """check-cited-claims.py's own loader, by path, so there is one of it."""
-    import importlib.machinery
-    import importlib.util
-    src = HERE / name
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(src)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506).
+    Called inside `main`'s boundary, so a campaign-jev that will not load is a
+    reading lost and never a commit refused."""
+    return importlib.import_module("campaign-jev")
 
 
 if __name__ == "__main__":

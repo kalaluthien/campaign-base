@@ -260,26 +260,28 @@ MUTATIONS = [
      "each call is labelled with the finding's number and its resolved site"),
     ("a finding with no site not logged", "            jev.skip(READER, f\"{subject} f{n}\", got, env)",
      "            pass", "a finding naming no path:line, a line past the end or no one file logs one skip row each"),
-    ("an unknown sha read on", "        if not sha:\n", "        if False:\n",
+    ("an unknown sha read on", "    if not sha:\n", "    if False:\n",
      "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
-    ("one skip for the whole REVIEW", "            for n in range(1, len(cut) + 1):\n",
-     "            for n in range(1, 2):\n",
+    ("one skip for the whole REVIEW", "        for n in range(1, len(cut) + 1):\n",
+     "        for n in range(1, 2):\n",
      "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
     ("the comment kind not read", 'if not review.lstrip().startswith("REVIEW "):', "if False:",
      "a comment of another kind asks nothing"),
     ("the reading's group not read from the entry",
-     'jev.judge(entry["group"], state, read=label, reader=READER,',
-     'jev.judge("issue-shape", state, read=label, reader=READER,',
+     'group=entry["group"], reader=READER, env=env)]',
+     'group="issue-shape", reader=READER, env=env)]',
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("the row keyed by a number with no repository",
      '{"repo": repo, "pull_request": int(pr)} if repo else None, env)',
      '{"pull_request": int(pr)}, env)',
      "the row carries the reading, the wording and the join key"),
     ("the finding never numbered on the row",
-     "key=dict(key or {}, finding=n), env=env)", "key=key, env=env)",
+     '"key": dict(key or {}, finding=n)}', '"key": key}',
      "the row carries the reading, the wording and the join key"),
-    ("the skip not logged", 'READER, subject, f"the reading raised {e.__class__.__name__}", env)',
-     'READER, subject, "x", {"CAMPAIGN_JEV_LOG": "/nonexistent/x/y"})',
+    ("the failure boundary removed",
+     "    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,\n"
+     "                                               env), env)",
+     "    read(pr, repo, subject, stdin, jev, env)",
      "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
@@ -288,7 +290,7 @@ def live(record):
     """Every corpus case against the real endpoint, once. A case is red when
     its word differs from the last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)

@@ -61,18 +61,14 @@ three runs:
 
 Usage: scripts/check-finding-site.py <pr> [<repo>] < review
 """
-import importlib.machinery
-import importlib.util
-import json
+import importlib
 import re
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READING = "finding-site"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-finding-site.py"
 SLICE_HALF = 40
 GIT_TIMEOUT = 20
@@ -80,14 +76,9 @@ GIT_TIMEOUT = 20
 SITE = re.compile(r"`?((?:[\w.-]+/)*[\w.-]+\.(?:py|sh|als|md|json|jsonl|yml|yaml|html|toml))`?:(\d+)")
 
 
-def load_sibling(name):
-    """A sibling script as a module, by path: these are scripts, not a package."""
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506)."""
+    return importlib.import_module("campaign-jev")
 
 
 def git(*args):
@@ -129,7 +120,8 @@ def site_slice(sha, masked):
 
 def reviewed_sha(first_line):
     """The last sha the first line names that this checkout holds, or None."""
-    for named in reversed(load_sibling("check-merge-review.py").SHA.findall(first_line)):
+    review = jev_module().load_sibling("check-merge-review.py")
+    for named in reversed(review.SHA.findall(first_line)):
         sha = (git("rev-parse", "--verify", "-q", named + "^{commit}") or "").strip()
         if sha:
             return sha
@@ -153,16 +145,10 @@ def ask_all(entry, cut, sha, subject, jev, key=None, env=None):
         else:
             asks.append((n, f"{subject} f{n} {site[0]}:{site[1]}",
                          {"finding": masked, "slice": got}))
-    if not asks:
-        return []
-
-    def one(item):
-        n, label, state = item
-        judged = jev.judge(entry["group"], state, read=label, reader=READER,
-                           key=dict(key or {}, finding=n), env=env)
-        return judged.verdicts[READING]
-    with ThreadPoolExecutor(min(8, len(asks))) as pool:
-        return list(pool.map(one, asks))
+    return [j.verdicts[READING] for j in jev.judge_each(
+        [{"state": state, "read": label, "key": dict(key or {}, finding=n)}
+         for n, label, state in asks],
+        group=entry["group"], reader=READER, env=env)]
 
 
 def main(argv, stdin=sys.stdin, env=None):
@@ -173,32 +159,33 @@ def main(argv, stdin=sys.stdin, env=None):
     pr, repo = argv[0], (argv[1] if len(argv) > 1 else "")
     subject = f"{repo or 'tracker'}#{pr} REVIEW"
     try:
-        review = stdin.read()
-        if not review.lstrip().startswith("REVIEW "):
-            return 0
-        cut = load_sibling("check-finding-sort.py").findings(review)
-        if not cut:
-            return 0
-        jev = load_sibling("campaign-jev.py")
-        sha = reviewed_sha(review.lstrip().split("\n", 1)[0])
-        if not sha:
-            for n in range(1, len(cut) + 1):
-                jev.skip(READER, f"{subject} f{n}",
-                         "the first line names no sha this checkout holds", env)
-            return 0
-        entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
-        # repository names no pull request when a member repository's numbers
-        # collide with this tracker's.
-        ask_all(entry, cut, sha, subject, jev,
-                {"repo": repo, "pull_request": int(pr)} if repo else None, env)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
-        try:
-            load_sibling("campaign-jev.py").skip(
-                READER, subject, f"the reading raised {e.__class__.__name__}", env)
-        except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
-            pass
+        jev = jev_module()
+    except Exception:  # noqa: BLE001 -- no log to count a raise in
+        return 0
+    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,
+                                               env), env)
     return 0
+
+
+def read(pr, repo, subject, stdin, jev, env):
+    review = stdin.read()
+    if not review.lstrip().startswith("REVIEW "):
+        return
+    cut = jev.load_sibling("check-finding-sort.py").findings(review)
+    if not cut:
+        return
+    sha = reviewed_sha(review.lstrip().split("\n", 1)[0])
+    if not sha:
+        for n in range(1, len(cut) + 1):
+            jev.skip(READER, f"{subject} f{n}",
+                     "the first line names no sha this checkout holds", env)
+        return
+    entry = jev.load_registry()[READING]
+    # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no repository
+    # names no pull request when a member repository's numbers collide with
+    # this tracker's.
+    ask_all(entry, cut, sha, subject, jev,
+            {"repo": repo, "pull_request": int(pr)} if repo else None, env)
 
 
 if __name__ == "__main__":

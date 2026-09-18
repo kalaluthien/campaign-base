@@ -64,19 +64,15 @@ runs on 2026-09-17, highest P(contradicts) per paragraph:
 Usage: scripts/check-cited-claims.py --staged
 """
 import ast
-import importlib.machinery
-import importlib.util
-import json
+import importlib
 import re
 import subprocess
 import sys
 import types
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READINGS = ("docstring-claims", "reference-claims")
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-cited-claims.py --staged"
 # WHAT A CLAIM THE RESPONSE NEVER ANSWERED READS AS, in the shape an answered
 # one has. `judge` hands back the raws it got and nothing for a question the
@@ -94,15 +90,11 @@ SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z`(\"'])")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
-def load_sibling(name):
-    """A sibling script as a module, by path: these are scripts, not a package."""
-    src = HERE / name
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(src)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506).
+    Called inside `main`'s boundary, so a campaign-jev that will not load is a
+    reading lost and never a commit refused."""
+    return importlib.import_module("campaign-jev")
 
 
 def code_lines(lines):
@@ -372,21 +364,17 @@ def ask_all(entry, states, jev, key, env=None):
     Without those no later fact could ever be joined to it (sdlc-alloy#458
     DECISION 5722176509)."""
     cut = entry["state"]["claims"]
-
-    def one(target):
-        label, path, paragraph, name, text = target
-        found = claims(paragraph, name, cut)
-        judged = jev.judge(entry["group"],
-                           {"paragraph": paragraph,
-                            "pred": {"name": name, "text": text},
-                            "claim": {f"c{i}": c for i, c in enumerate(found)}},
-                           read=label, reader=READER,
-                           key=dict(key, path=path, name=name), env=env)
-        reading = next(iter(judged.verdicts))
-        return (label, found, jev.words_of(entry, judged.verdicts[reading]),
-                judged.logged)
-    with ThreadPoolExecutor(6) as pool:
-        return list(pool.map(one, states))
+    found = [claims(paragraph, name, cut) for _, _, paragraph, name, _ in states]
+    judged = jev.judge_each(
+        [{"state": {"paragraph": paragraph,
+                    "pred": {"name": name, "text": text},
+                    "claim": {f"c{i}": c for i, c in enumerate(got)}},
+          "read": label, "key": dict(key, path=path, name=name)}
+         for (label, path, paragraph, name, text), got in zip(states, found)],
+        workers=6, group=entry["group"], reader=READER, env=env)
+    return [(state[0], got,
+             jev.words_of(entry, j.verdicts[next(iter(j.verdicts))]), j.logged)
+            for state, got, j in zip(states, found, judged)]
 
 
 def git(*args):
@@ -453,12 +441,13 @@ def main(argv, out=sys.stdout, env=None):
         print("Usage: scripts/check-cited-claims.py --staged", file=sys.stderr)
         return 2
     try:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        jev = jev_module()
+        registry = jev.load_registry()
         # `--no-prefix` PINNED: a user's `diff.noprefix` changes what `+++`
         # carries, and a parser reading `b/` found no file at all.
         hunks = staged_hunks(git("diff", "--cached", "-U0", "-M", "--no-color",
                                  "--no-ext-diff", "--no-prefix"))
-        in_scripts_dir = load_sibling("check-tree-shape.py").in_scripts_dir
+        in_scripts_dir = jev.load_sibling("check-tree-shape.py").in_scripts_dir
         sources = {
             "docstring-claims": lambda p: (
                 paragraphs if p.endswith(".py") and in_scripts_dir(p) else None),
@@ -477,7 +466,6 @@ def main(argv, out=sys.stdout, env=None):
                              if wanted(p)])
         spec = {p: t for p, t in texts.items() if is_spec(p)}
         decls, fields = declarations(spec)
-        jev = None
         for reading in READINGS:
             if reading not in registry:
                 print(f"check-cited-claims: no entry `{reading}` in the "
@@ -497,7 +485,6 @@ def main(argv, out=sys.stdout, env=None):
                   + (f"; skipped as declared twice: {', '.join(sorted(skipped))}"
                      if skipped else ""), file=out)
             if states:
-                jev = jev or load_sibling("campaign-jev.py")
                 report(ask_all(entry, states, jev, jev.commit_key(), env),
                        entry, out)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit

@@ -185,21 +185,21 @@ MUTATIONS = [
      "each call is labelled with the reviewer's word, by item or by section"),
     ("the comment kind not read", 'if not review.lstrip().startswith("REVIEW "):', "if False:",
      "a comment of another kind asks nothing"),
-    ("an empty cut asked", "        if not cut:\n            return 0", "        if False:\n            return 0",
-     "a REVIEW with no finding asks nothing"),
     ("the row keyed by a number with no repository",
      '{"repo": repo, "pull_request": int(pr)} if repo else None, env)',
      '{"pull_request": int(pr)}, env)',
      "the row carries the reading, the wording and the join key"),
     ("the finding never numbered on the row",
-     "key=dict(key or {}, finding=n), env=env)", "key=key, env=env)",
+     '"key": dict(key or {}, finding=n)}', '"key": key}',
      "the row carries the reading, the wording and the join key"),
     ("the reading's group not read from the entry",
-     'jev.judge(entry["group"], {"finding": masked},',
-     'jev.judge("issue-shape", {"finding": masked},',
+     'group=entry["group"], reader=READER, env=env)]',
+     'group="issue-shape", reader=READER, env=env)]',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the skip not logged", 'READER, subject, f"the reading raised {e.__class__.__name__}", env)',
-     'READER, subject, "x", {"CAMPAIGN_JEV_LOG": "/nonexistent/x/y"})',
+    ("the failure boundary removed",
+     "    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,\n"
+     "                                               env), env)",
+     "    read(pr, repo, subject, stdin, jev, env)",
      "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
@@ -208,7 +208,7 @@ def live(record):
     """Every corpus case against the real endpoint, once. A case is red when
     its word differs from the last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
+    jev = m.jev_module()
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)

@@ -725,9 +725,9 @@
   },
   "thresholds": {},
   "loss": {
-   "wrong_yes": 1,
+   "wrong_yes": 2,
    "wrong_no": 1,
-   "why": "the entry gives no reason to weight one wrong word over the other"
+   "why": "a wrong yes lets an author's own review through the gate; a wrong no asks for one more review (planner's veto, DECISION 5727427869)"
   },
   "combine": "nothing yet. At `shadow` the answer is recorded and no cut is applied, so no code reads it",
   "join": null,
@@ -794,8 +794,8 @@
   "thresholds": {},
   "loss": {
    "wrong_yes": 1,
-   "wrong_no": 1,
-   "why": "the entry gives no reason to weight one wrong word over the other"
+   "wrong_no": 2,
+   "why": "a wrong no lets a done stand with no check named; a wrong yes is one flag to read (planner's veto, DECISION 5727427869)"
   },
   "combine": "nothing yet. At `shadow` the answer is recorded, no cut is applied and no code reads it. IT HAS NO ADDRESS `noul`: the one it had, `report-addresses-judge`, was stopped on this group by rule-check#455 DECISION 5723273420's own rule (`bands.unguarded`), so no cut may be set here until a guard that holds on this tracker's REPORTs stands beside it. rule-check#471 DECISION 5716551122 keeps every condition in code: a flag would also need `verified_after_change`, a script's word, and Jev never decides `verified`",
   "join": "report-next-round",
@@ -887,6 +887,51 @@
    "no_under": 0.84,
    "yes_over": 0.85,
    "at": "2026-09-18"
+  },
+  "composition": {
+   "verdict": "rejected",
+   "at": "2026-09-18",
+   "decided": "rule-check#505 DECISION 5727427869: kept only where it beats the single `choice` held out",
+   "what": "one narrow `noul` per Scope bullet -- is the work `request` asks for work of the kind this line names -- 25 bullets over 4 campaigns, one call a request; a tree by hand (highest In >= a and highest Out < b, the covered campaign of highest In wins) and an additive form (sum of In minus w times sum of Out, against a cut)",
+   "cases": {
+    "real": 107,
+    "made": 40
+   },
+   "loss": "right 0, `none` on a covered request = wrong_no, a campaign named that is not the truth = wrong_yes, from this entry's `loss`",
+   "held_out_loss_per_real_case": {
+    "single": 0.458,
+    "tree": 0.701,
+    "additive": 0.757
+   },
+   "right_of_real_held_out": {
+    "single": 70,
+    "tree": 54,
+    "additive": 46
+   },
+   "made_loss_per_case": {
+    "single": 0.8,
+    "tree": 0.5,
+    "additive": 0.5
+   },
+   "made_right": {
+    "single": 24,
+    "tree": 30,
+    "additive": 30
+   },
+   "fitted_on_all_real": {
+    "single": {
+     "cut": 0.335
+    },
+    "tree": {
+     "a": 0.7,
+     "b": 0.6
+    },
+    "additive": {
+     "w": 0.5,
+     "cut": 1.52
+    }
+   },
+   "why": "held out over the real cases the single reading costs 0.458 a case and the tree 0.701; the compositions read the made no-match cases better, 30 of 40 against 24, which the rule fixed before the run does not weigh"
   }
  },
  "filing-addresses-judge": {

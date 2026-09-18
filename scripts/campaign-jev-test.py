@@ -3620,6 +3620,17 @@ def a_least_loss_in_two_spans_takes_one_whole(m):
     return ok, (fit, entry["thresholds"])
 
 
+def two_spans_as_wide_take_the_lower(m):
+    """(0.20, 0.30) and (0.70, 0.80) are as wide on paper and not as floats:
+    the width is rounded, so the lower is taken and the cut is 0.25 (pr#507's
+    second REVIEW, finding 1)."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [0.30]), ("no", [0.70])]
+              + [("yes", [v]) for v in spread(0.80, 0.96, 10)])
+    entry, _said = fitted(m, values)
+    return entry["fit"].get("cut") == 0.25, entry["fit"]
+
+
 CASES["a typed cut is replaced by the fitted one"] = a_typed_cut_is_replaced_by_the_fitted_one
 CASES["a reading under the floor is written unmeasurable with its counts"] = a_reading_under_the_floor_is_unmeasurable
 CASES["a made case is scored beside the fit and never fitted"] = a_made_case_is_scored_and_never_fitted
@@ -3627,6 +3638,7 @@ CASES["a cut that beats no constant answer is unmeasurable"] = a_cut_that_beats_
 CASES["a reading left uncut stays uncut, its fit recorded"] = an_uncut_reading_stays_uncut
 CASES["a log row is tied by its state, and a stub's is not"] = a_log_row_is_tied_by_state_and_a_stub_s_is_not
 CASES["least loss reached in two spans apart takes one span whole"] = a_least_loss_in_two_spans_takes_one_whole
+CASES["two least-loss spans as wide take the lower"] = two_spans_as_wide_take_the_lower
 
 MUTATIONS = [
     # --- the fit (rule-check#505) ---
@@ -3649,9 +3661,13 @@ MUTATIONS = [
      "    share = 0.5",
      "a typed cut is replaced by the fitted one"),
     ("two spans apart read as one stretch",
-     "    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))",
+     "    low, high = max(ends, key=lambda e: (round(e[1] - e[0], 6), -e[0]))",
      "    low, high = ends[0][0], ends[-1][1]",
      "least loss reached in two spans apart takes one span whole"),
+    ("the span width compared as a float",
+     "    low, high = max(ends, key=lambda e: (round(e[1] - e[0], 6), -e[0]))",
+     "    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))",
+     "two least-loss spans as wide take the lower"),
     ("a stub's row tied to a case",
      '        if (row.get("reading") != name or row.get("endpoint") != REAL\n',
      '        if (row.get("reading") != name\n',

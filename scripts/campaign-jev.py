@@ -1653,10 +1653,13 @@ def load_sibling(name):
     """A sibling script as a module, by path: these are scripts, not a package.
     Loaded WHERE IT IS USED and never at import, because the sibling loads this
     module the same way -- at the point of use -- and two module-level imports
-    of each other would not resolve."""
-    key = name.replace("-", "_").replace(".py", "")
+    of each other would not resolve. `name` is a file beside this one, or a
+    PATH to a script elsewhere in the tree -- the one place this file builds
+    a module from a path, which `suite-harness-test.py` holds it to."""
+    path = Path(name) if isinstance(name, Path) else HERE / name
+    key = path.name.replace("-", "_").replace(".py", "")
     spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
+        key, importlib.machinery.SourceFileLoader(key, str(path)))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -2342,6 +2345,45 @@ def join_witness_case_kept(row, seen):
                else f"the case `{name}` is still there"), "")
 
 
+TRANSCRIPT_MODULE = (HERE.parent / ".claude" / "skills" / "assuming-role"
+                     / "scripts" / "campaign-transcript.py")
+
+
+def fetch_transcript(_repo, path):
+    """Every line of one session's transcript, or None. LOCAL: the record a
+    stuck reading joins to is this machine's `~/.claude/projects` file, and
+    never on GitHub."""
+    try:
+        return Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, TypeError):
+        return None
+
+
+def join_stuck_reprompt(row, lines):
+    """worker-stuck: did the planner re-prompt the session before it spoke
+    again?
+
+    THE LABEL IS WHAT THE PLANNER THEN DID (rule-check#455 DECISION
+    5725160413): a prompt into the pane AFTER the row and BEFORE the session's
+    next text is a re-prompt that moved it, `yes`; a text with no prompt before
+    it is a session that went on by itself, `no`; nothing after the row yet is
+    not labelled. `campaign-transcript.py`'s `firsts` is the one reader of the
+    two shapes, since the reading's state came off the same file by the same
+    rules, and it is loaded through `load_sibling` by path at the one call:
+    it lives under a skill, not beside this script."""
+    if lines is None:
+        return None, "", "the transcript did not read"
+    transcript = load_sibling(TRANSCRIPT_MODULE)
+    first = transcript.firsts(lines, row.get("at") or "1970-01-01T00:00:00Z")
+    prompt, text = first["prompt"], first["text"]
+    if text is None:
+        return None, "", ("no text of the session since the reading"
+                          + (f"; a prompt at {prompt} awaits its turn" if prompt else ""))
+    if prompt is not None and transcript.when(prompt) < transcript.when(text):
+        return "yes", f"prompted at {prompt}, spoke next at {text}", ""
+    return "no", f"spoke at {text} with no prompt since the reading before it", ""
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
@@ -2351,17 +2393,22 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
          "done-line-reraised": join_done_line_reraised,
          "comment-rewritten": join_comment_rewritten,
          "guard-tree-delta": join_guard_tree_delta,
-         "witness-case-kept": join_witness_case_kept}
+         "witness-case-kept": join_witness_case_kept,
+         "stuck-reprompt": join_stuck_reprompt}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
 # FIELDS, so the subject is the field it names and never a guess. A commit-time
 # row names TWO, because no sha alone names a file.
-SUBJECTS = {"issue": ("fetch", ("issue",)),
+# THE LOCAL SUBJECTS COME FIRST, because `subject_of` takes the first field a
+# row carries: a stuck row names its `issue` too, for the tracker's sake, and
+# its join reads the transcript.
+SUBJECTS = {"transcript": ("fetch_transcript", ("transcript",)),
+            "guard_log": ("fetch_guard_log", ("guard_log",)),
+            "issue": ("fetch", ("issue",)),
             "pull_request": ("fetch_thread", ("pull_request",)),
-            "commit": ("fetch_commits", ("commit", "path")),
-            "guard_log": ("fetch_guard_log", ("guard_log",))}
-# `guard_log` is a PATH on this machine and names no repository.
-LOCAL_SUBJECTS = {"guard_log"}
+            "commit": ("fetch_commits", ("commit", "path"))}
+# `guard_log` and `transcript` are PATHS on this machine and name no repository.
+LOCAL_SUBJECTS = {"guard_log", "transcript"}
 
 
 def subject_of(row):
@@ -3124,7 +3171,8 @@ def main(argv):
     p.add_argument("action", choices=["join"])
     p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
                    fetch_thread=fetch_thread, fetch_commits=fetch_commits,
-                   fetch_guard_log=fetch_guard_log)
+                   fetch_guard_log=fetch_guard_log,
+                   fetch_transcript=fetch_transcript)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

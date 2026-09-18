@@ -798,12 +798,13 @@ def joined(m, rows):
             fetch=lambda repo, number: ISSUES.get((repo, number)),
             fetch_thread=lambda repo, number: THREADS.get((repo, number)),
             fetch_commits=lambda repo, sha, path: FILES.get((repo, sha, path)),
-            fetch_guard_log=m.fetch_guard_log)
+            fetch_guard_log=m.fetch_guard_log,
+            fetch_transcript=m.fetch_transcript)
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
                 "filing-scope-covers", "unverified-done",
-                "model-comment", "shell-write-unread")}
+                "model-comment", "shell-write-unread", "worker-stuck")}
     finally:
         m.CORPUS = was
         m.fetch_reopen = was_reopen
@@ -1152,6 +1153,71 @@ def join_waits_for_the_commit_gate(m):
     guard.write_text("".join(json.dumps(r) + "\n" for r in kept))
     cases, _lines = joined(m, rows[:1])
     return cases["shell-write-unread"] == [], cases["shell-write-unread"]
+
+
+def stuck_rows(m, *records):
+    """One `worker-stuck` row asked at 01:00 on a transcript holding
+    `records`, each (minute, kind) -- `prompt` a typed prompt, `text` the
+    session's own words, `tool` a turn ending on a tool call alone, `peer` a
+    peer's queued message, which is not a prompt."""
+    def rec(minute, kind):
+        ts = f"2026-09-18T01:{minute:02d}:00.000Z"
+        if kind == "prompt":
+            return {"type": "user", "timestamp": ts, "message": {"content": "go on"}}
+        if kind == "peer":
+            return {"type": "attachment", "timestamp": ts, "attachment": {
+                "type": "queued_command", "prompt": "<cross-session-message>hi",
+                "commandMode": "prompt", "isMeta": True}}
+        content = ([{"type": "text", "text": "moving"}] if kind == "text"
+                   else [{"type": "tool_use", "name": "Bash"}])
+        return {"type": "assistant", "timestamp": ts,
+                "message": {"model": "m", "content": content}}
+    path = ROOT / f"transcript-{len(records)}-{'-'.join(k for _, k in records)}.jsonl"
+    path.write_text("".join(json.dumps(rec(*r)) + "\n" for r in records))
+    row = log_row("st-1", "worker-stuck", "", 455,
+                  state={"assignment": {"text": "Work sub-issue o/r#455 now", "minutes": 60},
+                         "last_prompt": {"text": "Work sub-issue o/r#455 now", "minutes": 60},
+                         "last_text": {"text": "Now the tests", "minutes": 50},
+                         "comments": []},
+                  session="sid-1", transcript=str(path), tier="shadow",
+                  does="nothing", at="2026-09-18T01:00:00+00:00")
+    return [row]
+
+
+def join_reads_a_reprompt_before_the_next_text(m):
+    """worker-stuck's join: a prompt after the reading and before the
+    session's next text is a re-prompt that moved it; a text with no prompt
+    before it is a session that went on by itself; a text before the reading,
+    or a peer's queued message, is neither."""
+    def truth(*records):
+        cases, _lines = joined(m, stuck_rows(m, *records))
+        by = {c["id"]: c for c in cases["worker-stuck"]}
+        case = by.get("worker-stuck-st-1") or {}
+        return case.get("truth"), (case.get("label") or {}).get("from")
+    got = {"reprompt": truth((5, "prompt"), (6, "text")),
+           "alone": truth((5, "text"), (6, "prompt")),
+           "peer": truth((5, "peer"), (6, "text")),
+           "earlier": truth((0, "prompt"), (5, "text"))}
+    return got == {"reprompt": ("yes", "join:stuck-reprompt"),
+                   "alone": ("no", "join:stuck-reprompt"),
+                   "peer": ("no", "join:stuck-reprompt"),
+                   "earlier": ("no", "join:stuck-reprompt")}, got
+
+
+def join_waits_for_the_sessions_next_text(m):
+    """No text of the session since the reading -- nothing, a tool call
+    alone, or a prompt still awaiting its turn -- is not labelled, and a
+    transcript that will not read is skipped rather than labelled."""
+    got = {}
+    for name, records in (("nothing", ()), ("tool", ((5, "tool"),)),
+                          ("prompted", ((5, "prompt"),))):
+        cases, _lines = joined(m, stuck_rows(m, *records))
+        got[name] = cases["worker-stuck"]
+    rows = stuck_rows(m, (5, "prompt"), (6, "text"))
+    rows[0]["transcript"] = str(ROOT / "no-such-transcript.jsonl")
+    cases, _lines = joined(m, rows)
+    got["unread"] = cases["worker-stuck"]
+    return all(v == [] for v in got.values()), got
 
 
 def join_reads_a_later_review_on_the_thread(m):
@@ -1650,6 +1716,8 @@ def a_case_code_settled_is_never_drift(m):
 CASES["a case code settled is never named as drift"] = a_case_code_settled_is_never_drift
 CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
 CASES["the shell join reads the same session's next call in the same tree"] = join_reads_the_tree_after_an_unread_call
+CASES["the stuck join reads a re-prompt before the session's next text"] = join_reads_a_reprompt_before_the_next_text
+CASES["the stuck join waits for the session's next text"] = join_waits_for_the_sessions_next_text
 CASES["...and waits for the commit gate's verdict on that tree"] = join_waits_for_the_commit_gate
 CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band

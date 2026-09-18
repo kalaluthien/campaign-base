@@ -105,8 +105,9 @@ so tell the owner; or one that ended, with the reason: a claim still standing
 means ask that worker or reassign the sub-issue, and an end after the release
 is when the next assignment is due. At each wake read by hand what nothing
 prints -- `campaign-tracker settlement <N>` and `index <N>` for an open
-sub-issue with no claim and a claim on a closed one, `campaign-claim live <N>`
-for the rest. Retiring is step 8; the context is the harness's own window,
+sub-issue with no claim and a claim on a closed one, `campaign-claim live <N>
+--stuck` for the rest: its stuck column says, per idle worker, whether code
+settled it or Jev was asked, and a re-prompt is yours to send. Retiring is step 8; the context is the harness's own window,
 `"autoCompactWindow": 250000` in the base's checked-in `.claude/settings.json`,
 and a delegate in a member clone takes `--autocompact 250k`
 (`references/launching.md`).

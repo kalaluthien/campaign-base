@@ -158,6 +158,35 @@ def assignment(content):
     return int(hit.group("issue")) if hit else None
 
 
+def own(lines):
+    """This session's records, `(timestamp, type, record, message)`, in file
+    order: a line that is not JSON, not a dict, or a subagent's
+    (`isSidechain`) is skipped, as is one with no timestamp, since every
+    reading here is by time."""
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(r, dict) or r.get("isSidechain"):
+            continue
+        ts = r.get("timestamp")
+        if not isinstance(ts, str):
+            continue
+        yield ts, r.get("type"), r, r.get("message") or {}
+
+
+def queued_prompt(record):
+    """What a `queued_command` attachment typed into a busy pane says, or
+    None: only prompt mode, and not a peer's message (`isMeta`)."""
+    a = record.get("attachment") or {}
+    if (a.get("type") == "queued_command"
+            and a.get("commandMode") == "prompt"
+            and not a.get("isMeta")):
+        return a.get("prompt")
+    return None
+
+
 def transcript_reading(lines):
     """What one session's transcript says. Pure, over its lines. Returns a
     dict of timestamps, the model and the commands run:
@@ -166,6 +195,15 @@ def transcript_reading(lines):
                  sentence names, at `assigned_at`: `campaign-assign.py`'s
                  prompt and the launch brief. Only a prompt counts, so a
                  summary or a tool result quoting the sentence does not.
+                 `assigned_text` is that prompt's text.
+      prompt_at  the last prompt of any text, and `prompt_text` what it
+                 said: what was last typed into the pane, by a person or
+                 a peer's `herdr agent prompt`. The `worker-stuck` reading
+                 (`campaign-claim live --stuck`) sends it.
+      text_at    the last assistant record carrying text, and `text` what
+                 it said: the session's own last words, which a turn that
+                 ended on a tool call alone does not move. A `<synthetic>`
+                 record is skipped, as under `model`.
       compacted  the last `compact_boundary` record. A record type, so no
                  text anything prints can forge it.
       compact_asked  the last `/compact`: a user record or a queued prompt
@@ -193,9 +231,11 @@ def transcript_reading(lines):
     queued, which can be earlier than records written before it, so every
     "the last" above is the latest timestamp. Records of a subagent
     (`isSidechain`) are its own, not this session's, and are not read."""
-    out = {"assigned": None, "assigned_at": None, "compacted": None,
-           "compact_asked": None, "compact_refused": None, "records": 0,
-           "model": None, "model_at": None, "commands": []}
+    out = {"assigned": None, "assigned_at": None, "assigned_text": None,
+           "compacted": None, "compact_asked": None, "compact_refused": None,
+           "records": 0, "model": None, "model_at": None, "commands": [],
+           "prompt_at": None, "prompt_text": None, "text_at": None,
+           "text": None}
 
     def later(key, ts):
         if out[key] is None or ts > out[key]:
@@ -206,19 +246,12 @@ def transcript_reading(lines):
         if n is not None and (out["assigned_at"] is None
                               or ts > out["assigned_at"]):
             out["assigned"], out["assigned_at"] = n, ts
+            out["assigned_text"] = "".join(texts(content))
+        if out["prompt_at"] is None or ts > out["prompt_at"]:
+            out["prompt_at"], out["prompt_text"] = ts, "".join(texts(content))
 
-    for line in lines:
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(r, dict) or r.get("isSidechain"):
-            continue
-        ts = r.get("timestamp")
-        if not isinstance(ts, str):
-            continue
+    for ts, kind, r, msg in own(lines):
         out["records"] += 1
-        kind, msg = r.get("type"), r.get("message") or {}
         if kind == "system" and r.get("subtype") == "compact_boundary":
             later("compacted", ts)
         elif (kind == "system" and r.get("subtype") == "local_command"
@@ -227,6 +260,9 @@ def transcript_reading(lines):
         elif kind == "assistant" and msg.get("model") != "<synthetic>":
             if msg.get("model") and (out["model_at"] is None or ts > out["model_at"]):
                 out["model"], out["model_at"] = msg["model"], ts
+            words = "".join(texts(msg.get("content")))
+            if words.strip() and (out["text_at"] is None or ts > out["text_at"]):
+                out["text_at"], out["text"] = ts, words
         elif kind == "user":
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue
@@ -241,14 +277,12 @@ def transcript_reading(lines):
             if is_prompt(content):
                 said(ts, content)
         elif kind == "attachment":
-            a = r.get("attachment") or {}
-            if (a.get("type") == "queued_command"
-                    and a.get("commandMode") == "prompt"
-                    and not a.get("isMeta")):
-                if is_compact(a.get("prompt")):
+            typed = queued_prompt(r)
+            if typed is not None:
+                if is_compact(typed):
                     later("compact_asked", ts)
-                if is_prompt(a.get("prompt")):
-                    said(ts, a.get("prompt"))
+                if is_prompt(typed):
+                    said(ts, typed)
         elif (kind == "queue-operation" and r.get("operation") == "enqueue"
               and r.get("content") == QUEUED_COMPACT):
             later("compact_asked", ts)
@@ -265,6 +299,41 @@ def compaction_pending(reading):
         return (f"compaction pending: /compact at {asked}, no compact_boundary "
                 f"since" + (f" {done}" if done else ""))
     return None
+
+
+def firsts(lines, at):
+    """{"prompt": when the FIRST prompt after `at` landed or None, "text":
+    when the session's FIRST text after `at` did or None}. Pure, over the
+    transcript's lines, for the `worker-stuck` join in `campaign-jev.py`:
+    a prompt before the first text is a re-prompt that moved the session,
+    a text before any prompt is a session that went on by itself.
+
+    THE SAME SHAPES `transcript_reading` READS, through the same `own`,
+    `queued_prompt`, `is_prompt` and `texts`: a user record that is not a
+    harness note or a summary, a `queued_command` attachment in prompt mode
+    that is not a peer's, and an assistant record that is not `<synthetic>`.
+    Firsts, where that reads lasts, because the order of the two is the
+    label and a last cannot say which came first. `at` is compared as a time, since the log writes
+    `+00:00` at seconds and the transcript `Z` at milliseconds."""
+    out = {"prompt": None, "text": None}
+    since = when(at)
+
+    def earlier(key, ts):
+        if out[key] is None or when(ts) < when(out[key]):
+            out[key] = ts
+
+    for ts, kind, r, msg in own(lines):
+        if when(ts) <= since:
+            continue
+        if kind == "assistant" and msg.get("model") != "<synthetic>":
+            if "".join(texts(msg.get("content"))).strip():
+                earlier("text", ts)
+        elif kind == "user" and not (r.get("isMeta") or r.get("isCompactSummary")):
+            if is_prompt(msg.get("content")):
+                earlier("prompt", ts)
+        elif kind == "attachment" and is_prompt(queued_prompt(r)):
+            earlier("prompt", ts)
+    return out
 
 
 def read_transcript(session_id):

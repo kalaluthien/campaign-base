@@ -145,6 +145,40 @@ def _(m):
     return (r["assigned"], r["compacted"]) == (5, ts(3)), r
 
 
+def said(minute, *texts, model="claude-opus-5"):
+    """An assistant record carrying `texts` as text blocks, or a tool call
+    alone when none."""
+    content = ([{"type": "text", "text": t} for t in texts]
+               or [{"type": "tool_use", "name": "Bash"}])
+    return {"type": "assistant", "timestamp": ts(minute),
+            "message": {"model": model, "content": content}}
+
+
+@case("the last prompt and the session's last text are what each said, by time")
+def _(m):
+    r = reading(m, prompt(1, work(5)), prompt(4, "go on"), prompt(2, "hi"),
+                said(6, "done", " here"), said(3, "start"), said(7),
+                said(8, "later", model="<synthetic>"),
+                dict(said(9, "aside"), isSidechain=True))
+    return ((r["assigned_text"], r["prompt_at"], r["prompt_text"],
+             r["text_at"], r["text"])
+            == (work(5), ts(4), "go on", ts(6), "done here")), r
+
+
+@case("firsts after a time: the first prompt and the first text, or none")
+def _(m):
+    L = lines(prompt(1, work(5)), said(2, "start"), queued(4, "go on"),
+              said(6, "moved"), said(5), said(3, "x", model="<synthetic>"),
+              dict(prompt(3, "peer"), isSidechain=True),
+              result(3, "not a prompt"))
+    before = m.firsts(L, gh_ts(0))
+    after = m.firsts(L, gh_ts(2))
+    none = m.firsts(L, gh_ts(6))
+    return ((before["prompt"], before["text"], after["prompt"], after["text"],
+             none) == (ts(1), ts(2), ts(4), ts(6),
+                       {"prompt": None, "text": None})), (before, after, none)
+
+
 def gone(minute, standing=(), read="tk/9-* on o/r; the feed: o/r 40 event(s)"):
     """A `refs` whose sub-issue's refs are `standing`, the last gone at
     `minute` (None: no deletion read), recording each sub-issue asked."""
@@ -460,6 +494,35 @@ def _(m):
 
 # (the branch broken, old text, new text, the case that must go red)
 MUTATIONS = [
+    ("the last prompt read by position",
+     'if out["prompt_at"] is None or ts > out["prompt_at"]:', "if True:",
+     "the last prompt and the session's last text are what each said, by time"),
+    ("the last text read by position",
+     'if words.strip() and (out["text_at"] is None or ts > out["text_at"]):',
+     "if words.strip():",
+     "the last prompt and the session's last text are what each said, by time"),
+    ("a tool call alone read as text",
+     'if words.strip() and (out["text_at"] is None or ts > out["text_at"]):',
+     'if out["text_at"] is None or ts > out["text_at"]:',
+     "the last prompt and the session's last text are what each said, by time"),
+    ("firsts read as lasts", "if out[key] is None or when(ts) < when(out[key]):",
+     "if True:",
+     "firsts after a time: the first prompt and the first text, or none"),
+    ("firsts read from the start", "        if when(ts) <= since:\n            continue\n        if kind == \"assistant\"",
+     "        if kind == \"assistant\"",
+     "firsts after a time: the first prompt and the first text, or none"),
+    ("a synthetic text counted in firsts",
+     '        if kind == "assistant" and msg.get("model") != "<synthetic>":\n            if "".join(texts(msg.get("content"))).strip():\n                earlier("text", ts)',
+     '        if kind == "assistant":\n            if "".join(texts(msg.get("content"))).strip():\n                earlier("text", ts)',
+     "firsts after a time: the first prompt and the first text, or none"),
+    ("a queued prompt missed by firsts",
+     '        elif kind == "attachment" and is_prompt(queued_prompt(r)):\n            earlier("prompt", ts)',
+     '        elif False:\n            earlier("prompt", ts)',
+     "firsts after a time: the first prompt and the first text, or none"),
+    ("a tool result counted as a first prompt",
+     '            if is_prompt(msg.get("content")):\n                earlier("prompt", ts)',
+     '            if True:\n                earlier("prompt", ts)',
+     "firsts after a time: the first prompt and the first text, or none"),
     ("one transcript per id", "if len(hits) != 1:", "if not hits:",
      "one transcript per session id: none, or two, is a why and no path"),
     ("a slash command's output dropped", "out[\"commands\"][-1][1] = content", "_ = content",
@@ -480,7 +543,7 @@ MUTATIONS = [
      "compacted after the ref went is compacted, before it stale, and no time unknown"),
     ("the assignment by its sentence", 'hit = ASSIGNMENT.search("".join(texts(content)))',
      "hit = None", "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
-    ("a queued assignment", 'said(ts, a.get("prompt"))', 'pass',
+    ("a queued assignment", "said(ts, typed)", "pass",
      "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
     ("the last assignment by time", 'or ts > out["assigned_at"])', "or True)",
      "every last is by time, not by position in the file"),
@@ -521,7 +584,7 @@ MUTATIONS = [
      "        if False:\n            return None, f\"gh api {path}:",
      "a feed that would not read is a why, not a deletion"),
     ("the compaction is a record type", 'r.get("subtype") == "compact_boundary"',
-     'r.get("subtype") == "compact_boundary" or "Compacted" in line',
+     'r.get("subtype") == "compact_boundary" or "Compacted" in json.dumps(r)',
      "the compaction marker printed as text is not a compaction"),
     ("last by time", "if out[key] is None or ts > out[key]:",
      "if True:", "every last is by time, not by position in the file"),
@@ -530,13 +593,13 @@ MUTATIONS = [
     ("a prompt is text", "if is_prompt(content):\n                said(ts, content)",
      "if False:\n                said(ts, content)",
      "every last is by time, not by position in the file"),
-    ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
+    ("a prompt typed into a busy pane", "typed = queued_prompt(r)", "typed = None",
      "an assignment typed into a busy pane is the assignment, whatever its origin"),
     ("a queued peer message", 'and not a.get("isMeta")):', "):",
      "a peer's message queued into the pane is not a prompt"),
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
      "a queued command in any mode but prompt is not a prompt"),
-    ("a queued echo", 'if is_prompt(a.get("prompt")):', "if True:",
+    ("a queued echo", "if is_prompt(typed):", "if True:",
      "a command's output queued while busy is not a prompt"),
     ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
      'COMPACTION_ECHOES = ("\\x00",)', "a command's own echoes are not a prompt"),
@@ -557,7 +620,7 @@ MUTATIONS = [
      "every shape of /compact is asked, and pending until a boundary after it"),
     ("its echo is asked", " or said.startswith(COMPACTION_ECHOES[0])", "",
      "every shape of /compact is asked, and pending until a boundary after it"),
-    ("a queued /compact is asked", 'if is_compact(a.get("prompt")):', "if False:",
+    ("a queued /compact is asked", "if is_compact(typed):", "if False:",
      "every shape of /compact is asked, and pending until a boundary after it"),
     ("a refusal ends the window", 'later("compact_refused", ts)', "pass",
      "a /compact refused or failed ends the window, and other command output does not"),

@@ -75,6 +75,13 @@ SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Stub)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 URL = f"http://127.0.0.1:{SERVER.server_address[1]}/v1/systemone"
 
+# THE SNAPSHOT IS WHAT SAYS A NAME IS A SCENARIO. check-sdlc-tie's `Tree` reads
+# it, and this reader asks that Tree rather than the tree's `.als` text, so a
+# fixture whose snapshot omits a name gets it skipped and never asked.
+SNAPSHOT = json.dumps({"generated_by": "fixture", "why": "fixture", "commands": [
+    ["fixture/checks.als", "check", "Held"],
+    ["fixture/checks.als", "run", "Cov_Held"]]})
+
 SPEC = """module fixture
 sig Agent {
   peer: lone Agent
@@ -185,19 +192,37 @@ def case_one(t):
     return True, ""
 '''
 
+INLINE_SUITE = '''#!/usr/bin/env python3
+#@ Held
+"""A suite whose cases are a dict of values that are not bare names."""
+
+
+def refusal(code):
+    def run(t):
+        return code == 2, ""
+    return run
+
+
+CASES = {
+    "a call value is a case": refusal(2),
+    "a lambda value is a case": lambda t: (True, ""),
+}
+'''
+
+
 # THE FIXTURE'S WITNESS LINES ARE BUILT AND NOT WRITTEN. check-sdlc-tie reads a
 # `# witnesses:` line by the line's first non-blank character, so a literal one
 # at column zero inside a fixture string is a declaration BY THIS SUITE, and T6
 # refuses the commit over a scenario only the fixture has.
-DICT_SUITE, CASE_SUITE, BARE_SUITE, FLAT_SUITE, GHOST_SUITE = (
+DICT_SUITE, CASE_SUITE, BARE_SUITE, FLAT_SUITE, GHOST_SUITE, INLINE_SUITE = (
     t.replace("#@ ", "# witnesses: ") for t in
-    (DICT_SUITE, CASE_SUITE, BARE_SUITE, FLAT_SUITE, GHOST_SUITE))
-
+    (DICT_SUITE, CASE_SUITE, BARE_SUITE, FLAT_SUITE, GHOST_SUITE, INLINE_SUITE))
 SUITES = {"scripts/fixture-dict-test.py": DICT_SUITE,
           "scripts/fixture-case-test.py": CASE_SUITE,
           "scripts/fixture-bare-test.py": BARE_SUITE,
           "scripts/fixture-flat-test.py": FLAT_SUITE,
-          "scripts/fixture-ghost-test.py": GHOST_SUITE}
+          "scripts/fixture-ghost-test.py": GHOST_SUITE,
+          "scripts/fixture-inline-test.py": INLINE_SUITE}
 
 
 def module(source):
@@ -223,6 +248,9 @@ def repo(t, edits, choice="t1", tier="advise", registry=True, url=None,
              "scripts/check-model-comment.py": (HERE / "check-model-comment.py").read_text(),
              "scripts/check-cited-claims.py": (HERE / "check-cited-claims.py").read_text(),
              "scripts/campaign-jev.py": (HERE / "campaign-jev.py").read_text(),
+             "scripts/check-sdlc-tie.py": (HERE / "check-sdlc-tie.py").read_text(),
+             "scripts/check-tree-shape.py": (HERE / "check-tree-shape.py").read_text(),
+             "spec/commands.snapshot.json": SNAPSHOT,
              **SUITES, **(extra or {})}
     if registry:
         entries = json.loads(REGISTRY.read_text())
@@ -282,9 +310,31 @@ def touch(text):
 
 # ------------------------------------------------------------------ the cuts
 
-def declared_names(t):
-    got = t.m.declared(CASE_SUITE, ENTRY["prefilter"]["witnesses"])
-    return got == ["Held", "Cov_Held"], got
+def the_tie_reads_the_witness_line(t):
+    """check-sdlc-tie owns the `# witnesses:` form, so this reader must hold no
+    copy of it: no `declared`, and no pattern in the entry."""
+    import ast as A
+    tree = A.parse(t.source)
+    docs = {id(n.body[0].value) for n in A.walk(tree)
+            if isinstance(n, (A.Module, A.FunctionDef, A.ClassDef)) and n.body
+            and isinstance(n.body[0], A.Expr)
+            and isinstance(n.body[0].value, A.Constant)}
+    held = [n.value for n in A.walk(tree)
+            if isinstance(n, A.Constant) and isinstance(n.value, str)
+            and id(n) not in docs and "witnesses" in n.value]
+    return (not hasattr(t.m, "declared")
+            and "witnesses" not in ENTRY["prefilter"]
+            and "tree.declared(suite)" in t.source and not held), held
+
+
+def a_case_that_is_not_a_function_is_a_candidate(t):
+    """`campaign-close-test` writes 73 of its 158 cases as `refusal(...)` and
+    `check-read-range-test` all 14 that way; read as functions they vanish, and
+    a case a reader cannot name can only come back `noMatch`."""
+    got = t.m.candidates(INLINE_SUITE, ENTRY["prefilter"])
+    return ([(c["fn"], c["name"]) for c in got.values()]
+            == [("", "a call value is a case"), ("", "a lambda value is a case")]
+            and "refusal(" in list(got.values())[0]["body"]), got
 
 
 def dict_names_the_case(t):
@@ -347,7 +397,7 @@ def a_staged_spec_asks_every_suite(t):
     r, out, _ = repo(t, {"spec/fixture/checks.als":
                          CHECKS.replace("for 3\n-- names `holds`\nrun",
                                         "for 4\n-- names `holds`\nrun")})
-    return (r.returncode == 0 and len(selects()) == 4), (len(selects()), out)
+    return (r.returncode == 0 and len(selects()) == 5), (len(selects()), out)
 
 
 def one_call_a_scenario(t):
@@ -374,7 +424,7 @@ def a_declarative_suite_is_skipped(t):
                        FLAT_SUITE.replace('"ok"', '"okay"')})
     why = skips(d)
     return (r.returncode == 0 and not selects()
-            and any("no test function by AST" in w for w in why)), why
+            and any("holds no case by AST" in w for w in why)), why
 
 
 def a_settled_sentence_is_a_skip_row(t):
@@ -412,7 +462,7 @@ def over_budget_skips(t):
     r, _, d = repo(t, {"scripts/fixture-dict-test.py": big})
     why = skips(d)
     return (r.returncode == 0 and not selects()
-            and any("over the" in w and "budget" in w for w in why)), why
+            and any("over the" in w and "budget even at" in w for w in why)), why
 
 
 def entry_reaches_model(t):
@@ -460,7 +510,8 @@ def failure_exits_zero(t):
 
 
 CASES = {
-    "the names of a suite's `# witnesses:` lines, in order, union over lines": declared_names,
+    "the `# witnesses:` form is check-sdlc-tie's and is not copied here": the_tie_reads_the_witness_line,
+    "a dict value that is no bare name is still a case, its own source the body": a_case_that_is_not_a_function_is_a_candidate,
     "a `*CASES` dict names the case, not the function": dict_names_the_case,
     "an `@case(\"...\")` suite names every function `_`, so the cut keys by position": decorator_names_the_case,
     "a bare case_* / *_cases / test_* name is a candidate": bare_names_are_candidates,
@@ -484,14 +535,16 @@ CASES = {
 }
 
 MUTATIONS = [
-    ("the witness lines read as one",
-     'for m in re.finditer(witnesses, text, re.M):', 'for m in re.finditer(witnesses, text):',
-     "the names of a suite's `# witnesses:` lines, in order, union over lines"),
+    ("a dict value that is no bare name dropped",
+     "            else:\n                inline.append((v, k.value))",
+     "            else:\n                pass",
+     "a dict value that is no bare name is still a case, its own source the body"),
     ("the dict key dropped for the function's own name",
      'label[id(first_of[v.id])] = k.value', 'pass',
      "a `*CASES` dict names the case, not the function"),
     ("the candidates keyed by name",
-     'out[f"t{len(out) + 1}"] = {', 'out[f"t{n.name}"] = {',
+     '        out[f"t{len(out) + 1}"] = {\n            "name": name, "fn": n.name,',
+     '        out[f"t{n.name}"] = {\n            "name": name, "fn": n.name,',
      "an `@case(\"...\")` suite names every function `_`, so the cut keys by position"),
     ("the decorator's name never read",
      '                name = d.args[0].value', '                pass',
@@ -503,8 +556,10 @@ MUTATIONS = [
      "        if name is None:\n            continue", "        name = name or n.name",
      "a helper is not a candidate"),
     ("the body never capped",
-     '"body": "\\n".join(lines[at - 1:min(n.end_lineno, at - 1 + head)])}',
-     '"body": "\\n".join(lines[at - 1:n.end_lineno])}',
+     '            "name": name, "fn": n.name, "first": at, "last": n.end_lineno,\n'
+     '            "body": "\\n".join(lines[at - 1:min(n.end_lineno, at - 1 + head)])}',
+     '            "name": name, "fn": n.name, "first": at, "last": n.end_lineno,\n'
+     '            "body": "\\n".join(lines[at - 1:n.end_lineno])}',
      "a candidate's body is capped at the entry's head_lines"),
     ("a spec edit read as touching its own file alone",
      "            if suite not in staged and not (set(names) & moved):",
@@ -515,7 +570,8 @@ MUTATIONS = [
      '    claims = {f"c{i}": c for i, c in enumerate(found[:1], 1)}',
      "one select call a scenario, every claim of it in that call"),
     ("a name with no declaration asked anyway",
-     "                if name not in defs:", "                if False:",
+     "                if name not in tree.scenarios or name not in defs:",
+     "                if False:",
      "a declared name with no declaration under spec/ logs a skip"),
     ("a suite with no candidate asked anyway",
      "                if not cands:", "                if False:",
@@ -532,8 +588,8 @@ MUTATIONS = [
      "            by_fn[t + cid] = {cid: claims[cid]}; cands[t + cid] = cands[t]",
      "one claim call a function picked, carrying that function's body"),
     ("the budget not read",
-     '    if len(json.dumps({"candidates": text}).encode("utf-8")) > jev.STATE_BUDGET:',
-     "    if False:",
+     '        if len(json.dumps({"candidates": text}).encode("utf-8")) <= budget:',
+     "        if True:",
      "a select state over the budget is not sent and logs a skip"),
     ("the row keyed by the suite alone",
      "                         dict(jev.commit_key(cwd=HERE), path=suite,\n"

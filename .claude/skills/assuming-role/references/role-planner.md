@@ -145,8 +145,9 @@ the campaign issue quoting both answers. The worker's side is in
 2. **It starts the successor** in a pane of its own at the base root, named
    `<slug>-planner-<n>` by `campaign-name-session.py`. The first prompt is one
    sentence: take over from `<old>`, read its NOTE on `<slug>#N`.
-3. **The successor reads that NOTE on GitHub**, then `bound <N>` and
-   `campaign-claim live <N>`. It checks its own name carries this campaign's
+3. **The successor reads that NOTE**, which the brief hook prints ahead of
+   its brief at every planner start, saying when a planner started after it
+   and left none -- a planner of any slug, so a rename still hands off; then `bound <N>` and `campaign-claim live <N>`. It checks its own name carries this campaign's
    slug: no guard refuses a planner of another campaign.
 4. **Only then it runs `scripts/campaign-close.py leave <N> <pane>`** on the
    predecessor's pane: `/exit`, the wait until herdr no longer lists it, and

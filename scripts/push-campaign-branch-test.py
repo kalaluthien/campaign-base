@@ -2,9 +2,9 @@
 """Cases for push-campaign-branch.sh, run over a fixture repository.
 
 The subject is reached through a SYMLINK in the fixture's own `scripts/`, so
-`$0`'s directory is that one and the siblings it calls -- `check-commit-claim.py`
-and `check-diff-screen.py` -- are stand-ins, while the code that runs is the
-script itself and not a copy. `gh` is a fake on PATH that records its calls.
+`$0`'s directory is that one and the siblings it calls -- `check-commit-claim.py`,
+`check-diff-screen.py` and `check-form-behaviour.py` -- are stand-ins, while the
+code that runs is the script itself and not a copy. `gh` is a fake on PATH that records its calls.
 
 The fixture's origin has a github.com FETCH url and the bare repository as its
 PUSH url, because the announcement is scoped to a github remote and a fixture
@@ -88,7 +88,8 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
         (d / "scripts").mkdir()
         (d / "scripts" / SCRIPT.name).symlink_to(SCRIPT)
         for name, body in (("check-commit-claim.py", FAKE_CLAIM),
-                           ("check-diff-screen.py", FAKE_SCREEN)):
+                           ("check-diff-screen.py", FAKE_SCREEN),
+                           ("check-form-behaviour.py", FAKE_SCREEN)):
             (d / "scripts" / name).write_text(body)
             (d / "scripts" / name).chmod(0o755)
         harness.fake(d / "bin", "gh", FAKE_GH)

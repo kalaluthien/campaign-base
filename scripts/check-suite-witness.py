@@ -296,9 +296,15 @@ def steps(_inp, reg, jev):
                       f"asked, {asked} claim(s); {skipped} settled by code")
 
 
-def raised(e):
-    """The stock line, and nothing at `shadow`."""
-    if reg_tier(SELECT) == "shadow":
+def raised(e, reg=None):
+    """The stock line, and nothing at `shadow` -- the tier read off the
+    registry the shell hands over, or `shadow` when it did not read: silence
+    being the safer half when nothing is known."""
+    try:
+        tier = reg[SELECT]["tier"]
+    except Exception:  # noqa: BLE001
+        tier = "shadow"
+    if tier == "shadow":
         return []
     return [f"check-suite-witness: could not read the commit "
             f"({e.__class__.__name__}: {e}); nothing asked, exit status "
@@ -315,16 +321,6 @@ def main(argv, out=None, env=None):
             print(line, file=out)
         return 0
     return jev.run_reader(globals(), argv, out=out, env=env)
-
-
-def reg_tier(reading):
-    """The reading's tier, or `shadow` when the registry itself did not read --
-    silence being the safer half when nothing is known."""
-    try:
-        return importlib.import_module("campaign-jev").load_registry()[
-            reading]["tier"]
-    except Exception:  # noqa: BLE001
-        return "shadow"
 
 
 if __name__ == "__main__":

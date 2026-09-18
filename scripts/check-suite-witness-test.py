@@ -657,7 +657,7 @@ MUTATIONS = [
      "        if False:",
      "a commit touching neither a suite nor a spec module asks nothing"),
     ("the raise said at shadow",
-     '    if reg_tier(SELECT) == "shadow":', "    if False:",
+     '    if tier == "shadow":', "    if False:",
      "a reader that could not read exits 0, silent at shadow"),
 ]
 

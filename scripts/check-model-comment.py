@@ -198,7 +198,7 @@ def steps(_inp, registry, jev):
         yield ask_all(entry, states, jev, jev.commit_key(), s1)
 
 
-def raised(e):
+def raised(e, _reg=None):
     return [f"check-model-comment: could not read the commit "
             f"({e.__class__.__name__}: {e}); nothing asked, exit status "
             f"unmoved"]

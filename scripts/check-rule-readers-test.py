@@ -515,6 +515,33 @@ def main():
     check("a staged violation reverted on disk is refused under --staged only",
           staged == 1 and worktree == 0,
           f"--staged exit {staged}, wanted 1; working-tree exit {worktree}, wanted 0")
+    # THE JEV-DRIVE FORM READS CODE (rule-check#506): a reader given back a
+    # `main` that drives is refused, one handing itself to `run` is not, and
+    # the gates exempt by name are files that exist.
+    for label, body, want in (
+        ("a reader given back a main that drives is refused",
+         "def main(argv):\n    return jev.judge_each(asks, 6, group='g')\n", 1),
+        ("a reader given back its own loader is refused",
+         "def _jev_module():\n    return importlib.import_module('campaign-jev')\n", 1),
+        ("a reader reading the registry off the import is refused",
+         "def reg_tier(r):\n    return importlib.import_module("
+         "'campaign-jev').load_registry()[r]\n", 1),
+        ("a loader under another name is refused",
+         "def _load_jev():\n    return None\n", 1),
+        ("a reader handing itself to `run` is left alone",
+         "def main(argv):\n    return importlib.import_module("
+         "'campaign-jev').run_reader(globals(), argv)\n", 0)):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "scripts" / "check-fixture.py"
+            f.parent.mkdir()
+            f.write_text(body)
+            got = subprocess.run([str(GUARD), str(f)], capture_output=True,
+                                 text=True)
+        check(label, got.returncode == want
+              and (want == 0 or "jev-drive" in got.stdout
+                   or "Jev reading" in got.stdout), got.stdout)
+    for path in crr.JEV_GATES:
+        check(f"the exempt gate {path} is a file", (base / path).is_file())
     return harness.report()
 
 

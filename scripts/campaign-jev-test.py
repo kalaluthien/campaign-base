@@ -3887,7 +3887,7 @@ def staged_reader_says_a_raise(m):
     out = io.StringIO()
     boom = reader_of("staged", lambda inp, reg, jev: 1 / 0)
     quiet = reader_of("staged", lambda inp, reg, jev: 1 / 0,
-                      raised=lambda e: [])
+                      raised=lambda e, reg: [])
     said = reader_of("staged", lambda inp, reg, jev: [jev.Say(f"saw {inp}")])
     with swapped(m, load_registry=lambda *a: {}):
         codes = [m.run_reader(boom, ["--staged"], out=out, env=env()),

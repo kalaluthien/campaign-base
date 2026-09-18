@@ -736,7 +736,7 @@ REOPENED = []
 FILES = {
     ("o/r", "0" * 40, "spec/x.als"): {
         "now": "-- A claim is atomic.\npred peerHasPeer {}\n",
-        "window": 30,
+        "window": 30, "own": None,
         "commits": [{"sha": "1" * 40, "paths": ["spec/x.als"]}]},
 }
 
@@ -1195,11 +1195,14 @@ def fetch_commits_reads_one_file_s_later_commits(m):
     path, shas = a_clone()
     got = m.fetch_commits("o/r", shas["first"], "spec/x.als", cwd=path)
     other = m.fetch_commits("o/r", shas["first"], "spec/y.als", cwd=path)
+    # `own` NAMES THE CHILD OF THE SHA: from `first`, the commit that touched
+    # spec/y.als is the child, and from `other` the commit on spec/x.als is.
     return (got is not None and other is not None
             and [c["sha"] for c in got["commits"]] == [shas["again"]]
             and got["now"] == "pred a { no b }\n" and got["window"] == 2
-            and [c["sha"] for c in other["commits"]] == [shas["other"]]), \
-        (got, other)
+            and got["own"] is None          # `again` is not `first`'s child
+            and [c["sha"] for c in other["commits"]] == [shas["other"]]
+            and other["own"] == shas["other"]), (got, other)
 
 
 def fetch_commits_tells_unmerged_from_unreadable(m):
@@ -1210,17 +1213,22 @@ def fetch_commits_tells_unmerged_from_unreadable(m):
     a reading made on the claim it is about is the ordinary case: reporting
     those as dead would bury every row this machinery was built for.
 
-    A REPOSITORY THIS MACHINE DOES NOT HOLD IS the None: nothing here will ever
-    read that sha, whichever day the join runs."""
+    A REPOSITORY THIS MACHINE DOES NOT HOLD IS the None, and so is a SHA IT
+    DOES NOT HOLD: nothing here will ever read either, whichever day the join
+    runs. `git merge-base --is-ancestor` exits 128 for the second and 1 for an
+    unmerged one, and reading both as `unmerged` left a row keyed to a squashed
+    or force-pushed sha waiting for ever (pr#492 REVIEW 5723079103, F3)."""
     path, shas = a_clone()
     unmerged = m.fetch_commits("o/r", shas["unmerged"], "spec/x.als", cwd=path)
     elsewhere = m.fetch_commits("o/other", shas["first"], "spec/x.als",
                                 cwd=path)
+    absent = m.fetch_commits("o/r", "d" * 40, "spec/x.als", cwd=path)
     waiting, _e, why = m.join_comment_rewritten(
         commit_row("a", "model-comment", {"c0": "x"}), unmerged)
     return ((unmerged or {}).get("unmerged") is True and elsewhere is None
+            and absent is None
             and waiting is None and "has not reached" in why), \
-        (unmerged, elsewhere, why)
+        (unmerged, elsewhere, absent, why)
 
 
 def the_subject_names_the_fetch_and_what_it_is_given(m):
@@ -1266,7 +1274,8 @@ def the_join_reaches_a_commit_time_row(m):
         "c1": "A claim is atomic."})])
     one = next((c for c in cases["model-comment"]
                 if c["id"] == "model-comment-mmmm"), {})
-    return (one.get("truth") == {"c0": "yes", "c1": "no"}
+    return (one.get("truth") == {"The ref is cut on the remote.": "yes",
+                                "A claim is atomic.": "no"}
             and one.get("label", {}).get("from") == "join:comment-rewritten"
             and sorted(one.get("state") or {}) == ["body", "claim"]), \
         (one, len(cases["model-comment"]))
@@ -1551,7 +1560,7 @@ def thread_answers(**kw):
 def a_per_item_reading_is_one_call(m):
     """Two findings and the other THREE readings of the group: five questions,
     ONE request, and each per-item question's instructions name its own item,
-    since the id never reaches the model.
+    since the id is a key of the body and no part of the question.
 
     THE COUNT OF QUESTIONS IS THE GROUP'S AND MOVES WITH IT; the count of
     REQUESTS is the invariant, and it is 1."""
@@ -1659,7 +1668,8 @@ def a_flag_may_be_computed_from_the_answers(m):
 
 def a_per_item_question_must_name_its_item(m):
     """Without the marker the same question would be asked once per item and
-    answered once per item, identically -- the id never reaches the model."""
+    answered once per item, identically -- the id is a key of the body and
+    no part of the question."""
     reg = m.load_registry()
     entry = reg["C-report-disposes-finding"]
     entry["question"] = dict(entry["question"],
@@ -1737,7 +1747,12 @@ def the_decision_join_labels_a_named_condition(m):
 def the_done_join_labels_a_line_named_again(m):
     """done-*-claim: a later REVIEW naming that Definition-of-done line is the
     strong half and labels `no`; the sub-issue CLOSED with none naming it is
-    the weak half and labels `yes`. An open one with none waits."""
+    the weak half and labels `yes`.
+
+    THE WAIT IS PER CONDITION. One REVIEW naming ONE line of the round used to
+    carry every OTHER line of the same row past the close and hand the weak
+    half a label nothing had earned -- and this case pinned it, asserting
+    `c2: yes` over an OPEN sub-issue (pr#492 REVIEW 5723079103, F2)."""
     conds = {"c1": "the guard refuses a comment over the ceiling",
              "c2": "a skip row names the rule that took it"}
     row = dict(note_row("a", 3, conds), reading="done-test-claim")
@@ -1750,7 +1765,7 @@ def the_done_join_labels_a_line_named_again(m):
     a, _e, _w = m.join_done_line_reraised(row, named)
     b, _e, _w = m.join_done_line_reraised(row, closed)
     c, _e, why = m.join_done_line_reraised(row, still)
-    return (a == {"c1": "no", "c2": "yes"}
+    return (a == {"c1": "no"}                     # c2 is not labelled yet
             and b == {"c1": "yes", "c2": "yes"} and c is None
             and "still open" in why), (a, b, c, why)
 
@@ -1765,9 +1780,13 @@ def the_comment_join_labels_a_claim_rewritten_away(m):
               "c1": "A claim is atomic."}
     row = commit_row("a", "model-comment", claims)
     kept = "-- A claim is atomic.\npred peerHasPeer {}\n"
+    # `own` IS THE READING'S OWN COMMIT, the child of the sha it was keyed to.
+    # It touches the file by construction, so counting it as somebody coming
+    # back let a claim be "read and left" by the commit that wrote it.
     seen = lambda now, touched, window: {  # noqa: E731
-        "now": now, "window": window,
-        "commits": [{"sha": "0" * 40, "paths": ["spec/x.als"]}] * touched}
+        "now": now, "window": window, "own": "9" * 40,
+        "commits": ([{"sha": "9" * 40, "paths": ["spec/x.als"]}]
+                    + [{"sha": "0" * 40, "paths": ["spec/x.als"]}] * touched)}
     read = lambda got: m.join_comment_rewritten(row, got)  # noqa: E731
     try:                 # a file gone is SAID, never tripped over
         gone_file, _e, why_file = read(seen(None, 1, 30))
@@ -1778,11 +1797,15 @@ def the_comment_join_labels_a_claim_rewritten_away(m):
         row, seen(kept + "-- The ref is cut on the remote.\n", 1, 3))
     gone_def, _e, why_def = m.join_comment_rewritten(
         row, seen("-- A claim is atomic.\npred somethingElse {}\n", 1, 30))
-    return (rewritten == {"c0": "yes", "c1": "no"}
+    only_own, own_said, _w = m.join_comment_rewritten(row, seen(kept, 0, 30))
+    return (rewritten == {"The ref is cut on the remote.": "yes",
+                          "A claim is atomic.": "no"}
+            and only_own == {"The ref is cut on the remote.": "yes"}
+            and "0 on the file since" in own_said
             and young is None and str(m.COMMIT_WINDOW) in why_young
             and gone_file is None and "gone from `origin/main`" in why_file
             and gone_def is None and "`peerHasPeer` is gone" in why_def), \
-        (rewritten, why_young, why_file, why_def)
+        (rewritten, only_own, own_said, why_young, why_file, why_def)
 
 
 def a_reading_with_no_join_says_why(m):
@@ -1840,7 +1863,9 @@ def the_composed_question_is_what_the_reader_sent(m):
         was = as_the_reader_did(reg[name], state)
         got = json.loads(SEEN["body"])
         # THE IDS ARE THE ONE THING THAT MAY MOVE: `judge` names a question
-        # `<reading>#<item>` and the id never reaches the model.
+        # `<reading>#<item>` where the reader named its own; the id is a key
+        # of the body and no part of the question, so what the MODEL reads is
+        # equal and the store misses once per state on the way over.
         got["questions"] = {q.split("#", 1)[-1]: v
                             for q, v in got["questions"].items()}
         if json.dumps(got, sort_keys=True) != json.dumps(was, sort_keys=True):
@@ -2267,7 +2292,33 @@ def relive_appends_and_never_replaces(m):
             and seen[1]["word"] == "yes"), seen
 
 
+def relive_never_asks_a_per_item_reading(m):
+    """A per-item reading's question is composed FROM the item, so asking it
+    with none leaves `{condition}` standing or hands back the instructions
+    object unfilled -- a question production never sends, and a band measured
+    on it would belong to a call nobody makes. `relive` sent that malformed
+    question and said nothing (pr#492 REVIEW 5723079103, F4)."""
+    corpus = ROOT / "relive-per"
+    corpus.mkdir(exist_ok=True)
+    entry = m.load_registry()["research-bar"]
+    case = {"id": "a-case", "reading": "research-bar", "role": "case",
+            "state": {"note": "NOTE w-1: measured",
+                      "condition": "runs a baseline"},
+            "truth": "no", "label": {"from": "owner"},
+            "source": {"kind": "fixture"}, "seen": []}
+    LOG.write_text("")
+    clear_store()
+    serving()
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        got = m.relive("research-bar", entry, [case], env=env(url=URL),
+                       root=corpus)
+    return (SEEN["count"] == 0 and got[0]["seen"] == []
+            and "not asked" in out.getvalue()), (SEEN["count"], out.getvalue())
+
+
 CASES["report --live appends a run and replaces none"] = relive_appends_and_never_replaces
+CASES["report --live never asks a per-item reading"] = relive_never_asks_a_per_item_reading
 
 
 def every_case_fits_its_entry(m):
@@ -3082,9 +3133,13 @@ MUTATIONS = [
      '    truth = {k: "yes"',
      "the DECISION join labels a condition named as a gap"),
     ("an open sub-issue read as agreement",
-     '    if not again and str(issue.get("state", "")).upper() != "CLOSED":',
-     "    if False:",
+     '        elif closed:', "        elif True:",
      "the done join labels a Definition-of-done line named again"),
+    ("the reading's own commit counted as somebody coming back",
+     '    touched = len([c for c in seen.get("commits") or []\n'
+     '                   if c.get("sha") != own])',
+     '    touched = len(seen.get("commits") or [])',
+     "the comment join labels a claim rewritten away"),
     ("a claim still there labelled without a commit on its file",
      "        elif touched and window >= COMMIT_WINDOW:",
      "        elif True:",
@@ -3179,6 +3234,14 @@ MUTATIONS = [
      '               "origin/main").returncode != 0:',
      "        if False:",
      "fetch_commits tells an unmerged sha from an unreadable one"),
+    ("a sha this checkout does not hold read as merely unmerged",
+     '        if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:',
+     "        if False:",
+     "fetch_commits tells an unmerged sha from an unreadable one"),
+    ("the child of the sha never named",
+     "            if own is None and sha in found.group(2).split():",
+     "            if False:",
+     "fetch_commits reads one file's later commits and the file now"),
     ("a sha read in whichever checkout the call was made from",
      "    return root if repo_of(out.stdout) == repo else None",
      "    return root",
@@ -3361,6 +3424,9 @@ MUTATIONS = [
      "the evidence row names each part that is short"),
     ("one run enough", "    if len(runs) < 3:", "    if False:",
      "the evidence row names each part that is short"),
+    ("a per-item reading asked with no item",
+     '    if (entry.get("question") or {}).get("per"):', "    if False:",
+     "report --live never asks a per-item reading"),
     ("a live run replaces the history", '        c.setdefault("seen", []).append(',
      '        c["seen"] = []\n        c.setdefault("seen", []).append(',
      "report --live appends a run and replaces none"),

@@ -441,7 +441,7 @@
    "no_under": 0.2
   },
   "join": null,
-  "join_why": "one fact cannot label five questions. The later fact this tree holds for a file is a commit touching it again, and this reading asks five different things of that file -- behaviour, boundary, caller, failure, untested -- each of which that one commit is consistent with either way.",
+  "join_why": "one fact cannot label five questions. DECISION 5722176509 names two -- a later fix commit on that file, and a later REVIEW finding on it -- and this tree can read both: `fetch_commits` gives the first and check-finding-site already resolves a finding to a path and a line. Neither says WHICH of the five things this reading asks of that file went wrong -- behaviour, boundary, caller, failure, untested -- and each is consistent with either answer to all five, so a join over them would write one word where five were asked.",
   "bands": {}
  },
  "C-report-disposes-finding": {

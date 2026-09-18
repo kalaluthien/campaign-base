@@ -599,8 +599,8 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     not: an issue body in a scratch log is a copy nobody swept.
 
     `questions` maps an id to a spec: `type`, `instructions`, `criteria`, and
-    the thresholds `branch` reads. The id never reaches the model, so the
-    instructions carry the whole meaning.
+    the thresholds `branch` reads. The id is a KEY of the body and no part of
+    the question, so the instructions carry the whole meaning.
 
     THIS IS THE BOUNDARY THE MODULE'S PROMISE RESTS ON. An unsupported question
     TYPE raises, and it is the only thing that does: every named failure below
@@ -1478,8 +1478,9 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
             raise ValueError(
                 f"campaign-jev: `{name}` is asked per `{per}` and composes its "
                 f"item at {', '.join(missing)}, which its instructions do not "
-                f"name; the question id never reaches the model, and without "
-                f"it the same question would be asked once per item")
+                f"name; the question id is a KEY of the request body and no "
+                f"part of the question, so without it the same question would "
+                f"be asked once per item")
         fanned[name] = items
         cleared = given or {}
         for item in items:
@@ -1955,9 +1956,17 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
     """What happened to one file after one commit, or None.
 
     {commits: [{sha, paths}] touching `path` after `sha`, oldest first;
+     own: the commit of those whose parent IS `sha`, or None;
      now: the file as `origin/main` holds it, or None where it is gone;
      window: how many commits `sha..origin/main` holds at all;
      unmerged: set where the sha has not reached `origin/main`}
+
+    `own` IS THE READING'S OWN COMMIT. A commit-time reader runs at
+    `pre-commit`, so the sha it names is the PARENT and the change it judged is
+    the child -- which touches `path` by construction, since `path` was staged.
+    Counting that as somebody coming back to the file let a claim be called
+    "read and left" by the very commit that wrote it (pr#492 REVIEW
+    5723079103, F1), so it is named here and the join drops it.
 
     THE ONE FETCH for a commit-time reading, as `fetch_issue` is for an issue
     and `fetch_thread` for a pull request, so an offline suite stubs one
@@ -1969,6 +1978,13 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
     half of it. `window` is the other clock: how much history has passed at
     all, so a join can tell "nobody has touched it yet" from "nobody touched it
     in the twenty commits since".
+
+    A SHA THIS CHECKOUT DOES NOT HOLD IS None, and it is read APART from the
+    ancestry: `git merge-base --is-ancestor` exits 128 for a sha that is not a
+    commit here and 1 for one that is merely unmerged, and reading both as
+    `unmerged` left a row keyed to a squashed or force-pushed sha waiting for
+    ever instead of counted among the subjects that will never read
+    (pr#492 REVIEW 5723079103, F3).
 
     A SHA THAT HAS NOT REACHED `origin/main` IS `unmerged` AND NOT None.
     `<sha>..origin/main` over an unmerged claim is every commit main took since
@@ -1991,28 +2007,34 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
                               capture_output=True, text=True, timeout=timeout)
 
     try:
+        if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+            return None
         if git("merge-base", "--is-ancestor", sha,
                "origin/main").returncode != 0:
             return {"commits": [], "window": 0, "now": None, "unmerged": True}
         window = git("rev-list", "--count", f"{sha}..origin/main")
-        log = git("log", "--reverse", "--format=%H", "--name-only",
+        log = git("log", "--reverse", "--format=%H %P", "--name-only",
                   f"{sha}..origin/main", "--", path)
         now = git("show", f"origin/main:{path}")
     except (OSError, subprocess.SubprocessError):
         return None
     if window.returncode != 0 or log.returncode != 0:
         return None
-    commits, at = [], None
+    commits, at, own = [], None, None
     for line in log.stdout.splitlines():
         line = line.strip()
         if not line:
             continue
-        if re.fullmatch(r"[0-9a-f]{40}", line):
-            at = {"sha": line, "paths": []}
+        found = re.fullmatch(r"([0-9a-f]{40})((?: [0-9a-f]{40})*)", line)
+        if found:
+            at = {"sha": found.group(1), "paths": []}
             commits.append(at)
+            if own is None and sha in found.group(2).split():
+                own = at["sha"]
         elif at is not None:
             at["paths"].append(line)
-    return {"commits": commits, "window": int(window.stdout.strip() or 0),
+    return {"commits": commits, "own": own,
+            "window": int(window.stdout.strip() or 0),
             "now": now.stdout if now.returncode == 0 else None}
 
 
@@ -2076,7 +2098,13 @@ def join_done_line_reraised(row, issue):
     that line is somebody saying it did not, which is the strong half. The
     weak half is the sub-issue CLOSED with no REVIEW naming it -- nobody looked
     again -- and it is what labels the `yes` class, which is why it waits for
-    the close rather than reading an open issue as agreement."""
+    the close rather than reading an open issue as agreement.
+
+    THE WAIT IS PER CONDITION AND NOT PER ROW. One REVIEW naming ONE of the
+    round's lines used to carry every other line of the same row past the
+    close, handing the weak half a label nothing had earned; a condition no
+    later REVIEW names is simply left out of the truth until the sub-issue
+    closes (pr#492 REVIEW 5723079103, F2)."""
     if issue is None:
         return None, "", "the issue did not read"
     conditions = (row.get("state") or {}).get("condition") or {}
@@ -2084,17 +2112,23 @@ def join_done_line_reraised(row, issue):
         return None, "", "the row carries no condition to label"
     later = later_comments(issue, row.get("at") or "", "REVIEW")
     body = "\n".join(later)
-    truth = {k: ("no" if later and re_raised(text, body) else "yes")
-             for k, text in conditions.items()}
+    closed = str(issue.get("state", "")).upper() == "CLOSED"
+    truth = {}
+    for k, text in conditions.items():
+        if later and re_raised(text, body):
+            truth[k] = "no"
+        elif closed:
+            truth[k] = "yes"
     again = sorted(k for k, v in truth.items() if v == "no")
-    if not again and str(issue.get("state", "")).upper() != "CLOSED":
+    if not truth:
         return None, "", ("no REVIEW naming these lines yet, and the sub-issue "
                           "is still open")
     return (truth,
             f"{len(later)} REVIEW(s) after this reading on {row.get('repo')}#"
-            f"{row.get('issue')}; " + (f"named again: {', '.join(again)}"
-                                       if again else "the sub-issue closed "
-                                       "with none of these named again"),
+            f"{row.get('issue')}, {len(truth)} of {len(conditions)} line(s) "
+            f"labelled; " + (f"named again: {', '.join(again)}" if again
+                             else "the sub-issue closed with none of these "
+                                  "named again"),
             "")
 
 
@@ -2134,18 +2168,22 @@ def join_comment_rewritten(row, seen):
     if name and name not in now:
         return None, "", (f"`{name}` is gone from `{row.get('path')}`, so a "
                           f"claim gone with it says nothing about the claim")
-    touched, window = len(seen.get("commits") or []), seen.get("window") or 0
+    own = seen.get("own")
+    touched = len([c for c in seen.get("commits") or []
+                   if c.get("sha") != own])
+    window = seen.get("window") or 0
     flat = " ".join(now.split())
     truth = {}
-    for item, text in claims.items():
+    for text in claims.values():
         if " ".join(str(text).split()) not in flat:
-            truth[item] = "yes"
+            truth[str(text)] = "yes"
         elif touched and window >= COMMIT_WINDOW:
-            truth[item] = "no"
+            truth[str(text)] = "no"
     if not truth:
         return None, "", (f"{window} commit(s) on `origin/main` since, "
-                          f"{touched} of them on this file; every claim is "
-                          f"still there and that is under {COMMIT_WINDOW}")
+                          f"{touched} of them on this file and not this "
+                          f"reading's own; every claim is still there and that "
+                          f"is under {COMMIT_WINDOW}")
     gone = sorted(k for k, v in truth.items() if v == "yes")
     return (truth,
             f"{len(truth)} of {len(claims)} claim(s) labelled on "
@@ -2834,7 +2872,19 @@ def relive(name, entry, cases, env=None, root=None, whole=False):
     replaced -- a band is read from the run history, so a run that overwrote
     the one before it would erase the evidence of drift.
 
-    WHICH CASES ARE ASKED IS `sample_of`'s, and `whole` is the way past it."""
+    WHICH CASES ARE ASKED IS `sample_of`'s, and `whole` is the way past it.
+
+    A PER-ITEM READING IS NOT ASKED HERE AND SAYS SO. Its question is composed
+    from the item, and `question_of` with no item leaves `{condition}` standing
+    or hands back the instructions object unfilled -- a question production
+    never sends, so a band measured on it would belong to a call nobody makes.
+    The suite's `--live` half already refused these; this refused nothing and
+    sent the malformed one (pr#492 REVIEW 5723079103, F4)."""
+    if (entry.get("question") or {}).get("per"):
+        print(f"  {name}: asked per "
+              f"`{entry['question']['per']}`, so its question is composed from "
+              f"an item and this has none; not asked")
+        return cases
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="seconds")
     q = {name: question_of(entry)}

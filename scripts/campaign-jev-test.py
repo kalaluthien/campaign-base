@@ -2083,16 +2083,25 @@ def a_corpus_row_is_labelled_by_the_entrys_own_join(m):
     `noMatch`, and a `corpus join` row on the same evidence would have landed
     in the opposite class (REVIEW at 228dd87, defect 1).
 
-    THIS IS THE HALF A TEST CAN HOLD. A corpus row carries no evidence, so
-    nothing here can re-run a join over it; what it can refuse is a row
-    claiming a DIFFERENT join from the one its entry declares, which is a row
-    whose class a `corpus join` run would overwrite. The other half is
-    structural and lives in the builder: a corpus is written by RUNNING the
-    declared join, never by re-deriving its rule beside it.
+    WHAT THIS DOES NOT HOLD, said first because the commit that added it
+    claimed otherwise: it CANNOT GO RED ON THE DEFECT THAT PROMPTED IT. That
+    corpus labelled every row `closing-diff:<side>`, which names no join, so
+    the skip below passes it; and a row could satisfy this by writing the
+    right string over a hand-derived label. What it does catch is a
+    CROSS-WIRED join name, over the 39 rows the tree has (REVIEW at edf5ba2,
+    defect 2).
+
+    THE REST IS THE HALF NO TEST CAN HOLD. A corpus row carries no evidence,
+    so nothing here can re-run a join over it; the agreement lives in the
+    builder, which must WRITE a corpus by running the declared join rather
+    than re-deriving its rule beside it. Every builder in this tree is
+    git-ignored scratch under a campaign's `runtime/`, which is why no case
+    reaches one.
 
     Eight label prefixes are in use here -- `hand:`, `survey:`, `flip-of:`,
-    `join:`, `history:`, `one-edit:`, `owner`, `mutant` -- so the shape of a
-    label is not the invariant; naming another entry's join is."""
+    `join:`, `history:`, `one-edit:`, `owner`, `mutant` -- and one is free
+    text, so the SHAPE of a label is not an invariant; naming another entry's
+    join is."""
     reg = m.load_registry()
     bad = []
     for name, entry in sorted(reg.items()):

@@ -1653,10 +1653,13 @@ def load_sibling(name):
     """A sibling script as a module, by path: these are scripts, not a package.
     Loaded WHERE IT IS USED and never at import, because the sibling loads this
     module the same way -- at the point of use -- and two module-level imports
-    of each other would not resolve."""
-    key = name.replace("-", "_").replace(".py", "")
+    of each other would not resolve. `name` is a file beside this one, or a
+    PATH to a script elsewhere in the tree -- the one place this file builds
+    a module from a path, which `suite-harness-test.py` holds it to."""
+    path = Path(name) if isinstance(name, Path) else HERE / name
+    key = path.name.replace("-", "_").replace(".py", "")
     spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
+        key, importlib.machinery.SourceFileLoader(key, str(path)))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -2366,16 +2369,11 @@ def join_stuck_reprompt(row, lines):
     it is a session that went on by itself, `no`; nothing after the row yet is
     not labelled. `campaign-transcript.py`'s `firsts` is the one reader of the
     two shapes, since the reading's state came off the same file by the same
-    rules, and it is loaded by path at the one call as `load_sibling` loads
-    a sibling: it lives under a skill, not beside this script."""
+    rules, and it is loaded through `load_sibling` by path at the one call:
+    it lives under a skill, not beside this script."""
     if lines is None:
         return None, "", "the transcript did not read"
-    spec = importlib.util.spec_from_loader(
-        "campaign_transcript",
-        importlib.machinery.SourceFileLoader("campaign_transcript",
-                                             str(TRANSCRIPT_MODULE)))
-    transcript = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(transcript)
+    transcript = load_sibling(TRANSCRIPT_MODULE)
     first = transcript.firsts(lines, row.get("at") or "1970-01-01T00:00:00Z")
     prompt, text = first["prompt"], first["text"]
     if text is None:

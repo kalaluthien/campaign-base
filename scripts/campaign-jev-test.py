@@ -2035,6 +2035,155 @@ def the_witness_join_labels_a_case_the_suite_dropped(m):
         (dropped, kept, young, own_only, gone, unwitnessed, waiting)
 
 
+def plan_row(**kw):
+    """One `plan-scenario-select` row as `judge` logs it, the state cut down to
+    the three options the cases need."""
+    row = {"reading": "plan-scenario-select", "reader": "campaign-tracker.py check",
+           "repo": "o/r", "issue": 5, "read": "o/r#5",
+           "state": {"plan": "- refuse a release while a worktree holds the ref",
+                     "scenarios": {"s1": "run Cov_TakeClaim\nthe floor",
+                                   "s2": "check ReleaseDiscipline\nthe release",
+                                   "s3": "run S9_ReleaseOccupied\nthe release"}},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": "s3", "raw": {}, "why": {}, "endpoint": "real", "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_plan_join_reads_the_closing_diff(m):
+    """S7: the later fact is the closing pull request's diff, and its two
+    halves are not equally strong. A `# witnesses:` line naming a command the
+    SAME DIFF adds to the snapshot is a scenario that did not exist when the
+    call was made, so the truth is `noMatch`; one naming a command already
+    there is that option's key. An open sub-issue, one closed as not planned,
+    a diff with no `# witnesses:` line at all, and one naming a command the
+    call never offered are each SAID rather than guessed at."""
+    row = plan_row()
+    closed = {"state": "CLOSED", "stateReason": "COMPLETED"}
+    diff = lambda text: {"pull_request": 7, "diff": text, "refs": 1}  # noqa: E731
+    was, m.PLAN_CLOSING_SEEN = dict(m.PLAN_CLOSING_SEEN), {}
+    try:
+        def seen(text):
+            m.PLAN_CLOSING_SEEN.clear()
+            m.PLAN_CLOSING_SEEN[("o/r", 5)] = diff(text)
+        # THE STRONG HALF: a command already in the snapshot.
+        seen("+# witnesses: S9_ReleaseOccupied\n")
+        old, said, _w = m.join_plan_closing_diff(row, closed)
+        # THE EVIDENCE NAMES THE COMMAND THE LABEL IS, and the further ones
+        # the call offered. It used to name the first witnessed command
+        # whatever the label was, so a diff witnessing one command the call
+        # never offered and one it did read as a sentence about the first
+        # (REVIEW at 228dd87, defect 4).
+        seen("+# witnesses: NeverOffered, S9_ReleaseOccupied, ReleaseDiscipline\n")
+        two, two_said, _w = m.join_plan_closing_diff(row, closed)
+        cover, cover_said, _w = m.join_plan_cover_kept(
+            plan_row(reading="plan-scenario-cover",
+                     state={"plan": row["state"]["plan"],
+                            "scenario": "run S9_ReleaseOccupied\nthe release"}),
+            closed)
+        # THE WEAK HALF: the same diff adds the command to the snapshot, so no
+        # option of that call could have been it.
+        seen('+# witnesses: NewOne\n'
+             '+    ["a/checks.als", "run", "NewOne"],\n')
+        fresh, fresh_said, _w = m.join_plan_closing_diff(row, closed)
+        # NOT LABELLED, AND EACH SAYS WHICH.
+        seen("+# witnesses: NeverOffered\n")
+        astray, _e, why_astray = m.join_plan_closing_diff(row, closed)
+        seen("+a line about nothing\n")
+        quiet, _e, why_quiet = m.join_plan_closing_diff(row, closed)
+        m.PLAN_CLOSING_SEEN.clear()
+        open_, _e, why_open = m.join_plan_closing_diff(row, {"state": "OPEN"})
+        dropped, _e, why_dropped = m.join_plan_closing_diff(
+            row, {"state": "CLOSED", "stateReason": "NOT_PLANNED"})
+        m.PLAN_CLOSING_SEEN[("o/r", 5)] = {"pull_request": None, "diff": None,
+                                           "refs": 2}
+        many, _e, why_two = m.join_plan_closing_diff(row, closed)
+    finally:
+        m.PLAN_CLOSING_SEEN.clear()
+        m.PLAN_CLOSING_SEEN.update(was)
+    return (old == "s3" and "`s3`" in said
+            and two == "s3" and "`S9_ReleaseOccupied`" in two_said
+            and "NeverOffered" not in two_said
+            and "`ReleaseDiscipline` (s2)" in two_said
+            and cover == "yes" and "among them" in cover_said
+            and fresh == "noMatch" and "adds to the snapshot" in fresh_said
+            and astray is None and "did not offer" in why_astray
+            and quiet is None and "no `# witnesses:` line" in why_quiet
+            and open_ is None and "still open" in why_open
+            and dropped is None and "not planned" in why_dropped
+            and many is None and "2 closing pull request(s)" in why_two), \
+        (old, two, two_said, cover, fresh, astray, quiet, open_, dropped)
+
+
+def a_choice_over_the_option_ceiling_is_unknown(m):
+    """THE SECOND BUDGET, and it is read before the endpoint for the reason the
+    first is: the endpoint refuses 256 options with an HTTP 400, which reads
+    exactly like an outage, and a reading whose options are built from the
+    state grows into it as the tree grows. Measured by binary search, not read
+    off a document (sdlc-alloy#458 S7): 255 options are taken and 256 are not.
+
+    NOTHING IS DROPPED TO FIT. A `choice` short of the right answer still
+    answers, and that is the failure this exists to refuse to make."""
+    fits = {"q": {"type": "choice", "instructions": "pick",
+                  "criteria": {f"o{i}": "an option"
+                               for i in range(m.OPTION_BUDGET)}}}
+    over = {"q": {"type": "choice", "instructions": "pick",
+                  "criteria": {f"o{i}": "an option"
+                               for i in range(m.OPTION_BUDGET + 1)}}}
+    ans, model, why, hit, where = m._answer({"a": "b"}, over, {}, 1, cache=False)
+    return (ans["q"].word == m.UNKNOWN and where == m.NONE_SENT
+            and str(m.OPTION_BUDGET) in why and "q" in why
+            and len(fits["q"]["criteria"]) == m.OPTION_BUDGET
+            # THE CONTROL: one option fewer is not refused HERE -- it goes on
+            # to the key and the endpoint, which an offline case has neither
+            # of, so it fails for a DIFFERENT reason and never this one.
+            and str(m.OPTION_BUDGET) not in (
+                m._answer({"a": "b"}, fits, {}, 1, cache=False)[2])), \
+        (ans["q"], why)
+
+
+def a_corpus_row_is_labelled_by_the_entrys_own_join(m):
+    """A CASE'S LABEL COMES FROM THE JOIN THE ENTRY DECLARES, or from a
+    construction that made the truth true -- never from a second rule written
+    beside the corpus. The plan corpus shipped with one: it labelled a state by
+    the option key its command wears TODAY where the declared join answers
+    `noMatch`, and a `corpus join` row on the same evidence would have landed
+    in the opposite class (REVIEW at 228dd87, defect 1).
+
+    WHAT THIS DOES NOT HOLD, said first because the commit that added it
+    claimed otherwise: it CANNOT GO RED ON THE DEFECT THAT PROMPTED IT. That
+    corpus labelled every row `closing-diff:<side>`, which names no join, so
+    the skip below passes it; and a row could satisfy this by writing the
+    right string over a hand-derived label. What it does catch is a
+    CROSS-WIRED join name, over the 39 rows the tree has (REVIEW at edf5ba2,
+    defect 2).
+
+    THE REST IS THE HALF NO TEST CAN HOLD. A corpus row carries no evidence,
+    so nothing here can re-run a join over it; the agreement lives in the
+    builder, which must WRITE a corpus by running the declared join rather
+    than re-deriving its rule beside it. Every builder in this tree is
+    git-ignored scratch under a campaign's `runtime/`, which is why no case
+    reaches one.
+
+    Eight label prefixes are in use here -- `hand:`, `survey:`, `flip-of:`,
+    `join:`, `history:`, `one-edit:`, `owner`, `mutant` -- and one is free
+    text, so the SHAPE of a label is not an invariant; naming another entry's
+    join is."""
+    reg = m.load_registry()
+    bad = []
+    for name, entry in sorted(reg.items()):
+        for case in m.read_corpus(name):
+            source = (case.get("label") or {}).get("from") or ""
+            if not source.startswith("join:"):
+                continue
+            named = source[len("join:"):]
+            if named in m.JOINS and named != entry.get("join"):
+                bad.append(f"{name} {case.get('id')}: labelled by join "
+                           f"`{named}`, entry declares `{entry.get('join')}`")
+    return not bad, bad
+
+
 def a_reading_with_no_join_says_why(m):
     """EVERY ENTRY EITHER DECLARES A JOIN OR SAYS WHY IT HAS NONE
     (sdlc-alloy#458 DECISION 5722176509: "a fact too weak to label: leave
@@ -2375,6 +2524,9 @@ CASES["the DECISION join labels a condition named as a gap"] = the_decision_join
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
 CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
+CASES["a corpus row is labelled by the entry's own join"] = a_corpus_row_is_labelled_by_the_entrys_own_join
+CASES["a choice over the option ceiling is unknown"] = a_choice_over_the_option_ceiling_is_unknown
+CASES["the plan join reads the closing diff"] = the_plan_join_reads_the_closing_diff
 CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
 CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent

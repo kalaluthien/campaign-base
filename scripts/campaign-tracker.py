@@ -1208,6 +1208,147 @@ def judgment_report(repo, number, title, body, settled_kind, show_kind=True):
                           settled_kind, show_kind, settled_verb)
 
 
+# S7's two readings, sdlc-alloy#458 DECISION 5724477924: which scenario `spec/`
+# already declares covers a sub-issue's `## Plan`. THEIR OWN GROUPS AND THEIR
+# OWN CALLS, because the state is `{plan, scenarios}` and then `{plan,
+# scenario}`, neither of which is `issue-shape`'s `{title, body}` -- one call a
+# state (DECISION 5716072632). Both sit at `shadow` and this prints nothing.
+PLAN_SELECT, PLAN_COVER = "plan-scenario-select", "plan-scenario-cover"
+PLAN_READER = "campaign-tracker.py check"
+# The committed snapshot, the one inventory of every declared command.
+SNAPSHOT = "commands.snapshot.json"
+SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "spec" / SNAPSHOT
+# The entity a Plan names, where it names one at all -- 5 of this tracker's 138
+# Plans do. A Plan naming none is cut to nothing and gets every command.
+PLAN_ENTITY = re.compile(r"\bspec/(campaign/[a-z]+|sdlc)/")
+# An Alloy line comment, and a command declaration. The comment ABOVE a
+# declaration is a group heading several commands share, which is why a blank
+# line does not end the walk up and another declaration does.
+ALS_COMMENT = re.compile(r"^\s*(?:--|//)\s*(\S.*?)\s*$")
+ALS_COMMAND = re.compile(r"^\s*(?:run|check)\s+\w+")
+
+
+def comment_above(lines, at):
+    """The nearest line comment above the declaration at `lines[at]`, or "".
+
+    NEITHER A BLANK LINE NOR ANOTHER DECLARATION ENDS THE WALK: these comments
+    are group headings sitting above a RUN of commands -- `-- the floor` over
+    four of them -- so the one belonging to a command is the last heading
+    written before it, and stopping at the declaration above would leave every
+    command but the first of each run with no text at all: 86 of 242 carry a
+    heading that way against 215 the shared way, at 2026-09-18. A BLOCK
+    COMMENT ENDS IT, so the module's own header, which is about the file and
+    not about any command, never stands in for one."""
+    for i in range(at - 1, -1, -1):
+        line = lines[i].strip()
+        if not line or ALS_COMMAND.match(lines[i]):
+            continue
+        if line.endswith("*/"):
+            return ""
+        found = ALS_COMMENT.match(lines[i])
+        if found:
+            return found.group(1)
+    return ""
+
+
+def scenarios_of(plan, root=None):
+    """`{s1: "<verb> <Name>\\n<the comment line above it>"}` for every command
+    the committed snapshot lists, cut to the entity the Plan names.
+
+    A PLAN NAMING NO ENTITY GETS ALL OF THEM, which is the ordinary case and
+    not a fallback: 133 of this tracker's 138 Plans name none, and the whole
+    state over every command is 22,444 bytes at 2026-09-18 against
+    `campaign-jev.py`'s 60,000 budget.
+    So no state is skipped for want of an entity, and the cut buys a narrower
+    field only where there is one to read (sdlc-alloy#458 NOTE 5724505059)."""
+    path = Path(root) / "spec" / SNAPSHOT if root else SNAPSHOT_PATH
+    try:
+        commands = json.loads(path.read_text(encoding="utf-8"))["commands"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}, "the committed snapshot did not read"
+    want = {m.group(1) for m in PLAN_ENTITY.finditer(plan)}
+    kept = [c for c in commands
+            if not want or str(c[0]).rsplit("/", 1)[0] in want]
+    if not kept:
+        return {}, (f"the snapshot holds no command"
+                    + (f" under {', '.join(sorted(want))}" if want else ""))
+    heads = {}
+    out = {}
+    for i, (rel, verb, name) in enumerate(kept, 1):
+        src = (Path(root) / "spec" / rel if root
+               else SNAPSHOT_PATH.parent / rel)
+        if rel not in heads:
+            try:
+                heads[rel] = src.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                heads[rel] = []
+        lines = heads[rel]
+        decl = re.compile(rf"^\s*{verb}\s+{re.escape(name)}\b")
+        at = next((n for n, line in enumerate(lines) if decl.match(line)), None)
+        above = comment_above(lines, at) if at is not None else ""
+        out[f"s{i}"] = f"{verb} {name}" + (f"\n{above}" if above else "")
+    return out, ""
+
+
+def settled_scenario(plan, scenarios):
+    """The option key where the Plan names one command by its EXACT name in
+    backticks -- code has decided the reading and the model is never asked.
+
+    TWO SUCH SPANS NAMING TWO COMMANDS SETTLE NOTHING: the author named more
+    than one, and which of them covers the Plan is the question."""
+    by_name = {v.split("\n", 1)[0].split(None, 1)[-1]: k
+               for k, v in scenarios.items()}
+    found = {by_name[t] for t in re.findall(r"`([^`]+)`", plan) if t in by_name}
+    return found.pop() if len(found) == 1 else None
+
+
+def plan_scenario_read(repo, number, body):
+    """Ask both plan readings and print nothing. AT `shadow` THERE IS NOTHING
+    TO PRINT: the call writes its log row, `corpus join` labels it off the
+    closing pull request's diff, and no reader is shown a guess.
+
+    EVERY FAILURE IS SWALLOWED HERE for the reason `judgment_report`'s is:
+    `campaign-claim take` gates on `check`'s verdict, so a traceback from an
+    aside must not cost a worker its claim."""
+    try:
+        # `section` GIVES THE NON-BLANK LINES AND NOT THE TEXT, and a list
+        # handed to a regex raises rather than reading empty -- which the guard
+        # below would have swallowed into a reading that never happened.
+        plan = "\n".join(REPOS.section(body, PLAN_SECTION) or ())
+        if not plan.strip():
+            return
+        scenarios, why = scenarios_of(plan)
+        jev = load(Path(__file__).resolve().parent / "campaign-jev.py",
+                   "campaign_jev")
+        key = {"repo": repo, "issue": number}
+        # THE OPTION CEILING IS THE ENDPOINT'S AND THE NUMBER IS `campaign-jev`'s
+        # to state. The call carries one option a scenario PLUS the entry's own
+        # `noMatch`, so a cut of the ceiling itself is already one too many.
+        # This is the branch `spec/` grows into: 242 commands at 2026-09-18
+        # against 255, and a Plan naming no entity gets all of them. It is a SKIP ROW naming
+        # the count, because the alternative -- dropping scenarios to fit -- is
+        # a reading that silently stopped offering the right answer.
+        if not why and len(scenarios) >= jev.OPTION_BUDGET:
+            why = (f"the cut leaves {len(scenarios)} scenario(s) and the call "
+                   f"takes {jev.OPTION_BUDGET} options counting `noMatch`: "
+                   f"`spec/` has outgrown a Plan that names no entity")
+        if why:
+            jev.skip(PLAN_READER, f"{repo}#{number} {PLAN_SELECT}", why)
+            return
+        settled = settled_scenario(plan, scenarios)
+        picked = jev.judge(
+            PLAN_SELECT, {"plan": plan, "scenarios": scenarios},
+            read=f"{repo}#{number}", reader=PLAN_READER,
+            key=key, settled={PLAN_SELECT: settled} if settled else None)
+        word = picked.verdicts[PLAN_SELECT].word
+        if word not in scenarios:
+            return
+        jev.judge(PLAN_COVER, {"plan": plan, "scenario": scenarios[word]},
+                  read=f"{repo}#{number}", reader=PLAN_READER, key=key)
+    except Exception:  # noqa: BLE001 -- a reading that did not happen
+        return
+
+
 def cmd_check(args):
     repo, number = args.repo, args.campaign_issue
     title, body, names, parented, why = issue_shape(repo, number)
@@ -1252,6 +1393,11 @@ def cmd_check(args):
     for line in judgment_report(repo, number, title, body, settled_kind,
                                 show_kind=kind == SUB_ISSUE):
         print(line)
+    # THE PLAN READINGS, AT `shadow`, PRINTING NOTHING. They ride here and not
+    # in the call above because their state is the Plan and the snapshot's
+    # commands, not the title and body: one call a state.
+    if kind == SUB_ISSUE:
+        plan_scenario_read(repo, number, body)
     print("  NOT checked: whether the body is bullets rather than prose, "
           "whether `## Definition of done` is checkable. Those are judgement "
           "and nothing reads them; verb-first is read above, by Jev, as a "

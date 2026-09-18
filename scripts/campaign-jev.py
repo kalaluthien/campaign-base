@@ -39,8 +39,9 @@ with `guarded_by`, and `address_word` is the one reader of THAT rule: at
 `ADDRESS_OVER` or over the guarded reading answers `uncertain`, whatever it
 said (rule-check#471 DECISION 5717901390).
 
-UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
-is never sent and never cut down -- no key, a `~/.env` that is not text,
+UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET`, or a
+`choice` over `OPTION_BUDGET` options -- neither ever sent, neither ever cut
+down -- no key, a `~/.env` that is not text,
 `CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
 not answer, an HTTP error, a timeout, a body that is not JSON, a response naming
 another model, an answer missing for a question, an answer of another type --
@@ -180,6 +181,14 @@ TIMEOUT = 10.0
 # that knows which part of its state carries the answer -- so slicing stays the
 # reader's and this returns `unknown` naming both numbers.
 STATE_BUDGET = 60_000
+# HOW MANY `choice` OPTIONS THE ENDPOINT TAKES, measured and not read off
+# a document: 254 scenarios plus the entry's own `noMatch` answer, 255
+# refuse with an HTTP 400 that reads exactly like an outage (binary
+# search, sdlc-alloy#458 S7, 2026-09-18). It bites a reading whose
+# options are BUILT FROM THE STATE and so grow with the tree: `spec/`
+# declared 242 commands at 2026-09-18, thirteen under the ceiling,
+# and that count moves with every spec commit.
+OPTION_BUDGET = 255
 UNKNOWN = "unknown"
 # THE ANSWER THAT LANDED BETWEEN THE EDGES, and it is NOT `unknown`. A lone cut
 # inside a measured band flips on noise, so a reading that has bands takes two
@@ -679,6 +688,18 @@ def _answer(state, questions, env, timeout, cache=True, cwd=None):
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
+        return unknown_all(questions, why), "", why, False, NONE_SENT
+    # THE OPTION CEILING IS THE SECOND BUDGET, and it is read here for the same
+    # reason: it is the caller's own bug and the endpoint answers it with an
+    # HTTP 400, which reads exactly like an outage. A reading whose options are
+    # built from the state grows with the tree, so a cut that fits today sends
+    # 256 one command later and comes back `unknown` with nothing naming why.
+    over = sorted(qid for qid, q in questions.items()
+                  if len((q or {}).get("criteria") or {}) > OPTION_BUDGET)
+    if over:
+        why = (f"{', '.join(over)} offers more than the {OPTION_BUDGET} "
+               f"options the endpoint takes, so it was not sent; narrowing the "
+               f"option set is the reader's, and this never drops one to fit")
         return unknown_all(questions, why), "", why, False, NONE_SENT
     # THE STORE IS READ BEFORE THE KEY AND BEFORE THE ENDPOINT. A hit is an
     # answer this state, this wording and this model already gave, so a reader
@@ -1568,7 +1589,7 @@ def fetch_issue(repo, number, timeout=30):
     try:
         out = subprocess.run(
             ["gh", "issue", "view", str(number), "-R", repo, "--json",
-             "title,body,state,labels,comments"], capture_output=True,
+             "title,body,state,stateReason,labels,comments"], capture_output=True,
             text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -2384,6 +2405,176 @@ def join_stuck_reprompt(row, lines):
     return "no", f"spoke at {text} with no prompt since the reading before it", ""
 
 
+# WHAT A SUITE'S `# witnesses:` LINE NAMES, read off a diff's ADDED lines: the
+# commands a suite says it exercises. A removed line is not read -- what a
+# scenario stopped being witnessed by says nothing about which one covered the
+# Plan -- so a line REWRITTEN to add a name reads as the added line it is.
+WITNESSES_ADDED = re.compile(r"^\+\s*#\s*witnesses:\s*(.+)$", re.M)
+# A COMMAND THE SAME DIFF ADDS TO THE SNAPSHOT: a scenario that did not exist
+# when the Plan was judged, so no option of that call could have been it.
+SNAPSHOT_ADDED = re.compile(
+    r'^\+\s*\[\s*"[^"]+"\s*,\s*"(?:run|check)"\s*,\s*"(\w+)"\s*\]', re.M)
+PLAN_CLOSING_SEEN = {}
+
+
+def fetch_plan_closing(repo, number, timeout=30):
+    """(the pull request that closed this sub-issue, its diff) -- or None.
+
+    THE LAZY SECOND FETCH of the two plan readings, and the only call either
+    makes beyond `fetch_issue`. The subject fetch answers `{repo, issue}` and
+    the later fact is a PULL REQUEST's diff, which no issue view carries, so
+    the closing reference is asked for here and the diff after it.
+
+    It is taken for one branch only -- a sub-issue CLOSED AS COMPLETED -- and
+    memoised per issue by `plan_closing_of`, so an open sub-issue, one dropped
+    as not planned, and one whose reading already has a case cost nothing.
+
+    THE CLOSING REFERENCE'S OWN REPOSITORY IS READ OFF ITS URL, as
+    `fetch_reopen` reads it: a member repository's pull request closes a
+    sub-issue on this base's tracker, and `gh pr diff` must be given the
+    repository the pull request is on, not the one the issue is on.
+
+    IT IS A MODULE-LEVEL NAME so an offline suite replaces it as it replaces
+    the subject fetches; `cmd_corpus_join` routes those through its `args` and
+    this one is not a subject, it is a second question about one."""
+    try:
+        head = subprocess.run(
+            ["gh", "issue", "view", str(number), "-R", repo, "--json",
+             "closedByPullRequestsReferences"], capture_output=True,
+            text=True, timeout=timeout)
+        if head.returncode != 0:
+            return None
+        refs = json.loads(head.stdout).get(
+            "closedByPullRequestsReferences") or []
+        if len(refs) != 1:
+            return {"pull_request": None, "diff": None, "refs": len(refs)}
+        ref = refs[0]
+        owner = ((ref.get("repository") or {}).get("owner") or {}).get("login")
+        name = (ref.get("repository") or {}).get("name")
+        on = f"{owner}/{name}" if owner and name else repo
+        out = subprocess.run(
+            ["gh", "pr", "diff", str(ref["number"]), "-R", on],
+            capture_output=True, text=True, timeout=timeout)
+        if out.returncode != 0:
+            return None
+        return {"pull_request": ref["number"], "diff": out.stdout, "refs": 1}
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+        return None
+
+
+def plan_closing_of(repo, number):
+    """`fetch_plan_closing`, memoised for this join run, `None` included --
+    both plan readings of one sub-issue ask it, and a subject that would not
+    read this run will not read on the second row either."""
+    key = (repo, number)
+    if key not in PLAN_CLOSING_SEEN:
+        PLAN_CLOSING_SEEN[key] = fetch_plan_closing(repo, number)
+    return PLAN_CLOSING_SEEN[key]
+
+
+def plan_witnessed(row, issue):
+    """(the command names the closing diff's `# witnesses:` lines add, the
+    names that diff also adds to the snapshot, the pull request) -- or
+    (None, why not, None).
+
+    THE ONE READER of the later fact both plan readings are labelled by, so
+    the two cannot disagree about what the diff said."""
+    if issue is None:
+        return None, "the issue did not read", None
+    if str(issue.get("state", "")).upper() == "OPEN":
+        return None, "still open: what the work landed is not written yet", None
+    if str(issue.get("stateReason", "")).upper() != "COMPLETED":
+        return None, ("closed as not planned, so no diff says what would have "
+                      "covered the Plan"), None
+    seen = plan_closing_of(row.get("repo"), row.get("issue"))
+    if seen is None:
+        return None, "the closing pull request did not read", None
+    if seen.get("pull_request") is None:
+        return None, (f"{seen.get('refs')} closing pull request(s), so the "
+                      f"diff that landed this Plan is not one diff"), None
+    diff = seen.get("diff") or ""
+    named = [n.strip() for line in WITNESSES_ADDED.findall(diff)
+             for n in line.split(",") if n.strip()]
+    if not named:
+        return None, (f"pr#{seen['pull_request']} adds no `# witnesses:` line, "
+                      f"so nothing says which scenario the work was tied to"), \
+            None
+    return named, set(SNAPSHOT_ADDED.findall(diff)), seen["pull_request"]
+
+
+def join_plan_closing_diff(row, issue):
+    """plan-scenario-select: which scenario did the work actually tie itself to?
+
+    THE LATER FACT IS THE CLOSING PULL REQUEST'S DIFF, and it has two halves of
+    unequal strength. A `# witnesses:` line naming a command the SAME DIFF adds
+    to `spec/commands.snapshot.json` is a scenario that did not exist when the
+    reading was made, so no option of that call could have been it and the
+    truth is `noMatch`. A line naming a command already in the snapshot is the
+    strong half: the work tied itself to a scenario that was on offer, and the
+    truth is that option's key.
+
+    WHAT IT DOES NOT SAY, and the docstring is where that is said: a new
+    command proves the author WROTE one, never that no existing scenario would
+    have done -- which is the very miss this reading exists to catch. So a
+    `noMatch` label here is the author's choice and not a fact about `spec/`,
+    and a band fitted on these labels inherits that. A diff naming an existing
+    command the reading did not offer -- one the entity cut left out -- is not
+    labelled at all: the call could not have picked it."""
+    named, new, at = plan_witnessed(row, issue)
+    if named is None:
+        return None, "", new
+    picked = {str(v).split("\n", 1)[0].split(None, 1)[-1]: k
+              for k, v in ((row.get("state") or {}).get("scenarios")
+                           or {}).items()}
+    if not picked:
+        return None, "", "the row carries no scenarios to label against"
+    old = [n for n in named if n not in new]
+    if not old:
+        return ("noMatch",
+                f"pr#{at} witnesses {', '.join(named)}, which it adds to the "
+                f"snapshot in the same diff: no scenario on offer was it", "")
+    # THE EVIDENCE NAMES THE COMMAND THE LABEL IS, and says how many more the
+    # call also offered: `old` holds every witnessed command the diff did not
+    # add, and only some of those are on offer. Naming `old[0]` beside
+    # `picked[...]`'s key read as a sentence about a different command.
+    hit = [(n, picked[n]) for n in old if n in picked]
+    if not hit:
+        return None, "", (f"pr#{at} witnesses {', '.join(old)}, which the call "
+                          f"did not offer, so no option of it can be right")
+    name, key = hit[0]
+    return (key, f"pr#{at} witnesses `{name}`, which the call offered as "
+                 f"`{key}`"
+                 + (f", and {len(hit) - 1} more it offered: "
+                    f"{', '.join(f'`{n}` ({k})' for n, k in hit[1:])}"
+                    if len(hit) > 1 else ""), "")
+
+
+def join_plan_cover_kept(row, issue):
+    """plan-scenario-cover: did the work tie itself to the scenario picked?
+
+    THE SAME DIFF, READ FOR THE OTHER QUESTION. The cover `noul` asks whether
+    the picked scenario exercises what the Plan changes; the later fact that
+    bears on it is whether the work ended up witnessed by THAT command. `yes`
+    where the diff's `# witnesses:` names it, `no` where it names another
+    existing command or a new one instead.
+
+    THE WEAKNESS IS NAMED: a Plan's work may be witnessed by a scenario the
+    select call never picked and the cover call was never asked about, and
+    that reads `no` here on a pick the question might still have been right
+    about. It is a label on the PAIRING and not on the pick alone, which is
+    why the select reading is joined apart."""
+    named, new, at = plan_witnessed(row, issue)
+    if named is None:
+        return None, "", new
+    scenario = (row.get("state") or {}).get("scenario") or ""
+    name = scenario.split("\n", 1)[0].split(None, 1)[-1].strip()
+    if not name:
+        return None, "", "the row carries no picked scenario to label"
+    word = "yes" if name in named and name not in new else "no"
+    return (word, f"pr#{at} witnesses {', '.join(named)}; the picked "
+                  f"`{name}` is {'among them' if word == 'yes' else 'not'}", "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
@@ -2394,7 +2585,9 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
          "comment-rewritten": join_comment_rewritten,
          "guard-tree-delta": join_guard_tree_delta,
          "witness-case-kept": join_witness_case_kept,
-         "stuck-reprompt": join_stuck_reprompt}
+         "stuck-reprompt": join_stuck_reprompt,
+         "plan-closing-diff": join_plan_closing_diff,
+         "plan-cover-kept": join_plan_cover_kept}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
 # FIELDS, so the subject is the field it names and never a guess. A commit-time
@@ -2508,6 +2701,7 @@ def cmd_corpus_join(args):
     # per-subject `fetched` map below: `reopen_of` is not a subject fetch and
     # so sat outside it, and two rows on one pull request paid twice.
     REOPEN_SEEN.clear()
+    PLAN_CLOSING_SEEN.clear()
     rows, how, torn = read_log()
     rows, stray, unreal = joinable(rows, reg)
     known = {r: {c.get("source", {}).get("ref") for c in read_corpus(r)}

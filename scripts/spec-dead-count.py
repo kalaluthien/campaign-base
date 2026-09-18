@@ -23,6 +23,31 @@ judgement; how one leaves is `RemoveArtifact` in spec/sdlc/system.als, and
   premise      a definition whose name carries a multi-machine or handoff
                premise, one no tree fact can observe
   mismatch     a declared witness name spelled nowhere else in its suite
+  ruling       not in `all`: asks Jev, per candidate command, the two rulings
+               a survey makes by hand, each over a fact code fetched first --
+               `dead-premise` (has the situation it needs ever happened here)
+               and `dead-reader` (does a live decision read what it checks)
+
+THE RULING MODE is the agent's half made a reading, at the tier its registry
+entries in scripts/jev/readings.json give (`shadow`: it logs to the base's
+`runtime/jev.log` and prints nothing). Its candidates are the commands, never
+a `Cov_` (alloy-check's gate keeps those whatever they duplicate):
+
+  dead-premise  a command whose text or a predicate it names carries a premise
+                `PREMISES` names -- a handoff, a narrowed profile, or another
+                machine -- asked over `{row, fact}`, the fact being that
+                premise's own record: the `bound:` labels on every campaign
+                issue, the tracker's NOTEs whose first line reports a
+                hand-off, or the `optional = ...` lines of the kind references
+  dead-reader   a command no suite declares, asked over `{row, fact}`, the
+                fact being, for it and each predicate it names, the files
+                outside spec/ that name it -- the `defs` mentions
+
+Each row's `flag` is P(not_shown) or P(dead), the option each entry's
+`bands.how` names; no cut is declared on either.
+
+The duplicate ruling is not asked: sdlc-alloy#343 ruled one pair "not one",
+and a `Cov_` names no pair to compare (DECISION 5726744824).
 
 WHAT IT READS: the tracked files of the repository holding ROOT (default: the
 working directory), from its top, through `git ls-files`. What a suite, a code path, a
@@ -36,10 +61,11 @@ OUTPUT: each mode prints `MODE\\tcount\\t<set it counted>` first, then one row
 per candidate, `MODE\\t<entity>\\t<name>\\t<reason>`. It prints and never
 refuses: exit 0 whatever it found.
 
-Usage: scripts/spec-dead-count.py [--mode <mode>|all] [ROOT]
+Usage: scripts/spec-dead-count.py [--mode <mode>|all|ruling] [ROOT]
 """
 import argparse
 import collections
+import datetime
 import importlib.machinery
 import importlib.util
 import json
@@ -47,6 +73,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 MODES = ("defs", "unwitnessed", "unpaired", "duplicate", "undefined", "untied",
@@ -57,6 +84,21 @@ NEG = re.compile(r"Unguarded|StillLoses|Bites|Without|Insufficient|Escapes|"
                  r"RepairExcludes|Control|Blocks|Refused|Closes|Admits", re.I)
 MM = re.compile(r"Machine|Elsewhere|Migrat|Bound|Handoff|Heir|Successor|Predecessor", re.I)
 WORD = re.compile(r"\w+")
+# A PREMISE, BY THE WORD ITS RULE IS WRITTEN IN, first match wins: a handoff
+# rule names machines too, and its own record is the hand-off, not the label.
+# Another machine is read off the command's scope (`2 Machine`) or a word that
+# only a second machine gives meaning, never off `Machine` alone, which every
+# orchestration rule names.
+PREMISES = (("handoff", re.compile(r"Handoff|Heir|Successor|Predecessor")),
+            ("narrowing", re.compile(r"[Nn]arrowing")),
+            ("machine", re.compile(r"\b(?:exactly\s+)?[2-9]\s+Machine\b|coLocated|"
+                                   r"Elsewhere|two machines", re.I)))
+HANDOFF = re.compile(r"^NOTE [^:]+: .*\bhand(?:ing)?[- ]?off\b", re.I)
+PROFILE = re.compile(r"^`optional = [^`]*`", re.M)
+BASE_REPO = "kalaluthien/campaign-base"
+WORKERS = 8
+FACT_FILES = 6
+FLAG = {"dead-premise": "not_shown", "dead-reader": "dead"}
 PATH = re.compile(r"(?<![\w/])((?:spec|scripts|\.claude|\.github)/[\w./-]+"
                   r"\.(?:als|py|sh|md|jsonl|json|yml|html))(?!\w)")
 
@@ -87,9 +129,169 @@ def cls(name):
     return "cov" if name.startswith("Cov_") else "control" if NEG.search(name) else "scenario"
 
 
+def declarations(als, text):
+    """name -> [(kind, path, text)] for every definition: the comment block
+    directly above it and the declaration to the next blank line -- or, for
+    a command, its own line alone, since commands sit in runs of one line
+    each. A command and the pred or assert it runs share a name; both are
+    kept."""
+    out = collections.defaultdict(list)
+    for f in als:
+        lines = text[f].split("\n")
+        for i, line in enumerate(lines):
+            m = D.match(line)
+            if not m or line[:1].isspace():
+                continue
+            j = i
+            if j > 0 and lines[j - 1].rstrip().endswith("*/"):
+                while j > 0 and "/*" not in lines[j - 1]:
+                    j -= 1
+                j -= 1
+            while j > 0 and lines[j - 1].lstrip().startswith("--"):
+                j -= 1
+            k = i
+            if m.group(1) in ("check", "run"):
+                while k + 1 < len(lines) and "{" in line and "}" not in "\n".join(lines[i:k + 1]):
+                    k += 1
+            else:
+                while k + 1 < len(lines) and lines[k + 1].strip():
+                    k += 1
+            out[m.group(2)].append((m.group(1), f, "\n".join(lines[j:k + 1])))
+    return out
+
+
+def callees(name, table):
+    """The pred, fun and assert names one definition's code names, one level,
+    in its own entity."""
+    ent = table[name][0][1].rsplit("/", 1)[0]
+    code = "\n".join(code_lines("\n".join(t for _, _, t in table[name])))
+    return [w for w in dict.fromkeys(WORD.findall(code)) if w != name and w in table
+            and any(k in ("pred", "fun", "assert") and p.rsplit("/", 1)[0] == ent
+                    for k, p, _ in table[w])]
+
+
+def row_of(name, table):
+    """What the model reads of one command: its own definitions, the command
+    line last, then each definition it names, one level."""
+    own = sorted(table[name], key=lambda d: d[0] in ("check", "run"))
+    named = callees(name, table)
+    return "\n\n".join(t for _, _, t in own) + ("\n\n-- what it names:\n" + "\n\n".join(
+        t for w in named for k, _, t in table[w] if k not in ("check", "run"))
+        if named else "")
+
+
+def premise_of(row):
+    return next((k for k, rx in PREMISES if rx.search(row)), None)
+
+
+def utc(stamp):
+    return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+
+
+def gh(*args):
+    return subprocess.run(["gh", *args], capture_output=True, text=True,
+                          check=True, timeout=300).stdout
+
+
+def machine_fact(until):
+    """Every `bound:` label on a campaign issue filed by `until`."""
+    issues = [i for i in json.loads(gh("issue", "list", "-R", BASE_REPO, "-l", "campaign",
+                                       "-s", "all", "--limit", "1000", "--json",
+                                       "number,createdAt,labels"))
+              if until is None or utc(i["createdAt"]) <= until]
+    bound = collections.Counter(l["name"].removeprefix("bound:") for i in issues
+                                for l in i["labels"] if l["name"].startswith("bound:"))
+    held = "; ".join(f"{m} on {n}" for m, n in bound.most_common()) or "none"
+    return (f"`bound:` labels on the {len(issues)} campaign issues of {BASE_REPO}, "
+            f"open and closed: {held}. {len(bound)} machine(s) in all.")
+
+
+def handoff_fact(until):
+    """The tracker's NOTEs, by `until`, whose first line reports a hand-off."""
+    rows = gh("api", "--paginate", f"repos/{BASE_REPO}/issues/comments?per_page=100",
+              "--jq", '.[] | [.created_at, (.issue_url | split("/") | last), '
+              '(.body | split("\n") | first)] | @tsv').splitlines()
+    hits = []
+    for r in rows:
+        at, number, first = (r.split("\t", 2) + ["", ""])[:3]
+        if HANDOFF.match(first) and (until is None or utc(at) <= until):
+            hits.append(f"- campaign-base#{number} {at[:10]}: {first[:160]}")
+    return (f"NOTEs on {BASE_REPO}'s {len(rows)} issue comments whose first line "
+            f"reports a hand-off: {len(hits)}" + ("\n" + "\n".join(hits) if hits
+                                                   else ". None found."))
+
+
+def narrowing_fact(files, text):
+    """Each kind reference's `optional = ...` line: the profile a kind declares."""
+    refs = sorted(f for f in files if re.search(r"/references/kind-[\w-]+\.md$", f))
+    lines = [f"- {f.rsplit('/', 1)[1]}: " + (", ".join(PROFILE.findall(text[f])) or
+                                             "no `optional = ...` line") for f in refs]
+    return (f"The `optional = ...` line of each of the {len(refs)} kind references, "
+            "the stages a change of that kind may skip:\n" + "\n".join(lines))
+
+
+def reader_fact(names, tokens):
+    """For each name, the files outside spec/ that name it."""
+    out = []
+    for n in names:
+        found = sorted(g for g, c in tokens.items()
+                       if not g.endswith(".als") and g != tie.SNAPSHOT and c[n])
+        out.append(f"- {n}: " + (", ".join(found[:FACT_FILES]) + (
+            f" and {len(found) - FACT_FILES} more" if len(found) > FACT_FILES else "")
+            if found else "named by no file outside spec/"))
+    return "Files outside spec/ naming the command and each definition it names:\n" \
+        + "\n".join(out)
+
+
+def ruling_asks(files, text, tokens, commands, declared, until=None):
+    """[(group, name, path, state)]: every question the ruling mode asks, with
+    the fact each premise needs fetched once. A calculation over the tree, but
+    for the premise records, which are read from the tracker."""
+    table = declarations(sorted(f for f in files if f.startswith("spec/")
+                                and f.endswith(".als")), text)
+    facts = {"handoff": lambda: handoff_fact(until),
+             "machine": lambda: machine_fact(until),
+             "narrowing": lambda: narrowing_fact(files, text)}
+    fetched, asks = {}, []
+    for m, k, n in commands:
+        if n.startswith("Cov_") or n not in table:
+            continue
+        row = row_of(n, table)
+        kind = premise_of(row)
+        if kind:
+            if kind not in fetched:
+                fetched[kind] = facts[kind]()
+            asks.append(("dead-premise", n, m, {"row": row, "fact": fetched[kind]}))
+        if n not in declared:
+            asks.append(("dead-reader", n, m, {"row": row, "fact": reader_fact(
+                [n] + callees(n, table), tokens)}))
+    return asks
+
+
+def ruling(files, text, tokens, commands, declared, root):
+    """Judge every ask, one call each; at `shadow` the log is the output."""
+    jev = sibling("campaign-jev.py")
+    key = jev.commit_key(cwd=root)
+    asks = ruling_asks(files, text, tokens, commands, declared)
+
+    def flagged(reading, raw):
+        """The P of the option each entry's `bands.how` says the flag reads; no
+        cut is declared, so the row keeps the number and not a word."""
+        p = ((raw or {}).get("probabilities") or {}).get(FLAG[reading])
+        return {"code": p, "moved_by": FLAG[reading]} if p is not None else None
+
+    def one(ask):
+        group, name, path, state = ask
+        jev.judge(group, state, read=f"{path} {name}", reader="spec-dead-count.py",
+                  key=dict(key, path=path, name=name) if key.get("repo") else None,
+                  flag=flagged, cwd=root)
+    with ThreadPoolExecutor(WORKERS) as pool:
+        list(pool.map(one, asks))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", default="all", choices=("all",) + MODES)
+    ap.add_argument("--mode", default="all", choices=("all", "ruling") + MODES)
     ap.add_argument("root", nargs="?", default=".")
     args = ap.parse_args()
     # The tree's top, not ROOT itself: `git ls-files` below a subdirectory
@@ -124,6 +326,9 @@ def main():
     witnesses = {s: sorted(tree.declared(s)) for s in tree.suites}
     refines = {h: sorted(tree.refines(h)) for h in tree.htmls}
     declared = tree.declared_by_suites() | {n for v in refines.values() for n in v}
+    if args.mode == "ruling":
+        ruling(files, text, tokens, commands, declared, Path.cwd())
+        return 0
 
     if want("defs"):
         head("defs", len(defs), "definitions in spec/**/*.als")

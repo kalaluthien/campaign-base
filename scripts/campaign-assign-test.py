@@ -16,8 +16,8 @@ sub-issue's parent and state, the campaign's labels (slug and binding) and
 sub-issue's ref went at T1; a `hostname` stub names this machine `here`. "The
 assignment was sent" is asserted on what herdr was ASKED, never on an exit
 status. How the transcript and the feed are read -- order, forgery, a prefix,
-a tag -- is campaign-heartbeat-test.py's, since those readers are the
-heartbeat's.
+a tag -- is campaign-transcript-test.py's, since those readers are that
+script's.
 """
 import importlib
 import json

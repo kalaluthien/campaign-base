@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# witnesses: S2_SubIssueDropped, R7e_WorkerRuleAdmitsTheDroppedSubIssue, H1_HeartbeatRetiresADoneWorker, Cov_Handoff
+# witnesses: S2_SubIssueDropped, R7e_WorkerRuleAdmitsTheDroppedSubIssue, E1_ExitFollowsTheRelease, Cov_Handoff
 """Prove campaign-close refuses on every gate, with its reason beside it, and
 lets the ordinary close through.
 
 Every case calls `main` in-process over a fake `run`: the readers it asks --
-campaign-tracker, campaign-claim, campaign-directory, campaign-local-work,
-the heartbeat -- answer with text in the shape each prints, and `gh` and
+campaign-tracker, campaign-claim, campaign-directory, campaign-local-work --
+answer with text in the shape each prints, and `gh` and
 `herdr` answer with a status. Nothing reads GitHub or drives a pane; every
 action is asserted on what was ASKED. campaign-claim's slug and herdr
 readers are replaced on the module the script imported.
@@ -107,18 +107,6 @@ def local(rows=(), verdict="clear"):
     return "\n".join(out) + "\n"
 
 
-def heartbeat(*lines):
-    out = [f"read 3 session(s) from herdr agent list; 2 of {SLUG} (#{N})"]
-    for word, pane, name, reason in lines:
-        out += [f"{word} {pane} {name}: {reason}",
-                f"  read: herdr idle; transcript /t.jsonl; banner no limit"]
-    out += [f"would send /exit to {p}" for w, p, _, _ in lines if w == "retire"]
-    return "\n".join(out) + "\n"
-
-
-RETIRE_LINE = ("retire", PANE, "rc-worker-2", "assigned #32; no ref standing, "
-               "the last went 2026-09-10T10:03:00Z (rc/32-* on o/r); no "
-               "assignment prompt since, nothing else since")
 RELEASE_OK = f"releasing rc/{ISSUE}-drop\ndeleted rc/{ISSUE}-drop\n"
 RELEASE_REFUSED = ("refusing: kalaluthien/campaign-base says rc/32-drop is 2 "
                    "commit(s) ahead of main.\n")
@@ -191,7 +179,7 @@ def world(**over):
          "live": live(vacant=[(f"rc/{ISSUE}-drop", "never merged")]),
          "directory": f"/c/campaign-{SLUG}", "local": local(),
          "release": RELEASE_OK, "gh": 0, "herdr": 0,
-         "sessions": {SID: ROW}, "heartbeat": heartbeat(RETIRE_LINE),
+         "sessions": {SID: ROW},
          "env": {"CLAUDE_CODE_SESSION_ID": SID, "HERDR_ENV": "1"},
          "bound": "here\n", "standing": "not-standing\n",
          "installed": INSTALLED_CLEAR, "body": "", "gh_edit": 0, "gh_view": 0,
@@ -226,8 +214,6 @@ def answer(w, a):
                       else 2)
         if name == "campaign-local-work.py":
             return ok(w["local"])
-        if name == "campaign-heartbeat.py":
-            return ok(w["heartbeat"])
     if a[:3] == ["gh", "issue", "view"] and a[-1] == "state,labels":
         return subprocess.CompletedProcess(a, w["gh_chore"], json.dumps(
             {"state": w["state"], "labels": [{"name": la} for la in w["labels"]]}),
@@ -359,7 +345,7 @@ def drive(m, argv, w):
 
 
 DROP = ["sub-issue", N, ISSUE, "--not-planned", "superseded by rc#33"]
-RETIRE = ["worker", N, PANE]
+WORKER = ["worker", N, PANE]
 
 
 def closes(asked):
@@ -458,21 +444,19 @@ def case_no_directory(m):
     return code == 0 and lw and lw[0][2:] == [N], out
 
 
-def case_retire(m):
-    code, out, asked, sleeps = drive(m, RETIRE, world(polls=[
-        ({SID: dict(ROW, pane=PANE)}, None), ({SID: ROW}, None)]))
-    return (code == 0 and prompts(asked) == [["herdr", "agent", "prompt", PANE,
-                                              "/exit"]]
-            and sleeps == [m.WAIT_EVERY]
-            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]
-            and f"tab         holds -- closed {TAB}; no pane is listed in it" in out), out
-
-
-GONE = [({SID: dict(ROW, pane=PANE)}, None), ({SID: ROW}, None)]
+# The session leaving, on PANE; its successor, on OTHER.
+LEAVER = {"S2": dict(ROW, name="rc-worker-2", pane=PANE),
+          "S3": dict(ROW, name="rc-worker-3", pane=OTHER)}
+LEFT = {"S3": LEAVER["S3"]}
+# The leaver's own turn, as the leave's wait for it reads it poll by poll.
+TURN_OVER = {**LEAVER, "S2": dict(LEAVER["S2"], status="idle")}
+# One leave's polls: the session gate, the wait that reads the turn over, then
+# the wait after the `/exit` that finds the pane gone.
+GONE = [(LEAVER, None), (TURN_OVER, None), (LEFT, None)]
 
 
 def case_tab_shared(m):
-    ok, asked, out = refused(m, RETIRE, world(
+    ok, asked, out = refused(m, WORKER, world(
         polls=GONE, panes=[{PANE: TAB, "w1:p9": TAB}]), "tab",
         f"tab {TAB} holds w1:p9 beside {PANE}; closing it would close them too",
         f"/exit was sent to {PANE}, and it left herdr agent list")
@@ -480,7 +464,7 @@ def case_tab_shared(m):
 
 
 def case_tab_still_listed(m):
-    ok, asked, out = refused(m, RETIRE, world(
+    ok, asked, out = refused(m, WORKER, world(
         polls=GONE, panes=[{PANE: TAB}, {PANE: TAB}]), "tab",
         f"herdr tab close {TAB} exited 0, and the tab is still listed",
         f"herdr tab close {TAB} ran")
@@ -488,7 +472,7 @@ def case_tab_still_listed(m):
 
 
 def case_tab_not_listed(m):
-    code, out, asked, _ = drive(m, RETIRE, world(polls=GONE,
+    code, out, asked, _ = drive(m, WORKER, world(polls=GONE,
                                                  panes=[{OTHER: "w1:t3"}]))
     return (code == 0 and not tab_closes(asked)
             and f"tab         holds -- {PANE} is not in herdr pane list; "
@@ -505,8 +489,9 @@ def case_parse_panes(m):
 
 
 def case_unread_poll_retries(m):
-    code, out, asked, _ = drive(m, RETIRE, world(polls=[
-        (None, "herdr exited 1"), ({SID: ROW}, None)]))
+    code, out, asked, _ = drive(m, WORKER, world(polls=[
+        (LEAVER, None), (TURN_OVER, None), (None, "herdr exited 1"),
+        (LEFT, None)]))
     return (code == 0 and len(prompts(asked)) == 1
             and f"poll 2: {PANE} is not listed" in out), out
 
@@ -523,79 +508,18 @@ def case_wait_counts(m):
             and "poll 4" in note), note
 
 
-# ------------------------------------------------------------- workers
-
-WORKERS = ["workers", N]
-# This campaign's planner, two workers, and another campaign's worker.
-LISTED = {SID: ROW, "S2": dict(ROW, name="rc-worker-2", pane=PANE),
-          "S3": dict(ROW, name="rc-worker-3", pane=OTHER),
-          "S4": dict(ROW, name="zz-worker-4", pane="w1:p4")}
-TWO_WORKERS = heartbeat(RETIRE_LINE, ("keep", OTHER, "rc-worker-3",
-                                      "context 9 < 200"))
-
-
-def heartbeats(asked):
-    return [a for a in asked if a[0] == sys.executable
-            and Path(a[1]).name == "campaign-heartbeat.py"]
-
-
-def worker_lines(out):
-    return [ln for ln in out.splitlines()
-            if ln.split(" ", 1)[0] in ("exited", "kept", "failed")]
-
-
-def case_workers(m):
-    gone = {k: v for k, v in LISTED.items() if k != "S2"}
-    code, out, asked, _ = drive(m, WORKERS, world(
-        heartbeat=TWO_WORKERS,
-        polls=[(LISTED, None), (LISTED, None), (gone, None)]))
-    lines = worker_lines(out)
-    return (code == 0 and "2 worker(s) of rc (#10) among the 4 session(s)" in out
-            and len(lines) == 2 and len(heartbeats(asked)) == 2
-            and lines[0].startswith(f"exited      rc-worker-2 {PANE} -- retire: ")
-            and f"gone: poll 2: {PANE} is not listed; tab: closed {TAB}" in lines[0]
-            and lines[1].startswith(f"kept        rc-worker-3 {OTHER} -- retire: "
-                                    "the heartbeat reads rc-worker-3 as `keep`")
-            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
-
-
-def case_workers_failed(m):
-    ok, asked, out = refused(m, WORKERS, world(
-        heartbeat=TWO_WORKERS, sessions=LISTED, env={}), "workers",
-        "1 of 2 worker(s) failed past `retire`: rc-worker-2")
-    lines = worker_lines(out)
-    return (ok and not prompts(asked) and len(lines) == 2
-            and lines[0].startswith("failed      rc-worker-2 w1:p2 -- herdr: "
-                                    "HERDR_ENV is not 1 (nothing was changed)")
-            and lines[1].startswith("kept        rc-worker-3")), out
-
-
-def case_front_workers(m):
-    listed = dict(LISTED)
-    del listed["S2"]
-    w = world(issue=f"{N}\n", sessions=listed, heartbeat=TWO_WORKERS)
-    code, out, asked, _ = drive(m, ["workers"], w)
-    return (code == 0 and "read as scope workers -- `workers`; #10 from this "
-            "session's name rc-planner-1" in out
-            and worker_lines(out) == [f"kept        rc-worker-3 {OTHER} -- retire: "
-                                      "the heartbeat reads rc-worker-3 as `keep`: "
-                                      "context 9 < 200"]), out
-
-
 # ------------------------------------------------------------- leave
 
-# The session leaving, on PANE; its successor, on OTHER.
-LEAVER = {"S2": dict(ROW, name="rc-worker-2", pane=PANE),
-          "S3": dict(ROW, name="rc-worker-3", pane=OTHER)}
-LEFT = {"S3": LEAVER["S3"]}
 SELF_LEAVE = ["leave", N]
 HANDOVER = ["leave", N, PANE]
 
 
 def leaves(**over):
-    """A world where the leave's gate reads LEAVER, then the wait finds PANE
-    once and gone on the next poll."""
-    over.setdefault("polls", [(LEAVER, None), (LEAVER, None), (LEFT, None)])
+    """A world where the leave's gate reads LEAVER, the wait for the pane's
+    turn reads it over, and the wait after the `/exit` finds PANE once and
+    gone on the next poll."""
+    over.setdefault("polls", [(LEAVER, None), (TURN_OVER, None),
+                              (LEAVER, None), (LEFT, None)])
     return world(**over)
 
 
@@ -625,8 +549,50 @@ def case_leave_handover(m):
             and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
 
 
-# The leaver's own turn, as the detached run's wait reads it poll by poll.
-TURN_OVER = {**LEAVER, "S2": dict(LEAVER["S2"], status="idle")}
+def order(out):
+    """Every step the run printed, in the order it printed them: one word per
+    line, so a step that never ran is a missing word and not a crash."""
+    return " ".join(ln.split()[0] for ln in out.splitlines())
+
+
+def case_leave_handover_waits_for_idle(m):
+    """rule-check#481 step 3, DECISION 5719903507 item 1: another pane's
+    leave waits for that pane's turn the way the detached self-leave does --
+    one code path. The gate reads LEAVER, then the wait reads it working
+    twice, idle once, and only then `/exit`."""
+    w = leaves(current=OTHER, polls=[(LEAVER, None), (LEAVER, None), (LEAVER, None),
+                                     (TURN_OVER, None), (TURN_OVER, None), (LEFT, None)])
+    code, out, asked, sleeps = drive(m, HANDOVER, w)
+    return (code == 0 and order(out) == "herdr self session idle exit gone tab"
+            and f"poll 3: {PANE} reads idle" in out
+            and sleeps == [m.WAIT_EVERY] * 3
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
+
+
+def case_worker_leaves_by_hand(m):
+    """rule-check#481 step 3: scope worker is the leave of a worker that
+    neither left nor answers, the caller's own reading -- no heartbeat verdict
+    is read, and the wait for the pane's turn runs before `/exit` as in every
+    leave. It runs no reader script at all: herdr answers the gate, and the
+    slug comes through campaign-claim in process."""
+    w = leaves(current=OTHER, polls=[(LEAVER, None), (LEAVER, None),
+                                     (TURN_OVER, None), (TURN_OVER, None), (LEFT, None)])
+    code, out, asked, sleeps = drive(m, WORKER, w)
+    readers = [Path(a[1]).name for a in asked if a[0] == sys.executable]
+    return (code == 0 and not readers
+            and order(out) == "session herdr idle exit gone tab"
+            and sleeps == [m.WAIT_EVERY] * 2
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
+
+
+def case_worker_planner_stands(m):
+    """A planner on the pane is nobody's to exit by this scope: the gate reads
+    the role word off the one name herdr lists, and nothing is sent."""
+    ok, asked, out = refused(m, WORKER, world(
+        sessions={SID: dict(ROW, pane=PANE)}), "session",
+        f"rc-planner-1 on {PANE} is a planner, and this scope exits a worker")
+    return ok and not prompts(asked), out
 
 
 def case_leave_detached(m):
@@ -695,9 +661,11 @@ DIALOG_QUOTED = ('- then the dialog "Background work is running / The following 
 
 
 def blocked(**over):
-    """A handover whose PANE sits at the dialog, listed until `1` lands."""
+    """A handover whose PANE sits at the dialog, its turn over so the wait
+    before the `/exit` passes at once, and listed until `1` lands."""
     over.setdefault("screen", DIALOG_SCREEN)
-    return world(current=OTHER, sessions=LEAVER, left=LEFT, blocked="1", **over)
+    return world(current=OTHER, sessions=TURN_OVER, left=LEFT, blocked="1",
+                 **over)
 
 
 def case_leave_dialog(m):
@@ -864,7 +832,10 @@ def case_leave_chore_unread(m):
 def case_leave_chore_gate_refuses(m):
     """A gate of the campaign scope refuses: the clean-up stops there and says
     which, nothing is released or deleted, and the leave is not undone."""
-    w = chore(current=OTHER, live=live(occupied=[("rc/40-x", "/c/wt/40")]))
+    # The gate reads one listing of its own before the leave's two waits.
+    w = chore(current=OTHER, live=live(occupied=[("rc/40-x", "/c/wt/40")]),
+              polls=[(TURN_OVER, None), (TURN_OVER, None), (LEAVER, None),
+                     (LEFT, None)])
     ok, asked, out = refused(m, HANDOVER, w, "live", "rc/40-x is checked out")
     return (ok and w["dir"].exists() and not releases(asked)
             and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
@@ -1054,8 +1025,8 @@ def case_status_asked(m):
 def case_no_kill(m):
     # THE CEILING IS A LITERAL: 36 polls 5s apart is 35 sleeps, 175s measured.
     # Built from the script's own constants, the case moved with them.
-    ok, asked, out = refused(m, RETIRE, world(polls=[
-        ({SID: dict(ROW, pane=PANE)}, None)] * 36), "gone",
+    ok, asked, out = refused(m, WORKER, world(polls=[
+        (LEAVER, None), (TURN_OVER, None)] + [(LEAVER, None)] * 36), "gone",
         f"poll 36: {PANE} is still listed after 175s",
         "/exit was sent to w1:p2")
     return (ok and len(prompts(asked)) == 1
@@ -1398,16 +1369,17 @@ def case_front_repo(m):
 
 
 def case_front_worker(m):
-    # The first herdr reading is the front door's lookup, the second the
-    # wait after the /exit.
+    # Four herdr readings: the front door's lookup, the scope's own session
+    # gate, the wait that reads its turn over, the wait after the /exit.
     listed = {"S9": dict(ROW, name="rc-worker-2", pane=PANE)}
-    w = world(issue=f"{N}\n", polls=[(listed, None), ({}, None)])
+    over = {"S9": dict(listed["S9"], status="idle")}
+    w = world(issue=f"{N}\n", polls=[(listed, None), (listed, None),
+                                     (over, None), ({}, None)])
     code, out, asked, _ = drive(m, ["rc-worker-2"], w)
-    hb = [a for a in asked if a[0] == sys.executable
-          and Path(a[1]).name == "campaign-heartbeat.py"]
     return (code == 0 and f"read as scope worker -- rc-worker-2 is a session "
-            f"herdr lists, pane {PANE}, of #{N}" in out and hb and hb[0][2:] == [N]
-            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]), out
+            f"herdr lists, pane {PANE}, of #{N}" in out
+            and prompts(asked) == [["herdr", "agent", "prompt", PANE, "/exit"]]
+            and tab_closes(asked) == [["herdr", "tab", "close", TAB]]), out
 
 
 def case_front_here_marker(m):
@@ -1441,20 +1413,9 @@ CASES = {
         case_other_local_row,
     "drop: no session id writes the comment as owner": case_owner,
     "drop: no campaign directory here reads the base alone": case_no_directory,
-    "retire: a worker read as retire gets /exit and is gone on a later poll":
-        case_retire,
-    "retire: a listing that did not read is one more poll": case_unread_poll_retries,
+    "worker: a listing that did not read is one more poll": case_unread_poll_retries,
     "wait: it polls exactly its count and sleeps between polls only":
         case_wait_counts,
-    "workers: each of the campaign's workers is judged alone, one line each; "
-    "a done one exits, the rest are kept": case_workers,
-    "refuse workers: a step past retire failed, and the run says so":
-        case_workers_failed,
-    "refuse workers: herdr did not list the sessions": refusal(
-        "workers", "herdr agent list did not read: herdr is down", argv=WORKERS,
-        polls=[(None, "herdr is down")]),
-    "front: `workers` alone reads as scope workers of this session's campaign":
-        case_front_workers,
     "leave: its own pane is left by a detached run of the same scope":
         case_leave_self,
     "leave: another pane, the handover, is left in the foreground":
@@ -1465,6 +1426,13 @@ CASES = {
         case_leave_detached_waits_for_its_turn,
     "leave: at the wait's ceiling /exit is sent all the same, and said":
         case_leave_detached_ceiling,
+    "leave: another pane's leave waits for that pane's turn too, one code path":
+        case_leave_handover_waits_for_idle,
+    "worker: the leave of a worker that neither left nor answers; nothing but "
+    "the slug is read, and the pane's turn is waited for":
+        case_worker_leaves_by_hand,
+    "refuse worker: the pane holds a planner, which this scope never exits":
+        case_worker_planner_stands,
     "leave: a tab holding a second pane is refused, and not closed":
         case_leave_tab_shared,
     "leave: the spawned run leads a session of its own and writes the log":
@@ -1567,16 +1535,11 @@ CASES = {
     "refuse: release refused, and the closed issue is said": refusal(
         "release", "ahead of main", "is closed not planned; its claim still "
         "stands", release=RELEASE_REFUSED, acted=True),
-    "refuse: the heartbeat gives the pane no verdict": refusal(
-        "retire", "no verdict", argv=RETIRE, heartbeat=heartbeat()),
-    "refuse: the heartbeat reads keep, whatever another pane reads": refusal(
-        "retire", "as `keep`: context 9 < 200", argv=RETIRE, heartbeat=heartbeat(
-            ("retire", OTHER, "rc-worker-3", "done"),
-            ("keep", PANE, "rc-worker-2", "context 9 < 200"))),
     "refuse: HERDR_ENV is not 1": refusal(
-        "herdr", "not 1", argv=RETIRE, env={}),
+        "herdr", "not 1", argv=WORKER, sessions=LEAVER, env={}),
     "refuse: herdr could not send /exit": refusal(
-        "exit", "herdr exited 1", argv=RETIRE, herdr=1, acted=True),
+        "exit", "herdr exited 1", argv=WORKER, herdr=1, acted=True,
+        polls=[(LEAVER, None), (TURN_OVER, None)]),
     "refuse: still listed after the wait, and never killed": case_no_kill,
     "tab: a tab holding a second pane is refused, and not closed": case_tab_shared,
     "tab: a tab still listed after the close is refused": case_tab_still_listed,
@@ -1585,10 +1548,10 @@ CASES = {
         case_parse_panes,
     "refuse tab: herdr pane list did not read": refusal(
         "tab", "herdr pane list did not read: herdr pane list exited 1: no socket",
-        argv=RETIRE, polls=GONE, panes=[None], acted=True),
+        argv=WORKER, polls=GONE, panes=[None], acted=True),
     "refuse tab: herdr tab close failed": refusal(
         "tab", f"herdr tab close {TAB} exited 1: tab close failed",
-        argv=RETIRE, polls=GONE, tab_close=1, acted=True),
+        argv=WORKER, polls=GONE, tab_close=1, acted=True),
     # the whole: campaign
     "campaign: every gate held and no --close halts before any write":
         case_campaign_halts,
@@ -1839,10 +1802,13 @@ MUTATIONS = [
     ("release only a claim", "if branches:", "if True:",
      "drop: no claim names it, so listed sessions do not refuse and nothing is "
      "released"),
-    ("retire word", "if word != RETIRE:", "if False:",
-     "refuse: the heartbeat reads keep, whatever another pane reads"),
-    ("this pane's line", "format(pane=re.escape(pane))", r'format(pane=r"\S+")',
-     "refuse: the heartbeat reads keep, whatever another pane reads"),
+    ("worker: the session is gated",
+     "    gate_session(n, pane, say, worker_only=True)\n", "",
+     "refuse worker: the pane holds a planner, which this scope never exits"),
+    ("worker: a planner is not exited",
+     'if worker_only and (role := NAMES.role_word(names[0])) != "worker":',
+     "if False:",
+     "refuse worker: the pane holds a planner, which this scope never exits"),
     ("herdr guard", 'if os.environ.get("HERDR_ENV") != "1":', "if False:",
      "refuse: HERDR_ENV is not 1"),
     ("exit status", 'if r.returncode != 0:\n        raise Refused("exit"',
@@ -1858,7 +1824,7 @@ MUTATIONS = [
      "refuse: still listed after the wait, and never killed"),
     ("unread is not gone", 'note = f"poll {k + 1}: {why}"',
      'return True, f"poll {k + 1}: {why}"',
-     "retire: a listing that did not read is one more poll"),
+     "worker: a listing that did not read is one more poll"),
     ("sleep between polls", "if k + 1 < polls:", "if True:",
      "wait: it polls exactly its count and sleeps between polls only"),
     ("bound word", 'if (word == "here") != want_here:', "if False:",
@@ -2018,7 +1984,7 @@ MUTATIONS = [
     ("front: a scope's name alone reaches the front door",
      "or (\n            argv[0] in SCOPES and len(argv) == 1)", "or (False)",
      "refuse front: a scope's name alone is not a target"),
-    ("front: a scope's name alone refuses", "    elif t in SCOPES:\n", "    elif False:\n",
+    ("front: a scope's name alone refuses", "    if t in SCOPES:\n", "    if False:\n",
      "refuse front: a scope's name alone is not a target"),
     ("front: the number is the whole target", 'NUMBER = re.compile(r"^#?(\\d+)$")',
      'NUMBER = re.compile(r"^#?(\\d+)")',
@@ -2029,26 +1995,12 @@ MUTATIONS = [
      "refuse front: check answering for another number"),
     ("front: an unread flag refuses", "if extra:", "if False:",
      "refuse front: a flag the scope does not take"),
-    ("workers: only this campaign's", 'if NAMES.campaign_of(r["name"]) == slug\n',
-     "if True\n", "workers: each of the campaign's workers is judged alone, one "
-     "line each; a done one exits, the rest are kept"),
-    ("workers: only workers", 'and NAMES.role_word(r["name"]) == "worker")', ")",
-     "workers: each of the campaign's workers is judged alone, one line each; "
-     "a done one exits, the rest are kept"),
-    ("workers: kept is not failed", 'word = "kept" if r.gate == "retire" else "failed"',
-     'word = "failed"', "workers: each of the campaign's workers is judged alone, "
-     "one line each; a done one exits, the rest are kept"),
-    ("workers: a failure refuses", "    if broke:\n", "    if False:\n",
-     "refuse workers: a step past retire failed, and the run says so"),
-    ("workers: the exit's evidence is on the line", 'if s in ("retire", "gone", "tab"))',
-     'if s in ("retire", "gone"))', "workers: each of the campaign's workers is judged "
-     "alone, one line each; a done one exits, the rest are kept"),
     ("tab: after gone", "    step_tab(pane, say)\n", "",
-     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+     "leave: the detached run exits its pane, waits, and closes the tab"),
     ("tab: another pane refuses", "    if others:\n", "    if False:\n",
      "tab: a tab holding a second pane is refused, and not closed"),
     ("tab: only another pane", "if t == tab and p != pane)", "if t == tab)",
-     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+     "leave: the detached run exits its pane, waits, and closes the tab"),
     ("tab: closed is read back", "if tabs is None or tab in tabs.values():",
      "if tabs is None:", "tab: a tab still listed after the close is refused"),
     ("tab: an unlisted pane has no tab", "    if tab is None:\n        say(",
@@ -2061,8 +2013,6 @@ MUTATIONS = [
      "    if False:\n        raise Refused(\"tab\"", "refuse tab: herdr tab close failed"),
     ("tab: pane to tab", '{p["pane_id"]: p["tab_id"]', '{p["tab_id"]: p["pane_id"]',
      "tab: herdr pane list is read as pane to tab, and a shape it lacks is no reading"),
-    ("front: `workers` alone", 'if t == "workers":', "if False:",
-     "front: `workers` alone reads as scope workers of this session's campaign"),
     ("sync: the bound machine's", "    gate_bound(n, want_here=True)\n    step_sync(",
      "    step_sync(", "refuse sync: bound elsewhere"),
     ("sync: standing is not read", "    gate_bound(n, want_here=True)\n    step_sync(",
@@ -2077,19 +2027,26 @@ MUTATIONS = [
     ("sync: a scope by name", '"campaign", "sync",\n', '"campaign",\n',
      "sync: standing, an open sub-issue, a claim and a session at work do not "
      "stop a scope change"),
-    ("leave: the worker's retire is the leave", "    gate_herdr(say)\n    step_leave(pane, say)\n\n\n",
+    ("worker: the leave is the whole of the scope",
+     "    gate_herdr(say)\n    step_leave(pane, say)\n\n\n",
      "    gate_herdr(say)\n\n\n",
-     "retire: a worker read as retire gets /exit and is gone on a later poll"),
+     "worker: the leave of a worker that neither left nor answers; nothing but "
+     "the slug is read, and the pane's turn is waited for"),
     ("leave: the own pane detaches", "    if pane != own:\n        step_leave",
      "    if True:\n        step_leave",
      "leave: its own pane is left by a detached run of the same scope"),
     ("leave: another pane is not detached", "    if pane != own:\n        step_leave",
      "    if False:\n        step_leave",
      "leave: another pane, the handover, is left in the foreground"),
-    ("leave: the detached run reads no gate", "    if args.detached:\n        step_idle",
-     "    if False:\n        step_idle",
+    ("leave: the detached run reads no gate", "    if args.detached:\n        step_leave",
+     "    if False:\n        step_leave",
      "leave: the detached run exits its pane, waits, and closes the tab"),
-    ("leave: the detached run waits for idle", "    idle, note = wait_gone(pane, idle=True)",
+    ("leave: every leave waits for the pane's turn",
+     '    step_idle(pane, say)\n    r = run("herdr", "agent", "prompt", pane, EXIT_TEXT)',
+     '    r = run("herdr", "agent", "prompt", pane, EXIT_TEXT)',
+     "leave: another pane's leave waits for that pane's turn too, one code path"),
+    ("leave: the wait for the turn is a wait for idle",
+     "    idle, note = wait_gone(pane, idle=True)",
      "    idle, note = wait_gone(pane, idle=False)",
      "leave: the detached run waits for its own turn to end before /exit"),
     ("leave: done is idle too", 'IDLE = ("idle", "done")', 'IDLE = ("done",)',
@@ -2097,13 +2054,11 @@ MUTATIONS = [
     ("leave: the ceiling is said", "the ceiling: \"\n        f\"{EXIT_TEXT} is sent all the same",
      "\"\n        f\"{EXIT_TEXT} is sent",
      "leave: at the wait's ceiling /exit is sent all the same, and said"),
-    ("leave: another pane's leave does not wait", "    if pane != own:\n        step_leave(pane, say)",
-     "    if pane != own:\n        step_idle(pane, say)\n        step_leave(pane, say)",
-     "leave: another pane, the handover, is left in the foreground"),
     ("leave: the pane defaults to its own", "pane = args.pane or own", "pane = args.pane",
      "leave: its own pane is left by a detached run of the same scope"),
-    ("leave: the herdr guard is read", "    slug = slug_of(n)\n    gate_herdr(say)\n",
-     "    slug = slug_of(n)\n", "refuse leave: HERDR_ENV is not 1"),
+    ("leave: the herdr guard is read",
+     "    n = args.campaign_issue\n    gate_herdr(say)\n",
+     "    n = args.campaign_issue\n", "refuse leave: HERDR_ENV is not 1"),
     ("leave: its own pane is read", "    if own is None:\n        raise Refused(\"self\"",
      "    if False:\n        raise Refused(\"self\"",
      "refuse leave: herdr pane current did not read"),

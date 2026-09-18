@@ -280,10 +280,8 @@ VERB_FIRST, WORK_KIND = "verb-first", "work-kind"
 # `campaign-close.py`'s `standing` gate reads it and refuses the close naming
 # it; the survey prints it beside the row, so a campaign that will not close
 # says so before anybody spends a step trying. ON A SUB-ISSUE the same hold
-# keeps it open with no claim between tidies, and the heartbeat reads one
-# wearing it as neither `drift unclaimed` nor a reason the campaign is not
-# quiet (rule-check#369); the kind says what the work is, this says who holds
-# it open.
+# keeps it open with no claim between tidies (rule-check#369); the kind says
+# what the work is, this says who holds it open.
 STANDING_LABEL = "standing"
 
 NOT_EMPTY = "An index that did not read is not an empty campaign."
@@ -347,7 +345,7 @@ def classify(issues):
 def label_names(issue):
     """Every label name on one issue, as strings, off gh's `--json labels`.
     The one reading of it (rule-check#370 row 22): the survey, `check`,
-    `settlement`, `slugs` and the heartbeat each built the list themselves."""
+    `settlement` and `slugs` each built the list themselves."""
     return [l.get("name") for l in issue.get("labels") or []
             if isinstance(l, dict) and isinstance(l.get("name"), str)]
 
@@ -355,9 +353,9 @@ def label_names(issue):
 def is_standing(names):
     """Whether this label list holds the person's hold on the close.
 
-    THE ONE READER of `standing`, asked by the survey's row, the `standing`
-    verb and the heartbeat's index alike, so the word a close acts on and the
-    word a survey prints can never disagree. A calculation over labels already
+    THE ONE READER of `standing`, asked by the survey's row and the
+    `standing` verb alike, so the word a close acts on and the word a survey
+    prints can never disagree. A calculation over labels already
     fetched, so on and off are both cases with no network in them."""
     return STANDING_LABEL in names
 

@@ -3148,7 +3148,7 @@ def main():
         for name, command in (
                 ("a `/compact`", 'herdr agent prompt w40:p2D "/compact"'),
                 ("a STATUS", 'herdr agent prompt w40:p2D "STATUS from the '
-                             'heartbeat: demo#7 still has a claim"'),
+                             'planner: demo#7 still has a claim"'),
                 ("a launch line carrying flags only",
                  "herdr agent start demo-worker-9 --kind claude --pane w40:p2D "
                  "-- --model opus --effort high"),

@@ -1,6 +1,6 @@
 ---
 name: close
-description: Closes one piece of a campaign in the campaign-base repository, or the whole of it, through scripts/campaign-close.py, which reads the scope off the one target -- a campaign issue number, a sub-issue number, a session name, `workers` for every finished worker of the campaign, owner/repo, or nothing for this directory -- and prints which it read. Use when a person types /close, with or without a target.
+description: Closes one piece of a campaign in the campaign-base repository, or the whole of it, through scripts/campaign-close.py, which reads the scope off the one target -- a campaign issue number, a sub-issue number, a session name, owner/repo, or nothing for this directory -- and prints which it read. Use when a person types /close, with or without a target.
 disable-model-invocation: true
 ---
 

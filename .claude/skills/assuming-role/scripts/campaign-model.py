@@ -18,7 +18,7 @@ a context too large to compact; that path stays.
 THE ADDRESS is every row `herdr agent list` shows whose name carries the role
 word (`campaign-name-session.py`'s `role_word`), of any campaign, narrowed by
 `--from` to those whose transcript's latest assistant model contains that
-word (`campaign-heartbeat.py`'s `transcript_reading`, the one transcript
+word (`campaign-transcript.py`'s `transcript_reading`, the one transcript
 reader). It skips, and names why:
 
   another role     the name carries another role word, or none
@@ -107,7 +107,7 @@ def load(path, alias):
 
 
 names = load(HERE / "campaign-name-session.py", "cname")
-heartbeat = load(HERE / "campaign-heartbeat.py", "cheartbeat")
+transcript = load(HERE / "campaign-transcript.py", "ctranscript")
 assign = load(BASE / "scripts" / "campaign-assign.py", "cassign")
 
 
@@ -125,7 +125,7 @@ sleep = time.sleep
 
 def read_facts(sid):
     """(reading, None) -- `transcript_reading`'s dict -- or (None, why)."""
-    reading, _where, why = heartbeat.read_transcript(sid)
+    reading, _where, why = transcript.read_transcript(sid)
     return reading, why
 
 

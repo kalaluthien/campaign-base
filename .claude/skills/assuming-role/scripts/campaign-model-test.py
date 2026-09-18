@@ -7,8 +7,9 @@ The pane side goes through a fake `run` that records every herdr call and
 plays a session: a fresh one runs `/model` at once, one with history shows
 the `Switch model?` dialog until an Enter answers it -- the two shapes probed
 on rule-check#431. A switch that lands writes the command record and what it
-printed into a real transcript file, which the script reads through the
-heartbeat's reader, and rewrites a settings file the way the harness does,
+printed into a real transcript file, which the script reads through
+campaign-transcript's reader, and rewrites a settings file the way the
+harness does,
 which the script must put back (rule-check#431 DECISION 5659640299). What
 `ModelSwitchKeepsEverySession` says of the model is checked of the calls:
 nothing but `/model` and `/effort` is ever prompted, and no pane is started,
@@ -146,7 +147,7 @@ def session(m, default=DEFAULT, status="idle", **kw):
             settings.write_text(json.dumps(default, indent=2) + "\n")
         pane = Pane(path, settings, **kw)
         m.run, m.sleep, m.SETTINGS = pane, (lambda s: None), settings
-        m.heartbeat.transcript_path = lambda sid: (path, None)
+        m.transcript.transcript_path = lambda sid: (path, None)
         m.names.herdr_sessions = lambda: ({"a": row("rc-planner-1", "p1", status)}, None)
         try:
             yield pane
@@ -189,8 +190,8 @@ def no_handoff(pane):
 
 
 def case_runs(m):
-    """The runs of one command, read through the heartbeat's reader."""
-    r = m.heartbeat.transcript_reading([
+    """The runs of one command, read through campaign-transcript's reader."""
+    r = m.transcript.transcript_reading([
         user("<command-name>/model</command-name>"), user("<local-command-stdout>Set model to `Opus 5`</local-command-stdout>"),
         user("<command-name>/effort</command-name>"), user("<command-name>/model</command-name>")])
     return m.runs(r, "model") == ["Set model to `Opus 5`", None], r["commands"]

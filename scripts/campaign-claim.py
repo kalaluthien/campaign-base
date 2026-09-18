@@ -270,13 +270,13 @@ def _name_rule_module():
                 / "campaign-name-session.py", "campaign_name_session")
 
 
-def _heartbeat_module():
-    """`campaign-heartbeat.py`, imported for `read_transcript` and
+def _transcript_module():
+    """`campaign-transcript.py`, imported for `read_transcript` and
     `compaction_pending`: the one reading of whether a session's `/compact`
     waits unrun. Loaded at the one call, so a release that compacts nothing
     does not pay for it."""
     return load(HERE.parent / ".claude" / "skills" / "assuming-role" / "scripts"
-                / "campaign-heartbeat.py", "campaign_heartbeat")
+                / "campaign-transcript.py", "campaign_transcript")
 
 
 REPOS = _repos_module()
@@ -1190,9 +1190,9 @@ SESSION_ID_VAR = "CLAUDE_CODE_SESSION_ID"
 # Found by review at e680ef8. The same holds of a transcript, which records
 # what a `herdr pane read` displayed as a tool result.
 #
-# No script reads it since rule-check#349: the heartbeat and
-# `campaign-assign.py` read when a claim went off GitHub instead, since on the
-# base the planner releases and the line sat in the planner's transcript. It
+# No script reads it since rule-check#349: `campaign-assign.py` reads when a
+# claim went off GitHub instead, since on the base the planner releases and
+# the line sat in the planner's transcript. It
 # stays for the person reading the pane.
 RELEASED = "campaign-claim: released"
 
@@ -1257,8 +1257,9 @@ def compact_own_pane(sessions, session_id, sleep=time.sleep):
     guard's `role_of`; anything but `worker` -- a planner, a name of no shape,
     a listing it could not read -- sends nothing.
 
-    NEVER A SECOND ONE. A `/compact` queued and not yet run, by the
-    heartbeat's `compaction_pending`, is left to run alone: a second compacts
+    NEVER A SECOND ONE. A `/compact` queued and not yet run, by
+    `campaign-transcript.py`'s `compaction_pending`, is left to run alone: a
+    second compacts
     the fresh context the first leaves, which two releases in one turn did. A
     transcript it cannot read sends nothing, since whether one is pending is
     then unknown; that miss is loud, because `campaign-assign.py` refuses a
@@ -1291,13 +1292,13 @@ def compact_own_pane(sessions, session_id, sleep=time.sleep):
         print(f"not compacting: {how}, and only a worker's release compacts "
               f"its pane. The claim is released.")
         return pane
-    hb = _heartbeat_module()
-    reading, where, why = hb.read_transcript(session_id)
+    tr = _transcript_module()
+    reading, where, why = tr.read_transcript(session_id)
     if reading is None:
         print(f"not compacting: {where}: {why}, so whether a {COMPACT} is "
               f"already pending is unknown. The claim is released.")
         return pane
-    pending = hb.compaction_pending(reading)
+    pending = tr.compaction_pending(reading)
     if pending:
         print(f"not compacting again: {pending} (read {where}). The claim is "
               f"released.")
@@ -1315,8 +1316,8 @@ def compact_own_pane(sessions, session_id, sleep=time.sleep):
         return None
     polls = int(QUEUED_WAIT / QUEUED_EVERY)
     for i in range(polls + 1):
-        seen, _where, _why = hb.read_transcript(session_id)
-        queued = seen and hb.compaction_pending(seen)
+        seen, _where, _why = tr.read_transcript(session_id)
+        queued = seen and tr.compaction_pending(seen)
         if queued:
             print(f"sent {COMPACT} to {pane}; it runs when this turn ends "
                   f"({queued}, read {where})")

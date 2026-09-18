@@ -4,14 +4,13 @@
     scripts/campaign-close.py [<target>] [--not-planned "<why>"] [--close] [--delete]
     scripts/campaign-close.py sub-issue <N> <issue> --not-planned "<why>"
     scripts/campaign-close.py worker <N> <pane>
-    scripts/campaign-close.py workers <N>
     scripts/campaign-close.py leave <N> [<pane>]
     scripts/campaign-close.py repo <N> <owner/repo> [--delete]
     scripts/campaign-close.py here <N> [--delete]
     scripts/campaign-close.py campaign <N> [--close] [--delete]
     scripts/campaign-close.py sync <N>
 
-Every close used to restate the same gates in prose: drop a sub-issue, retire
+Every close used to restate the same gates in prose: drop a sub-issue, exit
 a worker, drop a repository, let a directory go, close the campaign. The one
 write that is not a close lives here too, because it shares the close's sync:
 a scope change reaching the campaign issue body. This is
@@ -42,11 +41,6 @@ THE GATES, and why each exists (printed beside every refusal)
                this machine has no other copy.
   installed    `campaign-installed.py check <README>`. A merge that has not
                reached its install is a merge nobody installed.
-  retire       `campaign-heartbeat.py <N>` without --apply, one pane's line.
-               Only a worker the heartbeat reads as done -- its assigned
-               sub-issue's ref gone and no assignment since -- holds nothing
-               an `/exit` could lose; that reading is the heartbeat's, and
-               nothing here restates it.
 
 THE PERSON'S ANSWERS are flags, and a run without one halts before the write
 it would license (exit 3): an open sub-issue's disposition (`sub-issue`'s
@@ -63,7 +57,7 @@ release.
 
 THE FRONT DOOR -- `/close <target>` -- reads the scope off the one target and
 prints which it read and from where, then runs that scope as below. The seven
-scopes stay callable by name; the front door only chooses among the six that
+scopes stay callable by name; the front door only chooses among the five that
 close, and `sync` and `leave` are reached by name alone.
 
   a number        `campaign-tracker.py check <n>`'s kind line: a campaign
@@ -73,9 +67,6 @@ close, and `sync` and `leave` are reached by name alone.
   owner/repo      scope repo, of the campaign read as for no target.
   a session name  one `herdr agent list` names: scope worker, of the campaign
                   its name's slug names, on the pane herdr gives it.
-  `workers`       scope workers, of the campaign read as for no target: the
-                  one scope's name the front door takes alone, since that
-                  scope needs nothing but the campaign.
   no target       scope here, of the campaign whose directory this runs in
                   (its `.campaign` marker), else the one this session's name
                   names (`campaign-tracker.py issue <slug>`).
@@ -105,14 +96,31 @@ SCOPE sub-issue <N> <issue> --not-planned "<why>"
                   ref names <issue>. Holds when: it printed `deleted` or `no
                   ref to delete` and no `refusing:`.
 
-SCOPE worker <N> <pane>
+SCOPE worker <N> <pane> -- a planner exits a worker by hand
 
-  1. retire       Holds when: the heartbeat's line for <pane> opens `retire`.
+  The one worker a planner sends `/exit` to itself: one that neither left by
+  itself nor answered a `STATUS` prompt. THAT READING IS THE CALLER'S, made
+  before this runs; what is read here is only that <pane> holds a worker of
+  the campaign.
+
+  1. session      `herdr agent list`, read against <N>'s `campaign:` label.
+                  Holds when: exactly one row sits on <pane>, named for <N>'s
+                  slug, and its role word is `worker` -- a planner is never
+                  exited by this scope.
   2. herdr        Holds when: HERDR_ENV is 1, the guard on every herdr
                   command that drives a pane.
-  3. exit         `herdr agent prompt <pane> /exit`, the heartbeat's own
-                  action text. Holds when: herdr exited 0.
-  4. gone         `herdr agent list`, WAIT_POLLS polls WAIT_EVERY seconds
+  3. idle         Before the `/exit`: `herdr agent list` every WAIT_EVERY
+                  seconds until <pane> reads `idle` or `done`, or is not
+                  listed. `/exit` into a turn still streaming does not queue:
+                  it ended the session 2 s later, the turn's answer unwritten
+                  (rule-check#481 NOTE 5718813306). THE CEILING is WAIT_POLLS
+                  polls; AT THE CEILING `/exit` IS SENT ALL THE SAME and the
+                  line says so: a turn cut short loses its last lines, while a
+                  finished worker left listed is seen by nobody once no watch
+                  runs.
+  4. exit         `herdr agent prompt <pane> /exit`. Holds when: herdr
+                  exited 0.
+  5. gone         `herdr agent list`, WAIT_POLLS polls WAIT_EVERY seconds
                   apart. Holds when: no row names <pane>. Still listed is
                   reported with the time measured, and never killed. Until
                   a key is sent, a poll that still lists <pane> reads its
@@ -122,27 +130,30 @@ SCOPE worker <N> <pane>
                   DIALOG_KEY, on a `dialog` line. A screen that did not
                   read, a dialog with another row 1, or a key herdr did not
                   send joins the still-listed note.
-  5. tab          `herdr pane list`, the one listing that names a pane's tab:
+  6. tab          `herdr pane list`, the one listing that names a pane's tab:
                   an exited agent leaves its pane there. Refuses when another
                   pane sits in the tab, since `herdr tab close` closes every
                   pane in it; else `herdr tab close <tab>`. Holds when: no
                   pane is listed in the tab, or <pane> was not listed at all.
 
-  Steps 3-5 are THE LEAVE, the one way a session of a campaign ends, whoever
-  sends it; scope leave runs them without the retire.
+  Steps 3-6 are THE LEAVE, the one way a session of a campaign ends, whoever
+  sends it, and EVERY LEAVE WAITS FOR THE PANE'S TURN, the ceiling and all:
+  one code path, the session's own leave and another pane's alike
+  (rule-check#481's DECISION 5719903507). Scope leave runs them after its own
+  gates.
 
 SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
 
   With <pane>, a successor closing its predecessor (a handover); without
-  one, the session running this leaves by itself. No retire is read: the
-  handover's NOTE, or the session's own word, is the decision.
+  one, the session running this leaves by itself. The handover's NOTE, or the
+  session's own word, is the decision, and no reading here restates it.
 
   1. slug         Holds when: <N>'s `campaign:` label reads.
   2. herdr        As in `worker` step 2.
   3. self         `herdr pane current`. Holds when: it names a pane, the one
                   <pane> defaults to.
-  4. session      `herdr agent list`. Holds when: exactly one row sits on
-                  <pane>, named for <N>'s slug.
+  4. session      As in `worker` step 1, the role word apart: a planner
+                  leaves by this scope as a worker does.
   5. detach       Only for the caller's own pane, whose turn must end before
                   its `/exit` can land: this scope again with --detached, in
                   a session of its own, its lines to a log in the temporary
@@ -150,19 +161,7 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   the leave done; its line says when to look and which log
                   says why a pane is still open. Nothing waits for it: end
                   the turn.
-  6. idle         The detached run alone, before its `/exit`: `herdr agent
-                  list` every WAIT_EVERY seconds until <pane> reads `idle` or
-                  `done`, or is not listed. `/exit` into a turn still
-                  streaming does not queue: it ended the session 2 s later,
-                  the turn's answer unwritten (rule-check#481 NOTE
-                  5718813306). THE CEILING is WAIT_POLLS polls; AT THE CEILING
-                  `/exit` IS SENT ALL THE SAME and the line says so: a turn
-                  cut short loses its last lines, while a finished worker
-                  left listed is seen by nobody once no watch runs. Another
-                  pane's leave does not wait, as before this step existed:
-                  its caller read it done, and whether it should is the
-                  watch's question (rule-check#349's DECISION, option 1).
-  7-9.            The leave, `worker` steps 3-5, in the foreground for
+  6-9.            The leave, `worker` steps 3-6, in the foreground for
                   another pane. For the own one it is the whole detached run,
                   which reads no gate again: the caller held every one, and
                   nothing but the log would read a refusal there.
@@ -194,19 +193,6 @@ SCOPE leave <N> [<pane>] -- a session of the campaign ends, pane and tab too
                   OPEN chore, and a reading that did not happen each leave the
                   leave a leave; the caller's own pane is told before its turn
                   ends that the clean-up follows, and which log says how it went.
-
-SCOPE workers <N> -- every finished worker at once
-
-  1. workers      `herdr agent list`. Holds when: it read; every session
-                  whose name is of <N>'s slug with the role word `worker` is
-                  one worker, the pane running this included, which the
-                  heartbeat never retires.
-  2. worker       Scope worker, once per worker, each on a heartbeat run of
-                  its own, so no reading outlives the `/exit` before it. One
-                  line per worker: `exited` (every step held), `kept` (retire
-                  refused: nothing was sent) or `failed` (a later step
-                  refused; the line says what was sent). Holds when: none
-                  `failed`.
 
 SCOPE repo <N> <owner/repo> [--delete] -- drop a member repository
 
@@ -314,7 +300,6 @@ CLAIM_SCRIPT = HERE / "campaign-claim.py"
 LOCAL_WORK_SCRIPT = HERE / "campaign-local-work.py"
 DIRECTORY_SCRIPT = HERE / "campaign-directory.py"
 INSTALLED_SCRIPT = HERE / "campaign-installed.py"
-HEARTBEAT_SCRIPT = SKILL_SCRIPTS / "campaign-heartbeat.py"
 
 
 def load(path, name):
@@ -328,8 +313,8 @@ def load(path, name):
 # The owners, imported: the claim-branch shape, the herdr reading, a
 # sub-issue's landing repository and the tracker's name are campaign-claim's,
 # and the `## Repos` list is campaign-repos' through it; which campaign a
-# session name is of is campaign-name-session's; the retire verdict and its
-# action are the heartbeat's; which directory is a campaign's is the claim
+# session name is of, and which role word it carries, are
+# campaign-name-session's; which directory is a campaign's is the claim
 # guard's, through campaign-claim, which loads it.
 CLAIM = load(CLAIM_SCRIPT, "campaign_claim")
 REPOS = CLAIM.REPOS
@@ -337,9 +322,8 @@ GUARD = CLAIM.GUARD
 NAMES = load(SKILL_SCRIPTS / "campaign-name-session.py", "cns")
 # The tracker, for the words it prints: an issue's kind on `check`'s line.
 TRACKER_MODULE = load(TRACKER_SCRIPT, "campaign_tracker")
-HEARTBEAT = load(HEARTBEAT_SCRIPT, "campaign_heartbeat")
-RETIRE = "retire"
-EXIT_TEXT = HEARTBEAT.ACTIONS[RETIRE]
+# The text the harness reads as the exit command.
+EXIT_TEXT = "/exit"
 
 WAIT_EVERY = 5
 # 3 min: `/exit` queues behind a worker's running turn, and the release's own
@@ -391,11 +375,6 @@ WHY = {
     "vacate": "a checkout is left by git's own refusals and no force, so one "
               "holding a change is kept",
     "delete": "the delete is the one step nothing recovers",
-    "retire": "only a worker the heartbeat reads as done, its assigned "
-              "sub-issue's ref gone and no assignment since, holds nothing an "
-              "/exit could lose",
-    "workers": "every worker is judged alone, and one not done is kept, "
-               "never exited",
     "herdr": "a herdr command that drives a pane runs only inside herdr "
              "(HERDR_ENV=1), so it cannot act on somebody else's session",
     "exit": "a session leaves by fact, and the fact is its pane stopping",
@@ -405,7 +384,10 @@ WHY = {
     "self": "a session leaving by itself names its own pane from herdr, "
             "never from a guess",
     "session": "the leave reaches a session of this campaign and nothing "
-               "else: not another campaign's, and not a person's shell",
+               "else: not another campaign's, and not a person's shell; and "
+               "where the caller read a worker as neither gone nor answering, "
+               "this reads only that it is a worker of the campaign, a "
+               "planner never being exited by that scope",
     "detach": "the exit and the tab close outlive the pane they close, so "
               "they run in a process of their own",
     "target": "the scope is read off the target, and a target read as nothing "
@@ -574,15 +556,6 @@ def local_rows(text, slug, issue):
             if any(CLAIM.issue_of_branch(tok.strip("[];,"), slug) == issue
                    for tok in line.split())]
     return finished, unread, mine, last
-
-
-HEARTBEAT_LINE = r"^(\S+) {pane} (\S+): (.*)$"
-
-
-def heartbeat_line(text, pane):
-    """(word, name, reason) of the heartbeat's verdict line for <pane>."""
-    m = re.search(HEARTBEAT_LINE.format(pane=re.escape(pane)), text, re.M)
-    return m.groups() if m else None
 
 
 def status_text(slug, issue, name):
@@ -1040,7 +1013,7 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
     absence, so it is one more poll and never the answer. `listed()` runs on
     each poll that still lists <pane>, and what it returns joins the note.
     With `idle`, a poll that lists <pane> with no turn running ends the wait
-    too: the detached leave's wait for its own turn, the header's step 6."""
+    too: the leave's wait for that pane's turn, the header's step 3."""
     read, sleep = read or CLAIM.herdr_sessions, sleep or time.sleep
     note = "no poll ran"
     for k in range(polls):
@@ -1062,8 +1035,8 @@ def wait_gone(pane, read=None, sleep=None, polls=WAIT_POLLS,
 
 
 def step_idle(pane, say):
-    """The detached leave's wait for its own turn to end. Never a refusal:
-    at the ceiling the `/exit` goes all the same (the header, step 6)."""
+    """The leave's wait for <pane>'s turn to end. Never a refusal: at the
+    ceiling the `/exit` goes all the same (the header, step 3)."""
     began = time.monotonic()
     idle, note = wait_gone(pane, idle=True)
     say("idle", note if idle else
@@ -1176,19 +1149,12 @@ def sub_issue(args):
 
 
 def worker(args, say=holds):
+    """A planner exiting a worker by hand: the one that neither left by itself
+    nor answered a `STATUS` prompt. THE READING IS THE CALLER'S; what is read
+    here is that <pane> holds one worker of the campaign, and never a planner,
+    which leaves by its own `leave` and by nobody else's hand."""
     n, pane = args.campaign_issue, args.pane
-    text = script(HEARTBEAT_SCRIPT, n)
-    line = heartbeat_line(text, pane)
-    if line is None:
-        first = (text.strip().splitlines() or ["<no output>"])[0]
-        raise Refused("retire", f"the heartbeat gave {pane} no verdict -- not "
-                                f"a session of #{n}, or it could not read: "
-                                f"{first[:200]}")
-    word, name, reason = line
-    if word != RETIRE:
-        raise Refused("retire", f"the heartbeat reads {name} as `{word}`: "
-                                f"{reason}")
-    say("retire", f"{name}: {reason}")
+    gate_session(n, pane, say, worker_only=True)
     gate_herdr(say)
     step_leave(pane, say)
 
@@ -1199,10 +1165,31 @@ def gate_herdr(say):
     say("herdr", "HERDR_ENV=1")
 
 
+def gate_session(n, pane, say, worker_only=False):
+    """One session of #N on <pane>, and with `worker_only` a worker of it: the
+    leave reaches a session of this campaign and nothing else."""
+    slug = slug_of(n)
+    sessions, why = CLAIM.herdr_sessions()
+    if sessions is None:
+        raise Refused("session", f"herdr agent list did not read: {why}")
+    names = [r["name"] for r in sessions.values() if r["pane"] == pane]
+    if len(names) != 1 or NAMES.campaign_of(names[0]) != slug:
+        raise Refused("session", f"herdr lists {', '.join(names) or 'no session'} "
+                                 f"on {pane}; the leave needs one session of "
+                                 f"{slug} (#{n})")
+    if worker_only and (role := NAMES.role_word(names[0])) != "worker":
+        raise Refused("session", f"{names[0]} on {pane} is a {role}, and this "
+                                 f"scope exits a worker: a planner leaves by "
+                                 f"its own `leave`")
+    say("session", f"{', '.join(names)} on {pane}, of {slug} (#{n})")
+
+
 def step_leave(pane, say):
-    """The one leave: `/exit` into <pane>, wait until herdr no longer lists
-    it, answering the background-work dialog once, then close the tab it
-    sat in."""
+    """The one leave: wait for <pane>'s turn to end, `/exit` into it, wait
+    until herdr no longer lists it, answering the background-work dialog once,
+    then close the tab it sat in. EVERY LEAVE WAITS, whoever sends it: `/exit`
+    into a turn still streaming cuts it short (the header, step 3)."""
+    step_idle(pane, say)
     r = run("herdr", "agent", "prompt", pane, EXIT_TEXT)
     if r.returncode != 0:
         raise Refused("exit", f"herdr exited {r.returncode}: "
@@ -1390,12 +1377,10 @@ def step_chore_cleanup(n, say):
 
 def leave(args, say=holds):
     if args.detached:
-        step_idle(args.pane, say)
         step_leave(args.pane, say)
         step_chore_cleanup(args.campaign_issue, say)
         return
     n = args.campaign_issue
-    slug = slug_of(n)
     gate_herdr(say)
     own, why = own_pane()
     if own is None:
@@ -1403,15 +1388,7 @@ def leave(args, say=holds):
     pane = args.pane or own
     say("self", f"this runs in {own}" + ("" if pane == own else
                                           f"; it closes {pane}"))
-    sessions, why = CLAIM.herdr_sessions()
-    if sessions is None:
-        raise Refused("session", f"herdr agent list did not read: {why}")
-    names = [r["name"] for r in sessions.values() if r["pane"] == pane]
-    if len(names) != 1 or NAMES.campaign_of(names[0]) != slug:
-        raise Refused("session", f"herdr lists {', '.join(names) or 'no session'} "
-                                 f"on {pane}; the leave needs one session of "
-                                 f"{slug} (#{n})")
-    say("session", f"{', '.join(names)} on {pane}, of {slug} (#{n})")
+    gate_session(n, pane, say)
     if pane != own:
         step_leave(pane, say)
         step_chore_cleanup(n, say)
@@ -1437,41 +1414,6 @@ def leave(args, say=holds):
                      f"to scope campaign --delete once the leave is done, if "
                      f"#{n} is closed by then (it reads {state} now), and "
                      f"{log} says which step stopped it")
-
-
-def workers(args):
-    """Scope worker once per worker herdr lists for the campaign, each on a
-    fresh heartbeat reading, one line per worker. A refusal at `retire` is a
-    worker not done, `kept`; a refusal at any later step is `failed`."""
-    n = args.campaign_issue
-    slug = slug_of(n)
-    sessions, why = CLAIM.herdr_sessions()
-    if sessions is None:
-        raise Refused("workers", f"herdr agent list did not read: {why}")
-    rows = sorted((r["name"], r["pane"]) for r in sessions.values()
-                  if NAMES.campaign_of(r["name"]) == slug
-                  and NAMES.role_word(r["name"]) == "worker")
-    print(f"{'workers':<11} {len(rows)} worker(s) of {slug} (#{n}) among the "
-          f"{len(sessions)} session(s) herdr lists")
-    broke = []
-    for name, pane in rows:
-        steps = []
-        try:
-            worker(argparse.Namespace(campaign_issue=n, pane=pane),
-                   say=lambda step, evidence: steps.append((step, evidence)))
-            word, what = "exited", "; ".join(f"{s}: {e}" for s, e in steps
-                                             if s in ("retire", "gone", "tab"))
-        except Refused as r:
-            word = "kept" if r.gate == "retire" else "failed"
-            what = f"{r.gate}: {r.reason}" + (
-                "" if word == "kept" else f" ({r.changed})")
-            if word == "failed":
-                broke.append(name)
-        print(f"{word:<11} {name} {pane} -- {what}")
-    if broke:
-        raise Refused("workers", f"{len(broke)} of {len(rows)} worker(s) "
-                                 f"failed past `retire`: {', '.join(broke)}",
-                      changed="each line above says what was sent")
 
 
 def drop_repo(args):
@@ -1559,7 +1501,7 @@ def sync(args):
 # ------------------------------------------------------------- the front door
 
 
-SCOPES = ("sub-issue", "worker", "workers", "repo", "here", "campaign", "sync",
+SCOPES = ("sub-issue", "worker", "repo", "here", "campaign", "sync",
           "leave")
 NUMBER = re.compile(r"^#?(\d+)$")
 CHECK_LINE = re.compile(r"^read \S+#(\d+): ("
@@ -1570,7 +1512,7 @@ CHECK_LINE = re.compile(r"^read \S+#(\d+): ("
 # is an answer the person gave and nobody read.
 FLAGS = {"campaign": ("close", "delete"), "here": ("delete",),
          "repo": ("delete",), "sub-issue": ("not_planned",), "worker": (),
-         "workers": (), "sync": (), "leave": ()}
+         "sync": (), "leave": ()}
 
 
 def campaign_named(slug, whose):
@@ -1606,10 +1548,7 @@ def front_door(args):
     """The scope's own argv, read off the one target, with what was read and
     from where printed first."""
     t = (args.target or "").strip() or None
-    if t == "workers":
-        n, where = own_campaign()
-        scope, argv, how = "workers", ["workers", n], f"`workers`; #{n} from {where}"
-    elif t in SCOPES:
+    if t in SCOPES:
         raise Refused("target", f"{t!r} is the name of a scope, not a target: "
                                 f"give it its arguments (`campaign-close.py "
                                 f"{t} ...`, see --help), or give /close a "
@@ -1730,8 +1669,8 @@ def main(argv=None):
     s.add_argument("--not-planned", required=True, metavar="WHY",
                    help="the person's reason, written into the closing comment")
     s.set_defaults(fn=sub_issue)
-    w = sub.add_parser("worker", help="send /exit to a worker the heartbeat "
-                                      "reads as retirable, and wait for it")
+    w = sub.add_parser("worker", help="end a worker that neither left by "
+                                      "itself nor answers: the same leave")
     w.add_argument("campaign_issue", type=number)
     w.add_argument("pane")
     w.set_defaults(fn=worker)
@@ -1742,10 +1681,6 @@ def main(argv=None):
                     help="the pane to close; none is the one running this")
     lv.add_argument("--detached", action="store_true", help=argparse.SUPPRESS)
     lv.set_defaults(fn=leave)
-    ws = sub.add_parser("workers", help="scope worker on every worker of the "
-                                        "campaign, one line each")
-    ws.add_argument("campaign_issue", type=number)
-    ws.set_defaults(fn=workers)
     r = sub.add_parser("repo", help="drop a member repository the README "
                                     "no longer lists, and its clone")
     r.add_argument("campaign_issue", type=number)

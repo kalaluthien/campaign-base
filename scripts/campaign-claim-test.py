@@ -2472,12 +2472,13 @@ exit 1
 def compact_watch_cases(m):
     """`compact_own_pane`'s branches no shim reaches: a role it could not
     read, and a sent /compact the transcript never shows. In process, with the
-    guard's `role_of`, the heartbeat and `run` stubbed and restored."""
+    guard's `role_of`, the transcript reader and `run` stubbed and
+    restored."""
     rows = {"S2": {"name": "absent-worker-2", "status": "working",
                    "cwd": "/tmp", "pane": "w1:p2"}}
     sent, naps = [], []
 
-    class Heartbeat:
+    class Transcript:
         pending = None
 
         @staticmethod
@@ -2488,9 +2489,9 @@ def compact_watch_cases(m):
         def compaction_pending(cls, reading):
             return cls.pending
 
-    real = (m.GUARD.role_of, m._heartbeat_module, m.run)
+    real = (m.GUARD.role_of, m._transcript_module, m.run)
     try:
-        m._heartbeat_module = lambda: Heartbeat
+        m._transcript_module = lambda: Transcript
         m.run = lambda *a, **kw: sent.append(a) or subprocess.CompletedProcess(
             a, 0, "", "")
         m.GUARD.role_of = lambda sid: (None, None, "herdr could not run (X)")
@@ -2514,7 +2515,7 @@ def compact_watch_cases(m):
         check("...having slept between reads and not after the last",
               naps == [m.QUEUED_EVERY] * polls, repr(naps))
     finally:
-        m.GUARD.role_of, m._heartbeat_module, m.run = real
+        m.GUARD.role_of, m._transcript_module, m.run = real
 
 
 def sweep_cwd_cases(m):

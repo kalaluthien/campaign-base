@@ -783,11 +783,13 @@ Retire finished agents as the campaign runs, not when it closes, and sweep with
 all three readings (`campaign-claim live`). A campaign may not close while a
 claim is checked out somewhere on this machine, or a session of it is still
 listed; nor may a repository be dropped while an agent works one of its
-sub-issues. **A listed peer is asked, never killed** — it is the only thing that
-can say which claim it holds — except a worker the planner's heartbeat reads
-as done, its last assigned sub-issue's ref gone and no assignment since, idle
-or mid-turn, which it retires through `campaign-close.py worker`: the retire
-reading, then the same leave.
+sub-issues. **A finished worker leaves by itself** — `role-worker.md` step 9
+ends on the release and `campaign-close.py leave`, and that end is pushed to
+every listed planner of its campaign by
+`.claude/skills/assuming-role/scripts/campaign-push.py`. **A listed peer is
+asked, never killed** — it is the only thing that can say which claim it holds
+— and one that neither left nor answers is exited through
+`campaign-close.py worker <N> <pane>`, the same leave.
 `scripts/check-campaign-claim.py` refuses
 `herdr agent kill`, `pkill` and `killall`: a pattern reaches every process
 matching it, which is the incident's shape. It reads the verb and not the

@@ -70,6 +70,13 @@ THE ROLE: a session herdr does not name has no role to brief and is still
 working a sub-issue, so the no-role branch says so and the kind path runs
 anyway. A subagent still gets neither.
 
+A PLANNER'S HAND-OFF. At a planner's SessionStart, whatever its source, the
+campaign issue's last planner `NOTE` is printed ahead of the brief, with a
+verdict: the hand-off, the session's own last NOTE, nothing handed, or
+started without the hand-off (rule-check#461). `handoff_reading` is the
+calculation and says what each verdict reads; it announces and refuses
+nothing, and a `gh` that fails or times out is a reading that did not happen.
+
 EXIT. Always 0, and never a traceback: a hook that fails must not wall the
 session it was meant to help. Every path prints one line to stderr saying what
 was read and which branch was taken, and the kind path's own lines open
@@ -91,6 +98,10 @@ REFERENCES = {"planner": SKILL / "references" / "role-planner.md",
 # from this file's own path, so the tracker is found from a session started
 # anywhere -- a worktree, a clone, a campaign directory.
 TRACKER = BASE / "scripts" / "campaign-tracker.py"
+# The kind-line reader a planner's hand-off is read with, and how long either
+# `gh` read on that path may take before it is a reading that did not happen.
+CONTEXT = BASE / "scripts" / "campaign-context.py"
+HANDOFF_TIMEOUT = 20
 
 
 def say(line):
@@ -371,6 +382,86 @@ def deliver_kind(hook, event, session_id):
              f"record {record} {written}")
 
 
+def handoff_reading(rows, me, is_planner):
+    """(the NOTE row or None, the verdict) over a campaign issue's comments.
+
+    A CALCULATION: `rows` is `(kind, author, created, comment)` oldest first,
+    as `campaign-context.py`'s `kind_line` reads each first line. The hand-off
+    is the last `NOTE` a planner-named author wrote, whatever its slug, since
+    a rename hands off from a name of the old one (`upkeep-planner-1`, #272).
+    The verdict is `started without the hand-off` when a planner other than
+    that NOTE's author and other than `me` first commented after it: that
+    planner came after the last hand-off and left none since. `me` is left
+    out because a session cannot have read what it is only now being handed.
+    A helper planner (`role-planner.md` § A helper planner) starts with no
+    NOTE handed by design and reads the same way; it announces, never refuses.
+    """
+    notes = [r for r in rows if r[0] == "NOTE" and is_planner(r[1])]
+    if not notes:
+        return None, "no planner NOTE on the campaign issue: nothing was handed"
+    last = notes[-1]
+    first = {}
+    for _, author, created, _ in rows:
+        if is_planner(author):
+            first.setdefault(author, created)
+    later = sorted(a for a, t in first.items()
+                   if a not in (last[1], me) and t > last[2])
+    if later:
+        return last, (f"started without the hand-off: {', '.join(later)} "
+                      f"first commented after {last[1]}'s last NOTE and left "
+                      f"no NOTE since")
+    if last[1] == me:
+        return last, "your own last NOTE, the state you left"
+    return last, f"the hand-off: {last[1]}'s last NOTE"
+
+
+def handoff(campaign, me):
+    """(text to print before the brief, the verdict line) for a planner.
+
+    Asks the tracker which issue the slug names, as `tracker_kind` asks it for
+    the kind, then reads that issue's comments through `gh` with a timeout: a
+    hook's `gh` that hangs would hang the session's start. Nothing is refused
+    and nothing is recorded; a reading that did not happen says so."""
+    try:
+        r = subprocess.run([sys.executable, str(TRACKER), "issue", campaign],
+                           capture_output=True, text=True, timeout=HANDOFF_TIMEOUT)
+    except Exception as e:                      # noqa: BLE001 -- reported
+        return None, f"could not run campaign-tracker issue ({e.__class__.__name__})"
+    number = (r.stdout or "").strip()
+    if r.returncode != 0 or not number.isdigit():
+        first = ((r.stderr or "").strip().splitlines() or [number or "nothing"])[0]
+        return None, f"could not read the campaign issue of `{campaign}`: {first}"
+    ctx = load(CONTEXT, "campaign_context")
+    ctx.FIRST_LINE = ctx.GUARD.comment_first_line()
+    if ctx.FIRST_LINE is None:
+        return None, f"could not read the kind line: {ctx.GUARD.FIRST_LINE_UNREADABLE}"
+    repo = ctx.TRACKER.DEFAULT_REPO
+    text, why = ctx.TRACKER.gh_read(
+        ["gh", "api", "--paginate", "--slurp",
+         f"repos/{repo}/issues/{number}/comments?per_page=100"],
+        timeout=HANDOFF_TIMEOUT)
+    if why:
+        return None, f"could not read {campaign}#{number}'s comments: {why}"
+    try:
+        comments = [c for page in json.loads(text) for c in page]
+    except (ValueError, TypeError) as e:
+        return None, f"could not parse {campaign}#{number}'s comments ({e.__class__.__name__})"
+    names = load(HERE / "campaign-name-session.py", "cns")
+    rows = []
+    for c in comments:
+        k = ctx.kind_line(c.get("body"))
+        if k:
+            rows.append((k[0], k[1], c.get("created_at") or "", c))
+    note, verdict = handoff_reading(
+        rows, me, lambda a: names.role_word(a) == "planner")
+    head = f"Hand-off, read from {campaign}#{number} ({len(comments)} comments): {verdict}."
+    if note is None:
+        return head, verdict
+    c = note[3]
+    return (f"{head}\n{c.get('html_url', '')} ({note[2]})\n\n{c.get('body', '').strip()}",
+            verdict)
+
+
 def brief(role, campaign):
     parts = [f"You are a {role} of campaign `{campaign}`. This is that role's "
              f"standing brief; it replaces nothing you were told, and adds."]
@@ -405,6 +496,14 @@ def brief_role(event, session_id):
                 return
         except OSError:
             pass
+    # A planner's hand-off goes FIRST, so it sits inside the preview the
+    # harness shows of a long hook output; the brief after it is the same
+    # text every start, the hand-off the one part that is news.
+    if role == "planner" and event == "SessionStart":
+        shown, verdict = handoff(campaign, how)
+        if shown:
+            print(shown + "\n\n---\n")
+        say(f"hand-off: {verdict}")
     print(text)
     written = write_record(record, stamp)
     say(f"{event}: briefed {role} of `{campaign}` ({len(text)} chars); "

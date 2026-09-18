@@ -60,6 +60,11 @@ if os.environ.get("FAKE_GH_FAILS"):
     print("gh: api broke", file=sys.stderr); sys.exit(1)
 if sys.argv[1:3] == ["issue", "view"]:
     print(os.environ.get("FAKE_ISSUE_STATE", "OPEN")); sys.exit(0)
+if sys.argv[1:3] == ["issue", "list"]:
+    print(os.environ.get("FAKE_CAMPAIGN_LIST", "[]")); sys.exit(0)
+if "--slurp" in sys.argv:
+    print(json.dumps([json.loads(os.environ.get("FAKE_COMMENTS", "[]"))]))
+    sys.exit(0)
 print(json.dumps(json.loads(os.environ.get("FAKE_LABELS", "[]"))))
 '''
 
@@ -80,7 +85,7 @@ def row(session_id, name="demo-worker-10"):
 def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
         marker=True, record=None, lock_runtime=False,
         raw=None, record_swallows=False, labels=None, gh_fails=False,
-        kind_record=None, state=None):
+        kind_record=None, state=None, campaign_list=None, comments=None):
     """(completed process, the record's text or None, the campaign dir).
 
     The kind record and the `gh` call log go to `LAST`, since every existing
@@ -136,6 +141,10 @@ def run(payload=None, argv=(), agents=None, list_fails=False, no_herdr=False,
             env["FAKE_GH_FAILS"] = "1"
         if state is not None:
             env["FAKE_ISSUE_STATE"] = state
+        if campaign_list is not None:
+            env["FAKE_CAMPAIGN_LIST"] = json.dumps(campaign_list)
+        if comments is not None:
+            env["FAKE_COMMENTS"] = json.dumps(comments)
         if payload is not None and payload.get("session_id"):
             env["CLAUDE_CODE_SESSION_ID"] = payload["session_id"]
         r = subprocess.run(
@@ -173,7 +182,77 @@ def assignment(issue=ISSUE, repo=REPO):
     return m.prompt_for(repo, issue)
 
 
+def comment(n, body, at):
+    return {"id": n, "body": body, "created_at": at,
+            "html_url": f"https://example.test/272#issuecomment-{n}"}
+
+
+# The campaign issue the tracker finds for slug `demo`, and a start payload.
+DEMO_ISSUE = [{"number": 272, "title": "t", "state": "OPEN"}]
+START = {"hook_event_name": "SessionStart", "source": "startup", "session_id": SID}
+
+
+def handoff_cases():
+    # THE NAMED FAILING CASE (rule-check#461 DECISION 5725160558): the last
+    # planner NOTE is older than a later planner's first comment, so that
+    # planner started without the hand-off. `old-planner-1` wears another slug
+    # on purpose: a rename hands off from the old one (#272).
+    thread = [comment(1, "NOTE old-planner-1: state at the stop", "2026-09-01T00:00:00Z"),
+              comment(2, "DECISION demo-planner-2: took over", "2026-09-02T00:00:00Z")]
+    r, _, _ = run(START, agents=row(SID, "demo-planner-3"),
+                  campaign_list=DEMO_ISSUE, comments=thread)
+    check("a planner that commented after the last planner NOTE and left none "
+          "is read as started without the hand-off, the NOTE printed first",
+          "hand-off: started without the hand-off: demo-planner-2" in r.stderr
+          and r.stdout.startswith("Hand-off, read from demo#272")
+          and "state at the stop" in r.stdout
+          and r.stdout.index("state at the stop") < r.stdout.index(PLANNER),
+          f"err {r.stderr!r} out {r.stdout[:300]!r}")
+
+    r, _, _ = run(START, agents=row(SID, "demo-planner-2"),
+                  campaign_list=DEMO_ISSUE, comments=thread[:1])
+    check("...and with no later planner it is the hand-off, even from a NOTE "
+          "of another slug",
+          "hand-off: the hand-off: old-planner-1's last NOTE" in r.stderr
+          and "issuecomment-1" in r.stdout, f"err {r.stderr!r}")
+
+    r, _, _ = run(START, agents=row(SID, "demo-planner-2"),
+                  campaign_list=DEMO_ISSUE, comments=thread)
+    check("...and the session reading it is never its own later planner",
+          "hand-off: the hand-off: old-planner-1's last NOTE" in r.stderr,
+          f"err {r.stderr!r}")
+
+    r, _, _ = run(START, agents=row(SID, "demo-planner-2"),
+                  campaign_list=DEMO_ISSUE,
+                  comments=[comment(3, "DECISION owner: go", "2026-09-01T00:00:00Z"),
+                            comment(4, "NOTE demo-worker-5: a finding", "2026-09-01T01:00:00Z")])
+    check("...and a thread with no planner NOTE says nothing was handed",
+          "hand-off: no planner NOTE on the campaign issue" in r.stderr
+          and "Hand-off, read from demo#272" in r.stdout
+          and PLANNER in r.stdout, f"err {r.stderr!r}")
+
+    r, _, _ = run(START, agents=row(SID, "demo-planner-2"), gh_fails=True)
+    check("...and a gh that fails is a reading that did not happen, and the "
+          "brief still goes out",
+          r.returncode == 0 and "hand-off: could not read" in r.stderr
+          and PLANNER in r.stdout and "Hand-off" not in r.stdout
+          and "Traceback" not in r.stderr, f"err {r.stderr!r}")
+
+    r, _, _ = run(START, agents=NAMED, campaign_list=DEMO_ISSUE, comments=thread)
+    check("...and a worker's start reads no hand-off",
+          "hand-off" not in r.stderr and not any("issue list" in c for c in LAST["gh"]),
+          f"gh {LAST['gh']!r}")
+
+    r, _, _ = run({"hook_event_name": "UserPromptSubmit", "session_id": SID,
+                   "prompt": "go on"}, agents=row(SID, "demo-planner-2"),
+                  campaign_list=DEMO_ISSUE, comments=thread)
+    check("...and nor does a planner's prompt: the hand-off is read at a start",
+          "hand-off" not in r.stderr, f"err {r.stderr!r}")
+
+
 def main():
+    handoff_cases()
+
     # ---- the three readings, through --role ----
 
     r, _, _ = run({"session_id": SID}, argv=["--role"], agents=NAMED)

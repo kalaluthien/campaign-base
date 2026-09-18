@@ -977,12 +977,31 @@
    }
   },
   "thresholds": {
-   "floor": 0.5,
-   "no_match": "noMatch"
+   "floor": 0.0,
+   "no_match": "noMatch",
+   "option": "noMatch",
+   "yes_over": 0.7,
+   "no_under": 0.25
   },
   "join": null,
   "join_why": "nothing later says WHICH test function carried a claim that was carried. The suite's own history records that a case was kept or cut, never that it was the one this claim belongs to, so every case this join could write would wear the `noMatch` option and the band would be fitted to it. The claim call's `witness-case-kept` is where the later fact lands.",
-  "bands": {}
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "wording": "a6420d40c3bc",
+   "cases": 72,
+   "declared": {
+    "yes": [
+     0.7,
+     1.0
+    ],
+    "no": [
+     0.0,
+     0.25
+    ]
+   },
+   "how": "72 states over 3 runs, sdlc-alloy#458 S5: 6 claims a mutant proves a case carries against 66 none does -- 27 claims of the same scenario comments plus the two one-edit negatives. P(noMatch) AUC 0.96 in every run against 0.91 for a token-overlap baseline; the discrete `noMatch` answer flagged 58-59 of the 66 and none of the 6. The floor is 0.0 because a floor costs positives faster than it buys negatives: at 0.6 it takes 65 of 66 negatives and 3 of the 6 positives with them."
+  }
  },
   "suite-witness-claim": {
   "owner": "scripts/check-suite-witness.py --staged",
@@ -1030,6 +1049,13 @@
    "no_under": 0.2
   },
   "join": "witness-case-kept",
-  "bands": {}
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "wording": "8c8918b2f68e",
+   "cases": 14,
+   "declared": {},
+   "how": "the claim call is only reached where the select call named a function, which was 13-14 of the 72 states: `supports` AUC 0.74-0.82 and `says_nothing` 0.79-0.85 over 6 positives, too few to declare a band. The flag the reader should read is the SELECT call's `noMatch` (sdlc-alloy#458 S5)."
+  }
  }
 }

@@ -48,6 +48,14 @@ THE KEY is the repository, the sha this commit sits on, the suite path, the
 scenario, and -- on a claim call -- the picked case's name, which is what
 `witness-case-kept` joins on.
 
+WHAT THE FLAG READS is the SELECT call's `noMatch`, and neither claim option:
+over 72 states, three runs, P(noMatch) separated the 6 claims a mutant proves a
+case carries from the 66 none does at AUC 0.96 against 0.91 for a token-overlap
+baseline, while `supports` read 0.74-0.82 and `says_nothing` 0.79-0.85 over the
+13-14 states that reached a claim call at all. The floor is 0.0 because a floor
+costs positives faster than it buys negatives. The band and the counts are the
+select entry's `bands`; the cases are scripts/jev/corpus/suite-witness-select.jsonl.
+
 THE EXIT STATUS IS 0 on every path, a failure of this script included: a
 judgment here never refuses a commit. At `shadow` nothing is printed at all;
 the log rows are the record.

@@ -187,7 +187,7 @@ def read_install(slug, path):
 def readable(word):
     """Is this `read_install` word a reading of the install -- current,
     behind N, or apply failed -- rather than a failure to read it? The one
-    statement of that; `check`, `reach` and the heartbeat's watch ask it."""
+    statement of that; `check` and `reach` ask it."""
     return word in ("current", "apply failed") or word.startswith("behind")
 
 

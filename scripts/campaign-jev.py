@@ -2658,15 +2658,16 @@ def agreement(entry, cases):
     return jev / len(judged), base / len(judged)
 
 
-# A LINE THE WATCH READS MUST NOT MOVE ON EVERY CALL. `campaign-heartbeat.py
-# --watch` fires its planner whenever a line it prints CHANGES, and every
-# `campaign-tracker check` logs two rows, so the exact count below re-fired
-# every planner on this machine every few minutes with nothing for any of them
-# to do (DECISION 5718621461). The STEADY form names the classes that are
-# waiting and no count at all: it changes when waiting starts, when it ends,
-# when a class comes or goes, and when the oldest unjoined row passes
-# STALE_AFTER -- and each of those is something its reader can act on. The
-# exact counts stay one flag away, on `report --waiting`.
+# A LINE A READER DIFFS MUST NOT MOVE ON EVERY CALL. The planner's watch that
+# read this line is gone (rule-check#481), and the form stays for any reader
+# that diffs it: every `campaign-tracker check` logs two rows, so the exact
+# count below moved on every call and re-fired every planner on this machine
+# every few minutes with nothing for any of them to do (DECISION 5718621461).
+# The STEADY form names the classes that are waiting and no count at all: it
+# changes when waiting starts, when it ends, when a class comes or goes, and
+# when the oldest unjoined row passes STALE_AFTER -- and each of those is
+# something its reader can act on. The exact counts stay one flag away, on
+# `report --waiting`.
 STALE_AFTER = datetime.timedelta(hours=6)
 
 

@@ -39,15 +39,16 @@ Contents: the moments below, then
    goes into the sub-issue template or the kind's reference. What reaches you
    is [worker](role-worker.md) step 4's. A relay is never the authority; point at
    the durable artifact instead.
-8. **Retire agents as the campaign runs.** The heartbeat retires a worker,
-   idle or mid-turn, whose last assigned sub-issue has no claim ref left, with
-   no assignment prompt since the ref went, whoever released it -- a prompt of
-   another shape, or a tool call, is not work, so hand a worker more only by
-   `campaign-assign.py`. Each retire is `/close`'s scope worker: the retire
-   reading, then the same leave. `/close workers` exits every such worker at once.
-   Any other listed peer is asked which claim it holds, never killed. `retire` is
-   decided before `compact`, so assign a released worker you mean to reuse
-   before the next `--apply`, or it gets `/exit`.
+8. **Retire agents as the campaign runs.** A finished worker leaves by
+   itself -- [worker](role-worker.md) step 9 ends on the release and
+   `scripts/campaign-close.py leave <N>` -- and that end is pushed into this
+   pane. A listed worker that neither left nor answers a `STATUS` prompt is
+   exited by hand with `scripts/campaign-close.py worker <N> <pane>`, which
+   reads no verdict, only that the target is a worker of this campaign, and
+   then takes the same leave. Any other listed peer is asked which claim it
+   holds, never killed. Hand a worker more work only by `campaign-assign.py`,
+   and say in the assignment when another sub-issue follows, or it leaves
+   after its `REPORT`.
 9. **Merge on a worker's `REPORT`**: read its `REVIEW` at the head sha, merge
    on the three conditions, then `reach`. Name the pull request by its branch,
    `gh pr merge <slug>/<issue>-<topic> -R <owner/repo> --merge
@@ -96,38 +97,27 @@ read again.
 
 ## The planner's clock
 
-The wake is **one persistent Monitor** on
-`.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --watch`,
-started at the first assignment and left running until it prints `quiet`. It
-prints only what changed and what is not as it should be (`drift <rule>`), so
-each line is an event. On one, run the **heartbeat**:
-
-1. `.claude/skills/assuming-role/scripts/campaign-heartbeat.py <N> --apply`.
-   It reads every session of the campaign, this planner included, and gives
-   each one verdict: `fire` on a limit banner, `compact` at the context
-   threshold, `retire` for a worker done and holding nothing, `ask` for an
-   idle worker whose claim stands and whose pane has been quiet 30m -- one
-   `STATUS` prompt -- and `keep` for the rest. Its header says what each
-   reads and sends.
-2. Act on the drift the heartbeat does not: assign an `unclaimed` sub-issue,
-   read the answer to an `ask`, ask about a `stuck` claim no `ask` covered
-   (its worker was not handed it by an assignment sentence), release a
-   `settled` one.
-
-**`quiet <slug>` means nothing is left to do**: no other session of the
-campaign listed, no open sub-issue without `backlog` or `standing`, no
-claim. The watch has
-exited; do not start it again. The heartbeat's `--apply` gives this pane
-`quiet` and queues `/compact`; then wait for a person's prompt. The next
-assignment starts the watch again. A planner is never sent `/exit`: a campaign
-always has one.
+The wake is a **push** into this pane -- a user turn from
+`.claude/skills/assuming-role/scripts/campaign-push.py` -- and the worker's
+own `REPORT`, `BLOCKED` and step `NOTE`. A push names a worker of this
+campaign that stopped at a permission prompt, which is the person's decision,
+so tell the owner; or one that ended, with the reason: a claim still standing
+means ask that worker or reassign the sub-issue, and an end after the release
+is when the next assignment is due. At each wake read by hand what nothing
+prints -- `campaign-tracker settlement <N>` and `index <N>` for an open
+sub-issue with no claim and a claim on a closed one, `campaign-claim live <N>`
+for the rest. Retiring is step 8; the context is the harness's own window,
+`"autoCompactWindow": 250000` in the base's checked-in `.claude/settings.json`,
+and a delegate in a member clone takes `--autocompact 250k`
+(`references/launching.md`).
 
 No cron and no idle subscription: a subscription on a session already idle
-fires at once. The only timer is the one `fire` schedules: a detached sleeper
-that prompts this pane a minute after the reset, and it lands even when this
-session stops on the same limit. A cron lives in the session and fires into
-the banner, which is what #244's 65 firings did, ~11 per window.
-A watch that prints `error watchdog` has exited: start it again.
+fires at once, and a cron lives in the session and fires into the limit
+banner, which is what #244's 65 firings did, ~11 per window. The one timer is
+scheduled by hand on seeing a banner --
+`.claude/skills/assuming-role/scripts/campaign-limit-reset.py <pane> --fire <own pane>`
+-- a detached sleeper that prompts this pane a minute after the reset, and it
+lands even when this session stops on the same limit.
 
 ## Handing off
 
@@ -179,5 +169,5 @@ under a `kind:maintenance` sub-issue wearing `standing`. It is started the way
 `<slug>-planner-<n>`, with no NOTE handed and no predecessor to close. It
 files sub-issues, investigates, and posts `NOTE`s; it launches nothing and
 assigns nothing, which stay the campaign planner's. It leaves by
-`scripts/campaign-close.py leave <N>`, since `quiet` and the close both wait on
-every listed session of the campaign.
+`scripts/campaign-close.py leave <N>`, since the close waits on every listed
+session of the campaign.

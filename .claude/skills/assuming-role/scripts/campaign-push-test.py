@@ -35,7 +35,7 @@ harness = importlib.import_module("suite-harness-test")
 check = harness.check
 NAMES = harness.load(HERE / "campaign-name-session.py", "campaign_name_session")
 # the sender's own reader of a message's typed text, not a copy of it
-texts = harness.load(HERE / "campaign-heartbeat.py", "campaign_heartbeat").texts
+texts = harness.load(HERE / "campaign-transcript.py", "campaign_transcript").texts
 
 WORKER = {"name": "demo-worker-3", "status": "working", "cwd": "/b", "pane": "w1:p3"}
 PLANNER = {"name": "demo-planner-1", "status": "idle", "cwd": "/b", "pane": "w1:p1"}
@@ -165,7 +165,7 @@ def sent_by(m, sessions, tmp):
     """One `send` over a listing whose every planner takes the text at once."""
     asked = []
 
-    class Hb:
+    class Tr:
         @staticmethod
         def transcript_path(sid):
             return None, "no transcript in this case"
@@ -174,7 +174,7 @@ def sent_by(m, sessions, tmp):
                                         else "herdr agent list exited 1")),
                            "role_word": staticmethod(NAMES.role_word),
                            "campaign_of": staticmethod(NAMES.campaign_of)})
-    m.send("ended", "demo-worker-3", "w1:p3", "reason other", names, Hb,
+    m.send("ended", "demo-worker-3", "w1:p3", "reason other", names, Tr,
            lambda pane, text: (asked.append(pane), (True, "agent_prompted"))[1],
            sleep=lambda _: None, out=(tmp, "the suite"))
     return asked
@@ -476,6 +476,19 @@ def case_the_base_settings_hold_the_window(m):
     got = json.loads((BASE / ".claude" / "settings.json").read_text()).get(
         "autoCompactWindow")
     return got == 250000, got
+
+
+def case_nothing_in_the_tree_starts_a_watch(m):
+    """rule-check#481 step 3: the push replaced the planner's watch, so no
+    file in the tree names the deleted heartbeat script, and nothing can
+    start one. Read off git's index, not the disk, so an untracked scratch
+    file is not a hit; the Jev corpus is data that quotes old prompts, and is
+    left out. The name is spelled in two halves so this file is not a hit."""
+    r = subprocess.run(["git", "-C", str(BASE), "grep", "-l", "campaign-" + "heartbeat",
+                        "--", ".", ":!scripts/jev/corpus"],
+                       capture_output=True, text=True)
+    hits = r.stdout.split()
+    return r.returncode == 1 and not hits, hits or r.stderr
 
 
 CASES = {k: v for k, v in sorted(globals().items()) if k.startswith("case_")}

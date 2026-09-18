@@ -693,29 +693,27 @@ pred agentRelease {
   no Target.agent
 }
 
-/* THE HEARTBEAT'S RETIRE, the orchestration half of `sessionExit`: a
+/* THE WORKER'S EXIT, the orchestration half of `sessionExit`: a
    sub-issue the worker took was released, BY ANY SESSION, and it holds no
    live agent. On the base the planner releases, so a release by the worker
    itself left every base worker unretirable.
-   `.claude/skills/assuming-role/scripts/campaign-heartbeat.py` reads the
-   first as GitHub has it -- the sub-issue its last assignment prompt names
-   has no ref standing, and the pull request timeline, or the events feed
-   where there is no pull request, says when the last went -- and stands in
-   for the second with no assignment prompt since then: a prompt of another
-   shape, or a tool call, is not work (the owner, rule-check#349). Idle is
-   not asked either: `/exit` queues behind a running turn, which holds no
-   claim. No compaction is asked: `/exit` ends the context whatever its size.
+   Who sends the `/exit` is outside the model: the worker itself at its last
+   step (`.claude/skills/assuming-role/references/role-worker.md` step 9, the
+   self-leave `scripts/campaign-close.py leave`), or the planner's
+   `scripts/campaign-close.py worker` by hand, for a worker that neither left
+   nor answers a `STATUS`. No compaction is asked: `/exit` ends the context
+   whatever its size.
 
    THE LEAVE is `scripts/campaign-close.py`'s one step behind every way a
-   session ends -- this retire, a handover's (`handoff` above), and a session
-   leaving by itself, which runs it detached so it outlives its own pane:
-   `/exit`, the wait until herdr no longer lists the agent, then the tab it
-   sat in closed, refused when another pane shares it. On every path, this
-   retire included, the wait answers the harness's background-work dialog,
-   where `/exit` stops while the session runs a background task, with `Exit
-   and stop tasks`: the leaving session's tasks are its own, and moving them
-   to the background was measured to keep the session alive where herdr no
-   longer lists it (rule-check#400). The tab
+   session ends -- a worker's exit, a handover's (`handoff` above), and a
+   session leaving by itself, which runs it detached so it outlives its own
+   pane: the wait for the pane's turn to end under a ceiling, `/exit`, the
+   wait until herdr no longer lists the agent, then the tab it sat in closed,
+   refused when another pane shares it. On every path the wait answers the
+   harness's background-work dialog, where `/exit` stops while the session
+   runs a background task, with `Exit and stop tasks`: the leaving session's
+   tasks are its own, and moving them to the background was measured to keep
+   the session alive where herdr no longer lists it (rule-check#400). The tab
    and the dialog are harness facts this model does not hold, and so is the
    self-leave, which no event here stands for. */
 pred exitSession[s: Session] {
@@ -724,35 +722,6 @@ pred exitSession[s: Session] {
   no heldBy[s]
   agentFrame and no Target.agent
 }
-
-/* THE WATCH'S DRIFT, what `campaign-heartbeat.py --watch` prints as
-   `drift <rule> <subject>` on every poll. The watch is a reader and no event:
-   it changes nothing, and the planner acts on what it prints by running the
-   heartbeat with `--apply`. Two of its rules are state this model holds, and
-   they are the shape every other rule shares -- a desired state read as a
-   level, so a drift stands from the event that opens it until the event that
-   repairs it, and a watch that missed the edge still sees it next poll:
-
-     unclaimed  an open sub-issue with no claim; `claim` repairs it
-     settled    a claim whose sub-issue is closed; `release` repairs it
-
-   `unclaimed` leaves a `Backlog` sub-issue out, as the script does; the
-   script also leaves out a `kind:maintenance` one, and the model has no
-   kinds. The rest are outside the model's reach:
-   `unworked` and `idle-worker` compare a count of claims with a count of
-   workers and never pair one with the other, because that pairing is not
-   derivable -- AGENTS.md § Completion, liveness, and local-only work. And
-   `stuck` is a clock, `context` a size, and `install` is `unreached` in
-   directory/system.als read for the base.
-
-   `quiet <slug>` is the watch's one exit: no session of the campaign
-   listed but the planner's own, no open sub-issue without `backlog`, and no
-   claim -- on two polls running, each read that poll, since a last reading
-   standing is not one.
-   Its act is a compaction of the planner and never `sessionExit`, which
-   admits a worker alone. */
-fun unclaimedDrift[c: Campaign]: set Issue { (c.memberIssues & Open) - Claimed - Backlog }
-fun settledDrift[c: Campaign]: set Issue { (c.memberIssues & Claimed) - Open }
 
 pred orchestrationInit {
   no Launched and no Live and no LocalOnly and no PushedToRemote

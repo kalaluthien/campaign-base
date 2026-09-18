@@ -327,12 +327,17 @@ FORMS = [
 # THE GATES ARE EXEMPT BY NAME, each for the one reason they share: its reading
 # rides a call the gate already makes, over input the gate already holds, and
 # its exit status is the gate's -- so there is no reader to hand to `run`.
+#
+# NOT CAUGHT: campaign-jev imported under another name and driven through it
+# (`cj = import_module("campaign-jev"); cj.judge(...)`) -- the alias carries no
+# marker, the floor this file's header already concedes.
 JEV_DRIVE = (
     "jev-drive",
     "scripts/campaign-jev.py",
     re.compile(r"\b_?jev\w*(\(\))?\.(judge|judge_each|judge_chain|shielded"
                r"|skip|load_registry|readers_on)\(|\breaders_on\("
-               r"|\bdef\s+_?jev_module\b|\breaders-on\b"),
+               r"|import_module\([\"']campaign-jev[\"']\)\.(?!run_reader\b)\w+\("
+               r"|\bdef\s+\w*jev\w*\s*\(|\breaders-on\b"),
     "a caller-side drive, loader or event table of a Jev reading",
 )
 JEV_GATES = {
@@ -345,14 +350,14 @@ JEV_GATES = {
 }
 
 
-def jev_script(path):
+def drive_script(path):
     """Whether the jev-drive form reads this path."""
     return (path.endswith((".py", ".sh")) and "scripts/" in "/" + path
             and not path.endswith(("-test.py", "campaign-jev.py"))
             and path not in JEV_GATES)
 
 
-def jev_drive(text):
+def drive_found(text):
     """(line, source) for each line holding the jev-drive form."""
     for n, line in enumerate(text.splitlines(), 1):
         if JEV_DRIVE[2].search(line):
@@ -524,7 +529,7 @@ def main(argv):
         paths, root = given, "."
     else:
         paths = all_tracked
-    scripts = [p for p in paths if jev_script(p)]
+    scripts = [p for p in paths if drive_script(p)]
     paths = [
         p for p in paths
         if p.endswith((".md", ".markdown")) and not p.startswith("scripts/")
@@ -567,7 +572,7 @@ def main(argv):
             broken.append((p, exc.strerror or exc))
             print(f"  unreadable: {p} ({exc.strerror or exc})")
             continue
-        for n, src in jev_drive(text or ""):
+        for n, src in drive_found(text or ""):
             found += 1
             print(f"{p}:{n}: {JEV_DRIVE[3]} belongs to {JEV_DRIVE[1]} "
                   f"(a reader yields steps and hands itself to `run`): {src}")

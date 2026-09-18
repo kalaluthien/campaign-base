@@ -523,6 +523,11 @@ def main():
          "def main(argv):\n    return jev.judge_each(asks, 6, group='g')\n", 1),
         ("a reader given back its own loader is refused",
          "def _jev_module():\n    return importlib.import_module('campaign-jev')\n", 1),
+        ("a reader reading the registry off the import is refused",
+         "def reg_tier(r):\n    return importlib.import_module("
+         "'campaign-jev').load_registry()[r]\n", 1),
+        ("a loader under another name is refused",
+         "def _load_jev():\n    return None\n", 1),
         ("a reader handing itself to `run` is left alone",
          "def main(argv):\n    return importlib.import_module("
          "'campaign-jev').run_reader(globals(), argv)\n", 0)):

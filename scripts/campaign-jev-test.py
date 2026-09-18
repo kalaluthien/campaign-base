@@ -3605,12 +3605,28 @@ def a_log_row_is_tied_by_state_and_a_stub_s_is_not(m):
     return ("| 1 |" in real and "| 0 |" in stub), (real[-300:], stub[-300:])
 
 
+def a_least_loss_in_two_spans_takes_one_whole(m):
+    """A `yes` at 0.30 under a `no` at 0.40 leaves the least loss, one case,
+    in two spans apart -- (0.20, 0.30) and (0.40, 0.60) -- and two cases
+    between them. The cut sits in the wider, at 0.50, never at the 0.40 the
+    stretch across both would name (pr#507's REVIEW, finding 1)."""
+    values = ([("no", [v]) for v in spread(0.02, 0.20, 10)]
+              + [("yes", [0.30]), ("no", [0.40])]
+              + [("yes", [v]) for v in spread(0.60, 0.96, 10)])
+    entry, _said = fitted(m, values)
+    fit = entry["fit"]
+    ok = (fit.get("verdict"), fit.get("cut")) == ("fitted", 0.5) \
+        and entry["thresholds"] == {"yes_over": 0.55, "no_under": 0.45}
+    return ok, (fit, entry["thresholds"])
+
+
 CASES["a typed cut is replaced by the fitted one"] = a_typed_cut_is_replaced_by_the_fitted_one
 CASES["a reading under the floor is written unmeasurable with its counts"] = a_reading_under_the_floor_is_unmeasurable
 CASES["a made case is scored beside the fit and never fitted"] = a_made_case_is_scored_and_never_fitted
 CASES["a cut that beats no constant answer is unmeasurable"] = a_cut_that_beats_no_constant_is_unmeasurable
 CASES["a reading left uncut stays uncut, its fit recorded"] = an_uncut_reading_stays_uncut
 CASES["a log row is tied by its state, and a stub's is not"] = a_log_row_is_tied_by_state_and_a_stub_s_is_not
+CASES["least loss reached in two spans apart takes one span whole"] = a_least_loss_in_two_spans_takes_one_whole
 
 MUTATIONS = [
     # --- the fit (rule-check#505) ---
@@ -3632,6 +3648,10 @@ MUTATIONS = [
      '    share = loss["wrong_yes"] / (loss["wrong_yes"] + loss["wrong_no"])',
      "    share = 0.5",
      "a typed cut is replaced by the fitted one"),
+    ("two spans apart read as one stretch",
+     "    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))",
+     "    low, high = ends[0][0], ends[-1][1]",
+     "least loss reached in two spans apart takes one span whole"),
     ("a stub's row tied to a case",
      '        if (row.get("reading") != name or row.get("endpoint") != REAL\n',
      '        if (row.get("reading") != name\n',

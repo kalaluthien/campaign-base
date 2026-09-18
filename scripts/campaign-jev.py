@@ -3444,18 +3444,29 @@ def sweep(cases, loss):
     `cases`, a list of observation lists. A CALCULATION.
 
     The candidates are one cut under every value, one over every value, and
-    the midpoint of each neighbouring pair. Those of least loss are one span
-    the data cannot split; its ends are the values that bound it, and the cut
-    sits inside at the share the two costs name -- a dearer wrong yes pushes it
-    up."""
+    the midpoint of each neighbouring pair. NEIGHBOURING candidates of least
+    loss are one span the data cannot split; its ends are the values that
+    bound it, and the cut sits inside at the share the two costs name -- a
+    dearer wrong yes pushes it up. WHERE THE LEAST LOSS IS REACHED IN TWO
+    SPANS APART, the candidates between them cost more, so one span is taken
+    whole and never the stretch across both: the widest, which is the one a
+    new answer is least likely to cross, and the lower of two as wide."""
     values = sorted({v for obs in cases for v, _yes in obs})
     marks = ([0.0] + [(a + b) / 2 for a, b in zip(values, values[1:])]
              + [1.0 + 1e-9])
     costs = [sum(case_loss(obs, c, loss) for obs in cases) for c in marks]
     best = min(costs)
-    tied = [c for c, cost in zip(marks, costs) if cost - best < 1e-9]
-    low = max([v for v in values if v < tied[0]], default=0.0)
-    high = min([v for v in values if v >= tied[-1]], default=1.0)
+    runs = []
+    for i, cost in enumerate(costs):
+        if cost - best < 1e-9:
+            if runs and runs[-1][1] == i - 1:
+                runs[-1][1] = i
+            else:
+                runs.append([i, i])
+    ends = [(max([v for v in values if v < marks[a]], default=0.0),
+             min([v for v in values if v >= marks[b]], default=1.0))
+            for a, b in runs]
+    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))
     share = loss["wrong_yes"] / (loss["wrong_yes"] + loss["wrong_no"])
     return low + (high - low) * share, low, high, best
 

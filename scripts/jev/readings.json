@@ -292,11 +292,11 @@
    },
    "loss_per_case": {
     "fitted": 0.281,
-    "held_out": 0.406,
+    "held_out": 0.458,
     "one_word_always": 0.406
    },
    "verdict": "unmeasurable",
-   "why": "held out, the cut costs 0.406 a case and answering one word always costs 0.406",
+   "why": "held out, the cut costs 0.458 a case and answering one word always costs 0.406",
    "at": "2026-09-18"
   }
  },
@@ -514,7 +514,7 @@
    },
    "loss_per_case": {
     "fitted": 0.323,
-    "held_out": 0.39,
+    "held_out": 0.395,
     "one_word_always": 0.4
    },
    "verdict": "fitted",
@@ -1129,8 +1129,8 @@
   },
   "thresholds": {
    "option": "supports",
-   "yes_over": 0.6,
-   "no_under": 0.53
+   "yes_over": 0.51,
+   "no_under": 0.49
   },
   "loss": {
    "wrong_yes": 2,
@@ -1149,13 +1149,13 @@
    },
    "loss_per_case": {
     "fitted": 0.22,
-    "held_out": 0.287,
+    "held_out": 0.311,
     "one_word_always": 0.61
    },
    "verdict": "fitted",
-   "cut": 0.573,
-   "no_under": 0.53,
-   "yes_over": 0.6,
+   "cut": 0.507,
+   "no_under": 0.49,
+   "yes_over": 0.51,
    "replaced": {
     "no_under": 0.2,
     "yes_over": 0.5
@@ -1304,11 +1304,11 @@
    },
    "loss_per_case": {
     "fitted": 0.431,
-    "held_out": 0.475,
+    "held_out": 0.486,
     "one_word_always": 0.431
    },
    "verdict": "unmeasurable",
-   "why": "held out, the cut costs 0.475 a case and answering one word always costs 0.431",
+   "why": "held out, the cut costs 0.486 a case and answering one word always costs 0.431",
    "at": "2026-09-18"
   }
  },
@@ -1921,9 +1921,9 @@
     "made": 1.333
    },
    "verdict": "fitted",
-   "cut": 0.483,
-   "no_under": 0.46,
-   "yes_over": 0.53,
+   "cut": 0.543,
+   "no_under": 0.54,
+   "yes_over": 0.56,
    "at": "2026-09-18"
   }
  },

@@ -366,20 +366,14 @@ MUTATIONS = [
     ("no claim still read", "if number is None:\n        return\n", "pass\n",
      "a branch that is no claim asks, reads and logs nothing"),
     ("an unread issue passes silently",
-     '        jev.skip(READER, label, f"sub-issue {number} did not read "\n'
-     '                 f"({e.__class__.__name__})", env, cwd=HERE)\n', "",
+     '        yield jev.Skip(label, f"sub-issue {number} did not read "\n'
+     '                       f"({e.__class__.__name__})")\n', "",
      "a sub-issue that did not read logs one skip"),
     ("no Intent asked anyway", "if not intent:", "if intent is None:",
      "a sub-issue with an empty Intent logs one skip"),
     ("no merge-base passes silently",
-     '        jev.skip(READER, label, "no merge-base with origin/HEAD or "\n'
-     '                 "origin/main", env, cwd=HERE)\n', "",
+     '        yield jev.Skip(label, "no merge-base with origin/HEAD or origin/main")\n', "",
      "a commit with no merge-base logs one skip"),
-    ("the failure boundary removed",
-     "    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,\n"
-     "                 cwd=HERE)",
-     "    read(argv, subject, jev, env)",
-     "a reading that raised exits 0, says nothing and logs a skip"),
 ]
 
 
@@ -394,11 +388,13 @@ def hook(origin, pushable=True):
     (scripts / "check-commit-claim.py").write_text(
         "#!/usr/bin/env python3\nimport sys\nprint('claim demo/9-topic')\nsys.exit(0)\n")
     (scripts / "check-diff-screen.py").write_text("#!/bin/sh\nexit 0\n")
-    # THE REGISTRY STAND-IN: both readers a push starts.
+    # THE SHELL STAND-IN: `run --on push` runs both readers a push starts
+    # over the sha and the branch it was handed.
     (scripts / "campaign-jev.py").write_text(
-        "#!/bin/sh\n[ \"$1 $2\" = \"readers-on push\" ] && "
-        "printf '%s\\n' \"$(dirname \"$0\")/check-diff-screen.py\" "
-        "\"$(dirname \"$0\")/check-form-behaviour.py\"\n")
+        "#!/bin/sh\n[ \"$1 $2 $3\" = \"run --on push\" ] || exit 2\n"
+        "here=$(dirname \"$0\")\n"
+        "\"$here/check-diff-screen.py\" \"$4\" \"$5\"\n"
+        "\"$here/check-form-behaviour.py\" \"$4\" \"$5\"\n")
     (scripts / "check-form-behaviour.py").write_text(
         f"#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
     for s in scripts.iterdir():
@@ -431,7 +427,7 @@ def hook_cases():
 def live(record):
     """Every corpus case against the real endpoint, once. Red when its word
     differs from the last one recorded under the same wording."""
-    jev = load(SOURCE).m.jev_module()
+    jev = importlib.import_module("campaign-jev")
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     wording = jev.wording(ENTRY)
     today = datetime.date.today().isoformat()

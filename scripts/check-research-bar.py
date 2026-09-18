@@ -55,14 +55,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "research-bar"
 READER = "check-research-bar.py"
+INPUT = "comment NOTE"
+USAGE = "scripts/check-research-bar.py <issue> [<repo>] < note"
+READING = "research-bar"
 KIND_TIMEOUT = 20
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506)."""
-    return importlib.import_module("campaign-jev")
 
 
 def work_kind(issue, repo):
@@ -78,56 +75,34 @@ def work_kind(issue, repo):
     return "", (p.stderr.strip().splitlines() or [f"exit {p.returncode}"])[-1]
 
 
-def ask_all(entry, note, subject, jev, key=None, env=None):
-    """{condition: Answer} for every condition of the entry, in one call.
-
-    ONE CALL A NOTE, not one a condition (sdlc-alloy#458 DECISION
+def steps(inp, reg, jev):
+    """ONE CALL A NOTE, not one a condition (sdlc-alloy#458 DECISION
     issuecomment-5716072632): questions in one call cannot see each other, so
     each still asks one narrow judgment, and the state the endpoint is sent is
     the note alone. The conditions are handed to `judge` as the state's
     `condition` field and its `compose` splices each one's text at
-    `{condition}` -- the shape this file composed by hand until now -- so what
-    is sent did not move. What the ROW gained is the reading's name, the
-    wording and the KEY, without which no later DECISION could ever be joined
-    to the answer (sdlc-alloy#458 DECISION 5722176509)."""
-    judged = jev.judge(entry["group"],
-                       {"note": note, "condition": entry["conditions"]},
-                       read=f"{subject} NOTE", reader=READER, key=key, env=env)
-    return jev.words_of(entry, judged.verdicts[READING])
-
-
-def main(argv, stdin=sys.stdin, env=None):
-    if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
-        print("Usage: scripts/check-research-bar.py <issue> [<repo>] < note",
-              file=sys.stderr)
-        return 2
-    issue, repo = argv[0], (argv[1] if len(argv) > 1 else "")
-    subject = f"{repo or 'tracker'}#{issue} NOTE"
-    try:
-        jev = jev_module()
-    except Exception:  # noqa: BLE001 -- no log to count a raise in
-        return 0
-    jev.shielded(READER, subject, lambda: read(issue, repo, subject, stdin, jev,
-                                               env), env)
-    return 0
-
-
-def read(issue, repo, subject, stdin, jev, env):
-    note = stdin.read()
-    if not note.lstrip().startswith("NOTE "):
-        return
-    kind, why = work_kind(issue, repo)
+    `{condition}`, so what is sent did not move. The ROW carries the reading's
+    name, the wording and the KEY, without which no later DECISION could ever
+    be joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
+    kind, why = work_kind(inp.number, inp.repo)
     if why:
-        jev.skip(READER, subject, f"the kind read failed: {why}", env)
+        yield jev.Skip(inp.subject, f"the kind read failed: {why}")
         return
     if kind != "research":
         return
-    entry = jev.load_registry()[READING]
+    entry = reg[READING]
     # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: the guard passes it, and a
     # number with no repository names no issue when a member repository's
     # numbers collide with this tracker's.
-    ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev,
-            {"repo": repo, "issue": int(issue)} if repo else None, env)
+    key = {"repo": inp.repo, "issue": int(inp.number)} if inp.repo else {}
+    yield jev.Ask([{"state": {"note": inp.body, "condition": entry["conditions"]},
+                    "read": inp.subject, "key": key}],
+                  {"group": entry["group"]})
+
+
+def main(argv, stdin=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, stdin, env=env)
 
 
 if __name__ == "__main__":

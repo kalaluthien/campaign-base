@@ -56,8 +56,12 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "form-behaviour"
 READER = "check-form-behaviour.py"
+INPUT = "commit"
+USAGE = "scripts/check-form-behaviour.py [<commit> [<branch>]]"
+# THE BASE'S LOG, not the checkout's, for check-diff-screen's reason.
+CWD = HERE
+READING = "form-behaviour"
 KIND = "maintenance"
 FLAG = "unasked_behaviour"
 GH_TIMEOUT = 30
@@ -73,11 +77,6 @@ COMMENT = {
     ".yaml": re.compile(r"^\s*#"), ".toml": re.compile(r"^\s*#"),
     ".js": re.compile(r"^\s*(//|/\*|\*)"), ".ts": re.compile(r"^\s*(//|/\*|\*)"),
 }
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506)."""
-    return importlib.import_module("campaign-jev")
 
 
 def hunks(patch):
@@ -147,64 +146,49 @@ def sub_issue(number, repo):
     return got["labels"], got["body"] or ""
 
 
-def main(argv, env=None):
-    if len(argv) > 2:
-        print("Usage: scripts/check-form-behaviour.py [<commit> [<branch>]]",
-              file=sys.stderr)
-        return 2
-    subject = argv[0] if argv else "HEAD"
-    try:
-        jev = jev_module()
-    except Exception:  # noqa: BLE001 -- no log to count a raise in
-        return 0
-    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,
-                 cwd=HERE)
-    return 0
-
-
-def read(argv, subject, jev, env):
+def steps(inp, reg, jev):
     screen = jev.load_sibling("check-diff-screen.py")
     git = screen.git
-    branch = argv[1] if len(argv) > 1 else (
+    branch = inp.branch if inp.branch is not None else (
         git("symbolic-ref", "--quiet", "--short", "HEAD") or "").strip()
     number = jev.load_sibling("campaign-claim.py").issue_of_branch(
         branch, branch.split("/", 1)[0])
     if number is None:
         return
     repos = jev.load_sibling("campaign-repos.py")
-    commit = (git("rev-parse", "--verify", "-q", subject + "^{commit}")
+    commit = (git("rev-parse", "--verify", "-q", inp.subject + "^{commit}")
               or "").strip()
-    label = f"{branch} {commit[:12] or subject}"
+    label = f"{branch} {commit[:12] or inp.subject}"
     try:
         names, body = sub_issue(number, repos.BASE_REPO)
     except Exception as e:  # noqa: BLE001 -- an unread issue is a skip
-        jev.skip(READER, label, f"sub-issue {number} did not read "
-                 f"({e.__class__.__name__})", env, cwd=HERE)
+        yield jev.Skip(label, f"sub-issue {number} did not read "
+                       f"({e.__class__.__name__})")
         return
     kind, _why = jev.load_sibling("campaign-tracker.py").work_kind_of(names)
     if kind != KIND:
         return
     if not commit:
-        jev.skip(READER, label, "the commit does not resolve", env, cwd=HERE)
+        yield jev.Skip(label, "the commit does not resolve")
         return
     intent = repos.section(body, "Intent")
     if not intent:
-        jev.skip(READER, label, f"sub-issue {number} has no ## Intent",
-                 env, cwd=HERE)
+        yield jev.Skip(label, f"sub-issue {number} has no ## Intent")
         return
     intent = "\n".join(intent)
     base = screen.merge_base(commit)
     if not base:
-        jev.skip(READER, label, "no merge-base with origin/HEAD or "
-                 "origin/main", env, cwd=HERE)
+        yield jev.Skip(label, "no merge-base with origin/HEAD or origin/main")
         return
-    entry = jev.load_registry()[READING]
+    # THE ENTRY IS READ HERE, where the registry is first needed: a registry
+    # that will not read raises before any file is read or skipped.
+    group = reg[READING]["group"]
     found, _tests = screen.files(commit, base)
     key = jev.commit_key()
     key = {"repo": key["repo"], "commit": commit} if key.get("repo") else {}
     asks = []
-    for path, patch in screen.patches(jev, READER, label, found, base, commit,
-                                      env):
+    sent = yield from screen.patches(jev, label, found, base, commit)
+    for path, patch in sent:
         before = git("show", f"{base}:{path}") if path.endswith(".py") \
             else None
         for header, text, start, count in hunks(patch):
@@ -221,8 +205,12 @@ def read(argv, subject, jev, env):
                 else jev.option_flag(FLAG),
                 "key": dict(key, path=path, hunk=header) if key
                 else {"path": path, "hunk": header}})
-    jev.judge_each(asks, group=entry["group"], reader=READER, env=env,
-                   cwd=HERE)
+    yield jev.Ask(asks, {"group": group})
+
+
+def main(argv, env=None):
+    return importlib.import_module("campaign-jev").run_reader(globals(), argv,
+                                                              env=env)
 
 
 if __name__ == "__main__":

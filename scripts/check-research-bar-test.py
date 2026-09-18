@@ -198,32 +198,24 @@ CASES = {
 
 MUTATIONS = [
     ("the conditions never handed to the call",
-     '{"note": note, "condition": entry["conditions"]},',
-     '{"note": note, "condition": {}},',
+     '"state": {"note": inp.body, "condition": entry["conditions"]},',
+     '"state": {"note": inp.body, "condition": {}},',
      "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the note sent as a condition's text",
-     '                       {"note": note, "condition": entry["conditions"]},',
-     '                       {"note": note,\n'
-     '                        "condition": {k: note for k in entry["conditions"]}},',
+     '"condition": entry["conditions"]},',
+     '"condition": {k: inp.body for k in entry["conditions"]}},',
      "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the work kind not read", 'if kind != "research":', "if False:",
      "a NOTE on another work kind asks nothing"),
-    ("the comment kind not read", 'if not note.lstrip().startswith("NOTE "):', "if False:",
-     "a comment of another kind asks nothing"),
     ("the reading's group not read from the entry",
-     'jev.judge(entry["group"],', 'jev.judge("issue-shape",',
+     '{"group": entry["group"]})', '{"group": "issue-shape"})',
      "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the repository dropped", "args + ([repo] if repo else [])", "args",
      "the repository reaches the kind reader"),
     ("the row keyed by a number with no repository",
-     '{"repo": repo, "issue": int(issue)} if repo else None, env)',
-     '{"issue": int(issue)}, env)',
+     'key = {"repo": inp.repo, "issue": int(inp.number)} if inp.repo else {}',
+     'key = {"issue": int(inp.number)}',
      "the row carries the reading, the wording and the join key"),
-    ("the failure boundary removed",
-     "    jev.shielded(READER, subject, lambda: read(issue, repo, subject, stdin, jev,\n"
-     "                                               env), env)",
-     "    read(issue, repo, subject, stdin, jev, env)",
-     "a reader that could not read exits 0, says nothing and logs a skip"),
     ("a failed kind read taken for a kind",
      '    if p.returncode == 0 or (p.returncode == 1 and kind == "none"):', "    if True:",
      "a failed kind read logs one skip row"),
@@ -232,7 +224,7 @@ MUTATIONS = [
      "a tracker that raised, exit 1 and no word, logs one skip row"),
     ("a skip logged for a kind that is not research",
      '    if kind != "research":\n        return',
-     '    if kind != "research":\n        jev.skip(READER, subject, "x", env)\n        return',
+     '    if kind != "research":\n        yield jev.Skip(inp.subject, "x")\n        return',
      "an issue with no kind logs nothing"),
 ]
 
@@ -241,7 +233,7 @@ def live(record):
     """Every corpus case against the real endpoint, once. A case is red when
     its word differs from the last one recorded under the same wording."""
     m = load(SOURCE).m
-    jev = m.jev_module()
+    jev = importlib.import_module("campaign-jev")
     rows = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     wording = hashlib.sha256(json.dumps(ENTRY["question"], sort_keys=True)

@@ -262,11 +262,12 @@ def ruling(files, text, tokens, commands, declared, root):
     """Judge every ask, one call each; at `shadow` the log is the output."""
     key = jev.commit_key(cwd=root)
     # The P of the option each entry's `bands.how` says the flag reads.
-    jev.judge_each([{"group": group, "state": state, "read": f"{path} {name}",
-                     "key": dict(key, path=path, name=name) if key.get("repo") else None}
-                    for group, name, path, state in
-                    ruling_asks(files, text, tokens, commands, declared)],
-                   reader="spec-dead-count.py", flag=jev.option_flag(FLAG), cwd=root)
+    jev.perform([jev.Ask(
+        [{"group": group, "state": state, "read": f"{path} {name}",
+          "key": dict(key, path=path, name=name) if key.get("repo") else None}
+         for group, name, path, state in
+         ruling_asks(files, text, tokens, commands, declared)],
+        {"flag": jev.option_flag(FLAG)})], "spec-dead-count.py", cwd=root)
 
 
 def main():

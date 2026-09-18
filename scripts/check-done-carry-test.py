@@ -321,38 +321,38 @@ NO_TEST_DIFF = ("diff --git a/scripts/tool.py b/scripts/tool.py\n"
 
 
 def drive(t, jev, answers, diff=DIFF, body=BODY):
-    """`main()` once with `jev` in place of the real one, over a gh double.
+    """The reader run once by `jev`'s own shell, over a gh double.
 
     `answers` names the gh verbs that fail. The real `load_sibling` still
     answers for check-diff-screen.py, whose TEST names a test path."""
-    real, real_gh = t.m.jev_module, t.m.gh
-    t.m.jev_module = lambda: jev
+    real_gh = t.m.gh
     t.m.gh = lambda *a: (
         ("", "gh double: refused") if " ".join(a[:2]) in answers else
         (json.dumps(closing(5)), "") if a[:2] == ("pr", "view") else
         (diff, "") if a[:2] == ("pr", "diff") else (body, ""))
     try:
-        return t.m.main(["9"], io.StringIO(REPORT))
+        return jev.run_reader(vars(t.m), ["9"], io.StringIO(REPORT))
     finally:
-        t.m.jev_module, t.m.gh = real, real_gh
+        t.m.gh = real_gh
 
 
 def every_jev_call_names_the_readers_base(t):
     """Every one of the reader's ten call sites, and each must name HERE.
 
-    ask_issue's three are driven directly; main()'s seven are driven through
-    main() itself, because a case that calls the inner function supplies the
+    ask_issue's three are driven directly, through the shell's `perform` with
+    the reader's CWD; the shell's seven are driven through the shell itself, because a case that calls the inner function supplies the
     argument the call site was supposed to be pinned for -- that is how this
     case lost main()'s skips once (the REVIEW at 318a053, D1)."""
     conds = {"c1": "a condition one test could carry"}
     cands = {"h1": {"path": "scripts/tool-test.py", "text": "@@ -1 +1 @@\n+x"}}
     inner, over = RecordingJev(), RecordingJev()
-    t.m.ask_issue({"done-test-select": SELECT, "done-test-claim": CLAIM},
-                  "tracker#9 REPORT 5", conds, cands, inner)
-    t.m.ask_issue({"done-test-select": SELECT, "done-test-claim": CLAIM},
-                  "tracker#9 REPORT 5", conds,
-                  {"h1": {"path": "scripts/tool-test.py",
-                          "text": "x" * (BUDGET + 1)}}, over)
+    reg = {"done-test-select": SELECT, "done-test-claim": CLAIM}
+    inner.perform(t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, cands, inner),
+                  t.m.READER, cwd=getattr(t.m, "CWD", None))
+    over.perform(t.m.ask_issue(reg, "tracker#9 REPORT 5", conds,
+                               {"h1": {"path": "scripts/tool-test.py",
+                                       "text": "x" * (BUDGET + 1)}}, over),
+                 t.m.READER, cwd=getattr(t.m, "CWD", None))
     seen, counts = [], []
     for kw in ({"answers": {"pr view"}},          # the pull request read failed
                {"answers": {"issue view"}},       # the issue read failed
@@ -432,8 +432,8 @@ CASES = {
 
 MUTATIONS = [
     ('a call a condition',
-     '        SELECT, {"candidateHunks": text, "condition": conds},',
-     '        SELECT, {"candidateHunks": text, "condition": dict(list(conds.items())[:1])},',
+     '        "state": {"candidateHunks": text, "condition": conds},',
+     '        "state": {"candidateHunks": text, "condition": dict(list(conds.items())[:1])},',
      'a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing'),
     ('a claim call for noMatch',
      '        if h in cands else None,',
@@ -459,8 +459,6 @@ MUTATIONS = [
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("the merge ask not read", 'if not re.search(prefilter["asks_merge"], report):', "if False:",
      "a REPORT not asking for the merge asks and logs nothing"),
-    ("the comment kind not read", 'if not report.lstrip().startswith("REPORT "):', "if False:",
-     "a comment of another kind asks nothing"),
     ('an issue with no DoD asked',
      '        elif DOD in body:',
      '        elif True:',
@@ -478,7 +476,7 @@ MUTATIONS = [
      '"closingIssuesReferences")\n    if False:',
      'a failed pull request read logs one skip'),
     ('a failed issue read unlogged',
-     '            jev.skip(reader, f"{subject} {ref[\'number\']}",\n                     f"the issue read failed: {why}", env, cwd=HERE)',
+     '            yield jev.Skip(f"{subject} {ref[\'number\']}",\n                           f"the issue read failed: {why}")',
      '            pass',
      'a failed issue read logs a skip for that issue'),
     ('a failed diff read taken for one',
@@ -491,22 +489,12 @@ MUTATIONS = [
      "a member pull request is read in its repository, its tracker issue in the tracker"),
     ("the issue read in the tracker always", '"-R", name,', '"-R", TRACKER,',
      "an issue is read in its own repository"),
-    ("the log resolved from the process's cwd, at a main() skip",
-     '                         "test could carry", env, cwd=HERE)',
-     '                         "test could carry", env)',
-     "every jev call names the reader's own base, not the process cwd"),
-    ("the log resolved from the process's cwd",
-     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,\n        cwd=HERE)',
-     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env)',
+    ("the log resolved from the process's cwd", "CWD = HERE\n", "",
      "every jev call names the reader's own base, not the process cwd"),
     ("the table header kept", "            if not rule.match(line) and not header:", "            if not rule.match(line):",
      "a condition is a list item with its lines, or a table row"),
     ("no tracker default", 'target = ["-R", repo or TRACKER]', 'target = ["-R", repo] if repo else []',
      "with no repository gh is told the tracker"),
-    ('the failure boundary removed',
-     '    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,\n                                               env), env, cwd=HERE)',
-     '    read(pr, repo, subject, stdin, jev, env)',
-     'a reader that raised exits 0, says nothing and logs a skip'),
     ("a continuation line dropped", '            out[-1] += " " + re.sub(', "            out[-1] += \"\" and re.sub(",
      "a condition is a list item with its lines, or a table row"),
     ("the table rule kept", "            if not rule.match(line) and not header:", "            if not header:",
@@ -523,7 +511,7 @@ def live(record):
     asked as the reader asks it: one condition's question over the case's own
     state. Prints each answer beside its truth; `--record` appends it."""
     m = load(SOURCE).m
-    jev = m.jev_module()
+    jev = importlib.import_module("campaign-jev")
     today = datetime.date.today().isoformat()
     for name, entry in (("done-test-select", SELECT), ("done-test-claim", CLAIM)):
         path = CORPUS / f"{name}.jsonl"

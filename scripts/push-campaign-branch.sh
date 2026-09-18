@@ -136,9 +136,9 @@ announce_pull_request() {
 if git push --quiet origin "$branch" 2>"$err"; then
 	echo "push-campaign-branch: pushed $branch"
 	# THE READERS A PUSH STARTS read the pushed commit, in the background and
-	# unwaited, since each asks a model; which they are is the registry's
-	# `owner`, read by `campaign-jev.py readers-on push`, and what each reads
-	# is its docstring's. A GitHub remote only: their later fact is a REVIEW
+	# unwaited, since each asks a model; `campaign-jev.py run --on push` runs
+	# every one the registry's `owner` names, and what each reads is its
+	# docstring's. A GitHub remote only: their later fact is a REVIEW
 	# on a pull request there, and a fixture's local remote is not one.
 	case $(git remote get-url origin 2>/dev/null) in
 	*github.com[:/]*)
@@ -146,10 +146,8 @@ if git push --quiet origin "$branch" 2>"$err"; then
 		# a subshell holding this hook's stdout open, so a caller capturing
 		# `git commit`'s output waited for every Jev call.
 		sha=$(git rev-parse HEAD) || exit 0
-		"$HERE/campaign-jev.py" readers-on push 2>/dev/null |
-			while IFS= read -r reader; do
-				nohup "$reader" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
-			done
+		nohup "$HERE/campaign-jev.py" run --on push "$sha" "$branch" \
+			</dev/null >/dev/null 2>&1 &
 
 		announce_pull_request "$branch"
 		;;

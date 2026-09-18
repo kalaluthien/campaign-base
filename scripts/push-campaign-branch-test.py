@@ -4,7 +4,7 @@
 The subject is reached through a SYMLINK in the fixture's own `scripts/`, so
 `$0`'s directory is that one and the siblings it calls -- `check-commit-claim.py`,
 `check-diff-screen.py`, `check-form-behaviour.py` and the `campaign-jev.py`
-naming them as the readers a push starts -- are stand-ins, while the
+running them as the readers a push starts -- are stand-ins, while the
 code that runs is the script itself and not a copy. `gh` is a fake on PATH that records its calls.
 
 The fixture's origin has a github.com FETCH url and the bare repository as its
@@ -69,13 +69,13 @@ FAKE_CLAIM = '#!/bin/sh\necho claim\nexit 0\n'
 # A READER STAND-IN records which one started, and on what.
 FAKE_SCREEN = ('#!/bin/sh\n'
                'echo "$(basename "$0") $2" >> "$READERS_LOG"\n')
-# THE REGISTRY STAND-IN names the two readers a push starts, as the real
-# `readers-on push` does, beside itself.
+# THE SHELL STAND-IN runs the two readers a push starts over the sha and the
+# branch it was handed, as the real `run --on push` does, beside itself.
 FAKE_JEV = ('#!/bin/sh\n'
-            '[ "$1 $2" = "readers-on push" ] || exit 2\n'
+            '[ "$1 $2 $3" = "run --on push" ] || exit 2\n'
             'here=$(dirname "$0")\n'
-            'echo "$here/check-diff-screen.py"\n'
-            'echo "$here/check-form-behaviour.py"\n')
+            '"$here/check-diff-screen.py" "$4" "$5"\n'
+            '"$here/check-form-behaviour.py" "$4" "$5"\n')
 # What the last `run` saw started, since its four values are every case's.
 STARTED = []
 

@@ -175,7 +175,8 @@ def cut_definitions(t):
 
 
 def s1(t):
-    return t.m.jev_module().load_sibling("check-cited-claims.py")
+    return importlib.import_module("campaign-jev").load_sibling(
+        "check-cited-claims.py")
 
 
 def body_has_no_comment(t):
@@ -423,15 +424,15 @@ MUTATIONS = [
      '{"claim": {f"c{i}": c for i, c in enumerate(found[:1])},',
      "one call a definition, every claim of it in that call"),
     ("the answers never reported",
-     "            s1.report(ask_all(entry, states, jev, jev.commit_key(), env),\n"
-     "                      entry, out)", "            pass",
+     "        yield ask_all(entry, states, jev, jev.commit_key(), s1)",
+     "        pass",
      "a contradicted claim is printed with its value, exit 0"),
     ("the tier read as advise whatever the entry says",
-     "                      entry, out)",
-     '                      dict(entry, tier="advise"), out)',
+     "                       entry))",
+     '                       dict(entry, tier="advise")))',
      "at tier shadow the counts are printed and no claim"),
     ("a settled sentence left unlogged",
-     "jev.skip(READER, f\"{path} `{name}`: {sentence}\", why, env=env)", "pass",
+     "yield jev.Skip(f\"{path} `{name}`: {sentence}\", why)", "pass",
      "a sentence code settled is written as a skip row naming the rule"),
     ('the row keyed by the file alone',
      '"read": label, "key": dict(key, path=path, name=name)}',
@@ -447,9 +448,9 @@ MUTATIONS = [
     ("a missing entry read as an empty one",
      "if READING not in registry:", "if False:",
      "a missing entry is named and nothing is asked"),
-    ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
-     "except ZeroDivisionError as e:",
+    ("the raise not said",
+     '    return [f"check-model-comment: could not read the commit "',
+     '    return []\n    [f"check-model-comment: could not read the commit "',
      "a reader that could not read exits 0 and says so"),
 ]
 
@@ -459,8 +460,8 @@ def live(record):
     its word differs from the last one recorded under the same wording: a
     known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
-    jev = m.jev_module()
-    s1_mod = m.jev_module().load_sibling("check-cited-claims.py")
+    jev = importlib.import_module("campaign-jev")
+    s1_mod = jev.load_sibling("check-cited-claims.py")
     rows_ = [json.loads(line) for line in CORPUS.read_text().splitlines() if line]
     t = ENTRY["thresholds"]
     states = [(r["id"], [r["state"]["claim"]], r["state"]["body"]) for r in rows_]

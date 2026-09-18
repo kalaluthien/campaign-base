@@ -147,6 +147,10 @@ def run(t, argv=(), registry=True, cwd=REPO, named_log=True):
     (d / "jev").mkdir()
     (d / "check-diff-screen.py").write_text(t.source)
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
+    # THE GUARD GOES WITH IT: campaign-jev.py's `base_root` asks the claim
+    # guard's (rule-check#475, pr#493), so copied alone it finds no base and
+    # the shared-log case below reads no row.
+    shutil.copy(HERE / "check-campaign-claim.py", d / "check-campaign-claim.py")
     if registry:
         (d / "jev" / "readings.json").write_text(json.dumps({"diff-screen": ENTRY}))
     SEEN.clear()

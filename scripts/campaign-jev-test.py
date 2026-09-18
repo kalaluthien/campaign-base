@@ -2002,6 +2002,13 @@ def the_plan_join_reads_the_closing_diff(m):
         # THE STRONG HALF: a command already in the snapshot.
         seen("+# witnesses: S9_ReleaseOccupied\n")
         old, said, _w = m.join_plan_closing_diff(row, closed)
+        # THE EVIDENCE NAMES THE COMMAND THE LABEL IS, and the further ones
+        # the call offered. It used to name the first witnessed command
+        # whatever the label was, so a diff witnessing one command the call
+        # never offered and one it did read as a sentence about the first
+        # (REVIEW at 228dd87, defect 4).
+        seen("+# witnesses: NeverOffered, S9_ReleaseOccupied, ReleaseDiscipline\n")
+        two, two_said, _w = m.join_plan_closing_diff(row, closed)
         cover, cover_said, _w = m.join_plan_cover_kept(
             plan_row(reading="plan-scenario-cover",
                      state={"plan": row["state"]["plan"],
@@ -2023,19 +2030,22 @@ def the_plan_join_reads_the_closing_diff(m):
             row, {"state": "CLOSED", "stateReason": "NOT_PLANNED"})
         m.PLAN_CLOSING_SEEN[("o/r", 5)] = {"pull_request": None, "diff": None,
                                            "refs": 2}
-        two, _e, why_two = m.join_plan_closing_diff(row, closed)
+        many, _e, why_two = m.join_plan_closing_diff(row, closed)
     finally:
         m.PLAN_CLOSING_SEEN.clear()
         m.PLAN_CLOSING_SEEN.update(was)
     return (old == "s3" and "`s3`" in said
+            and two == "s3" and "`S9_ReleaseOccupied`" in two_said
+            and "NeverOffered" not in two_said
+            and "`ReleaseDiscipline` (s2)" in two_said
             and cover == "yes" and "among them" in cover_said
             and fresh == "noMatch" and "adds to the snapshot" in fresh_said
             and astray is None and "did not offer" in why_astray
             and quiet is None and "no `# witnesses:` line" in why_quiet
             and open_ is None and "still open" in why_open
             and dropped is None and "not planned" in why_dropped
-            and two is None and "2 closing pull request(s)" in why_two), \
-        (old, cover, fresh, astray, quiet, open_, dropped, two)
+            and many is None and "2 closing pull request(s)" in why_two), \
+        (old, two, two_said, cover, fresh, astray, quiet, open_, dropped)
 
 
 def a_choice_over_the_option_ceiling_is_unknown(m):
@@ -2063,6 +2073,38 @@ def a_choice_over_the_option_ceiling_is_unknown(m):
             and str(m.OPTION_BUDGET) not in (
                 m._answer({"a": "b"}, fits, {}, 1, cache=False)[2])), \
         (ans["q"], why)
+
+
+def a_corpus_row_is_labelled_by_the_entrys_own_join(m):
+    """A CASE'S LABEL COMES FROM THE JOIN THE ENTRY DECLARES, or from a
+    construction that made the truth true -- never from a second rule written
+    beside the corpus. The plan corpus shipped with one: it labelled a state by
+    the option key its command wears TODAY where the declared join answers
+    `noMatch`, and a `corpus join` row on the same evidence would have landed
+    in the opposite class (REVIEW at 228dd87, defect 1).
+
+    THIS IS THE HALF A TEST CAN HOLD. A corpus row carries no evidence, so
+    nothing here can re-run a join over it; what it can refuse is a row
+    claiming a DIFFERENT join from the one its entry declares, which is a row
+    whose class a `corpus join` run would overwrite. The other half is
+    structural and lives in the builder: a corpus is written by RUNNING the
+    declared join, never by re-deriving its rule beside it.
+
+    Eight label prefixes are in use here -- `hand:`, `survey:`, `flip-of:`,
+    `join:`, `history:`, `one-edit:`, `owner`, `mutant` -- so the shape of a
+    label is not the invariant; naming another entry's join is."""
+    reg = m.load_registry()
+    bad = []
+    for name, entry in sorted(reg.items()):
+        for case in m.read_corpus(name):
+            source = (case.get("label") or {}).get("from") or ""
+            if not source.startswith("join:"):
+                continue
+            named = source[len("join:"):]
+            if named in m.JOINS and named != entry.get("join"):
+                bad.append(f"{name} {case.get('id')}: labelled by join "
+                           f"`{named}`, entry declares `{entry.get('join')}`")
+    return not bad, bad
 
 
 def a_reading_with_no_join_says_why(m):
@@ -2405,6 +2447,7 @@ CASES["the DECISION join labels a condition named as a gap"] = the_decision_join
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
 CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
+CASES["a corpus row is labelled by the entry's own join"] = a_corpus_row_is_labelled_by_the_entrys_own_join
 CASES["a choice over the option ceiling is unknown"] = a_choice_over_the_option_ceiling_is_unknown
 CASES["the plan join reads the closing diff"] = the_plan_join_reads_the_closing_diff
 CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why

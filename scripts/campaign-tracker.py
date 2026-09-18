@@ -1255,8 +1255,9 @@ def scenarios_of(plan, root=None):
     the committed snapshot lists, cut to the entity the Plan names.
 
     A PLAN NAMING NO ENTITY GETS ALL OF THEM, which is the ordinary case and
-    not a fallback: 133 of this tracker's 138 Plans name none, and all 244
-    commands come to 26,244 bytes against `campaign-jev.py`'s 60,000 budget.
+    not a fallback: 133 of this tracker's 138 Plans name none, and the whole
+    state over every command is 22,444 bytes at 2026-09-18 against
+    `campaign-jev.py`'s 60,000 budget.
     So no state is skipped for want of an entity, and the cut buys a narrower
     field only where there is one to read (sdlc-alloy#458 NOTE 5724505059)."""
     path = Path(root) / "spec" / SNAPSHOT if root else SNAPSHOT_PATH

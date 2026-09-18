@@ -2491,12 +2491,20 @@ def join_plan_closing_diff(row, issue):
         return ("noMatch",
                 f"pr#{at} witnesses {', '.join(named)}, which it adds to the "
                 f"snapshot in the same diff: no scenario on offer was it", "")
-    hit = [picked[n] for n in old if n in picked]
+    # THE EVIDENCE NAMES THE COMMAND THE LABEL IS, and says how many more the
+    # call also offered: `old` holds every witnessed command the diff did not
+    # add, and only some of those are on offer. Naming `old[0]` beside
+    # `picked[...]`'s key read as a sentence about a different command.
+    hit = [(n, picked[n]) for n in old if n in picked]
     if not hit:
         return None, "", (f"pr#{at} witnesses {', '.join(old)}, which the call "
                           f"did not offer, so no option of it can be right")
-    return (hit[0], f"pr#{at} witnesses `{old[0]}`, which the call offered as "
-                    f"`{hit[0]}`", "")
+    name, key = hit[0]
+    return (key, f"pr#{at} witnesses `{name}`, which the call offered as "
+                 f"`{key}`"
+                 + (f", and {len(hit) - 1} more it offered: "
+                    f"{', '.join(f'`{n}` ({k})' for n, k in hit[1:])}"
+                    if len(hit) > 1 else ""), "")
 
 
 def join_plan_cover_kept(row, issue):

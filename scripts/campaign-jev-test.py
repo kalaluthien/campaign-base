@@ -1967,6 +1967,77 @@ def the_witness_join_labels_a_case_the_suite_dropped(m):
         (dropped, kept, young, own_only, gone, unwitnessed, waiting)
 
 
+def plan_row(**kw):
+    """One `plan-scenario-select` row as `judge` logs it, the state cut down to
+    the three options the cases need."""
+    row = {"reading": "plan-scenario-select", "reader": "campaign-tracker.py check",
+           "repo": "o/r", "issue": 5, "read": "o/r#5",
+           "state": {"plan": "- refuse a release while a worktree holds the ref",
+                     "scenarios": {"s1": "run Cov_TakeClaim\nthe floor",
+                                   "s2": "check ReleaseDiscipline\nthe release",
+                                   "s3": "run S9_ReleaseOccupied\nthe release"}},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": "s3", "raw": {}, "why": {}, "endpoint": "real", "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_plan_join_reads_the_closing_diff(m):
+    """S7: the later fact is the closing pull request's diff, and its two
+    halves are not equally strong. A `# witnesses:` line naming a command the
+    SAME DIFF adds to the snapshot is a scenario that did not exist when the
+    call was made, so the truth is `noMatch`; one naming a command already
+    there is that option's key. An open sub-issue, one closed as not planned,
+    a diff with no `# witnesses:` line at all, and one naming a command the
+    call never offered are each SAID rather than guessed at."""
+    row = plan_row()
+    closed = {"state": "CLOSED", "stateReason": "COMPLETED"}
+    diff = lambda text: {"pull_request": 7, "diff": text, "refs": 1}  # noqa: E731
+    was, m.PLAN_CLOSING_SEEN = dict(m.PLAN_CLOSING_SEEN), {}
+    try:
+        def seen(text):
+            m.PLAN_CLOSING_SEEN.clear()
+            m.PLAN_CLOSING_SEEN[("o/r", 5)] = diff(text)
+        # THE STRONG HALF: a command already in the snapshot.
+        seen("+# witnesses: S9_ReleaseOccupied\n")
+        old, said, _w = m.join_plan_closing_diff(row, closed)
+        cover, cover_said, _w = m.join_plan_cover_kept(
+            plan_row(reading="plan-scenario-cover",
+                     state={"plan": row["state"]["plan"],
+                            "scenario": "run S9_ReleaseOccupied\nthe release"}),
+            closed)
+        # THE WEAK HALF: the same diff adds the command to the snapshot, so no
+        # option of that call could have been it.
+        seen('+# witnesses: NewOne\n'
+             '+    ["a/checks.als", "run", "NewOne"],\n')
+        fresh, fresh_said, _w = m.join_plan_closing_diff(row, closed)
+        # NOT LABELLED, AND EACH SAYS WHICH.
+        seen("+# witnesses: NeverOffered\n")
+        astray, _e, why_astray = m.join_plan_closing_diff(row, closed)
+        seen("+a line about nothing\n")
+        quiet, _e, why_quiet = m.join_plan_closing_diff(row, closed)
+        m.PLAN_CLOSING_SEEN.clear()
+        open_, _e, why_open = m.join_plan_closing_diff(row, {"state": "OPEN"})
+        dropped, _e, why_dropped = m.join_plan_closing_diff(
+            row, {"state": "CLOSED", "stateReason": "NOT_PLANNED"})
+        m.PLAN_CLOSING_SEEN[("o/r", 5)] = {"pull_request": None, "diff": None,
+                                           "refs": 2}
+        two, _e, why_two = m.join_plan_closing_diff(row, closed)
+    finally:
+        m.PLAN_CLOSING_SEEN.clear()
+        m.PLAN_CLOSING_SEEN.update(was)
+    return (old == "s3" and "`s3`" in said
+            and cover == "yes" and "among them" in cover_said
+            and fresh == "noMatch" and "adds to the snapshot" in fresh_said
+            and astray is None and "did not offer" in why_astray
+            and quiet is None and "no `# witnesses:` line" in why_quiet
+            and open_ is None and "still open" in why_open
+            and dropped is None and "not planned" in why_dropped
+            and two is None and "2 closing pull request(s)" in why_two), \
+        (old, cover, fresh, astray, quiet, open_, dropped, two)
+
+
 def a_reading_with_no_join_says_why(m):
     """EVERY ENTRY EITHER DECLARES A JOIN OR SAYS WHY IT HAS NONE
     (sdlc-alloy#458 DECISION 5722176509: "a fact too weak to label: leave
@@ -2307,6 +2378,7 @@ CASES["the DECISION join labels a condition named as a gap"] = the_decision_join
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
 CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
+CASES["the plan join reads the closing diff"] = the_plan_join_reads_the_closing_diff
 CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
 CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent

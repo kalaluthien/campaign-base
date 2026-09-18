@@ -1374,6 +1374,104 @@ def main():
     finally:
         m.load = was
 
+    # ------------------------------------------------ S7: the plan/scenario cut
+    # THE HEADING IS SHARED AND THE WALK MUST PASS A DECLARATION. `-- the floor`
+    # sits above a RUN of commands and belongs to each of them; a walk that
+    # stopped at the declaration above gave 86 of this tree's 244 commands a
+    # comment line where the shared reading gives 217.
+    als = ("/*\n * The module's own header, about the file.\n */\n"
+           "module a/checks\n\n"
+           "-- the floor\n"
+           "run First   for 4 steps expect 1\n"
+           "run Second  for 4 steps expect 1\n\n"
+           "-- the post-merge step\n"
+           "check Third for 4 steps expect 0\n\n"
+           "run Fourth  for 4 steps expect 1\n")
+    lines = als.splitlines()
+    at = {n: i for i, line in enumerate(lines)
+          for n in ("First", "Second", "Third", "Fourth")
+          if re.match(rf"^\s*(?:run|check)\s+{n}\b", line)}
+    check("a shared heading reaches the SECOND command of its run",
+          m.comment_above(lines, at["Second"]) == "the floor",
+          m.comment_above(lines, at["Second"]))
+    check("...and the first of the run reads the same heading",
+          m.comment_above(lines, at["First"]) == "the floor")
+    check("...and a command under a later heading reads that one",
+          m.comment_above(lines, at["Third"]) == "the post-merge step")
+    # THE BLOCK COMMENT ENDS THE WALK, so the module's own header -- which is
+    # about the file and about no command -- never stands in for one. Fourth
+    # sits under `Third`'s heading, which the walk passes; what it must NOT
+    # reach is the `*/` three lines above the module line.
+    check("a walk past every heading stops at the block comment",
+          m.comment_above(lines, at["Fourth"]) == "the post-merge step")
+    check("...and a command with no heading at all above it reads empty",
+          m.comment_above(["module a/checks", "run Only for 1 steps expect 1"],
+                          1) == "")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "spec" / "a").mkdir(parents=True)
+        (root / "spec" / "b").mkdir(parents=True)
+        (root / "spec" / "a" / "checks.als").write_text(als, encoding="utf-8")
+        (root / "spec" / "b" / "checks.als").write_text(
+            "-- b's floor\nrun Sibling for 4 steps expect 1\n", encoding="utf-8")
+        (root / "spec" / "commands.snapshot.json").write_text(json.dumps(
+            {"commands": [["a/checks.als", "run", "First"],
+                          ["a/checks.als", "run", "Second"],
+                          ["a/checks.als", "check", "Third"],
+                          ["b/checks.als", "run", "Sibling"]]}), encoding="utf-8")
+        got, why = m.scenarios_of("no entity here", root=root)
+        check("a Plan naming no entity gets every command",
+              not why and len(got) == 4 and got["s1"] == "run First\nthe floor",
+              (got, why))
+        # THE ENTITY PATTERN IS THIS TREE'S, so a fixture entity is matched
+        # only where it spells one -- `spec/sdlc/` and `spec/campaign/<x>/`.
+        got, why = m.scenarios_of("see spec/campaign/session/checks.als",
+                                  root=root)
+        check("an entity the snapshot does not hold leaves nothing to pick",
+              not got and "no command" in why, (got, why))
+        got, why = m.scenarios_of("", root=Path(tmp) / "gone")
+        check("a snapshot that will not read gives a why, not a raise",
+              not got and "did not read" in why, (got, why))
+        # THE NEGATIVE THE MEASUREMENT USES: the same Plan against a SIBLING
+        # entity's scenarios, which is one edit and no covering command.
+        sib, _ = m.scenarios_of("", root=root)
+        check("one exact name in backticks settles the reading",
+              m.settled_scenario("we extend `Third` here", sib) == "s3",
+              m.settled_scenario("we extend `Third` here", sib))
+        check("...two names settle nothing: which covers it is the question",
+              m.settled_scenario("`Third` and `First`", sib) is None)
+        check("...and a backticked word that is no command settles nothing",
+              m.settled_scenario("`campaign-claim take`", sib) is None)
+
+    # A BODY WITH A `## Plan` REACHES THE CALL, and the case is here because it
+    # did not: `REPOS.section` gives the non-blank LINES and not the text, a
+    # list handed to a regex raises, and the guard around the whole reading
+    # swallowed that into a reading that silently never happened.
+    asked = []
+
+    def spy(*a, **k):
+        mod = types.SimpleNamespace()
+        mod.judge = lambda group, state, **kw: (
+            asked.append((group, state)) or judged(
+                {group: verdict("noMatch", None, "", "shadow", "nothing")},
+                "jev-1.13.0", 0.1, "c", "logged"))
+        mod.skip = lambda *a, **k: asked.append(("skip", a))
+        return mod
+
+    was, m.load = m.load, spy
+    try:
+        m.plan_scenario_read("o/r", 5, "## Intent\n\n- x\n")
+        check("a body with no `## Plan` asks nothing", not asked, asked)
+        m.plan_scenario_read("o/r", 5, "## Plan\n\n- refuse a stale claim\n")
+        check("a body with a `## Plan` reaches the select call",
+              len(asked) == 1 and asked[0][0] == m.PLAN_SELECT
+              and isinstance(asked[0][1]["plan"], str)
+              and "stale claim" in asked[0][1]["plan"], asked)
+        check("...and `noMatch` asks no cover call", len(asked) == 1, asked)
+    finally:
+        m.load = was
+
     return harness.report()
 
 

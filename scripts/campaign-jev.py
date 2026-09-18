@@ -902,9 +902,10 @@ def wording(entry):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-# WHERE THE ITEM'S NAME GOES in a question asked per item. The id never reaches
-# the model, so a fan-out whose instructions did not name the item would ask one
-# question n times and get one answer n times.
+# WHERE THE ITEM'S NAME GOES in a question asked per item. The id is a KEY of
+# the request body and no part of the question, so a fan-out whose instructions
+# did not name the item would ask one question n times and get one answer n
+# times.
 ITEM_MARK = "{item}"
 # WHERE A `choice`'s OPTIONS COME FROM WHEN THE ENTRY CANNOT HOLD THEM. An
 # entry names a state field here, and one option is built per key of that
@@ -1465,9 +1466,10 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
                 f"{type(items).__name__}")
         if given is not None and not isinstance(given, dict):
             continue                     # one word settles the whole reading
-        # THE ITEM MUST REACH THE MODEL, and the entry's `compose` says how.
-        # The question id never does, so a shape that named the item nowhere
-        # would ask the same question once per item and get one answer n times.
+        # THE ITEM MUST BE IN THE QUESTION, and the entry's `compose` says
+        # how. The id is a key of the body and no part of the question, so a
+        # shape that named the item nowhere would ask the same question once
+        # per item and get one answer n times.
         shape = compose_of(entry)
         marks = ([ITEM_MARK] if shape["where"] == IN_STATE
                  else list(shape["as"]) if shape["where"] == IN_QUESTION
@@ -2009,6 +2011,13 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
     try:
         if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
             return None
+        # AND THE REF THE WINDOW IS MEASURED AGAINST. `--is-ancestor` exits 128
+        # for a missing `origin/main` exactly as it does for a missing sha, so
+        # a checkout without it read every sha `unmerged` for ever instead of
+        # saying nothing here can label them (pr#492 REVIEW 5723212225, F3).
+        if git("rev-parse", "--verify", "-q",
+               "origin/main^{commit}").returncode != 0:
+            return None
         if git("merge-base", "--is-ancestor", sha,
                "origin/main").returncode != 0:
             return {"commits": [], "window": 0, "now": None, "unmerged": True}
@@ -2029,7 +2038,12 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
         if found:
             at = {"sha": found.group(1), "paths": []}
             commits.append(at)
-            if own is None and sha in found.group(2).split():
+            # BY PREFIX, because `%P` is always 40 hex and the sha a row
+            # carries need not be: `cat-file -e` and `merge-base` both take an
+            # abbreviation or a tag, and an equality test there found no child
+            # and quietly undid the drop above (pr#492 REVIEW 5723212225, F2).
+            if own is None and any(p.startswith(sha)
+                                   for p in found.group(2).split()):
                 own = at["sha"]
         elif at is not None:
             at["paths"].append(line)

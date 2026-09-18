@@ -1205,6 +1205,39 @@ def fetch_commits_reads_one_file_s_later_commits(m):
             and other["own"] == shas["other"]), (got, other)
 
 
+def fetch_commits_finds_the_child_of_an_abbreviated_sha(m):
+    """`%P` is always 40 hex and the sha a row carries need not be: `cat-file
+    -e` and `merge-base` both take an abbreviation or a tag. An equality test
+    against the parents found no child for one, and the dropped-own-commit fix
+    quietly came undone (pr#492 REVIEW 5723212225, F2)."""
+    path, shas = a_clone()
+    short = shas["first"][:9]
+    got = m.fetch_commits("o/r", short, "spec/y.als", cwd=path)
+    return (got is not None and got["own"] == shas["other"]), (short, got)
+
+
+def fetch_commits_reads_nothing_without_origin_main(m):
+    """`--is-ancestor` exits 128 for a missing `origin/main` exactly as it does
+    for a missing sha, so a checkout without that ref read EVERY sha as
+    `unmerged` -- waiting for ever on a window nothing could ever measure."""
+    path, _shas = a_clone()
+    bare = ROOT / "no-origin-main"
+    if not bare.exists():
+        bare.mkdir()
+        for args in (("init", "-q", "-b", "main"),
+                     ("remote", "add", "origin", "https://github.com/o/r.git")):
+            subprocess.run(["git", "-C", str(bare), *args], check=True,
+                           capture_output=True, env=GIT_ENV)
+        (bare / "a.txt").write_text("x\n")
+        for args in (("add", "a.txt"), ("commit", "-q", "-m", "one")):
+            subprocess.run(["git", "-C", str(bare), *args], check=True,
+                           capture_output=True, env=GIT_ENV)
+    head = subprocess.run(["git", "-C", str(bare), "rev-parse", "HEAD"],
+                          capture_output=True, text=True,
+                          env=GIT_ENV).stdout.strip()
+    return m.fetch_commits("o/r", head, "a.txt", cwd=bare) is None, head
+
+
 def fetch_commits_tells_unmerged_from_unreadable(m):
     """`<sha>..origin/main` over an unmerged claim is every commit main took
     since the fork, not one of which is a later fact about this reading's own
@@ -1260,6 +1293,8 @@ def the_subject_names_the_fetch_and_what_it_is_given(m):
 
 
 CASES["fetch_commits reads one file's later commits and the file now"] = fetch_commits_reads_one_file_s_later_commits
+CASES["fetch_commits finds the child of an abbreviated sha too"] = fetch_commits_finds_the_child_of_an_abbreviated_sha
+CASES["fetch_commits reads nothing where origin/main does not resolve"] = fetch_commits_reads_nothing_without_origin_main
 CASES["fetch_commits tells an unmerged sha from an unreadable one"] = fetch_commits_tells_unmerged_from_unreadable
 CASES["a row's subject names the fetch and what it is given"] = the_subject_names_the_fetch_and_what_it_is_given
 
@@ -3239,9 +3274,19 @@ MUTATIONS = [
      "        if False:",
      "fetch_commits tells an unmerged sha from an unreadable one"),
     ("the child of the sha never named",
-     "            if own is None and sha in found.group(2).split():",
-     "            if False:",
+     "            if own is None and any(p.startswith(sha)",
+     "            if False and any(p.startswith(sha)",
      "fetch_commits reads one file's later commits and the file now"),
+    ("the child found by an exact sha, not a prefix",
+     "            if own is None and any(p.startswith(sha)\n"
+     "                                   for p in found.group(2).split()):",
+     "            if own is None and sha in found.group(2).split():",
+     "fetch_commits finds the child of an abbreviated sha too"),
+    ("a checkout with no origin/main read as merely unmerged",
+     '        if git("rev-parse", "--verify", "-q",\n'
+     '               "origin/main^{commit}").returncode != 0:',
+     "        if False:",
+     "fetch_commits reads nothing where origin/main does not resolve"),
     ("a sha read in whichever checkout the call was made from",
      "    return root if repo_of(out.stdout) == repo else None",
      "    return root",

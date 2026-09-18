@@ -892,6 +892,7 @@
    "verdict": "rejected",
    "at": "2026-09-18",
    "decided": "rule-check#505 DECISION 5727427869: kept only where it beats the single `choice` held out",
+   "method": "rule-check#505 NOTE 5727500172 states the rules fixed before the run; the numbers were read by campaign scratch that is not in this tree -- `scope-bullets-505.py` asked the bullets, `scope-compose-505.py` scored the three deciders, both under the rule-check campaign directory's `scripts/`; the 147 answers are that directory's scratch too, and the NOTE is the durable statement of the method",
    "what": "one narrow `noul` per Scope bullet -- is the work `request` asks for work of the kind this line names -- 25 bullets over 4 campaigns, one call a request; a tree by hand (highest In >= a and highest Out < b, the covered campaign of highest In wins) and an additive form (sum of In minus w times sum of Out, against a cut)",
    "cases": {
     "real": 107,
@@ -920,15 +921,18 @@
    },
    "fitted_on_all_real": {
     "single": {
-     "cut": 0.335
+     "cut": 0.335,
+     "loss_per_real_case": 0.421
     },
     "tree": {
      "a": 0.7,
-     "b": 0.6
+     "b": 0.6,
+     "loss_per_real_case": 0.589
     },
     "additive": {
      "w": 0.5,
-     "cut": 1.52
+     "cut": 1.52,
+     "loss_per_real_case": 0.673
     }
    },
    "why": "held out over the real cases the single reading costs 0.458 a case and the tree 0.701; the compositions read the made no-match cases better, 30 of 40 against 24, which the rule fixed before the run does not weigh"

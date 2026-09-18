@@ -1235,9 +1235,10 @@ def comment_above(lines, at):
     are group headings sitting above a RUN of commands -- `-- the floor` over
     four of them -- so the one belonging to a command is the last heading
     written before it, and stopping at the declaration above would leave every
-    command but the first of each run with no text at all (86 of 244 rather
-    than 217 when this was written, 215 of 242 at 2026-09-18). A BLOCK COMMENT ENDS IT, so the module's own header, which is
-    about the file and not about any command, never stands in for one."""
+    command but the first of each run with no text at all: 86 of 242 carry a
+    heading that way against 215 the shared way, at 2026-09-18. A BLOCK
+    COMMENT ENDS IT, so the module's own header, which is about the file and
+    not about any command, never stands in for one."""
     for i in range(at - 1, -1, -1):
         line = lines[i].strip()
         if not line or ALS_COMMAND.match(lines[i]):

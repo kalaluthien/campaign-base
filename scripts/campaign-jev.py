@@ -149,6 +149,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import namedtuple
+from collections.abc import Mapping
 from pathlib import Path
 
 # This script's own directory, which is where its siblings and its registry sit.
@@ -1709,6 +1710,28 @@ Comment = namedtuple("Comment", "number repo body subject")
 Commit = namedtuple("Commit", "subject branch")
 
 
+class Registry(Mapping):
+    """The registry, loaded on its first read and not before: a reader that
+    settles by code before it reads an entry never loads it, as it never did
+    when each reader loaded its own."""
+    def __init__(self, load):
+        self._load, self._got = load, None
+
+    def _reg(self):
+        if self._got is None:
+            self._got = self._load()
+        return self._got
+
+    def __getitem__(self, name):
+        return self._reg()[name]
+
+    def __iter__(self):
+        return iter(self._reg())
+
+    def __len__(self):
+        return len(self._reg())
+
+
 def perform(steps, reader, env=None, cwd=None, out=None):
     """Carry out `steps` in order; [the results of each `Ask`]."""
     out = sys.stdout if out is None else out
@@ -1751,8 +1774,8 @@ def run_reader(reader, argv, stdin=None, out=None, env=None):
         return 2
 
     def go(inp):
-        return perform(r.steps(inp, load_registry(), jev), r.READER, env, cwd,
-                       out)
+        return perform(r.steps(inp, Registry(load_registry), jev), r.READER,
+                       env, cwd, out)
     if kind == "comment":
         if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
             return usage()

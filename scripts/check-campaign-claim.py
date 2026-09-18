@@ -3101,9 +3101,9 @@ COMMENT_TARGET = {"issue": ISSUE_URL, "pr": PULL_URL}
 def shadow_reading(tokens, text, cwd, root):
     """Start the shadow readings of the comment this `gh issue comment` or `gh
     pr comment` segment posts -- the readers the registry says its event, the
-    verb and the comment's first word, starts -- in the background, and never
-    wait for them: each asks a model, and this guard runs before every tool
-    call. The target is resolved as `report_pin` resolves a pull request, and
+    verb and the comment's first word, starts -- as ONE `campaign-jev.py run
+    --on <event>` in the background, and never wait for it: each reading asks
+    a model, and this guard runs before every tool call. The target is resolved as `report_pin` resolves a pull request, and
     one only `gh` could resolve is not read. A registry that will not load
     starts nothing. What each reading logs, and that it never prints, is its
     script's docstring's."""
@@ -3113,11 +3113,11 @@ def shadow_reading(tokens, text, cwd, root):
     first = text.lstrip().split(" ", 1)[0]
     if first not in COMMENT_KINDS:
         return
+    event = f"{words[0]} {first}"
     try:
-        readers = load(JEV, "campaign_jev").readers_on(f"{words[0]} {first}")
+        if not load(JEV, "campaign_jev").readers_on(event):
+            return
     except Exception:  # noqa: BLE001 -- a reading never costs the verdict
-        return
-    if not readers:
         return
     form = COMMENT_TARGET[words[0]]
     pick = words[2] if len(words) > 2 else ""
@@ -3126,16 +3126,15 @@ def shadow_reading(tokens, text, cwd, root):
     number = url.group(2) if url else pick.lstrip("#")
     if not number.isdigit() or (repo is None and checkout_of(cwd)[0] != root):
         return
-    for reader in readers:
-        try:
-            p = subprocess.Popen([sys.executable, str(reader), number]
-                                 + ([repo] if repo else []), cwd=cwd,
-                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
-            p.stdin.write(text.encode("utf-8"))
-            p.stdin.close()
-        except (OSError, ValueError):  # a lone surrogate does not encode
-            pass
+    try:
+        p = subprocess.Popen([sys.executable, str(JEV), "run", "--on", event,
+                              number] + ([repo] if repo else []), cwd=cwd,
+                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        p.stdin.write(text.encode("utf-8"))
+        p.stdin.close()
+    except (OSError, ValueError):  # a lone surrogate does not encode
+        pass
 
 
 def report_pin(tokens, text, cwd, root):

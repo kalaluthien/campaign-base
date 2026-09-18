@@ -3846,6 +3846,21 @@ def comment_reader_reads_its_kind(m):
         (codes, got, rows)
 
 
+def registry_read_only_when_used(m):
+    LOG.write_text("")
+
+    def broken(*a):
+        raise FileNotFoundError("no registry")
+    settled = reader_of("comment NOTE", lambda inp, reg, jev: [])
+    reads = reader_of("comment NOTE", lambda inp, reg, jev: [reg["x"]])
+    with swapped(m, load_registry=broken):
+        m.run_reader(settled, ["1"], io.StringIO("NOTE a"), env=env())
+        m.run_reader(reads, ["2"], io.StringIO("NOTE a"), env=env())
+    rows = rows_of_log()
+    return ([(x["read"], x["skipped"]) for x in rows]
+            == [("tracker#2 NOTE", "the reading raised FileNotFoundError")]), rows
+
+
 def commit_reader_is_shielded(m):
     LOG.write_text("")
     got = []
@@ -3906,6 +3921,7 @@ def run_on_hands_each_reader_the_input(m):
 CASES["a reader's steps are carried out in order, each ask routed"] = perform_in_order
 CASES["a comment reader reads its own kind, and a raise is a skip row"] = comment_reader_reads_its_kind
 CASES["a commit reader gets its subject and branch, and a raise is a skip row"] = commit_reader_is_shielded
+CASES["a reader that never reads the registry never loads it"] = registry_read_only_when_used
 CASES["a staged reader prints what it says, and a raise as one line"] = staged_reader_says_a_raise
 CASES["an event runs every reader it starts over the same input"] = run_on_hands_each_reader_the_input
 CASES["a reading that raised is a skip row, and one that did not returns"] = shielded_logs_a_raise
@@ -3936,6 +3952,10 @@ MUTATIONS = [
     ("a comment reading's raise not shielded",
      "        shielded(r.READER, subject, body, env, cwd=cwd)", "        body()",
      "a comment reader reads its own kind, and a raise is a skip row"),
+    ("the registry loaded before the reader reads it",
+     "        return perform(r.steps(inp, Registry(load_registry), jev), r.READER,",
+     "        return perform(r.steps(inp, load_registry(), jev), r.READER,",
+     "a reader that never reads the registry never loads it"),
     ("the branch never handed over",
      "            Commit(subject, argv[1] if len(argv) > 1 else None)), env, cwd=cwd)",
      "            Commit(subject, None)), env, cwd=cwd)",

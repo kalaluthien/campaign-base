@@ -51,12 +51,13 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  },
  "reference-claims": {
@@ -113,12 +114,13 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  },
  "research-bar": {
@@ -162,12 +164,13 @@
     }
    }
   },
+  "compose": {"where": "question", "as": {"{condition}": "condition"}},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "decision-gap",
   "bands": {}
  },
  "finding-sort": {
@@ -201,12 +204,14 @@
     }
    }
   },
+  "compose": {"where": "call"},
   "thresholds": {
    "option": "defect",
    "yes_over": 0.5,
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "no later fact of this tree labels it. The reading sorts a finding into defect or refinement; the DECISION's candidate -- the same thread's next REVIEW, the finding re-found or gone -- says whether the finding was DISPOSED, which is `thread-refinding`'s word and not one of these. A finding raised again may be either kind, and one never raised again may be either kind fixed.",
   "bands": {}
  },
  "verb-first": {
@@ -349,12 +354,14 @@
     }
    }
   },
+  "compose": {"where": "call"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "no later fact of this tree labels it. `thread-refinding` answers disposed or undisposed, and this reading answers whether the slice contradicts the finding's claim about it; a finding disposed was as often fixed as wrong, so reusing that join would write the two classes into one word.",
   "bands": {}
  },
  "diff-screen": {
@@ -428,11 +435,13 @@
     }
    }
   },
+  "compose": {"where": "table", "table": "nouls"},
   "thresholds": {
    "yes_over": 0.5,
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "one fact cannot label five questions. DECISION 5722176509 names two -- a later fix commit on that file, and a later REVIEW finding on it -- and this tree can read both: `fetch_commits` gives the first and check-finding-site already resolves a finding to a path and a line. Neither says WHICH of the five things this reading asks of that file went wrong -- behaviour, boundary, caller, failure, untested -- and each is consistent with either answer to all five, so a join over them would write one word where five were asked.",
   "bands": {}
  },
  "C-report-disposes-finding": {
@@ -462,6 +471,7 @@
     "says_nothing": "Nothing in `report` addresses that finding at all; a reader looking for its disposition finds none. NOT this option: a `report` that is merely short, or one that answers the other findings well, when this finding is still answered somewhere in it."
    }
   },
+  "compose": {"where": "state"},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.8,
@@ -507,6 +517,7 @@
   "thresholds": {},
   "combine": "nothing yet. At `shadow` the answer is recorded and no cut is applied, so no code reads it",
   "join": null,
+  "join_why": "the fact is not on this tracker. One `gh` account signs every session's write, so who wrote a REVIEW and who wrote the commits is the same name in the API; the thread the reading is given is already the whole of what this machine can see.",
   "bands": {
    "model": "jev-1.13.0",
    "measured": null,
@@ -605,6 +616,7 @@
   "thresholds": {},
   "combine": "read by `campaign-jev.py`'s `address_word` for `unverified-done`, which declares this reading as its `guarded_by`. `address_word` stays the ONE reader of `ADDRESS_OVER` and no second reader of that number is written here. This reading's own word is never shown: at `shadow` it is recorded, and what it decides it decides through the reading it guards",
   "join": null,
+  "join_why": "nothing later reads it, as `filing-addresses-judge`'s fact is not read either: the reading is over the text of a REPORT at the moment it is posted, and no artifact afterwards records whether that text addressed its judge -- the comment holds the body, which is the state, not a later fact about it.",
   "bands": {
    "model": "jev-1.13.0",
    "measured": "2026-09-17",
@@ -690,6 +702,7 @@
   },
   "thresholds": {},
   "join": null,
+  "join_why": "nothing later reads it. The reading is over the text of a request at the moment it is filed, and no artifact afterwards records whether that request addressed its judge -- the filed issue holds the body, which is the state, not a later fact about it.",
   "bands": {
    "model": "jev-1.13.0",
    "measured": "2026-09-17",
@@ -728,11 +741,15 @@
     "noMatch": "no hunk in `candidateHunks` checks this condition: none tests it, or the condition is about something no hunk here exercises"
    }
   },
+  "compose": {"where": "question", "as": {"{condition}": "condition"},
+              "criteria": {"from": "candidateHunks", "template": "{hunk}",
+                           "put": {"{hunk}": "key", "{path}": "first line"}}},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
   },
   "join": null,
+  "join_why": "the fact is one-sided. A later REVIEW naming a Definition-of-done line says no test carried it, which is the `noMatch` option; nothing later says WHICH candidate carried one that was carried, so every case this join could write would wear one option and the band would be fitted to it.",
   "bands": {}
  },
  "done-test-claim": {
@@ -769,12 +786,13 @@
     }
    }
   },
+  "compose": {"where": "question", "as": {"{condition}": "condition"}},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "done-line-reraised",
   "bands": {}
  },
  "done-report-select": {
@@ -812,11 +830,15 @@
     "noMatch": "no candidate in `candidates` is evidence for this condition: none implements it, tests it or reports a result that shows it"
    }
   },
+  "compose": {"where": "question", "as": {"{condition}": "condition"},
+              "criteria": {"from": "candidates", "template": "{hunk}",
+                           "put": {"{hunk}": "key", "{path}": "first line"}}},
   "thresholds": {
    "floor": 0.5,
    "no_match": "noMatch"
   },
   "join": null,
+  "join_why": "the fact is one-sided, as `done-test-select`'s is: a later REVIEW can say a line went unshown, and nothing later names which candidate showed one that was.",
   "bands": {}
  },
  "done-report-claim": {
@@ -856,12 +878,14 @@
     }
    }
   },
+  "compose": {"where": "question",
+              "as": {"{condition}": "condition", "{reportLine}": "reportLine"}},
   "thresholds": {
    "option": "supports",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "done-line-reraised",
   "bands": {}
  },
  "model-comment": {
@@ -901,12 +925,13 @@
     }
    }
   },
+  "compose": {"where": "question", "as": "claim"},
   "thresholds": {
    "option": "contradicts",
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  }
 }

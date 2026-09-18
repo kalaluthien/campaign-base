@@ -18,8 +18,9 @@ at `act` and only when the call replied, cleared its threshold and fits;
 otherwise the issue is escalated to an agent.
 
 THE QUESTION IS NEVER WRITTEN HERE. `scripts/jev/readings.json` is the one home
-of every reading -- the question, its `criteria`, the state slice, the code
-prefilter, the cuts and the tier -- and a reader asks by NAME:
+of every reading -- the question, its `criteria`, how a reading asked per item
+puts that item into it (`compose`), the state slice, the code prefilter, the
+cuts and the tier -- and a reader asks by NAME:
 
     judge("issue-shape", {"title": ..., "body": ...},
           read="kalaluthien/campaign-base#455",
@@ -604,8 +605,8 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
     not: an issue body in a scratch log is a copy nobody swept.
 
     `questions` maps an id to a spec: `type`, `instructions`, `criteria`, and
-    the thresholds `branch` reads. The id never reaches the model, so the
-    instructions carry the whole meaning.
+    the thresholds `branch` reads. The id is a KEY of the body and no part of
+    the question, so the instructions carry the whole meaning.
 
     THIS IS THE BOUNDARY THE MODULE'S PROMISE RESTS ON. An unsupported question
     TYPE raises, and it is the only thing that does: every named failure below
@@ -818,6 +819,11 @@ def check_edges(reg):
                     f"`{lower}` is {lo}; the upper edge of a band sits ABOVE "
                     f"the lower one, or the band has no middle and "
                     f"`{UNCERTAIN}` can never be answered")
+        # AND THE PER-ITEM SHAPE, read at the same moment and for the same
+        # reason: a reading asked per item whose `compose` says nothing is one
+        # whose questions nobody can build, and finding that out at the call
+        # would cost a reader its judgment in the middle of a commit.
+        compose_of(entry)
     return reg
 
 
@@ -902,9 +908,10 @@ def wording(entry):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
-# WHERE THE ITEM'S NAME GOES in a question asked per item. The id never reaches
-# the model, so a fan-out whose instructions did not name the item would ask one
-# question n times and get one answer n times.
+# WHERE THE ITEM'S NAME GOES in a question asked per item. The id is a KEY of
+# the request body and no part of the question, so a fan-out whose instructions
+# did not name the item would ask one question n times and get one answer n
+# times.
 ITEM_MARK = "{item}"
 # WHERE A `choice`'s OPTIONS COME FROM WHEN THE ENTRY CANNOT HOLD THEM. An
 # entry names a state field here, and one option is built per key of that
@@ -946,23 +953,222 @@ def options_of(entry, state=None):
     return built
 
 
+# HOW A READING ASKED PER ITEM PUTS THE ITEM INTO ITS QUESTION, declared
+# BESIDE `question` and never inside it: `wording()` hashes the question block,
+# so a shape written in there would move every band's hash without changing one
+# word the model reads.
+#
+# `where` is where the item's TEXT travels, and it decides the state as well,
+# because an item the question carries is not sent twice:
+#
+#   state     the state carries the items, and the instructions name the one
+#             being asked by its KEY, at `{item}`; the model reads the text out
+#             of the state itself
+#   question  the instructions carry the item's TEXT, and every field it came
+#             from is withheld from the state the call sends
+#   table     the items are the entry's OWN table, named by `table`, and each
+#             one's words fill placeholders across the whole question
+#   call      the reader makes one CALL an item and the item is that call's
+#             state, so this asks one question and fans out nothing
+#
+# `as` says how, and only `question` has one. A MAP of `{placeholder}` to a
+# state field splices each one's item into the instructions -- a reading may
+# take more than one, as `done-report-claim` takes the condition and the REPORT
+# line that answers it -- and a plain word instead puts the item's text under
+# that key of an instructions OBJECT.
+#
+# THE ITEM SOURCE NEED NOT BE A STATE FIELD. `state.fields` is the slice ONE
+# CASE carries, and a case of a per-item reading is one item -- so
+# `docstring-claims` names `paragraph` and `pred` and cuts its claims out of
+# the paragraph, while `model-comment` names the claim it was asked about. Both
+# withhold the source from the call, so both send what they sent before.
+COMPOSE = "compose"
+IN_STATE, IN_QUESTION, FROM_TABLE, ONE_CALL = "state", "question", "table", "call"
+WHERE = (IN_STATE, IN_QUESTION, FROM_TABLE, ONE_CALL)
+
+
+def compose_of(entry):
+    """How a per-item reading composes its question, or None where it is asked
+    once. THE ONE READER of that rule: `question_of` sends by it and `judge`
+    decides by it which fields the call carries and whether it fans out at all,
+    and a second copy would let the question and the state disagree about where
+    the item went."""
+    if not (entry.get("question") or {}).get("per"):
+        return None
+    shape = entry.get(COMPOSE)
+    if not isinstance(shape, dict) or shape.get("where") not in WHERE:
+        raise ValueError(
+            f"campaign-jev: a reading asked per "
+            f"`{entry['question']['per']}` declares `{COMPOSE}` beside its "
+            f"question, with `where` one of {', '.join(WHERE)}; it holds "
+            f"{shape!r}")
+    for where, field in ((IN_QUESTION, "as"), (FROM_TABLE, "table")):
+        if shape["where"] == where and not shape.get(field):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.where` is `{where}`, so `{field}` "
+                f"must say where the item comes from or goes; it holds "
+                f"{shape.get(field)!r}")
+    if shape["where"] == IN_QUESTION and isinstance(shape["as"], dict):
+        loose = sorted(m for m in shape["as"] if not m.startswith("{"))
+        if loose:
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.as` maps a PLACEHOLDER to the state "
+                f"field its item comes from; {', '.join(loose)} is no "
+                f"placeholder")
+    if shape["where"] == FROM_TABLE and not isinstance(
+            entry.get(shape["table"]), dict):
+        raise ValueError(
+            f"campaign-jev: `{COMPOSE}.table` names `{shape['table']}`, which "
+            f"is no table of this entry")
+    built = shape.get("criteria")
+    if built is not None:
+        if built.get("template") not in (entry["question"].get("criteria") or {}):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.criteria.template` names "
+                f"`{built.get('template')}`, which is no option of this "
+                f"entry's question")
+        bad = sorted(set((built.get("put") or {}).values()) - set(PUTS))
+        if bad or not built.get("put"):
+            raise ValueError(
+                f"campaign-jev: `{COMPOSE}.criteria.put` fills each "
+                f"placeholder from {' or '.join(PUTS)}; it names "
+                f"{', '.join(bad) or 'nothing'}")
+    return shape
+
+
+# WHERE A BUILT OPTION'S WORDS COME FROM, for a `choice` whose options are one
+# per item of a state field and whose descriptions are a TEMPLATE the entry
+# holds under a braced key. `key` is the item's own name and `first line` the
+# first line of its value -- which is what the model reads at the top of that
+# item in the state, so the description names the file the hunk opens with and
+# nothing the call did not send.
+PUT_KEY, PUT_FIRST_LINE = "key", "first line"
+PUTS = (PUT_KEY, PUT_FIRST_LINE)
+
+
+def criteria_of(entry, state=None):
+    """The `choice` criteria as the model is sent them: the entry's own, or one
+    per item of the field `compose.criteria` names, each from the template.
+
+    THE ONE READER of that rule, as `options_of` is of `options_from`. The two
+    are different shapes on purpose: `options_from` takes each option's
+    DESCRIPTION straight out of the state, and this fills a template the entry
+    wrote, so the wording of an option stays in the registry where every other
+    wording is."""
+    shape = (compose_of(entry) or {}).get("criteria")
+    written = entry["question"]["criteria"]
+    if not shape:
+        return written
+    template = written[shape["template"]]
+    built = {}
+    for key, value in ((state or {}).get(shape["from"]) or {}).items():
+        text = template
+        for mark, source in shape["put"].items():
+            text = text.replace(mark, key if source == PUT_KEY
+                                else str(value).split("\n", 1)[0])
+        built[key] = text
+    for name, text in written.items():
+        if name != shape["template"]:
+            built[name] = text
+    return built
+
+
+def instructions_of(entry, item, state=None):
+    """The instructions ONE ITEM of a per-item reading is asked with, for the
+    two shapes that change nothing else about the question."""
+    text = entry["question"]["instructions"]
+    shape = compose_of(entry)
+    if shape["where"] == IN_STATE:
+        return text.replace(ITEM_MARK, str(item))
+    how = shape["as"]
+    if isinstance(how, dict):
+        for mark, field in how.items():
+            text = text.replace(
+                mark, str(((state or {}).get(field) or {}).get(item)))
+        return text
+    return {"question": text,
+            how: ((state or {}).get(entry["question"]["per"]) or {}).get(item)}
+
+
+def filled_from_table(entry, spec, item):
+    """The whole question with one row of the entry's table put into its
+    placeholders. The substitution is over the question as JSON TEXT, because a
+    row's words reach the criteria and their examples as well as the
+    instructions, and each is escaped as JSON on the way in."""
+    words = (entry[compose_of(entry)["table"]] or {}).get(item) or {}
+    text = json.dumps({k: spec[k] for k in ("type", "instructions", "criteria")})
+    for key, value in words.items():
+        text = text.replace("{" + key + "}", json.dumps(value)[1:-1])
+    return dict(spec, **json.loads(text))
+
+
+def words_of(entry, verdict):
+    """{item: Answer} for a per-item verdict, each raw answer branched.
+
+    `judge` hands a fanned reading its raws and NO word, because what they add
+    up to is the entry's `combine` and that is the reader's. The branch of ONE
+    item is not: a reader that cut its own would be a second reader of the
+    entry's edges, and the two would drift the first time a cut moved."""
+    spec, whys = question_of(entry), verdict.why or {}
+    out = {}
+    for item, raw in (verdict.raw or {}).items():
+        word, why = branch(spec, raw)
+        # THE CALL'S OWN REASON WINS. `branch` can only say the response
+        # carried no answer; the call knows WHY it carried none -- a closed
+        # port, a timeout, a body that was not JSON -- and that sentence is
+        # what a reader prints and a person acts on.
+        out[item] = Answer(word, raw, whys.get(item) or why)
+    return out
+
+
+def item_fields(entry):
+    """The state fields a per-item reading takes its items from: the ones the
+    caller is asked for and the call does NOT send, because the question
+    carries their text. THE ONE READER of that half of `compose.as`."""
+    shape = compose_of(entry)
+    if shape is None or shape["where"] != IN_QUESTION:
+        return set()
+    how = shape["as"]
+    return set(how.values()) if isinstance(how, dict) \
+        else {entry["question"]["per"]}
+
+
+def items_of(entry, state=None):
+    """The items one per-item reading is asked over, by key, or None where it
+    is asked once. THE ONE READER of where they come from: the state's own
+    field, or the entry's table."""
+    shape = compose_of(entry)
+    if shape is None or shape["where"] == ONE_CALL:
+        return None
+    if shape["where"] == FROM_TABLE:
+        return entry[shape["table"]]
+    return (state or {}).get(entry["question"]["per"])
+
+
 def question_of(entry, item=None, state=None):
     """The spec `ask` and `branch` read: the question as sent, plus the cuts,
     which are this tree's reading of the answer and are never sent.
 
-    `item` is the key of a reading asked per item, written into the instructions
-    where `{item}` stands -- by replacement and not by `format`, so a question
-    holding a brace of its own is not a formatting error.
+    `item` is the key of a reading asked per item, put into the instructions
+    the way the entry's `compose` declares -- by replacement and not by
+    `format`, so a question holding a brace of its own is not a formatting
+    error.
 
-    `state` is what a reading whose options are BUILT is built from; it is
-    ignored by every other reading, so a caller that does not pass it changes
-    nothing for the entries that declare no `options_from`."""
+    `state` is what a reading whose options are BUILT is built from, and where
+    an item composed into the QUESTION reads its text; it is ignored by every
+    other reading, so a caller that does not pass it changes nothing for the
+    entries that declare no `options_from` and no per-item shape."""
     spec = dict(entry["question"])
     spec.update(entry.get("thresholds") or {})
     if spec.pop(OPTIONS_FROM, None):
         spec["criteria"] = options_of(entry, state)
-    if item is not None:
-        spec["instructions"] = spec["instructions"].replace(ITEM_MARK, str(item))
+    elif "criteria" in spec:
+        spec["criteria"] = criteria_of(entry, state)
+    if item is None:
+        return spec
+    if compose_of(entry)["where"] == FROM_TABLE:
+        return filled_from_table(entry, spec, item)
+    spec["instructions"] = instructions_of(entry, item, state)
     return spec
 
 
@@ -1188,7 +1394,12 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     `key` is the join key AS FIELDS -- `repo`, `issue`, and `comment` or
     `pull_request` where there is one -- because every join is "the later fact
     on that number" and a number inside a label is not a field anything can
-    read. `flag` is what the reader computed from the answers,
+    read. A COMMIT-TIME READER'S KEY IS `repo`, `commit` AND `path`: it judges
+    one file's text at `pre-commit`, before its own commit exists, so the sha
+    it can name is the one it is committing onto and the later fact is what
+    happened to that file after it.
+
+    `flag` is what the reader computed from the answers,
     {"code": ..., "moved_by": ...}: the flag and which answer moved it. It may
     be a CALLABLE `(reading, raw) -> flag`, because a reader cannot compute a
     flag from answers it has not got back yet.
@@ -1197,12 +1408,22 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     ties the rows of one call back together."""
     reg = load_registry() if reg is None else reg
     entries = group_of(reg, group)
-    want, given = state_fields(entries), set(state)
+    # THE ITEMS ARE ASKED FOR AND NOT ALWAYS SENT. A reading whose `compose`
+    # puts the item's text in the QUESTION is handed its items here all the
+    # same -- there is nowhere else they could come from -- and the field they
+    # came from is then WITHHELD from the call, because an item carried by the
+    # question is not sent twice. So the caller owes the group's fields plus
+    # every item source, and the endpoint is sent the fields less those.
+    sources = set().union(*(item_fields(e) for e in entries.values())) \
+        if entries else set()
+    fields = state_fields(entries)
+    want, given = fields | sources, set(state)
     if want != given:
         raise ValueError(
             f"campaign-jev: the state of group `{group}` must carry exactly "
             f"{sorted(want)}; missing {sorted(want - given) or 'none'}, extra "
             f"{sorted(given - want) or 'none'}")
+    carried = fields - sources
     # A NUMBER WITHOUT ITS REPOSITORY IS NOT A JOIN KEY. A member repository's
     # pull request closes a sub-issue on this tracker, and its number collides
     # with this tracker's own -- 33 of 199 closing links are a member's
@@ -1215,6 +1436,20 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
             f"campaign-jev: the join key names {', '.join(numbered)} with no "
             f"`repo`; a number alone names no issue when a member "
             f"repository's numbers collide with this tracker's")
+    # A COMMIT-TIME READING IS KEYED BY THE SHA AND THE PATH, and by both. The
+    # reader runs at `pre-commit` over the index, so the sha it can name is the
+    # one it is committing ONTO and the path is the file it judged; the later
+    # fact is what happened to THAT FILE after THAT COMMIT. A sha with no
+    # repository names no checkout to read it in, and a sha with no path leaves
+    # the join guessing its way around a whole commit's diff.
+    if "commit" in key:
+        for field in ("repo", "path"):
+            if not key.get(field):
+                raise ValueError(
+                    f"campaign-jev: the join key names `commit` with no "
+                    f"`{field}`; a commit-time reading judges one file's text "
+                    f"at the sha it is committing onto, so its key is the "
+                    f"repository, the sha and the path, and all three")
     settled = dict(settled or {})
     for name in settled:
         if name not in entries:
@@ -1224,31 +1459,44 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
     for name, entry in entries.items():
         per = (entry.get("question") or {}).get("per")
         given = settled.get(name)
-        if not per:
+        items = items_of(entry, state)
+        if items is None:                # asked once: no `per`, or one a call
             if name not in settled:
                 asked[name] = question_of(entry, state=state)
             continue
-        items = state.get(per)
         if not isinstance(items, dict):
             raise ValueError(
-                f"campaign-jev: `{name}` is asked per `{per}`, so the state's "
-                f"`{per}` must be an object of one item per question; it is a "
+                f"campaign-jev: `{name}` is asked per `{per}`, so the items "
+                f"`{compose_of(entry)['where']}` holds must be an object of "
+                f"one item per question; they are a "
                 f"{type(items).__name__}")
         if given is not None and not isinstance(given, dict):
             continue                     # one word settles the whole reading
-        if ITEM_MARK not in entry["question"]["instructions"]:
+        # THE ITEM MUST BE IN THE QUESTION, and the entry's `compose` says
+        # how. The id is a key of the body and no part of the question, so a
+        # shape that named the item nowhere would ask the same question once
+        # per item and get one answer n times.
+        shape = compose_of(entry)
+        marks = ([ITEM_MARK] if shape["where"] == IN_STATE
+                 else list(shape["as"]) if shape["where"] == IN_QUESTION
+                 and isinstance(shape["as"], dict) else [])
+        missing = [m for m in marks
+                   if m not in entry["question"]["instructions"]]
+        if missing:
             raise ValueError(
-                f"campaign-jev: `{name}` is asked per `{per}` through `judge`, "
-                f"so its instructions must name the item with `{ITEM_MARK}`; "
-                f"the question id never reaches the model, and without it the "
-                f"same question would be asked once per item")
-        fanned[name] = per
+                f"campaign-jev: `{name}` is asked per `{per}` and composes its "
+                f"item at {', '.join(missing)}, which its instructions do not "
+                f"name; the question id is a KEY of the request body and no "
+                f"part of the question, so without it the same question would "
+                f"be asked once per item")
+        fanned[name] = items
         cleared = given or {}
         for item in items:
             if item not in cleared:
                 asked[f"{name}#{item}"] = question_of(entry, item, state)
     if asked:
-        reading = ask(reader or "campaign-jev.judge", read, state, asked,
+        reading = ask(reader or "campaign-jev.judge", read,
+                      {k: v for k, v in state.items() if k in carried}, asked,
                       env=env, cwd=cwd, timeout=timeout, log=False, cache=cache,
                       run=run)
     else:
@@ -1261,15 +1509,19 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
         if name in fanned:
             # ONE VERDICT PER READING STILL, carrying the per-item answers and
             # no word: combining them is the entry's `combine`, which code does.
-            raw, whys = {}, []
-            for item in state[fanned[name]]:
+            # THE RAWS AND THE WHYS ARE BOTH PER ITEM. A joined string read
+            # back to one item was a parse nobody could do safely, and the
+            # reason a question went `unknown` -- which is the whole of what
+            # a failed call leaves behind -- belongs to that item alone.
+            raw, whys = {}, {}
+            for item in fanned[name]:
                 answer = reading.answers.get(f"{name}#{item}")
                 if answer is None:
                     continue
                 raw[item] = answer.raw
                 if answer.why:
-                    whys.append(f"{item}: {answer.why}")
-            word, why = None, "; ".join(whys)
+                    whys[item] = answer.why
+            word, why = None, whys
             verdicts[name] = Verdict(word, raw, why, entry["tier"],
                                      does(entry, word, raw))
         elif name in settled:
@@ -1307,12 +1559,17 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
 
 def fetch_issue(repo, number, timeout=30):
     """One issue as `gh` gives it, or None. THE ONE FETCH, so an offline suite
-    stubs this alone and every join is exercised against it."""
+    stubs this alone and every join is exercised against it.
+
+    ITS COMMENTS COME WITH IT, in the same call, because two of the joins read
+    what was said on the sub-issue AFTER the reading -- the next DECISION, the
+    next REVIEW -- and a second call for them would double every fetch this
+    command makes."""
     try:
         out = subprocess.run(
             ["gh", "issue", "view", str(number), "-R", repo, "--json",
-             "title,body,state,labels"], capture_output=True, text=True,
-            timeout=timeout)
+             "title,body,state,labels,comments"], capture_output=True,
+            text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
@@ -1646,14 +1903,352 @@ def join_report_next_round(row, thread):
                   f"sub-issue of it reopened naming it"), ""
 
 
+
+def repo_of(url):
+    """`owner/name` out of a git remote URL, or "". Both spellings git writes:
+    `https://github.com/owner/name.git` and `git@github.com:owner/name.git`."""
+    found = re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?/*$", (url or "").strip())
+    return found.group(1) if found else ""
+
+
+def clone_of(repo, cwd=None):
+    """This machine's checkout of `repo`, or None.
+
+    THE BASE IS THE ONE CHECKOUT A JOIN CAN COUNT ON. A member repository's
+    clone lives under a campaign directory -- git-ignored scratch a close
+    sweeps -- so a join that read one would answer differently depending on
+    which campaigns happen to be open on the day it ran. A sha in any other
+    repository reads as None and the join COUNTS it as a subject that would not
+    read, which is the same treatment a deleted issue gets and never a guess."""
+    root = base_root(cwd)
+    if root is None:
+        return None
+    try:
+        out = subprocess.run(["git", "-C", str(root), "remote", "get-url",
+                              "origin"], capture_output=True, text=True,
+                             timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return root if repo_of(out.stdout) == repo else None
+
+
+def commit_key(cwd=None):
+    """{repo, commit} for a reading made at `pre-commit`, or {} -- the
+    repository this tree pushes to and the sha it is committing ONTO.
+
+    THE COMMIT BEING MADE HAS NO SHA YET, which is why the key is its parent:
+    the reader runs over the index, and `HEAD` is the newest thing it can name.
+    `fetch_commits` reads the window from there, and the join drops the first
+    later commit that touched the file -- the one this reading was made for.
+
+    A KEY IT COULD NOT READ IS EMPTY, never half: a row carrying a path and no
+    repository is a row the join cannot reach anyway, and it says so."""
+    out = {}
+    for field, args in (("repo", ("remote", "get-url", "origin")),
+                        ("commit", ("rev-parse", "HEAD"))):
+        try:
+            got = subprocess.run(["git", *args], capture_output=True, text=True,
+                                 timeout=10, cwd=str(cwd) if cwd else None)
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        if got.returncode != 0 or not got.stdout.strip():
+            return {}
+        out[field] = got.stdout.strip()
+    out["repo"] = repo_of(out["repo"])
+    return out if out["repo"] else {}
+
+
+def fetch_commits(repo, sha, path, timeout=60, cwd=None):
+    """What happened to one file after one commit, or None.
+
+    {commits: [{sha, paths}] touching `path` after `sha`, oldest first;
+     own: the commit of those whose parent IS `sha`, or None;
+     now: the file as `origin/main` holds it, or None where it is gone;
+     window: how many commits `sha..origin/main` holds at all;
+     unmerged: set where the sha has not reached `origin/main`}
+
+    `own` IS THE READING'S OWN COMMIT. A commit-time reader runs at
+    `pre-commit`, so the sha it names is the PARENT and the change it judged is
+    the child -- which touches `path` by construction, since `path` was staged.
+    Counting that as somebody coming back to the file let a claim be called
+    "read and left" by the very commit that wrote it (pr#492 REVIEW
+    5723079103, F1), so it is named here and the join drops it.
+
+    THE ONE FETCH for a commit-time reading, as `fetch_issue` is for an issue
+    and `fetch_thread` for a pull request, so an offline suite stubs one
+    function per subject. It asks GITHUB NOTHING: the later fact here is the
+    history, and git holds that whole and for free.
+
+    IT IS READ AT A SHA AND A PATH, never a sha alone, because the later fact
+    is what happened to ONE FILE and the file as `origin/main` holds it now is
+    half of it. `window` is the other clock: how much history has passed at
+    all, so a join can tell "nobody has touched it yet" from "nobody touched it
+    in the twenty commits since".
+
+    A SHA THIS CHECKOUT DOES NOT HOLD IS None, and it is read APART from the
+    ancestry: `git merge-base --is-ancestor` exits 128 for a sha that is not a
+    commit here and 1 for one that is merely unmerged, and reading both as
+    `unmerged` left a row keyed to a squashed or force-pushed sha waiting for
+    ever instead of counted among the subjects that will never read
+    (pr#492 REVIEW 5723079103, F3).
+
+    A SHA THAT HAS NOT REACHED `origin/main` IS `unmerged` AND NOT None.
+    `<sha>..origin/main` over an unmerged claim is every commit main took since
+    the fork, not one of which is a later fact about this reading's own change,
+    so nothing is read there -- but such a sha is WAITING and not unreadable,
+    and None is the word for a subject nothing on this tracker can ever label.
+    A reading made on the claim it is about is the ordinary case, so reporting
+    those as dead would bury every row this machinery was built for.
+
+    IT READS THE LOCAL `origin/main` AND FETCHES NOTHING. A clone behind the
+    remote sees fewer later commits and a shorter window, which costs a label
+    and can never write a wrong one: every missing later fact leaves the row
+    waiting in the log, where the next run picks it up."""
+    root = clone_of(repo, cwd)
+    if root is None:
+        return None
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root), *args],
+                              capture_output=True, text=True, timeout=timeout)
+
+    try:
+        if git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+            return None
+        # AND THE REF THE WINDOW IS MEASURED AGAINST. `--is-ancestor` exits 128
+        # for a missing `origin/main` exactly as it does for a missing sha, so
+        # a checkout without it read every sha `unmerged` for ever instead of
+        # saying nothing here can label them (pr#492 REVIEW 5723212225, F3).
+        if git("rev-parse", "--verify", "-q",
+               "origin/main^{commit}").returncode != 0:
+            return None
+        if git("merge-base", "--is-ancestor", sha,
+               "origin/main").returncode != 0:
+            return {"commits": [], "window": 0, "now": None, "unmerged": True}
+        window = git("rev-list", "--count", f"{sha}..origin/main")
+        log = git("log", "--reverse", "--format=%H %P", "--name-only",
+                  f"{sha}..origin/main", "--", path)
+        now = git("show", f"origin/main:{path}")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if window.returncode != 0 or log.returncode != 0:
+        return None
+    commits, at, own = [], None, None
+    for line in log.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        found = re.fullmatch(r"([0-9a-f]{40})((?: [0-9a-f]{40})*)", line)
+        if found:
+            at = {"sha": found.group(1), "paths": []}
+            commits.append(at)
+            # BY PREFIX, because `%P` is always 40 hex and the sha a row
+            # carries need not be: `cat-file -e` and `merge-base` both take an
+            # abbreviation or a tag, and an equality test there found no child
+            # and quietly undid the drop above (pr#492 REVIEW 5723212225, F2).
+            if own is None and any(p.startswith(sha)
+                                   for p in found.group(2).split()):
+                own = at["sha"]
+        elif at is not None:
+            at["paths"].append(line)
+    return {"commits": commits, "own": own,
+            "window": int(window.stdout.strip() or 0),
+            "now": now.stdout if now.returncode == 0 else None}
+
+
+# HOW MUCH HISTORY MAKES "NOBODY CHANGED IT" A FACT. A comment nobody has gone
+# back to says nothing yet; a comment still standing after twenty commits, one
+# of them on its own file, was read and left. The number is here and not in an
+# entry because it is the same question for every commit-time reading.
+COMMIT_WINDOW = 20
+
+
+def later_comments(issue, at, kind):
+    """The bodies of one issue's comments after `at` whose first word is
+    `kind`. THE ONE READER of "what was said next on that sub-issue", because
+    two joins ask it and a second copy would read a different channel."""
+    return [c.get("body") or "" for c in (issue or {}).get("comments") or []
+            if (c.get("createdAt") or "") > at
+            and (c.get("body") or "").lstrip().startswith(kind + " ")]
+
+
+def join_decision_gap(row, issue):
+    """research-bar: did the next DECISION on that sub-issue name this
+    condition as a gap?
+
+    THE OWNER'S OR PLANNER'S NEXT WORD IS THE LABEL, which is the strongest
+    this tree has for this reading: the reading says whether a NOTE meets a
+    condition of the research bar, and the DECISION answering that NOTE either
+    names what is missing or moves the work on. A DECISION carrying half a
+    condition's words is that condition named -- rule-check#460 set C's own
+    rule, reused here through `re_raised`, so both joins measure "named again"
+    the same way.
+
+    THE TWO HALVES ARE NOT EQUALLY STRONG, as `join_issue_title_kept`'s are
+    not. A condition NAMED is strong: somebody read the note and said that bar
+    was not met. A condition not named is the weak half -- the DECISION may
+    simply not have gone through them -- and it is what labels the `no` class,
+    which is why `label.from` records the join by name."""
+    if issue is None:
+        return None, "", "the issue did not read"
+    conditions = (row.get("state") or {}).get("condition") or {}
+    if not conditions:
+        return None, "", "the row carries no condition to label"
+    later = later_comments(issue, row.get("at") or "", "DECISION")
+    if not later:
+        return None, "", "no DECISION on this sub-issue after the NOTE yet"
+    body = "\n".join(later)
+    truth = {k: ("yes" if re_raised(text, body) else "no")
+             for k, text in conditions.items()}
+    named = sorted(k for k, v in truth.items() if v == "yes")
+    return (truth,
+            f"{len(later)} DECISION(s) after this NOTE on {row.get('repo')}#"
+            f"{row.get('issue')}; " + (f"named as a gap: {', '.join(named)}"
+                                       if named else "none of these named"),
+            "")
+
+
+def join_done_line_reraised(row, issue):
+    """done-test-claim, done-report-claim: did a later REVIEW on that sub-issue
+    name that Definition-of-done line again?
+
+    THE READING SAYS THE EVIDENCE SHOWS THE LINE HOLDS. A later REVIEW naming
+    that line is somebody saying it did not, which is the strong half. The
+    weak half is the sub-issue CLOSED with no REVIEW naming it -- nobody looked
+    again -- and it is what labels the `yes` class, which is why it waits for
+    the close rather than reading an open issue as agreement.
+
+    THE WAIT IS PER CONDITION AND NOT PER ROW. One REVIEW naming ONE of the
+    round's lines used to carry every other line of the same row past the
+    close, handing the weak half a label nothing had earned; a condition no
+    later REVIEW names is simply left out of the truth until the sub-issue
+    closes (pr#492 REVIEW 5723079103, F2)."""
+    if issue is None:
+        return None, "", "the issue did not read"
+    conditions = (row.get("state") or {}).get("condition") or {}
+    if not conditions:
+        return None, "", "the row carries no condition to label"
+    later = later_comments(issue, row.get("at") or "", "REVIEW")
+    body = "\n".join(later)
+    closed = str(issue.get("state", "")).upper() == "CLOSED"
+    truth = {}
+    for k, text in conditions.items():
+        if later and re_raised(text, body):
+            truth[k] = "no"
+        elif closed:
+            truth[k] = "yes"
+    again = sorted(k for k, v in truth.items() if v == "no")
+    if not truth:
+        return None, "", ("no REVIEW naming these lines yet, and the sub-issue "
+                          "is still open")
+    return (truth,
+            f"{len(later)} REVIEW(s) after this reading on {row.get('repo')}#"
+            f"{row.get('issue')}, {len(truth)} of {len(conditions)} line(s) "
+            f"labelled; " + (f"named again: {', '.join(again)}" if again
+                             else "the sub-issue closed with none of these "
+                                  "named again"),
+            "")
+
+
+def join_comment_rewritten(row, seen):
+    """docstring-claims, reference-claims, model-comment: did a later commit
+    take that claim out of the file?
+
+    THE READING SAYS A CLAIM IS CONTRADICTED BY THE CODE UNDER IT, and the
+    later fact is what somebody did to the claim. A claim GONE while the
+    definition it is about is still there is the strong half: the comment was
+    rewritten and the claim did not survive it. A claim still standing is the
+    weak half -- and it is only read as one at all once somebody has come back
+    to that file and left it, which is why `no` needs a later commit ON THE
+    FILE and a window of `COMMIT_WINDOW` commits behind it.
+
+    TWO STATES ARE NOT LABELLED AT ALL, and both are said rather than guessed:
+    the file gone from `origin/main`, where what happened to the claim cannot
+    be read from what replaced it; and the DEFINITION gone, where a claim gone
+    with it says nothing about the claim. A claim left undecided is simply
+    left out of the truth, so the ones that are decided are not held back by
+    it."""
+    if seen is None:
+        return None, "", "the file's history did not read"
+    if seen.get("unmerged"):
+        return None, "", (f"{row.get('commit', '')[:12]} has not reached "
+                          f"`origin/main`, so no commit after it is a later "
+                          f"fact about this reading")
+    claims = (row.get("state") or {}).get("claim") or {}
+    if not claims:
+        return None, "", "the row carries no claim to label"
+    now = seen.get("now")
+    if now is None:
+        return None, "", (f"`{row.get('path')}` is gone from `origin/main`, so "
+                          f"what happened to the claim cannot be read from "
+                          f"what replaced it")
+    name = row.get("name") or ""
+    if name and name not in now:
+        return None, "", (f"`{name}` is gone from `{row.get('path')}`, so a "
+                          f"claim gone with it says nothing about the claim")
+    own = seen.get("own")
+    touched = len([c for c in seen.get("commits") or []
+                   if c.get("sha") != own])
+    window = seen.get("window") or 0
+    flat = " ".join(now.split())
+    truth = {}
+    for text in claims.values():
+        if " ".join(str(text).split()) not in flat:
+            truth[str(text)] = "yes"
+        elif touched and window >= COMMIT_WINDOW:
+            truth[str(text)] = "no"
+    if not truth:
+        return None, "", (f"{window} commit(s) on `origin/main` since, "
+                          f"{touched} of them on this file and not this "
+                          f"reading's own; every claim is still there and that "
+                          f"is under {COMMIT_WINDOW}")
+    gone = sorted(k for k, v in truth.items() if v == "yes")
+    return (truth,
+            f"{len(truth)} of {len(claims)} claim(s) labelled on "
+            f"{row.get('path')} `{name}` after {row.get('commit', '')[:12]}, "
+            f"{window} commit(s) and {touched} on the file since; "
+            + (f"rewritten away: {', '.join(gone)}" if gone
+               else "each still there"), "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
+         "filing-parent-slug": join_filing_parent_slug,
          "report-next-round": join_report_next_round,
-         "filing-parent-slug": join_filing_parent_slug}
-# WHICH NUMBER A ROW'S JOIN READS, and which fetch answers it. A row carries its
-# join key as FIELDS, so the subject is the field it names and never a guess.
-SUBJECTS = {"issue": "fetch", "pull_request": "fetch_thread"}
+         "decision-gap": join_decision_gap,
+         "done-line-reraised": join_done_line_reraised,
+         "comment-rewritten": join_comment_rewritten}
+# WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
+# fields it is given after the repository). A row carries its join key as
+# FIELDS, so the subject is the field it names and never a guess. A commit-time
+# row names TWO, because no sha alone names a file.
+SUBJECTS = {"issue": ("fetch", ("issue",)),
+            "pull_request": ("fetch_thread", ("pull_request",)),
+            "commit": ("fetch_commits", ("commit", "path"))}
+
+
+def subject_of(row):
+    """(the subject field, the fetch's name, what it is given after the repo)
+    for one row -- or (None, why not, ()).
+
+    THE SECOND HALF IS WHY A ROW NAMES WHAT IT LACKS. Every shape used to park
+    under one sentence about `repo` and a number, which said nothing to a row
+    carrying a sha and no path; the reason travels beside the verdict here so
+    `corpus join` prints the one that fits."""
+    repo = row.get("repo")
+    subject = next((s for s in SUBJECTS if row.get(s)), None)
+    if not repo or subject is None:
+        return None, (f"the row carries no repo and "
+                      f"{' or '.join(SUBJECTS)} field"), ()
+    how, fields = SUBJECTS[subject]
+    missing = [f for f in fields if not row.get(f)]
+    if missing:
+        return None, (f"the row's `{subject}` key carries no "
+                      f"{', '.join(f'`{f}`' for f in missing)}"), ()
+    return subject, how, tuple(row[f] for f in fields)
 
 
 # ------------------------------------------------------------------ the corpus
@@ -1743,15 +2338,13 @@ def cmd_corpus_join(args):
         if ref in known.get(name, set()):
             continue
         entry, repo = reg[name], row.get("repo")
-        subject = next((s for s in SUBJECTS if row.get(s)), None)
-        if not repo or subject is None:
-            waiting.append((row, f"the row carries no repo and "
-                                 f"{' or '.join(SUBJECTS)} field"))
+        subject, how, given = subject_of(row)
+        if subject is None:
+            waiting.append((row, how))
             continue
-        number = row[subject]
-        if (subject, repo, number) not in fetched:
-            fetched[(subject, repo, number)] = getattr(
-                args, SUBJECTS[subject])(repo, number)
+        at = (subject, repo) + given
+        if at not in fetched:
+            fetched[at] = getattr(args, how)(repo, *given)
         # A SUBJECT THAT WILL NOT READ AT ALL IS SKIPPED, COUNTED AND NAMED,
         # and it does not fail the run. It is not "not labelled yet" either:
         # the shared log holds hundreds of rows whose subject is a suite's
@@ -1759,12 +2352,12 @@ def cmd_corpus_join(args):
         # waiting asks a reader to go and fix a number that cannot move. Each
         # fetch is made ONCE per subject, so a repository that is gone costs
         # one `gh` call however many rows name it.
-        if fetched[(subject, repo, number)] is None:
-            unfetched.setdefault(f"{repo}#{number}", 0)
-            unfetched[f"{repo}#{number}"] += 1
+        if fetched[at] is None:
+            named = f"{repo}#{'/'.join(str(g) for g in given)}"
+            unfetched.setdefault(named, 0)
+            unfetched[named] += 1
             continue
-        truth, evidence, why = JOINS[entry["join"]](
-            row, fetched[(subject, repo, number)])
+        truth, evidence, why = JOINS[entry["join"]](row, fetched[at])
         if truth is None:
             waiting.append((row, why))
             continue
@@ -2299,7 +2892,19 @@ def relive(name, entry, cases, env=None, root=None, whole=False):
     replaced -- a band is read from the run history, so a run that overwrote
     the one before it would erase the evidence of drift.
 
-    WHICH CASES ARE ASKED IS `sample_of`'s, and `whole` is the way past it."""
+    WHICH CASES ARE ASKED IS `sample_of`'s, and `whole` is the way past it.
+
+    A PER-ITEM READING IS NOT ASKED HERE AND SAYS SO. Its question is composed
+    from the item, and `question_of` with no item leaves `{condition}` standing
+    or hands back the instructions object unfilled -- a question production
+    never sends, so a band measured on it would belong to a call nobody makes.
+    The suite's `--live` half already refused these; this refused nothing and
+    sent the malformed one (pr#492 REVIEW 5723079103, F4)."""
+    if (entry.get("question") or {}).get("per"):
+        print(f"  {name}: asked per "
+              f"`{entry['question']['per']}`, so its question is composed from "
+              f"an item and this has none; not asked")
+        return cases
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="seconds")
     q = {name: question_of(entry)}
@@ -2383,7 +2988,7 @@ def main(argv):
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])
     p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
-                   fetch_thread=fetch_thread)
+                   fetch_thread=fetch_thread, fetch_commits=fetch_commits)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

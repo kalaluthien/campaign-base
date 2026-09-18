@@ -197,9 +197,25 @@ def other_comment_asks_nothing(t):
     return r.returncode == 0 and not SEEN and not LOGGED, (len(SEEN), LOGGED)
 
 
+def row_carries_its_join_key(t):
+    """WHAT THE MOVE FROM `ask` TO `judge` BOUGHT: the row names the reading
+    and its wording and carries the key as FIELDS -- the repository, the pull
+    request and which finding it was -- so the thread's next REVIEW can be
+    joined to the answer. A call given no repository carries neither number."""
+    run(t, argv=("468", "o/r"))
+    keyed = [x for x in LOGGED if x.get("reading")]
+    run(t)
+    bare = [x for x in LOGGED if x.get("reading")]
+    return (bool(keyed) and all(x.get("repo") == "o/r" for x in keyed)
+            and all(x.get("pull_request") == 468 for x in keyed)
+            and all(x.get("finding") for x in keyed)
+            and all(len(x.get("wording") or "") == 12 for x in keyed)
+            and all("repo" not in x for x in bare)), (keyed, bare)
+
+
 def entry_reaches_model(t):
     run(t)
-    q = SEEN[0]["questions"]["c"] if SEEN else {}
+    q = SEEN[0]["questions"]["finding-site"] if SEEN else {}
     return (q.get("criteria") == ENTRY["question"]["criteria"]
             and q.get("instructions") == ENTRY["question"]["instructions"]
             and "yes_over" not in q), q
@@ -222,6 +238,7 @@ CASES = {
     "a sha the checkout does not hold asks nothing and logs one skip row a finding": unknown_sha_skips_each,
     "a comment of another kind asks nothing": other_comment_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
+    "the row carries the reading, the wording and the join key": row_carries_its_join_key,
     "a reading that raised exits 0, says nothing and logs a skip": failure_logs_skip,
 }
 
@@ -237,8 +254,9 @@ MUTATIONS = [
      "the slice is read at the last sha the first line names"),
     ("no suffix match", 'hits = [p for p in paths if p.endswith("/" + name)]', "hits = []",
      "a path written without its directory resolves to the one file ending in it"),
-    ("the site left out of the label", 'asks.append((f"{subject} f{n} {site[0]}:{site[1]}",',
-     'asks.append((f"{subject} f{n}",',
+    ("the site left out of the label",
+     'asks.append((n, f"{subject} f{n} {site[0]}:{site[1]}",',
+     'asks.append((n, f"{subject} f{n}",',
      "each call is labelled with the finding's number and its resolved site"),
     ("a finding with no site not logged", "            jev.skip(READER, f\"{subject} f{n}\", got, env)",
      "            pass", "a finding naming no path:line, a line past the end or no one file logs one skip row each"),
@@ -249,8 +267,17 @@ MUTATIONS = [
      "a sha the checkout does not hold asks nothing and logs one skip row a finding"),
     ("the comment kind not read", 'if not review.lstrip().startswith("REVIEW "):', "if False:",
      "a comment of another kind asks nothing"),
-    ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
+    ("the reading's group not read from the entry",
+     'jev.judge(entry["group"], state, read=label, reader=READER,',
+     'jev.judge("issue-shape", state, read=label, reader=READER,',
      "the entry's instructions and criteria reach the model, thresholds do not"),
+    ("the row keyed by a number with no repository",
+     '{"repo": repo, "pull_request": int(pr)} if repo else None, env)',
+     '{"pull_request": int(pr)}, env)',
+     "the row carries the reading, the wording and the join key"),
+    ("the finding never numbered on the row",
+     "key=dict(key or {}, finding=n), env=env)", "key=key, env=env)",
+     "the row carries the reading, the wording and the join key"),
     ("the skip not logged", 'READER, subject, f"the reading raised {e.__class__.__name__}", env)',
      'READER, subject, "x", {"CAMPAIGN_JEV_LOG": "/nonexistent/x/y"})',
      "a reading that raised exits 0, says nothing and logs a skip"),
@@ -269,7 +296,8 @@ def live(record):
     today = datetime.date.today().isoformat()
     misses = 0
     for row in rows:
-        reading = jev.ask(m.READER, row["id"], row["state"], m.questions(ENTRY))
+        reading = jev.ask(m.READER, row["id"], row["state"],
+                          {"c": jev.question_of(ENTRY)})
         a = reading.answers["c"]
         p = ((a.raw or {}).get("probabilities") or {}).get(t["option"])
         raw = None if p is None else round(p, 2)

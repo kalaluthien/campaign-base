@@ -3671,11 +3671,22 @@ def judge_each_keeps_order(m):
     calls = recording(m)
     got = m.judge_each([{"group": "g", "state": {"i": i}, "read": f"r{i}"}
                         for i in range(5)], reader="R", key={"k": 1})
+    # THE RESULTS COME BACK IN THE ASKS' ORDER, whatever order the threads
+    # finish in: a caller zips them onto its states, so a reordering puts a
+    # verdict on the wrong claim. Each result names its own ask here.
+    m.judge = lambda group, state, **kw: m.Judged({}, MODEL, 0, "c", kw["read"])
+    ordered = [j.logged for j in m.judge_each(
+        [{"group": "g", "state": {}, "read": f"r{i}"} for i in range(20)])]
+    # AN ASK'S OWN KEY WINS over the one every ask shares.
+    own = recording(m)
+    m.judge_each([{"group": "g", "state": {}, "key": {"k": 2}}], key={"k": 1})
     return (len(got) == 5 and sorted(c["read"] for c in calls)
             == [f"r{i}" for i in range(5)]
             and all(c.get("reader") == "R" and c.get("key") == {"k": 1}
                     for c in calls)
-            and m.judge_each([]) == []), calls
+            and ordered == [f"r{i}" for i in range(20)]
+            and own[0].get("key") == {"k": 2}
+            and m.judge_each([]) == []), (calls, ordered, own)
 
 
 def judge_chain_per_item(m):
@@ -3706,12 +3717,15 @@ def judge_chain_once(m):
         "group": "t", "state": {"w": w}, "read": "then"}, reg=reg)
     # THE SUBJECT CARRIES TO THE SECOND CALL: a `then` naming no `read` of
     # its own logs under the select's, or its rows join to nothing.
-    m.judge_chain("s", {"x": 1}, lambda w, _: {"group": "t", "state": {"w": w}},
-                  read="subject", reg=reg)
+    m.judge_chain("s", {"x": 1}, lambda w, _: {"group": "t", "state": {"w": w},
+                                               "key": {"k": 2}},
+                  read="subject", reg=reg, key={"k": 1})
     return (picked == {None: "b"}
             and [c["group"] for c in calls] == ["s", "t", "s", "t"]
             and calls[1]["state"] == {"w": "b"} and calls[1].get("read") == "then"
-            and calls[3].get("read") == "subject"), (picked, calls)
+            and calls[3].get("read") == "subject"
+            and calls[2].get("key") == {"k": 1}
+            and calls[3].get("key") == {"k": 2}), (picked, calls)
 
 
 def option_flag_reads_one_option(m):
@@ -4302,6 +4316,15 @@ MUTATIONS = [
      "a per-item pick asks once per option picked, with its items"),
     ("the once-asked word lost", "        asks = [then(picked[None], None)]",
      "        asks = [then(None, None)]", "a once-asked pick hands its word to the next call"),
+    ("the fanned results in finishing order",
+     "        return list(pool.map(lambda ask: judge(**dict(common, **ask)), asks))",
+     "        return list(pool.map(lambda ask: judge(**dict(common, **ask)), asks))[::-1]",
+     "one call per ask, each with what they share"),
+    ("the shared key over an ask's own", "judge(**dict(common, **ask))",
+     "judge(**dict(ask, **common))", "one call per ask, each with what they share"),
+    ("the chain's shared key over an ask's own",
+     '"reg": reg, "read": read, **ask}', '"reg": reg, "read": read, **ask, **common}',
+     "a once-asked pick hands its word to the next call"),
     ("the second call logged under no subject",
      '"reg": reg, "read": read, **ask', '"reg": reg, **ask',
      "a once-asked pick hands its word to the next call"),

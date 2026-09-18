@@ -3450,7 +3450,8 @@ def sweep(cases, loss):
     dearer wrong yes pushes it up. WHERE THE LEAST LOSS IS REACHED IN TWO
     SPANS APART, the candidates between them cost more, so one span is taken
     whole and never the stretch across both: the widest, which is the one a
-    new answer is least likely to cross, and the lower of two as wide."""
+    new answer is least likely to cross, and the lower of two as wide -- the
+    width ROUNDED, since 0.30 - 0.20 and 0.80 - 0.70 are not one float."""
     values = sorted({v for obs in cases for v, _yes in obs})
     marks = ([0.0] + [(a + b) / 2 for a, b in zip(values, values[1:])]
              + [1.0 + 1e-9])
@@ -3466,7 +3467,7 @@ def sweep(cases, loss):
     ends = [(max([v for v in values if v < marks[a]], default=0.0),
              min([v for v in values if v >= marks[b]], default=1.0))
             for a, b in runs]
-    low, high = max(ends, key=lambda e: (e[1] - e[0], -e[0]))
+    low, high = max(ends, key=lambda e: (round(e[1] - e[0], 6), -e[0]))
     share = loss["wrong_yes"] / (loss["wrong_yes"] + loss["wrong_no"])
     return low + (high - low) * share, low, high, best
 

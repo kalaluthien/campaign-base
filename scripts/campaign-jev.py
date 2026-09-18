@@ -123,6 +123,8 @@ one that logged.
 
 Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting [--steady]]
        scripts/campaign-jev.py corpus join
+       scripts/campaign-jev.py fit [<reading>] [--write]   -- each cut, fitted
+       on the labelled raw answers and the entry's `loss`; § the fit
        scripts/campaign-jev.py new <reading>
        scripts/campaign-jev.py probe <request.json>   -- a hand probe; the file
        holds {"reader": ..., "label": ..., "state": ..., "questions": {...}}
@@ -3345,6 +3347,319 @@ def relive(name, entry, cases, env=None, root=None, whole=False):
     return cases
 
 
+# -------------------------------------------------------------------- the fit
+# JEV ESTIMATES AND CODE DECIDES (rule-check#505, DECISION 5727045263). A cut a
+# session typed is a guess about where the model's numbers fall; the corpus and
+# the log hold where they DID fall, beside the truth. So an entry declares what
+# each wrong word costs -- `loss: {wrong_yes, wrong_no, why}` -- and `fit` reads
+# the labelled raw answers, sweeps the cut and writes it back. Every rule below
+# was fixed BEFORE the first run, since a rule picked after the run picks the
+# flattering one (rule-check#471 DECISION 5716742190):
+#
+#   an observation  one raw answer under the entry's CURRENT wording on a case
+#                   with a truth that code did not settle: a `seen` row, or a
+#                   real-endpoint log row tied to the case by the join's ref or
+#                   by the digest of the state cut to the entry's fields
+#   the fit set     the cases nobody MADE; a flip, a one-edit or a mutant is
+#                   scored at the chosen cut and reported beside, never fitted
+#   the floor       FIT_FLOOR cases of each class, or the reading is written
+#                   `unmeasurable` with the counts it has and nothing is guessed
+#   the cut         the point of least summed loss, a case weighing the mean
+#                   over its own observations; inside the span the data cannot
+#                   split, it sits at wrong_yes / (wrong_yes + wrong_no)
+#   the band        halfway from that point to each end of the span, and never
+#                   narrower than the median spread of one case's own repeats:
+#                   a lone cut inside the noise flips on it
+#   held out        the same procedure with each case left out in turn, scored
+#                   on the case it never saw; a cut that does not beat answering
+#                   one word always is `unmeasurable` too
+#
+# WHAT IS WRITTEN. `fit` on the entry, always: the verdict, the counts and the
+# losses. `thresholds` ONLY where the entry already declares the two edges
+# being fitted -- a typed cut is replaced, and a reading left uncut on purpose
+# stays uncut with its fit recorded beside it. No tier moves.
+FIT_FLOOR = 10
+FIT_FIELD, LOSS_FIELD = "fit", "loss"
+FITTED, UNMEASURABLE = "fitted", "unmeasurable"
+MADE_LABELS = ("flip-of", "one-edit", "mutant")
+
+
+def made(case):
+    """Was this case MADE rather than found? THE ONE READER of the two
+    spellings: `made_up` on the case, and a label whose `from` opens with one
+    of the made kinds."""
+    start = ((case.get("label") or {}).get("from") or "").split(":")[0]
+    return bool(case.get("made_up")) or start in MADE_LABELS
+
+
+def fit_option(entry):
+    """The one option whose probability is cut, or None: the threshold's, and
+    for a reading left uncut the one its `loss` names."""
+    return ((entry.get("thresholds") or {}).get("option")
+            or (entry.get(LOSS_FIELD) or {}).get("option"))
+
+
+def observation(entry, raw, truth):
+    """(the number a cut is over, was the right word yes) for one raw answer,
+    or None where it carries no such number.
+
+    THREE SHAPES. A `noul`, and a `choice` flagging one option, are cut on that
+    number against the truth. A `choice` cut on the winner's confidence is
+    fitted on whether the winner WAS the truth, which only a whole answer can
+    say -- a bare number from such a reading names no option, and is left out
+    rather than read as one."""
+    if not isinstance(truth, str):
+        return None
+    option, kind = fit_option(entry), entry["question"]["type"]
+    if kind == NOUL or option:
+        if isinstance(raw, dict):
+            raw = (raw.get(NOUL) if kind == NOUL
+                   else (raw.get("probabilities") or {}).get(option))
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            return None
+        return float(raw), truth in ("yes", option)
+    if not isinstance(raw, dict):
+        return None
+    value, word = raw.get("confidence"), raw.get(CHOICE)
+    if not isinstance(value, (int, float)) or not isinstance(word, str):
+        return None
+    return float(value), word == truth
+
+
+def case_loss(obs, cut, loss):
+    """What one case costs at one cut: the mean over its own observations, so
+    a case asked three times weighs what a case asked once does."""
+    cost = 0.0
+    for value, yes in obs:
+        said = value >= cut
+        if said and not yes:
+            cost += loss["wrong_yes"]
+        elif yes and not said:
+            cost += loss["wrong_no"]
+    return cost / len(obs)
+
+
+def sweep(cases, loss):
+    """(the cut, the span's lower end, its upper end, the summed loss) over
+    `cases`, a list of observation lists. A CALCULATION.
+
+    The candidates are one cut under every value, one over every value, and
+    the midpoint of each neighbouring pair. Those of least loss are one span
+    the data cannot split; its ends are the values that bound it, and the cut
+    sits inside at the share the two costs name -- a dearer wrong yes pushes it
+    up."""
+    values = sorted({v for obs in cases for v, _yes in obs})
+    marks = ([0.0] + [(a + b) / 2 for a, b in zip(values, values[1:])]
+             + [1.0 + 1e-9])
+    costs = [sum(case_loss(obs, c, loss) for obs in cases) for c in marks]
+    best = min(costs)
+    tied = [c for c, cost in zip(marks, costs) if cost - best < 1e-9]
+    low = max([v for v in values if v < tied[0]], default=0.0)
+    high = min([v for v in values if v >= tied[-1]], default=1.0)
+    share = loss["wrong_yes"] / (loss["wrong_yes"] + loss["wrong_no"])
+    return low + (high - low) * share, low, high, best
+
+
+def repeat_spread(cases):
+    """The median, over the cases asked more than once, of how far one case's
+    own answers sit apart: the noise a band must be wider than."""
+    spreads = sorted(max(v for v, _y in obs) - min(v for v, _y in obs)
+                     for obs in cases if len(obs) > 1)
+    return spreads[len(spreads) // 2] if spreads else 0.0
+
+
+def held_out(cases, loss):
+    """The mean loss a case costs at a cut fitted WITHOUT it."""
+    total = 0.0
+    for i, obs in enumerate(cases):
+        cut = sweep(cases[:i] + cases[i + 1:], loss)[0]
+        total += case_loss(obs, cut, loss)
+    return total / len(cases)
+
+
+def class_counts(cases):
+    """(cases whose right word is yes, cases whose right word is no). A case
+    whose own observations disagree -- a winner right once and wrong once --
+    counts where most of them fall."""
+    yes = sum(1 for obs in cases
+              if 2 * sum(1 for _v, y in obs if y) >= len(obs))
+    return yes, len(cases) - yes
+
+
+def fit_reading(entry, found, were_made, left_out=None):
+    """The `fit` object for one reading, from its observation lists.
+
+    `found` and `were_made` are lists of observation lists, one a case. The
+    verdict is `unmeasurable` with the reason and the counts, or `fitted` with
+    the cut, the two edges and every loss a reader would ask after."""
+    loss = entry.get(LOSS_FIELD)
+    yes, no = class_counts(found)
+    out = {"wording": wording(entry), "floor": FIT_FLOOR,
+           "counts": {"yes": yes, "no": no, "made": len(were_made)}}
+    # WHAT WAS LEFT OUT IS COUNTED BESIDE WHAT WAS FITTED, so a reading with a
+    # full corpus and an empty fit says which of the three reasons emptied it.
+    out["counts"].update({k: v for k, v in (left_out or {}).items() if v})
+
+    def cannot(why):
+        return dict(out, verdict=UNMEASURABLE, why=why)
+    if not found:
+        gone = ", ".join(f"{v} {k.replace('_', ' ')}"
+                         for k, v in (left_out or {}).items() if v)
+        return cannot("no labelled raw answer under the current wording a cut "
+                      "can be read over" + (f" ({gone})" if gone else ""))
+    if min(yes, no) < FIT_FLOOR:
+        return cannot(f"{yes} yes and {no} no case(s), under the floor of "
+                      f"{FIT_FLOOR} a class")
+    if not isinstance(loss, dict) or not all(
+            isinstance(loss.get(k), (int, float)) and loss[k] > 0
+            for k in ("wrong_yes", "wrong_no")):
+        return cannot("the entry declares no `loss` with a `wrong_yes` and a "
+                      "`wrong_no` above zero")
+    cut, low, high, best = sweep(found, loss)
+    half = repeat_spread(found) / 2
+    no_under = round(max(0.0, min((low + cut) / 2, cut - half)), 2)
+    yes_over = round(min(1.0, max((cut + high) / 2, cut + half)), 2)
+    constant = min(sum(case_loss(obs, c, loss) for obs in found)
+                   for c in (0.0, 1.0 + 1e-9)) / len(found)
+    unseen = held_out(found, loss)
+    out["loss_per_case"] = {"fitted": round(best / len(found), 3),
+                            "held_out": round(unseen, 3),
+                            "one_word_always": round(constant, 3)}
+    if were_made:
+        out["loss_per_case"]["made"] = round(
+            sum(case_loss(obs, cut, loss) for obs in were_made)
+            / len(were_made), 3)
+    if unseen >= constant:
+        return cannot(f"held out, the cut costs {unseen:.3f} a case and "
+                      f"answering one word always costs {constant:.3f}")
+    if yes_over <= no_under:
+        return cannot(f"the two edges meet at {yes_over}, so the band has no "
+                      f"middle")
+    return dict(out, verdict=FITTED, cut=round(cut, 3), no_under=no_under,
+                yes_over=yes_over)
+
+
+def fit_observations(name, entry, cases, rows):
+    """(found, were_made, tied, left_out): the observation lists of one
+    reading's cases, how many log rows were tied to one, and the cases left out
+    by reason.
+
+    A CASE CODE SETTLED IS LEFT OUT, because the model never answers it in
+    production; so is a truth that is an object, which is a reading asked per
+    item and scored by its `combine`, never by one cut."""
+    want, fields = wording(entry), (entry.get("state") or {}).get("fields") or []
+    by_ref, by_state, obs_of = {}, {}, {}
+    left_out = {"settled_by_code": 0, "asked_per_item": 0, "bare_number": 0}
+    for c in cases:
+        if isinstance(settled_of(c), str):
+            left_out["settled_by_code"] += 1
+            continue
+        if not isinstance(c.get("truth"), str):
+            left_out["asked_per_item"] += 1
+            continue
+        raws = [s["raw"] for s in c.get("seen") or []
+                if s.get("wording") == want and s.get("raw") is not None]
+        obs_of[c["id"]] = [o for o in (observation(entry, r, c["truth"])
+                                       for r in raws) if o]
+        if raws and not obs_of[c["id"]]:
+            left_out["bare_number"] += 1
+        by_state[digest(c.get("state"))] = c
+        ref = (c.get("source") or {}).get("ref")
+        if ref:
+            by_ref[ref] = c
+    tied = 0
+    for row in rows:
+        if (row.get("reading") != name or row.get("endpoint") != REAL
+                or row.get("wording") != want or row.get("raw") is None):
+            continue
+        cut = {k: v for k, v in (row.get("state") or {}).items() if k in fields}
+        case = (by_ref.get(f"{row.get('call')}:{name}")
+                or by_state.get(digest(cut)))
+        if case is None:
+            continue
+        o = observation(entry, row["raw"], case["truth"])
+        if o:
+            obs_of[case["id"]].append(o)
+            tied += 1
+    found = [obs_of[c["id"]] for c in cases
+             if obs_of.get(c["id"]) and not made(c)]
+    were_made = [obs_of[c["id"]] for c in cases
+                 if obs_of.get(c["id"]) and made(c)]
+    return found, were_made, tied, left_out
+
+
+def fit_edges(entry):
+    """The two threshold keys a fit replaces, or None where the entry declares
+    neither: a typed cut is replaced, an uncut reading stays uncut."""
+    cuts = entry.get("thresholds") or {}
+    if entry["question"]["type"] == NOUL or cuts.get("option"):
+        pair = ("no_under", "yes_over")
+    else:
+        pair = ("floor", "certain_over")
+    return pair if all(k in cuts for k in pair) else None
+
+
+def cmd_fit(args):
+    """Fit every reading's cut, print one row a reading, and with `--write`
+    put the result into the registry."""
+    path = Path(args.registry) if args.registry else REGISTRY
+    reg = load_registry(path)
+    rows, how, torn = read_log()
+    print(f"campaign-jev fit: registry {path}, corpus "
+          f"{args.corpus or CORPUS}, log {how} ({len(rows)} row(s)"
+          + (f", {torn} unparsed" if torn else "") + ")")
+    print("| reading | verdict | yes/no/made | tied log rows | cut "
+          "(no_under, yes_over) | was | loss a case: held out / one word "
+          "| why |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    names = [args.reading] if args.reading else list(reg)
+    today, wrote = datetime.date.today().isoformat(), 0
+    for name in names:
+        entry = reg.get(name)
+        if entry is None:
+            print(f"campaign-jev: no such reading `{name}`", file=sys.stderr)
+            return 2
+        found, were_made, tied, left_out = fit_observations(
+            name, entry, read_corpus(name, args.corpus), rows)
+        fit = fit_reading(entry, found, were_made, left_out)
+        edges, cuts = fit_edges(entry), entry.setdefault("thresholds", {})
+        was = ("uncut" if not edges
+               else f"{cuts.get(edges[0])}, {cuts.get(edges[1])}")
+        if fit["verdict"] == FITTED and edges:
+            fit["replaced"] = {k: cuts.get(k) for k in edges}
+            old = entry.get(FIT_FIELD) or {}
+            if old.get("replaced") and all(
+                    cuts.get(k) == old.get(f) for k, f in
+                    zip(edges, ("no_under", "yes_over"))):
+                # A SECOND RUN OVER ITS OWN RESULT keeps the cut it first
+                # replaced, or the typed number is lost on the next write.
+                fit["replaced"] = old["replaced"]
+            cuts[edges[0]], cuts[edges[1]] = fit["no_under"], fit["yes_over"]
+        old = dict(entry.get(FIT_FIELD) or {})
+        fit["at"] = (old.get("at") if {k: v for k, v in old.items()
+                                        if k != "at"} == fit else today)
+        entry[FIT_FIELD] = fit
+        c, per = fit["counts"], fit.get("loss_per_case") or {}
+        print(f"| {name} | {fit['verdict']} | {c['yes']}/{c['no']}/{c['made']} "
+              f"| {tied} | "
+              + (f"{fit['cut']} ({fit['no_under']}, {fit['yes_over']})"
+                 if fit["verdict"] == FITTED else "-")
+              + f" | {was} | "
+              + (f"{per['held_out']} / {per['one_word_always']}" if per else "-")
+              + f" | {fit.get('why', '')} |")
+        wrote += 1
+    assert wrote == len(names)
+    if not args.write:
+        print("nothing written; `--write` puts each `fit`, and each replaced "
+              "cut, into the registry")
+        return 0
+    check_edges(reg)
+    path.write_text(json.dumps(reg, indent=1, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    print(f"wrote {path}")
+    return 0
+
+
 def cmd_new(args):
     """An empty entry, and the PATH of the skill's reference -- never its text.
 
@@ -3357,7 +3672,8 @@ def cmd_new(args):
              "question": {"type": NOUL, "instructions": "",
                           "criteria": {"true": {"what": "", "examples": []},
                                        "false": {"what": "", "examples": []}}},
-             "thresholds": {}, "join": "",
+             "thresholds": {},
+             "loss": {"wrong_yes": 1, "wrong_no": 1, "why": ""}, "join": "",
              "bands": {"model": MODEL, "measured": "", "wording": "",
                        "declared": {}}}
     print(json.dumps({args.reading: empty}, indent=1, ensure_ascii=False))
@@ -3410,6 +3726,15 @@ def main(argv):
                    fetch_thread=fetch_thread, fetch_commits=fetch_commits,
                    fetch_guard_log=fetch_guard_log,
                    fetch_transcript=fetch_transcript)
+    p = sub.add_parser("fit", help="each reading's cut, fitted on its "
+                                   "labelled raw answers and its `loss`")
+    p.add_argument("reading", nargs="?")
+    p.add_argument("--write", action="store_true",
+                   help="put each `fit`, and each replaced cut, into the "
+                        "registry")
+    p.add_argument("--registry", help="a registry other than the tree's")
+    p.add_argument("--corpus", help="a corpus directory other than the tree's")
+    p.set_defaults(run=cmd_fit)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

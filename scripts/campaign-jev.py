@@ -134,6 +134,7 @@ Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting [--steady]
 import argparse
 import datetime
 import hashlib
+import io
 import importlib.machinery
 import importlib.util
 import json
@@ -143,6 +144,7 @@ import re
 import subprocess
 import sys
 import time
+import types
 import urllib.error
 import urllib.request
 import uuid
@@ -1686,6 +1688,125 @@ def readers_on(event, reg=None):
             if path not in out:
                 out.append(path)
     return [str(p) for p in out]
+
+
+# ------------------------------------------------------------- the one shell
+# A READER IS CALCULATIONS AND THIS IS ITS SHELL (rule-check#506, step 3). A
+# reader module declares `READER`, its file name; `INPUT`, what starts it --
+# `comment <KIND>`, `commit` or `staged`; `USAGE`; optionally `CWD`, the
+# directory its rows are logged against; and `steps(inp, reg, jev)`, which
+# yields what the reading is: a `Skip` code settled, a `Say` line to print, an
+# `Ask` of `judge` calls. Reading the input, driving the calls, logging a raise
+# and printing are all here, once; a reader's `main` only hands itself over.
+
+Skip = namedtuple("Skip", "read why")
+Say = namedtuple("Say", "line")
+# `asks` is `judge`'s keywords per call, one naming `select` being a
+# `judge_chain`'s; `common` what every ask shares (`workers` among them);
+# `present(results)` the lines to print, one result per ask in its order.
+Ask = namedtuple("Ask", "asks common present", defaults=(None, None))
+Comment = namedtuple("Comment", "number repo body subject")
+Commit = namedtuple("Commit", "subject branch")
+
+
+def perform(steps, reader, env=None, cwd=None, out=None):
+    """Carry out `steps` in order; [the results of each `Ask`]."""
+    out = sys.stdout if out is None else out
+    done = []
+    for step in steps:
+        if isinstance(step, Skip):
+            skip(reader, step.read, step.why, env, cwd=cwd)
+        elif isinstance(step, Say):
+            print(step.line, file=out)
+        else:
+            common = dict(step.common or {}, reader=reader, env=env, cwd=cwd)
+            workers = common.pop("workers", 8)
+            plain = iter(judge_each([a for a in step.asks if "select" not in a],
+                                    workers, **common))
+            got = [judge_chain(**{**common, **a}) if "select" in a
+                   else next(plain) for a in step.asks]
+            for line in (step.present(got) if step.present else []):
+                print(line, file=out)
+            done.append(got)
+    return done
+
+
+def run_reader(reader, argv, stdin=None, out=None, env=None):
+    """Run one reader over the input its `INPUT` names; the exit status.
+
+    `reader` is its module, or the globals of one handing itself over. A
+    reading NEVER REFUSES: 0 on every path but a usage error. A raise is a
+    skip row for a detached reader, whose output nobody reads, and the reader's
+    `raised(e)` lines -- a stock line by default -- for a staged one, which a
+    commit's author reads."""
+    r = types.SimpleNamespace(**reader) if isinstance(reader, dict) else reader
+    kind, _, word = r.INPUT.partition(" ")
+    cwd = getattr(r, "CWD", None)
+    # THIS MODULE AS THE READER SEES IT, whether it was imported, loaded by
+    # path or run: only an import registers it under a name.
+    jev = types.SimpleNamespace(**globals())
+
+    def usage():
+        print(f"Usage: {r.USAGE}", file=sys.stderr)
+        return 2
+
+    def go(inp):
+        return perform(r.steps(inp, load_registry(), jev), r.READER, env, cwd,
+                       out)
+    if kind == "comment":
+        if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
+            return usage()
+        number, repo = argv[0], (argv[1] if len(argv) > 1 else "")
+        subject = f"{repo or 'tracker'}#{number} {word}"
+
+        def body():
+            text = (sys.stdin if stdin is None else stdin).read()
+            if text.lstrip().startswith(word + " "):
+                go(Comment(number, repo, text, subject))
+        shielded(r.READER, subject, body, env, cwd=cwd)
+    elif kind == "commit":
+        if len(argv) > 2:
+            return usage()
+        subject = argv[0] if argv else "HEAD"
+        shielded(r.READER, subject, lambda: go(
+            Commit(subject, argv[1] if len(argv) > 1 else None)), env, cwd=cwd)
+    else:
+        if argv != ["--staged"]:
+            return usage()
+        try:
+            go(None)
+        except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
+            said = r.raised(e) if hasattr(r, "raised") else [
+                f"{r.READER.removesuffix('.py')}: could not read the commit "
+                f"({e.__class__.__name__}: {e}); nothing asked, exit status "
+                f"unmoved"]
+            for line in said:
+                print(line, file=sys.stdout if out is None else out)
+    return 0
+
+
+def run_on(event, argv, stdin=None, env=None):
+    """Run every reader `event` starts, each over the same input, one after
+    another; a reader that will not load is passed over, since the others'
+    readings are no less worth having. Exit status 0."""
+    text = (sys.stdin if stdin is None else stdin).read()
+    for path in readers_on(event):
+        try:
+            reader = load_sibling(Path(path))
+        except Exception:  # noqa: BLE001 -- the others still run
+            continue
+        run_reader(reader, argv, io.StringIO(text), env=env)
+    return 0
+
+
+def cmd_run(args):
+    if args.on:
+        return run_on(args.on, args.argv)
+    if not args.argv:
+        print("Usage: campaign-jev.py run (<reader> | --on <event>) [args]",
+              file=sys.stderr)
+        return 2
+    return run_reader(load_sibling(args.argv[0]), args.argv[1:])
 
 
 # ------------------------------------------------------------------ the joins
@@ -3875,6 +3996,11 @@ def main(argv):
     p.add_argument("event")
     p.set_defaults(run=lambda args: print("\n".join(readers_on(args.event)))
                    or 0)
+    p = sub.add_parser("run", help="one reader, or every reader an event "
+                                   "starts, over its input")
+    p.add_argument("--on", help="the event, as a registry `owner` names it")
+    p.add_argument("argv", nargs=argparse.REMAINDER)
+    p.set_defaults(run=cmd_run)
     args = ap.parse_args(argv)
     return args.run(args)
 

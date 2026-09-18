@@ -3764,6 +3764,150 @@ def budget_helpers(m):
             and m.over_options(m.OPTION_BUDGET + 1)), None
 
 
+# ------------------------------------------------------------- the one shell
+# A READER'S STEPS ARE CARRIED OUT HERE, and its input read here (rule-check
+# #506, step 3): `judge` is swapped for a recorder, and a reader is a dict of
+# the names a reader module declares.
+
+
+def reader_of(input_, steps, **more):
+    return dict(READER="r.py", INPUT=input_, USAGE="r.py <n>", steps=steps,
+                **more)
+
+
+@contextlib.contextmanager
+def swapped(m, **names):
+    """`m`'s `names` replaced for the block, and put back after it: the module
+    is shared by every case, so a swap left behind answers for the next."""
+    was = {k: getattr(m, k) for k in names}
+    try:
+        for k, v in names.items():
+            setattr(m, k, v)
+        yield
+    finally:
+        for k, v in was.items():
+            setattr(m, k, v)
+
+
+def rows_of_log():
+    return [json.loads(x) for x in LOG.read_text().splitlines() if x]
+
+
+def perform_in_order(m):
+    LOG.write_text("")
+    chained, out, shown = [], io.StringIO(), []
+    judge = m.judge
+    calls = recording(m)
+    with swapped(m, judge_chain=lambda **kw: chained.append(kw) or {"c1": "h1"}):
+        done = m.perform([
+        m.Say("first"),
+        m.Skip("a label", "settled by code"),
+        m.Ask([{"state": {"i": 1}, "read": "one"},
+               {"select": "s", "state": {"x": 1}, "then": None, "read": "two"},
+               {"state": {"i": 3}, "read": "three"}],
+              {"group": "g", "workers": 2},
+              lambda got: shown.append(got) or ["said after"]),
+        m.Say("last")], "R", env=env(), out=out)
+    m.judge = judge
+    rows = rows_of_log()
+    return (out.getvalue() == "first\nsaid after\nlast\n"
+            and [r.get("skipped") for r in rows] == ["settled by code"]
+            and rows[0]["read"] == "a label" and rows[0]["reader"] == "R"
+            and [c["read"] for c in calls] == ["one", "three"]
+            and all(c["group"] == "g" and c["reader"] == "R" for c in calls)
+            and all("workers" not in c for c in calls + chained)
+            and [c["read"] for c in chained] == ["two"]
+            and chained[0]["reader"] == "R"
+            and len(shown) == 1 and shown[0][1] == {"c1": "h1"}
+            and [j.call for j in (shown[0][0], shown[0][2])] == ["c", "c"]
+            and done == shown), (out.getvalue(), rows, calls, chained, shown)
+
+
+def comment_reader_reads_its_kind(m):
+    LOG.write_text("")
+    got = []
+    r = reader_of("comment NOTE", lambda inp, reg, jev: got.append(inp) or [])
+    boom = reader_of("comment NOTE", lambda inp, reg, jev: 1 / 0)
+    with swapped(m, load_registry=lambda *a: {}):
+        codes = [m.run_reader(r, ["7", "o/r"], io.StringIO("NOTE x: y"), env=env()),
+                 m.run_reader(r, ["8"], io.StringIO("REPORT x: y"), env=env()),
+                 m.run_reader(r, ["x"], io.StringIO("NOTE x: y"), env=env())]
+        # A RAISE THAT ESCAPES is this case failing, not the suite crashing.
+        try:
+            codes.append(m.run_reader(boom, ["9"], io.StringIO("NOTE z"),
+                                      env=env()))
+        except ZeroDivisionError:
+            codes.append("raised")
+    rows = rows_of_log()
+    return (codes == [0, 0, 2, 0]
+            and got == [m.Comment("7", "o/r", "NOTE x: y", "o/r#7 NOTE")]
+            and [(x["read"], x["skipped"]) for x in rows]
+            == [("tracker#9 NOTE", "the reading raised ZeroDivisionError")]), \
+        (codes, got, rows)
+
+
+def commit_reader_is_shielded(m):
+    LOG.write_text("")
+    got = []
+    r = reader_of("commit", lambda inp, reg, jev: got.append(inp) or [])
+    boom = reader_of("commit", lambda inp, reg, jev: 1 / 0, CWD=str(ROOT))
+    with swapped(m, load_registry=lambda *a: {}):
+        codes = [m.run_reader(r, [], env=env()),
+                 m.run_reader(r, ["abc", "s/1-t"], env=env()),
+                 m.run_reader(r, ["a", "b", "c"], env=env())]
+        try:
+            codes.append(m.run_reader(boom, ["def"], env=env()))
+        except ZeroDivisionError:
+            codes.append("raised")
+    rows = rows_of_log()
+    return (codes == [0, 0, 2, 0]
+            and got == [m.Commit("HEAD", None), m.Commit("abc", "s/1-t")]
+            and [(x["read"], x["skipped"]) for x in rows]
+            == [("def", "the reading raised ZeroDivisionError")]), \
+        (codes, got, rows)
+
+
+def staged_reader_says_a_raise(m):
+    LOG.write_text("")
+    out = io.StringIO()
+    boom = reader_of("staged", lambda inp, reg, jev: 1 / 0)
+    quiet = reader_of("staged", lambda inp, reg, jev: 1 / 0,
+                      raised=lambda e: [])
+    said = reader_of("staged", lambda inp, reg, jev: [jev.Say(f"saw {inp}")])
+    with swapped(m, load_registry=lambda *a: {}):
+        codes = [m.run_reader(boom, ["--staged"], out=out, env=env()),
+                 m.run_reader(quiet, ["--staged"], out=out, env=env()),
+                 m.run_reader(said, ["--staged"], out=out, env=env()),
+                 m.run_reader(said, [], out=out, env=env())]
+    return (codes == [0, 0, 0, 2]
+            and out.getvalue() == "r: could not read the commit "
+            "(ZeroDivisionError: division by zero); nothing asked, exit status "
+            "unmoved\nsaw None\n" and not rows_of_log()), (codes, out.getvalue())
+
+
+def run_on_hands_each_reader_the_input(m):
+    seen = []
+
+    def load_sibling(path):
+        return types.SimpleNamespace(**reader_of(
+            "comment REVIEW",
+            lambda inp, reg, jev: seen.append((Path(path).name, inp.body)) or []))
+    with swapped(m, readers_on=lambda event, reg=None: ["/x/a.py", "/x/b.py"]
+                 if event == "pr REVIEW" else [],
+                 load_registry=lambda *a: {}, load_sibling=load_sibling):
+        code = m.run_on("pr REVIEW", ["5"], io.StringIO("REVIEW w: at abc"),
+                        env=env())
+        none = m.run_on("push", ["abc"], io.StringIO(""), env=env())
+    return (code == none == 0
+            and seen == [("a.py", "REVIEW w: at abc"),
+                         ("b.py", "REVIEW w: at abc")]), seen
+
+
+CASES["a reader's steps are carried out in order, each ask routed"] = perform_in_order
+CASES["a comment reader reads its own kind, and a raise is a skip row"] = comment_reader_reads_its_kind
+CASES["a commit reader gets its subject and branch, and a raise is a skip row"] = commit_reader_is_shielded
+CASES["a staged reader prints what it says, and a raise as one line"] = staged_reader_says_a_raise
+CASES["an event runs every reader it starts over the same input"] = run_on_hands_each_reader_the_input
 CASES["a reading that raised is a skip row, and one that did not returns"] = shielded_logs_a_raise
 CASES["one call per ask, each with what they share"] = judge_each_keeps_order
 CASES["a per-item pick asks once per option picked, with its items"] = judge_chain_per_item
@@ -3774,6 +3918,35 @@ CASES["the budget and the option ceiling are measured once"] = budget_helpers
 
 
 MUTATIONS = [
+    # --- the one shell (rule-check#506, step 3) ---
+    ("a skip step never logged",
+     "            skip(reader, step.read, step.why, env, cwd=cwd)", "            pass",
+     "a reader's steps are carried out in order, each ask routed"),
+    ("a chained ask fanned out as a plain one",
+     '            plain = iter(judge_each([a for a in step.asks if "select" not in a],',
+     "            plain = iter(judge_each([a for a in step.asks],",
+     "a reader's steps are carried out in order, each ask routed"),
+    ("the lines an ask presents never printed",
+     "            for line in (step.present(got) if step.present else []):",
+     "            for line in []:",
+     "a reader's steps are carried out in order, each ask routed"),
+    ("the comment kind not read",
+     '            if text.lstrip().startswith(word + " "):', "            if True:",
+     "a comment reader reads its own kind, and a raise is a skip row"),
+    ("a comment reading's raise not shielded",
+     "        shielded(r.READER, subject, body, env, cwd=cwd)", "        body()",
+     "a comment reader reads its own kind, and a raise is a skip row"),
+    ("the branch never handed over",
+     "            Commit(subject, argv[1] if len(argv) > 1 else None)), env, cwd=cwd)",
+     "            Commit(subject, None)), env, cwd=cwd)",
+     "a commit reader gets its subject and branch, and a raise is a skip row"),
+    ("a staged reading's raise never said",
+     "            for line in said:", "            for line in []:",
+     "a staged reader prints what it says, and a raise as one line"),
+    ("each reader of an event handed the one stream",
+     "        run_reader(reader, argv, io.StringIO(text), env=env)",
+     "        run_reader(reader, argv, stdin, env=env)",
+     "an event runs every reader it starts over the same input"),
     # --- the fit (rule-check#505) ---
     ("the floor never read",
      "    if min(yes, no) < FIT_FLOOR:", "    if False:",

@@ -68,17 +68,14 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "finding-site"
 READER = "check-finding-site.py"
+INPUT = "comment REVIEW"
+USAGE = "scripts/check-finding-site.py <pr> [<repo>] < review"
+READING = "finding-site"
 SLICE_HALF = 40
 GIT_TIMEOUT = 20
 
 SITE = re.compile(r"`?((?:[\w.-]+/)*[\w.-]+\.(?:py|sh|als|md|json|jsonl|yml|yaml|html|toml))`?:(\d+)")
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506)."""
-    return importlib.import_module("campaign-jev")
 
 
 def git(*args):
@@ -118,9 +115,9 @@ def site_slice(sha, masked):
     return (path, line), "\n".join(f"{i}: {lines[i - 1]}" for i in range(lo, hi + 1))
 
 
-def reviewed_sha(first_line):
+def reviewed_sha(first_line, jev):
     """The last sha the first line names that this checkout holds, or None."""
-    review = jev_module().load_sibling("check-merge-review.py")
+    review = jev.load_sibling("check-merge-review.py")
     for named in reversed(review.SHA.findall(first_line)):
         sha = (git("rev-parse", "--verify", "-q", named + "^{commit}") or "").strip()
         if sha:
@@ -128,64 +125,41 @@ def reviewed_sha(first_line):
     return None
 
 
-def ask_all(entry, cut, sha, subject, jev, key=None, env=None):
-    """Ask every finding with a site at once; log a skip for every other.
-
-    ONE `judge` CALL A FINDING, which is what this entry's `compose` says by
-    `call`: the finding and its slice ARE the state, so nothing fans out inside
-    a call and the question sent is the entry's own. What the ROW gained is the
-    reading's name, the wording and the KEY -- the repository, the pull request
-    and which finding of the review it was -- so the thread's next REVIEW can
-    be joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
+def steps(inp, reg, jev):
+    """ONE `judge` CALL A FINDING WITH A SITE, which is what this entry's
+    `compose` says by `call`: the finding and its slice ARE the state. The
+    ROW carries the reading's name, the wording and the KEY -- the repository,
+    the pull request and which finding of the review it was -- so the thread's
+    next REVIEW can be joined to the answer (sdlc-alloy#458 DECISION
+    5722176509)."""
+    cut = jev.load_sibling("check-finding-sort.py").findings(inp.body)
+    if not cut:
+        return
+    sha = reviewed_sha(inp.body.lstrip().split("\n", 1)[0], jev)
+    if not sha:
+        for n in range(1, len(cut) + 1):
+            yield jev.Skip(f"{inp.subject} f{n}",
+                           "the first line names no sha this checkout holds")
+        return
+    # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no repository
+    # names no pull request when a member repository's numbers collide with
+    # this tracker's.
+    key = {"repo": inp.repo, "pull_request": int(inp.number)} if inp.repo else {}
     asks = []
     for n, (_word, masked, _ident) in enumerate(cut, 1):
         site, got = site_slice(sha, masked)
         if site is None:
-            jev.skip(READER, f"{subject} f{n}", got, env)
+            yield jev.Skip(f"{inp.subject} f{n}", got)
         else:
-            asks.append((n, f"{subject} f{n} {site[0]}:{site[1]}",
-                         {"finding": masked, "slice": got}))
-    return [j.verdicts[READING] for j in jev.judge_each(
-        [{"state": state, "read": label, "key": dict(key or {}, finding=n)}
-         for n, label, state in asks],
-        group=entry["group"], reader=READER, env=env)]
+            asks.append({"state": {"finding": masked, "slice": got},
+                         "read": f"{inp.subject} f{n} {site[0]}:{site[1]}",
+                         "key": dict(key, finding=n)})
+    yield jev.Ask(asks, {"group": reg[READING]["group"]})
 
 
-def main(argv, stdin=sys.stdin, env=None):
-    if not 1 <= len(argv) <= 2 or not argv[0].isdigit():
-        print("Usage: scripts/check-finding-site.py <pr> [<repo>] < review",
-              file=sys.stderr)
-        return 2
-    pr, repo = argv[0], (argv[1] if len(argv) > 1 else "")
-    subject = f"{repo or 'tracker'}#{pr} REVIEW"
-    try:
-        jev = jev_module()
-    except Exception:  # noqa: BLE001 -- no log to count a raise in
-        return 0
-    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,
-                                               env), env)
-    return 0
-
-
-def read(pr, repo, subject, stdin, jev, env):
-    review = stdin.read()
-    if not review.lstrip().startswith("REVIEW "):
-        return
-    cut = jev.load_sibling("check-finding-sort.py").findings(review)
-    if not cut:
-        return
-    sha = reviewed_sha(review.lstrip().split("\n", 1)[0])
-    if not sha:
-        for n in range(1, len(cut) + 1):
-            jev.skip(READER, f"{subject} f{n}",
-                     "the first line names no sha this checkout holds", env)
-        return
-    entry = jev.load_registry()[READING]
-    # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no repository
-    # names no pull request when a member repository's numbers collide with
-    # this tracker's.
-    ask_all(entry, cut, sha, subject, jev,
-            {"repo": repo, "pull_request": int(pr)} if repo else None, env)
+def main(argv, stdin=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, stdin, env=env)
 
 
 if __name__ == "__main__":

@@ -229,32 +229,44 @@ def read_fact(gh, name, repo, pr, issue, seen):
     return got
 
 
-def ask_issue(reg, subject, conds, cands, lines, jev, carry, env=None):
-    """The two calls for one sub-issue; {condition id: candidate picked or None}."""
+def ask_issue(reg, subject, conds, cands, lines, jev, key=None, env=None):
+    """The two calls for one sub-issue; {condition id: candidate picked or None}.
+
+    ONE `judge` CALL EACH, where it used to be one `ask`. `done-report-select`'s
+    options are one per candidate, built from the template the entry holds
+    under `{hunk}`; `done-report-claim` splices TWO placeholders, the condition
+    and the REPORT line answering it, so the line's fallback -- the entry's own
+    `no_report_line` -- is put in here and the state field it is handed as is
+    what the question carries. Both shapes are held to the byte by
+    campaign-jev-test's "a built-criteria question and a two-placeholder one
+    are what their readers sent". What the ROWS gained is each reading's name,
+    its wording and the KEY -- the repository, the sub-issue and the pull
+    request -- so a later REVIEW or reopen naming that Definition-of-done line
+    can be joined to the answer (sdlc-alloy#458 DECISION 5722176509)."""
     ceiling = reg[SELECT]["prefilter"]["candidate_ceiling"]
     text = {k: capped(c["path"] + "\n" + c["text"], ceiling)
             for k, c in cands.items()}
-    state = {"candidates": text}
-    if len(json.dumps(state).encode("utf-8")) > jev.STATE_BUDGET:
+    if len(json.dumps({"candidates": text}).encode("utf-8")) > jev.STATE_BUDGET:
         jev.skip(READER, f"{subject} select", f"the {len(cands)} candidates are "
                  f"over the {jev.STATE_BUDGET}-byte budget", env, cwd=HERE)
         return {}
-    got = jev.ask(READER, f"{subject} select", state,
-                  carry.select_questions(reg[SELECT], conds, cands),
-                  env=env, cwd=HERE)
-    picked = {cid: (a.raw or {}).get("choice") for cid, a in got.answers.items()}
+    got = jev.judge(reg[SELECT]["group"],
+                    {"candidates": text, "condition": conds},
+                    read=f"{subject} select", reader=READER, key=key,
+                    env=env, cwd=HERE)
+    picked = {cid: (a.raw or {}).get("choice") for cid, a in
+              jev.words_of(reg[SELECT], got.verdicts[SELECT]).items()}
     by_cand = {}
     for cid, h in picked.items():
         if h in cands:
             by_cand.setdefault(h, {})[cid] = conds[cid]
     none = reg[CLAIM]["question"]["no_report_line"]
     for h, asked in sorted(by_cand.items()):
-        questions = carry.claim_questions(reg[CLAIM], asked)
-        for cid, q in questions.items():
-            q["instructions"] = q["instructions"].replace(
-                "{reportLine}", lines.get(cid) or none)
-        jev.ask(READER, f"{subject} claim {h} {cands[h]['path']}",
-                {"evidence": text[h]}, questions, env=env, cwd=HERE)
+        jev.judge(reg[CLAIM]["group"],
+                  {"evidence": text[h], "condition": asked,
+                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},
+                  read=f"{subject} claim {h} {cands[h]['path']}", reader=READER,
+                  key=key, env=env, cwd=HERE)
     return picked
 
 
@@ -333,8 +345,12 @@ def main(argv, stdin=sys.stdin, env=None):
                                              pre["report_line_floor"],
                                              report, text)
             if conds:
-                ask_issue(reg, f"{subject} {number}", conds, cands, lines,
-                          jev, carry, env)
+                # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
+                # repository names no issue when a member repository's numbers
+                # collide with this tracker's.
+                ask_issue(reg, f"{subject} {number}", conds, cands, lines, jev,
+                          {"repo": repo, "issue": int(number),
+                           "pull_request": int(pr)} if repo else None, env)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
         skipped(subject, e, env)
     return 0

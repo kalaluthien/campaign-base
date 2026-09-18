@@ -109,7 +109,8 @@ def composed(name):
 
 def asks_each_condition(t):
     r, _ = run(t)
-    asked = {q: v["instructions"] for b in SEEN for q, v in b["questions"].items()}
+    asked = {q.split("#", 1)[-1]: v["instructions"]
+             for b in SEEN for q, v in b["questions"].items()}
     want = {name: composed(name) for name in ENTRY["conditions"]}
     return (r.returncode == 0 and len(SEEN) == 1 and r.stdout == ""
             and SEEN[0]["state"] == {"note": NOTE} and asked == want
@@ -129,10 +130,26 @@ def other_comment_asks_nothing(t):
 
 def entry_reaches_model(t):
     run(t)
-    q = SEEN[0]["questions"].get("baseline", {}) if SEEN else {}
+    q = SEEN[0]["questions"].get("research-bar#baseline", {}) if SEEN else {}
     return (q.get("criteria") == ENTRY["question"]["criteria"]
             and q.get("instructions") == composed("baseline")
             and "yes_over" not in q), q
+
+
+def row_carries_its_join_key(t):
+    """WHAT THE MOVE FROM `ask` TO `judge` BOUGHT: the row names the reading
+    and its wording and carries the key as FIELDS, so the next DECISION on that
+    sub-issue can be joined to the answer. A call given no repository carries
+    NEITHER field, because a number alone names no issue when a member
+    repository's numbers collide with this tracker's."""
+    run(t, argv=("7", "o/r"))
+    keyed = LOGGED[0] if LOGGED else {}
+    run(t)
+    bare = LOGGED[0] if LOGGED else {}
+    return (keyed.get("repo") == "o/r" and keyed.get("issue") == 7
+            and keyed.get("reading") == "research-bar"
+            and len(keyed.get("wording") or "") == 12
+            and "repo" not in bare and "issue" not in bare), (keyed, bare)
 
 
 def repo_reaches_tracker(t):
@@ -172,6 +189,7 @@ CASES = {
     "a comment of another kind asks nothing": other_comment_asks_nothing,
     "the entry's instructions and criteria reach the model, thresholds do not": entry_reaches_model,
     "the repository reaches the kind reader": repo_reaches_tracker,
+    "the row carries the reading, the wording and the join key": row_carries_its_join_key,
     "a reader that could not read exits 0, says nothing and logs a skip": failure_exits_zero,
     "a failed kind read logs one skip row": failed_kind_read_logs_skip,
     "a tracker that raised, exit 1 and no word, logs one skip row": crashed_tracker_logs_skip,
@@ -179,21 +197,28 @@ CASES = {
 }
 
 MUTATIONS = [
-    ("the condition's name sent for its text",
-     '"{condition}", entry["conditions"][name]))', '"{condition}", name))',
+    ("the conditions never handed to the call",
+     '{"note": note, "condition": entry["conditions"]},',
+     '{"note": note, "condition": {}},',
      "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
-    ("one call a condition again",
-     '    reading = jev.ask(READER, f"{subject} NOTE", {"note": note},\n                      questions(entry), env=env)\n    return reading.answers',
-     '    out = {}\n    for name, q in questions(entry).items():\n        out.update(jev.ask(READER, f"{subject} NOTE", {"note": note},\n                           {name: q}, env=env).answers)\n    return out',
+    ("the note sent as a condition's text",
+     '                       {"note": note, "condition": entry["conditions"]},',
+     '                       {"note": note,\n'
+     '                        "condition": {k: note for k in entry["conditions"]}},',
      "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the work kind not read", 'if kind != "research":', "if False:",
      "a NOTE on another work kind asks nothing"),
     ("the comment kind not read", 'if not note.lstrip().startswith("NOTE "):', "if False:",
      "a comment of another kind asks nothing"),
-    ("the criteria not sent", 'if k in ("type", "criteria")}', 'if k in ("type",)}',
-     "the entry's instructions and criteria reach the model, thresholds do not"),
+    ("the reading's group not read from the entry",
+     'jev.judge(entry["group"],', 'jev.judge("issue-shape",',
+     "a research NOTE asks one call, the note whole, a question per condition, printing nothing"),
     ("the repository dropped", "args + ([repo] if repo else [])", "args",
      "the repository reaches the kind reader"),
+    ("the row keyed by a number with no repository",
+     '{"repo": repo, "issue": int(issue)} if repo else None, env)',
+     '{"issue": int(issue)}, env)',
+     "the row carries the reading, the wording and the join key"),
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
      "except ZeroDivisionError as e:",
@@ -228,7 +253,8 @@ def live(record):
         name = next(n for n, text in ENTRY["conditions"].items()
                     if text == row["state"]["condition"])
         reading = jev.ask(m.READER, row["id"], {"note": row["state"]["note"]},
-                          {name: m.questions(ENTRY)[name]})
+                          {name: jev.question_of(
+                              ENTRY, name, {"condition": ENTRY["conditions"]})})
         a = reading.answers[name]
         p = ((a.raw or {}).get("probabilities") or {}).get(t["option"])
         raw = None if p is None else round(p, 2)

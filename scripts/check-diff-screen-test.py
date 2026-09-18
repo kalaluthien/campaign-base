@@ -147,6 +147,10 @@ def run(t, argv=(), registry=True, cwd=REPO, named_log=True):
     (d / "jev").mkdir()
     (d / "check-diff-screen.py").write_text(t.source)
     shutil.copy(HERE / "campaign-jev.py", d / "campaign-jev.py")
+    # THE GUARD GOES WITH IT: campaign-jev.py's `base_root` asks the claim
+    # guard's (rule-check#475, pr#493), so copied alone it finds no base and
+    # the shared-log case below reads no row.
+    shutil.copy(HERE / "check-campaign-claim.py", d / "check-campaign-claim.py")
     if registry:
         (d / "jev" / "readings.json").write_text(json.dumps({"diff-screen": ENTRY}))
     SEEN.clear()
@@ -196,7 +200,8 @@ def asks_only_the_commits_files(t):
 
 def asks_five_nouls_composed(t):
     run(t)
-    q = SEEN[0]["questions"] if SEEN else {}
+    q = {i.split("#", 1)[-1]: v
+         for i, v in (SEEN[0]["questions"] if SEEN else {}).items()}
     ask = {n: ENTRY["nouls"][n]["ask"] for n in NOULS}
     return (sorted(q) == NOULS
             and {n: v.get("instructions") for n, v in q.items()} == ask
@@ -205,9 +210,23 @@ def asks_five_nouls_composed(t):
             and all(v.get("type") == "noul" and "yes_over" not in v for v in q.values())), q
 
 
+def row_carries_its_join_key(t):
+    """WHAT THE MOVE FROM `ask` TO `judge` BOUGHT: the row names the reading
+    and its wording and carries the key as FIELDS -- the repository, the sha
+    and the file -- so a later fix commit on that file can be joined to the
+    answer. A checkout with no origin carries the path and no repository, and
+    says so by carrying neither of the other two."""
+    run(t)
+    one = next((row for row in LOGGED if row.get("reading")), {})
+    return (one.get("path") == "a.py"
+            and one.get("reading") == "diff-screen"
+            and len(one.get("wording") or "") == 12
+            and (one.get("repo") is None) == (one.get("commit") is None)), one
+
+
 def labels_branch_sha_path(t):
     run(t)
-    return [row["read"] for row in LOGGED if "answers" in row] == \
+    return [row["read"] for row in LOGGED if row.get("reading")] == \
         [f"demo/9-topic {HEAD[:12]} a.py"], LOGGED
 
 
@@ -239,7 +258,7 @@ def reads_the_remote_default_branch(t):
 
 def labels_the_branch_it_is_given(t):
     run(t, argv=(HEAD, "demo/9-given"))
-    return [row["read"] for row in LOGGED if "answers" in row] == \
+    return [row["read"] for row in LOGGED if row.get("reading")] == \
         [f"demo/9-given {HEAD[:12]} a.py"], LOGGED
 
 
@@ -261,6 +280,7 @@ CASES = {
     "only the commit's own files are read, not the rest of the branch": asks_only_the_commits_files,
     "one call carries the five nouls, each its own words, thresholds unsent": asks_five_nouls_composed,
     "the log label is the branch, the sha and the path": labels_branch_sha_path,
+    "the row carries the reading, the wording and the join key": row_carries_its_join_key,
     "an empty branch patch, a binary and a patch over the ceiling each log a skip": skips_what_it_cannot_send,
     "a merge commit asks and logs nothing": merge_asks_nothing,
     "a commit with no merge-base logs one skip": no_merge_base_skips_once,
@@ -280,11 +300,16 @@ MUTATIONS = [
      "a file the commit touched is asked with its whole branch patch and the branch's tests, printing nothing"),
     ("the whole branch read", "for path in filter(None, touched):", "for path in stat:",
      "only the commit's own files are read, not the rest of the branch"),
-    ("the placeholders left unfilled",
-     'filled = filled.replace("{" + key + "}", json.dumps(value)[1:-1])', "pass",
+    ("the reading's group not read from the entry",
+     'jev.judge(entry["group"],', 'jev.judge("issue-shape",',
      "one call carries the five nouls, each its own words, thresholds unsent"),
-    ("the path dropped from the label", 'jev.ask(READER, f"{label} {path}",', "jev.ask(READER, label,",
+    ("the path dropped from the label",
+     'read=f"{label} {path}", reader=READER,', "read=label, reader=READER,",
      "the log label is the branch, the sha and the path"),
+    ("the row keyed by the sha alone",
+     'key=dict(key, path=path) if key else {"path": path},',
+     "key=key,",
+     "the row carries the reading, the wording and the join key"),
     ("an empty branch patch sent", "if path not in stat:", "if False:",
      "an empty branch patch, a binary and a patch over the ceiling each log a skip"),
     ("a binary sent", 'elif stat[path] == "-":', "elif False:",
@@ -301,7 +326,7 @@ MUTATIONS = [
     ("the branch read from HEAD again", "branch = argv[1] if len(argv) > 1 else (", "branch = (",
      "the label carries the branch the hook passed, not HEAD's"),
     ("the log found from the checkout",
-     '"changedTests": tests}, asked, env=env, cwd=HERE)', '"changedTests": tests}, asked, env=env)',
+     "                      env=env, cwd=HERE)", "                      env=env)",
      "with no log named, rows land in the reader's own base, not the checkout it reads"),
     ("the failure boundary removed",
      "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
@@ -369,12 +394,15 @@ def live(record):
     t = ENTRY["thresholds"]
     # THE COMPOSED QUESTIONS, not `question`: that holds only placeholders, so
     # a noul reworded would keep the hash its old answers were recorded under.
-    wording = hashlib.sha256(json.dumps(m.questions(ENTRY), sort_keys=True)
+    wording = hashlib.sha256(json.dumps(
+        {n: jev.question_of(ENTRY, n) for n in ENTRY["nouls"]}, sort_keys=True)
                              .encode()).hexdigest()[:12]
     today = datetime.date.today().isoformat()
     misses = 0
     for row in rows:
-        reading = jev.ask(m.READER, row["id"], row["state"], m.questions(ENTRY))
+        reading = jev.ask(m.READER, row["id"], row["state"],
+                          {n: jev.question_of(ENTRY, n)
+                           for n in ENTRY["nouls"]})
         nouls = {n: (a.raw or {}).get("noul") for n, a in reading.answers.items()}
         raw = None if None in nouls.values() else round(max(nouls.values()), 2)
         word = ("unknown" if raw is None else "yes" if raw >= t["yes_over"]

@@ -176,9 +176,9 @@ def reads():
 def two_calls(t):
     r = run(t)
     kinds = ["select" if "candidateHunks" in b["state"] else "claim" for b in SEEN]
+    asked = [sorted(q.split("#", 1)[-1] for q in b["questions"]) for b in SEEN]
     return (r.returncode == 0 and r.stdout == "" and kinds == ["select", "claim"]
-            and sorted(SEEN[0]["questions"]) == ["c1", "c2"]
-            and sorted(SEEN[1]["questions"]) == ["c1"]
+            and asked == [["c1", "c2"], ["c1"]]
             and SEEN[1]["state"] == {"hunk": "scripts/tool-test.py\n@@ -10,2 +10,4 @@ "
                                      "def cases():\n+def refuses_empty():\n"
                                      "+    assert run(\"\").code == 2"}
@@ -198,8 +198,8 @@ def candidates_are_test_hunks(t):
 
 def entry_reaches_model(t):
     run(t)
-    q = SEEN[0]["questions"].get("c2", {}) if SEEN else {}
-    c = SEEN[1]["questions"].get("c1", {}) if len(SEEN) > 1 else {}
+    q = SEEN[0]["questions"].get("done-test-select#c2", {}) if SEEN else {}
+    c = SEEN[1]["questions"].get("done-test-claim#c1", {}) if len(SEEN) > 1 else {}
     want = SELECT["question"]["instructions"].replace(
         "{condition}", "`tool --list` prints every name sorted by date.")
     return (q.get("instructions") == want
@@ -217,7 +217,9 @@ def one_claim_a_hunk(t):
     finally:
         PICKS["prints every name"] = "noMatch"
     claims = [b for b in SEEN if "hunk" in b["state"]]
-    return len(claims) == 1 and sorted(claims[0]["questions"]) == ["c1", "c2"], SEEN
+    asked = sorted(q.split("#", 1)[-1] for q in claims[0]["questions"]) \
+        if claims else []
+    return len(claims) == 1 and asked == ["c1", "c2"], SEEN
 
 
 def no_merge_ask_asks_nothing(t):
@@ -302,11 +304,16 @@ class RecordingJev:
     def __init__(self):
         self.cwds = []
 
-    def ask(self, reader, label, state, questions, env=None, cwd=None):
+    def judge(self, group, state, read="", reader="", key=None, env=None,
+              cwd=None):
         self.cwds.append(cwd)
-        return types.SimpleNamespace(
-            answers={cid: types.SimpleNamespace(raw={"choice": "h1"})
-                     for cid in questions})
+        return types.SimpleNamespace(verdicts={group: types.SimpleNamespace(
+            raw={cid: {"choice": "h1"} for cid in state.get("condition") or {}},
+            why={})})
+
+    def words_of(self, entry, verdict):
+        return {cid: types.SimpleNamespace(raw=raw)
+                for cid, raw in (verdict.raw or {}).items()}
 
     def skip(self, reader, label, why, env=None, cwd=None):
         self.cwds.append(cwd)
@@ -362,7 +369,7 @@ def every_jev_call_names_the_readers_base(t):
         seen += one.cwds
         counts.append(len(one.cwds))
     raised = RecordingJev()
-    raised.ask = raised.skip          # a skip signature for an ask call: TypeError
+    raised.judge = raised.skip        # a skip signature for a judge call: TypeError
     drive(t, raised, answers=())
     seen += raised.cwds
     named = inner.cwds + over.cwds + seen
@@ -429,8 +436,9 @@ CASES = {
 
 MUTATIONS = [
     ("a call a condition",
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)\n    picked = {cid: (a.raw or {}).get("choice") for cid, a in got.answers.items()}',
-     '    picked = {}\n    for cid in conds:\n        got = jev.ask(READER, f"{subject} select", state,\n                      select_questions(reg[SELECT], {cid: conds[cid]}, cands), env=env, cwd=HERE)\n        picked.update({c: (a.raw or {}).get("choice") for c, a in got.answers.items()})',
+     '                    {"candidateHunks": text, "condition": conds},',
+     '                    {"candidateHunks": text,\n'
+     '                     "condition": dict(list(conds.items())[:1])},',
      "a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing"),
     ("a claim call for noMatch", "        if h in cands:", "        if h:",
      "a REPORT asking for the merge asks one select call and one claim call a hunk picked, printing nothing"),
@@ -443,13 +451,17 @@ MUTATIONS = [
     ("every file a candidate", "if not test.search(path) or len(body) < 2:", "if len(body) < 2:",
      "the candidates are the test file's hunks, each its path and hunk"),
     ("the path dropped from a candidate",
-     'state = {"candidateHunks": {h: c["path"] + "\\n" + c["text"]', 'state = {"candidateHunks": {h: c["text"]',
+     'text = {h: c["path"] + "\\n" + c["text"] for h, c in cands.items()}',
+     'text = {h: c["text"] for h, c in cands.items()}',
      "the candidates are the test file's hunks, each its path and hunk"),
-    ("the condition's text not composed",
-     'instructions=q["instructions"].replace("{condition}", t))\n            for cid, t in conds.items()}\n\n\ndef claim_questions',
-     'instructions=q["instructions"])\n            for cid, t in conds.items()}\n\n\ndef claim_questions',
+    ("the conditions never handed to the select call",
+     '                    {"candidateHunks": text, "condition": conds},',
+     '                    {"candidateHunks": text,\n'
+     '                     "condition": {c: "" for c in conds}},',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the hunk's path not in its criterion", '.replace("{path}", c["path"])', "",
+    ("the candidates never handed to the select call",
+     '                    {"candidateHunks": text, "condition": conds},',
+     '                    {"candidateHunks": {}, "condition": conds},',
      "the entry's instructions and criteria reach the model, thresholds do not"),
     ("the merge ask not read", 'if not re.search(prefilter["asks_merge"], report):', "if False:",
      "a REPORT not asking for the merge asks and logs nothing"),
@@ -459,7 +471,9 @@ MUTATIONS = [
      "a pull request closing no Definition of done logs one skip"),
     ("no test hunk not skipped", "        if not cands:", "        if False:",
      "a diff changing no test file logs one skip"),
-    ("the budget not read", "    if len(json.dumps(state).encode(\"utf-8\")) > jev.STATE_BUDGET:", "    if False:",
+    ("the budget not read",
+     '    if len(json.dumps({"candidateHunks": text}).encode("utf-8")) > jev.STATE_BUDGET:',
+     "    if False:",
      "a select state over the budget is not sent and logs a skip"),
     ("a failed pr read taken for one",
      '        view, why = gh("pr", "view", pr, *target, "--json", "closingIssuesReferences")\n        if why:',
@@ -484,8 +498,10 @@ MUTATIONS = [
      '                             "test could carry", env)',
      "every jev call names the reader's own base, not the process cwd"),
     ("the log resolved from the process's cwd",
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)',
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  select_questions(reg[SELECT], conds, cands), env=env)',
+     "                    read=f\"{subject} select\", reader=READER, key=key,\n"
+     "                    env=env, cwd=HERE)",
+     "                    read=f\"{subject} select\", reader=READER, key=key,\n"
+     "                    env=env)",
      "every jev call names the reader's own base, not the process cwd"),
     ("the table header kept", "            if not rule.match(line) and not header:", "            if not rule.match(line):",
      "a condition is a list item with its lines, or a table row"),

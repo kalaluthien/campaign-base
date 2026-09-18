@@ -159,45 +159,39 @@ def settled(prefilter, text):
         for c in parts)
 
 
-def select_questions(entry, conds, cands):
-    """One `choice` a condition over the candidate hunks and `noMatch`."""
-    q = entry["question"]
-    template = q["criteria"]["{hunk}"]
-    criteria = {h: template.replace("{hunk}", h).replace("{path}", c["path"])
-                for h, c in cands.items()}
-    criteria["noMatch"] = q["criteria"]["noMatch"]
-    spec = dict(entry["thresholds"], type=q["type"], criteria=criteria)
-    return {cid: dict(spec, instructions=q["instructions"].replace("{condition}", t))
-            for cid, t in conds.items()}
+def ask_issue(reg, subject, conds, cands, jev, key=None, env=None):
+    """The two calls for one sub-issue; {condition id: hunk picked or None}.
 
-
-def claim_questions(entry, conds):
-    """One `choice` supports / contradicts / says_nothing a condition."""
-    q = entry["question"]
-    spec = dict(entry["thresholds"], type=q["type"], criteria=q["criteria"])
-    return {cid: dict(spec, instructions=q["instructions"].replace("{condition}", t))
-            for cid, t in conds.items()}
-
-
-def ask_issue(reg, subject, conds, cands, jev, env=None):
-    """The two calls for one sub-issue; {condition id: hunk picked or None}."""
-    state = {"candidateHunks": {h: c["path"] + "\n" + c["text"]
-                                for h, c in cands.items()}}
-    if len(json.dumps(state).encode("utf-8")) > jev.STATE_BUDGET:
+    ONE `judge` CALL EACH, where it used to be one `ask`. `done-test-select`'s
+    options are one per candidate hunk, built from the template the entry holds
+    under `{hunk}`, and both readings splice the condition's text at
+    `{condition}` -- the shapes this file composed by hand until now, held to
+    the byte by campaign-jev-test's "a built-criteria question and a
+    two-placeholder one are what their readers sent". What the ROWS gained is
+    each reading's name, its wording and the KEY -- the repository, the
+    sub-issue and the pull request -- so a later REVIEW or reopen naming that
+    Definition-of-done line can be joined to the answer (sdlc-alloy#458
+    DECISION 5722176509)."""
+    text = {h: c["path"] + "\n" + c["text"] for h, c in cands.items()}
+    if len(json.dumps({"candidateHunks": text}).encode("utf-8")) > jev.STATE_BUDGET:
         jev.skip(READER, f"{subject} select", f"the {len(cands)} test hunks are "
                  f"over the {jev.STATE_BUDGET}-byte budget", env, cwd=HERE)
         return {}
-    got = jev.ask(READER, f"{subject} select", state,
-                  select_questions(reg[SELECT], conds, cands), env=env, cwd=HERE)
-    picked = {cid: (a.raw or {}).get("choice") for cid, a in got.answers.items()}
+    got = jev.judge(reg[SELECT]["group"],
+                    {"candidateHunks": text, "condition": conds},
+                    read=f"{subject} select", reader=READER, key=key,
+                    env=env, cwd=HERE)
+    picked = {cid: (a.raw or {}).get("choice") for cid, a in
+              jev.words_of(reg[SELECT], got.verdicts[SELECT]).items()}
     by_hunk = {}
     for cid, h in picked.items():
         if h in cands:
             by_hunk.setdefault(h, {})[cid] = conds[cid]
     for h, asked in sorted(by_hunk.items()):
-        jev.ask(READER, f"{subject} claim {h} {cands[h]['path']}",
-                {"hunk": cands[h]["path"] + "\n" + cands[h]["text"]},
-                claim_questions(reg[CLAIM], asked), env=env, cwd=HERE)
+        jev.judge(reg[CLAIM]["group"],
+                  {"hunk": text[h], "condition": asked},
+                  read=f"{subject} claim {h} {cands[h]['path']}", reader=READER,
+                  key=key, env=env, cwd=HERE)
     return picked
 
 
@@ -254,7 +248,12 @@ def main(argv, stdin=sys.stdin, env=None):
                 else:
                     conds[f"c{k}"] = text
             if conds:
-                ask_issue(reg, f"{subject} {number}", conds, cands, jev, env)
+                # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no
+                # repository names no issue when a member repository's numbers
+                # collide with this tracker's.
+                ask_issue(reg, f"{subject} {number}", conds, cands, jev,
+                          {"repo": repo, "issue": int(number),
+                           "pull_request": int(pr)} if repo else None, env)
     except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
         skipped(subject, e, env)
     return 0

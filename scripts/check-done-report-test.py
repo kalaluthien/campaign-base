@@ -214,9 +214,8 @@ def one_select_and_one_claim_a_candidate(t):
     kinds = ["select" if "candidates" in b["state"] else "claim" for b in SEEN]
     return (r.returncode == 0 and r.stdout == ""
             and kinds == ["select", "claim", "claim"]
-            and sorted(SEEN[0]["questions"]) == ["c1", "c2"]
-            and sorted(SEEN[1]["questions"]) == ["c1"]
-            and sorted(SEEN[2]["questions"]) == ["c2"]
+            and [sorted(q.split("#", 1)[-1] for q in b["questions"])
+                 for b in SEEN] == [["c1", "c2"], ["c1"], ["c2"]]
             and SEEN[1]["state"] == {"evidence": H2}
             and SEEN[2]["state"] == {"evidence": R1}
             and reads() == [MERGED, LABEL, CLOSED,
@@ -238,8 +237,8 @@ def candidates_are_every_hunk_and_the_result_lines(t):
 
 def entry_reaches_model(t):
     run(t)
-    q = SEEN[0]["questions"].get("c2", {}) if SEEN else {}
-    c = SEEN[1]["questions"].get("c1", {}) if len(SEEN) > 1 else {}
+    q = SEEN[0]["questions"].get("done-report-select#c2", {}) if SEEN else {}
+    c = SEEN[1]["questions"].get("done-report-claim#c1", {}) if len(SEEN) > 1 else {}
     want = SELECT["question"]["instructions"].replace(
         "{condition}", "`tool --list` prints every name sorted by date.")
     crit = SELECT["question"]["criteria"]["{hunk}"]
@@ -255,7 +254,7 @@ def entry_reaches_model(t):
 
 def the_report_line_reaches_the_claim(t):
     run(t)
-    c = SEEN[1]["questions"].get("c1", {}) if len(SEEN) > 1 else {}
+    c = SEEN[1]["questions"].get("done-report-claim#c1", {}) if len(SEEN) > 1 else {}
     line = "The suite refuses an empty name, with a named case at line 12."
     want = (CLAIM["question"]["instructions"].replace("{reportLine}", line)
             .replace("{condition}", "`tool` refuses an empty name, with a named case."))
@@ -264,7 +263,7 @@ def the_report_line_reaches_the_claim(t):
 
 def no_report_line_says_so(t):
     run(t, report=BARE)
-    c = SEEN[1]["questions"].get("c1", {}) if len(SEEN) > 1 else {}
+    c = SEEN[1]["questions"].get("done-report-claim#c1", {}) if len(SEEN) > 1 else {}
     return (CLAIM["question"]["no_report_line"] in c.get("instructions", "")
             and "12/12" not in c.get("instructions", "")), c.get("instructions")
 
@@ -290,7 +289,9 @@ def two_conditions_one_candidate_one_call(t):
     finally:
         PICKS["prints every name"] = "r1"
     claims = [b for b in SEEN if "evidence" in b["state"]]
-    return len(claims) == 1 and sorted(claims[0]["questions"]) == ["c1", "c2"], SEEN
+    asked = sorted(q.split("#", 1)[-1] for q in claims[0]["questions"]) \
+        if claims else []
+    return len(claims) == 1 and asked == ["c1", "c2"], SEEN
 
 
 def a_long_candidate_is_cut(t):
@@ -515,11 +516,16 @@ class RecordingJev:
     def overlap(text, against):
         return 1.0
 
-    def ask(self, reader, label, state, questions, env=None, cwd=None):
+    def judge(self, group, state, read="", reader="", key=None, env=None,
+              cwd=None):
         self.cwds.append(cwd)
-        return types.SimpleNamespace(
-            answers={cid: types.SimpleNamespace(raw={"choice": "h1"})
-                     for cid in questions})
+        return types.SimpleNamespace(verdicts={group: types.SimpleNamespace(
+            raw={cid: {"choice": "h1"} for cid in state.get("condition") or {}},
+            why={})})
+
+    def words_of(self, entry, verdict):
+        return {cid: types.SimpleNamespace(raw=raw)
+                for cid, raw in (verdict.raw or {}).items()}
 
     def skip(self, reader, label, why, env=None, cwd=None):
         self.cwds.append(cwd)
@@ -562,14 +568,13 @@ def every_jev_call_names_the_readers_base(t):
     reg = registry()
     conds = {"c1": "a condition one hunk could show"}
     cands = {"h1": {"path": "scripts/tool.py", "text": "@@ -1 +1 @@\n+x"}}
-    carry = t.m.load_sibling(t.m.CARRY)
     inner, over = RecordingJev(), RecordingJev()
     t.m.ask_issue(reg, "tracker#9 REPORT 5", conds, cands, {"c1": "a line"},
-                  inner, carry)
+                  inner)
     t.m.ask_issue(reg, "tracker#9 REPORT 5", conds,
                   {f"h{i}": {"path": "p", "text": "x" * CEILING}
                    for i in range(BUDGET // CEILING + 2)},
-                  {"c1": "a line"}, over, carry)
+                  {"c1": "a line"}, over)
     seen, counts = [], []
     for kw in ({"answers": {"pr view"}},              # the pull request read failed
                {"answers": {"issue view"}},           # the issue read failed
@@ -583,7 +588,7 @@ def every_jev_call_names_the_readers_base(t):
         seen += one.cwds
         counts.append(len(one.cwds))
     raised = RecordingJev()
-    raised.ask = raised.skip          # a skip signature for an ask call: TypeError
+    raised.judge = raised.skip        # a skip signature for a judge call: TypeError
     drive(t, raised, answers=())
     seen += raised.cwds
     named = inner.cwds + over.cwds + seen
@@ -628,8 +633,9 @@ CASES = {
 
 MUTATIONS = [
     ("a call a condition",
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  carry.select_questions(reg[SELECT], conds, cands),\n                  env=env, cwd=HERE)\n    picked = {cid: (a.raw or {}).get("choice") for cid, a in got.answers.items()}',
-     '    picked = {}\n    for cid in conds:\n        got = jev.ask(READER, f"{subject} select", state,\n                      carry.select_questions(reg[SELECT], {cid: conds[cid]}, cands),\n                      env=env, cwd=HERE)\n        picked.update({c: (a.raw or {}).get("choice") for c, a in got.answers.items()})',
+     '                    {"candidates": text, "condition": conds},',
+     '                    {"candidates": text,\n'
+     '                     "condition": dict(list(conds.items())[:1])},',
      "a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked"),
     ("a claim call for noMatch", "        if h in cands:", "        if h:",
      "a select answering noMatch throughout asks no claim call"),
@@ -651,17 +657,17 @@ MUTATIONS = [
     ("a REPORT line given a file's path", 'REPORT_PATH = "the REPORT"',
      'REPORT_PATH = "scripts/tool.py"',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the REPORT line not composed",
-     '            q["instructions"] = q["instructions"].replace(\n                "{reportLine}", lines.get(cid) or none)',
-     "            pass",
+    ("the REPORT line never handed to the claim call",
+     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
+     '                   "reportLine": {}},',
      "the condition's REPORT line reaches the claim's instructions"),
-    ("the condition sent in its REPORT line's place",
-     '                "{reportLine}", lines.get(cid) or none)',
-     '                "{reportLine}", asked.get(cid) or none)',
+    ("the condition handed in its REPORT line's place",
+     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
+     '                   "reportLine": dict(asked)},',
      "the condition's REPORT line reaches the claim's instructions"),
     ("no words for a condition the REPORT misses",
-     '                "{reportLine}", lines.get(cid) or none)',
-     '                "{reportLine}", lines.get(cid, ""))',
+     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
+     '                   "reportLine": {cid: lines.get(cid, "") for cid in asked}},',
      "a condition no REPORT line matches carries the entry's words for that"),
     ("the ceiling not applied",
      '    raw = text.encode("utf-8")\n    if len(raw) <= ceiling:\n        return text',
@@ -712,7 +718,7 @@ MUTATIONS = [
     ("no candidate not skipped", "        if not cands:", "        if False:",
      "a diff and a REPORT yielding no candidate log one skip"),
     ("the budget not read",
-     '    if len(json.dumps(state).encode("utf-8")) > jev.STATE_BUDGET:',
+     '    if len(json.dumps({"candidates": text}).encode("utf-8")) > jev.STATE_BUDGET:',
      "    if False:",
      "a select state over the budget is not sent and logs a skip"),
     ("a failed pr read taken for one",
@@ -760,8 +766,10 @@ MUTATIONS = [
      '                             f"{read}", env)',
      "every jev call names the reader's own base, not the process cwd"),
     ("the log resolved from the process's cwd",
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  carry.select_questions(reg[SELECT], conds, cands),\n                  env=env, cwd=HERE)',
-     '    got = jev.ask(READER, f"{subject} select", state,\n                  carry.select_questions(reg[SELECT], conds, cands),\n                  env=env)',
+     '                    read=f"{subject} select", reader=READER, key=key,\n'
+     "                    env=env, cwd=HERE)",
+     '                    read=f"{subject} select", reader=READER, key=key,\n'
+     "                    env=env)",
      "every jev call names the reader's own base, not the process cwd"),
 ]
 

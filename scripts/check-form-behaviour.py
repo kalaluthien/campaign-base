@@ -23,20 +23,23 @@ pinned form, cut into hunks at its `@@` lines.
              the repository, the sha, the path and the hunk's `@@` range, the
              `flag` P(unasked_behaviour)
   settled    `form_only` by code, the row's `flag` naming the rule: a hunk of
-             a test suite (check-diff-screen's `TEST`), a hunk of a non-prose
-             file whose every changed non-blank line is a comment, and a hunk
-             of a `.py` file whose AST, docstrings blanked, is the same before
+             a test suite (check-diff-screen's `TEST`), a hunk of a shell,
+             YAML, TOML or JavaScript file whose every changed non-blank line
+             is a comment in that language, and a hunk of a `.py` file whose
+             AST, function and class docstrings blanked, is the same before
              and after that hunk alone
   passed     a merge commit asks nothing: `git diff-tree` lists no file for one
   skipped    what check-diff-screen skips -- an empty branch patch, a binary,
              a failed `git diff`, a patch over its ceiling, no merge-base --
-             and a sub-issue that would not read, one with no `## Intent`, or
-             a reading that raised, each log one `skipped` row naming why
+             and a sub-issue that would not read, one with an empty or no
+             `## Intent`, a commit that does not resolve, or a reading that
+             raised, each log one `skipped` row naming why
 
 THE TIER is `shadow`: every call is logged and nothing is printed, since the
 hook's background start discards this process's output. Rows land in the
 base's `runtime/jev.log`, found from this script's directory, for
-check-diff-screen's reason. THE EXIT STATUS IS 0 on every path.
+check-diff-screen's reason. THE EXIT STATUS IS 0 on every path but a usage
+error, which is 2.
 
 WHERE THIS READING IS KNOWN TO BE WRONG is the entry's `bands.how`: it orders
 hunks by whether the Intent names the change, and at jev-1.13.0 no cut flags
@@ -63,12 +66,17 @@ FLAG = "unasked_behaviour"
 GH_TIMEOUT = 30
 WORKERS = 8
 HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", re.M)
-# A COMMENT LINE, in the languages this tree and its members write: `#` for
-# Python and shell, `//` and `/* */` for Alloy and JavaScript, `--` for Alloy.
-COMMENT = re.compile(r"^\s*(#|//|--|/\*|\*|\*/)")
-# PROSE IS NEVER COMMENT-SETTLED: a Markdown heading opens with `#` and a list
-# item with `*`, and both are the rule a document states.
-PROSE = re.compile(r"\.(md|txt|html)$")
+# A COMMENT LINE, BY THE FILE'S LANGUAGE, and only where a comment says no
+# rule. A marker read in every file settled `--squash` in a shell line and
+# `*args` in Python (pr#503 F1). Python is not here: its AST rule already
+# ignores comments. Alloy is not here either, nor is prose: a spec comment and
+# a document line are the rule itself (F2). A shebang is no comment.
+COMMENT = {
+    ".sh": re.compile(r"^\s*#(?!!)"), ".bash": re.compile(r"^\s*#(?!!)"),
+    ".zsh": re.compile(r"^\s*#(?!!)"), ".yml": re.compile(r"^\s*#"),
+    ".yaml": re.compile(r"^\s*#"), ".toml": re.compile(r"^\s*#"),
+    ".js": re.compile(r"^\s*(//|/\*|\*)"), ".ts": re.compile(r"^\s*(//|/\*|\*)"),
+}
 
 
 def load_sibling(name):
@@ -94,9 +102,13 @@ def hunks(patch):
 
 
 def blanked(source):
-    """The AST of `source` with every docstring replaced by `pass`, dumped."""
+    """The AST of `source` with every function and class docstring replaced by
+    `pass`, dumped. THE MODULE'S IS KEPT: a script prints it as its usage
+    through `__doc__`, so a change to it is a change of output (pr#503 F3)."""
     tree = ast.parse(source)
     for node in ast.walk(tree):
+        if isinstance(node, ast.Module):
+            continue
         body = getattr(node, "body", None)
         if (isinstance(body, list) and body and isinstance(body[0], ast.Expr)
                 and isinstance(body[0].value, ast.Constant)
@@ -124,8 +136,8 @@ def settled_by(path, text, start, count, before, test):
         return "a test suite"
     changed = [line[1:] for line in text.split("\n")[1:]
                if line[:1] in "+-" and line[1:].strip()]
-    if not PROSE.search(path) and changed and all(
-            COMMENT.match(line) for line in changed):
+    comment = COMMENT.get(Path(path).suffix)
+    if comment and changed and all(comment.match(line) for line in changed):
         return "comment lines only"
     if path.endswith(".py") and before is not None and same_ast(
             before, text, start, count):

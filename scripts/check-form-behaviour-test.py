@@ -56,7 +56,9 @@ def git(repo, *args):
 # comment in `s.sh`, adds `t-test.py` and rewrites the binary. So HEAD touched
 # five files and their branch patches hold six hunks: `g` and `doc.md` are
 # asked, the docstring, the comment and the test are settled, the binary is
-# skipped.
+# skipped. Three more are asked though a marker opens every changed line: a
+# shell option line opening `--`, an Alloy comment, which is the spec, and a
+# module docstring a script prints as its usage.
 REPO = ROOT / "repo"
 REPO.mkdir()
 git(REPO, "init", "-q", "-b", "main")
@@ -65,6 +67,9 @@ A_MAIN = f'def f():\n    """Say one."""\n    return 1\n\n\n{FILLER}\ndef g():\n 
 (REPO / "doc.md").write_text("# Rule\n\nA hook is never bypassed.\n")
 (REPO / "s.sh").write_text("# say hi\necho hi\n")
 (REPO / "old.bin").write_bytes(b"\x00\x01\x02")
+(REPO / "m.sh").write_text("gh pr merge \\\n  --squash \\\n  1\n")
+(REPO / "x.als").write_text("-- a hook is never bypassed\nsig A {}\n")
+(REPO / "u.py").write_text('"""Usage: u.py <n>"""\nprint(__doc__)\n')
 git(REPO, "add", "-A")
 git(REPO, "commit", "-q", "-m", "main")
 git(REPO, "update-ref", "refs/remotes/origin/main", "HEAD")
@@ -77,6 +82,9 @@ git(REPO, "commit", "-qam", "first")
 (REPO / "s.sh").write_text("# say hello\necho hi\n")
 (REPO / "t-test.py").write_text("assert True\n")
 (REPO / "old.bin").write_bytes(b"\x00\x09\x02")
+(REPO / "m.sh").write_text("gh pr merge \\\n  --merge --admin \\\n  1\n")
+(REPO / "x.als").write_text("-- a hook is not bypassed without a reason\nsig A {}\n")
+(REPO / "u.py").write_text('"""Usage: u.py <n> [<m>]"""\nprint(__doc__)\n')
 git(REPO, "add", "-A")
 git(REPO, "commit", "-q", "-m", "head")
 HEAD = git(REPO, "rev-parse", "HEAD")
@@ -187,11 +195,14 @@ def settled():
             for row in LOGGED if row.get("settled")}
 
 
+ASKED = ["a.py", "doc.md", "m.sh", "u.py", "x.als"]
+
+
 def asks_each_unsettled_hunk(t):
     r = run(t)
     paths = [p for p, _ in asked()]
     return (r.returncode == 0 and r.stdout == "" and r.stderr == ""
-            and paths == ["a.py", "doc.md"] and len(SEEN) == 2), (asked(), r.stderr[-300:])
+            and paths == ASKED and len(SEEN) == len(ASKED)), (asked(), r.stderr[-300:])
 
 
 def state_is_intent_and_hunk(t):
@@ -232,7 +243,27 @@ def flag_is_the_unasked_probability(t):
     run(t)
     flags = sorted(json.dumps(row.get("flag")) for row in LOGGED
                    if row.get("reading") and not row.get("settled"))
-    return flags == [json.dumps({"code": 0.15, "moved_by": "unasked_behaviour"})] * 2, flags
+    return flags == [json.dumps({"code": 0.15, "moved_by": "unasked_behaviour"})] * len(ASKED), flags
+
+
+def asks_what_only_looks_like_a_comment(t):
+    run(t)
+    got = {p for p, _ in asked()}
+    return {"m.sh", "x.als", "u.py"} <= got and not {"m.sh", "x.als", "u.py"} & set(settled()), \
+        (sorted(got), settled())
+
+
+def an_insertion_hunk_lines_up(t):
+    """A `-N,0` hunk inserts AFTER line N: a docstring-only function added
+    after line 1 leaves no AST unchanged, and a comment line inserted there
+    does. Read at the unit, since git's three lines of context make such a
+    hunk only for an empty file."""
+    before = "x = 1\ny = 2\n"
+    comment = t.m.same_ast(before, "@@ -1,0 +2 @@\n+# note", 1, 0)
+    code = t.m.same_ast(before, "@@ -1,0 +2 @@\n+z = 3", 1, 0)
+    # one line early would land inside the string and change its value
+    string = t.m.same_ast('y = """a\nb"""\nx = 1\n', "@@ -2,0 +3 @@\n+# c", 2, 0)
+    return comment and not code and string, (comment, code, string)
 
 
 def skips_the_binary(t):
@@ -290,6 +321,8 @@ CASES = {
     "the hunks are the branch patch's, not HEAD's alone": reads_the_branch_patch,
     "the row carries the reading and the repository, sha, path and hunk": row_carries_its_join_key,
     "an asked row's flag is P(unasked_behaviour)": flag_is_the_unasked_probability,
+    "a shell option, an Alloy comment and a module docstring are asked, not settled": asks_what_only_looks_like_a_comment,
+    "a -N,0 insertion hunk is applied after line N": an_insertion_hunk_lines_up,
     "a binary logs a skip": skips_the_binary,
     "a claim of another kind asks and logs nothing": other_kind_asks_nothing,
     "a branch that is no claim asks, reads and logs nothing": no_claim_asks_nothing,
@@ -311,8 +344,8 @@ MUTATIONS = [
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
     ("docstrings not blanked", "            body[0] = ast.Pass()\n", "            pass\n",
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
-    ("the comment rule dropped", "COMMENT.match(line) for line in changed):",
-     "False for line in changed):",
+    ("the comment rule dropped", "all(comment.match(line) for line in changed)",
+     "all(False for line in changed)",
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
     ("the test rule dropped", "if test.search(path):", "if False:",
      "a docstring, a comment and a test suite are settled form_only, the rule named"),
@@ -324,6 +357,13 @@ MUTATIONS = [
      "the row carries the reading and the repository, sha, path and hunk"),
     ("the flag read off another option", 'FLAG = "unasked_behaviour"', 'FLAG = "asked_behaviour"',
      "an asked row's flag is P(unasked_behaviour)"),
+    ("every marker read in every file", "comment = COMMENT.get(Path(path).suffix)",
+     'comment = re.compile(r"^\\s*(#|//|--|/\\*|\\*|\\*/)")',
+     "a shell option, an Alloy comment and a module docstring are asked, not settled"),
+    ("the module docstring blanked", "        if isinstance(node, ast.Module):\n            continue\n", "",
+     "a shell option, an Alloy comment and a module docstring are asked, not settled"),
+    ("an insertion applied before line N", "at = start - 1 if count else start", "at = start - 1",
+     "a -N,0 insertion hunk is applied after line N"),
     ("a skip not logged", 'jev.skip(READER, f"{label} {path}", why, env, cwd=HERE)\n                continue',
      'continue', "a binary logs a skip"),
     ("the kind not read", "if kind != KIND:", "if False:",

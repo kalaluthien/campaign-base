@@ -1246,5 +1246,56 @@
    "declared": {},
    "how": "THE CALL IS ALL BUT NEVER REACHED, which is the select call's result and not this one's: the select answered `noMatch` on 35 of the 36 states, so this was asked 1 state a run, 3 in all. One positive and no negative is no measurement at all, and nothing is proposed. Whether the second call separates the Plan's behaviour from its noun is unmeasured and stays unmeasured until a select call exists that picks something (sdlc-alloy#458 S7)."
   }
+ },
+ "form-behaviour": {
+  "owner": "scripts/check-form-behaviour.py, started by scripts/push-campaign-branch.sh",
+  "tier": "shadow",
+  "group": "form-behaviour",
+  "state": {
+   "fields": [
+    "intent",
+    "hunk"
+   ],
+   "intent": "the `## Intent` section of the `kind:maintenance` sub-issue the claim names, its non-blank lines",
+   "hunk": "one hunk of the branch's patch of a file the commit touched: `path`, and `text`, the hunk from its `@@` line, cut from `git diff` from the merge-base with origin/main to the commit"
+  },
+  "prefilter": {
+   "what": "a commit on a claim whose sub-issue carries `kind:maintenance`, pushed to a GitHub remote; any other claim asks nothing and logs nothing. Three hunks are settled `form_only` by code and logged as settled rows naming which rule took them: a hunk of a test suite (check-diff-screen's `TEST`); a hunk of a shell, YAML, TOML or JavaScript file whose every changed non-blank line is a comment in that language -- never prose, a `.als` or a `.py`, where a comment is the rule or the AST rule reads it; and a hunk of a `.py` file whose AST, function and class docstrings blanked, is the same before and after that hunk alone -- the module's docstring is kept, since a script prints it as its usage. A merge commit asks nothing; a file whose branch patch is empty, a binary, a failed `git diff`, a patch over check-diff-screen's ceiling, no merge-base, a commit that does not resolve, a sub-issue that would not read, one with an empty or no `## Intent`, and a reading that raised each log a skip."
+  },
+  "question": {
+   "type": "choice",
+   "instructions": "`intent` says what a tidy-up is for. `hunk` is one change it made. Which of these is `hunk`?",
+   "criteria": {
+    "form_only": {
+     "what": "a change of form: wording, layout, names, comments or where something lives; every input gives the same result and every rule says the same thing",
+     "example": "a copied `def section(text)` replaced by an import of the identical function"
+    },
+    "asked_behaviour": {
+     "what": "a change of behaviour that `intent` asks for: a result or a rule differs, and `intent` names that difference",
+     "example": "intent 'cap titles at 40 characters'; hunk changes `TITLE_CEILING = 60` to `TITLE_CEILING = 40`"
+    },
+    "unasked_behaviour": {
+     "what": "a change of behaviour that `intent` does not ask for: a result or a rule differs, and nothing in `intent` names that difference",
+     "example": "intent 'trim AGENTS.md to what filing does not own'; hunk rewrites 'a hook is never bypassed' as 'a hook is not bypassed without a reason'"
+    },
+    "unclear": {
+     "what": "the hunk alone cannot show whether anything runs differently: it calls or moves something whose body is not in the hunk"
+    }
+   }
+  },
+  "compose": {
+   "where": "call"
+  },
+  "thresholds": {},
+  "join": null,
+  "join_why": "the named fact labels almost nothing. DECISION 5726150089 names a later REVIEW finding on the hunk's file, or a later fix commit on its lines; over the 34 merged pull requests of the 25 `kind:maintenance` sub-issues, 112 of 1121 hunks carry either, and of the 46 findings behind them 3 to 5 name a behaviour change at all -- the rest are wording, a missing test or a stale citation. check-diff-screen's fact is the same fact and has the same gap. A hand label per hunk is the truth here, which is what the corpus holds",
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "wording": "a83edbd768c7",
+   "declared": {},
+   "cases": "144 real hunks of merged maintenance pull requests labelled by hand (60 asked_behaviour, 38 form_only, 18 unasked_behaviour, 28 unclear and unscored), 60 made by moving a hunk under a sibling sub-issue's Intent, 15 made by one behaviour edit inside a form-only hunk: 93 negatives (unasked or made) and 98 positives (form_only or asked)",
+   "how": "NO BAND: FEW CASES, LONG SHADOW. NO CUT IS DECLARED, so the word is the option the model picked; the flag reads P(unasked_behaviour), which the reader writes as the row's `flag`. AUC 0.80 over all (real 0.85, sibling 0.85, one edit 0.55), but the cut that flags every negative is 0.00, so it flags 98 of 98 positives too. Measured beside it on the same states: a form_only/changes_behaviour/unclear choice read on P(changes_behaviour), AUC 0.74 and 98/98 at the all-negatives cut; a noul 'does hunk change what anything does' AUC 0.61 (one edit 0.31); a noul 'does intent ask for it' read as 1-P, AUC 0.82 and 97/98; the two nouls combined 0.78 and 89/98; token overlap of intent and hunk 0.66 and 96/98; changed-line count 0.56. The paired rise of P(unasked) from a hunk to its made negative is 50 of 60 under a sibling Intent but 11 of 15 for one edit: it reads whether the Intent names the change, not whether behaviour changed. Repeat of 30 states with the store off: at most 0.08-0.11 apart, 2 word flips. Calls: 479 over 230 distinct states, 2.1 a state for the measurement (every alternative re-asked each state); the reader sends 1 a hunk. It orders and does not filter, so this stays at shadow collecting cases (sdlc-alloy#458 C2)."
+  }
  }
 }

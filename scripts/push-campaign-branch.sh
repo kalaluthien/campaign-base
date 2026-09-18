@@ -146,6 +146,9 @@ if git push --quiet origin "$branch" 2>"$err"; then
 		# `git commit`'s output waited for every Jev call.
 		sha=$(git rev-parse HEAD) || exit 0
 		nohup "$HERE/check-diff-screen.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
+		# THE FORM-BEHAVIOUR READING beside it, the same way: it asks only
+		# on a claim whose sub-issue is `kind:maintenance`, and says why there.
+		nohup "$HERE/check-form-behaviour.py" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
 
 		announce_pull_request "$branch"
 		;;

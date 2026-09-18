@@ -132,7 +132,6 @@ def steps(inp, reg, jev):
     the pull request and which finding of the review it was -- so the thread's
     next REVIEW can be joined to the answer (sdlc-alloy#458 DECISION
     5722176509)."""
-    group = reg[READING]["group"]
     cut = jev.load_sibling("check-finding-sort.py").findings(inp.body)
     if not cut:
         return
@@ -142,6 +141,7 @@ def steps(inp, reg, jev):
             yield jev.Skip(f"{inp.subject} f{n}",
                            "the first line names no sha this checkout holds")
         return
+    group = reg[READING]["group"]
     # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: a number with no repository
     # names no pull request when a member repository's numbers collide with
     # this tracker's.

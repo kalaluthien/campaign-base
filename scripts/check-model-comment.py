@@ -205,8 +205,15 @@ def raised(e):
 
 
 def main(argv, out=None, env=None):
-    return importlib.import_module("campaign-jev").run_reader(
-        globals(), argv, out=out, env=env)
+    # THE IMPORT INSIDE A BOUNDARY: a campaign-jev that will not load is a
+    # reading lost and never a commit refused.
+    try:
+        jev = importlib.import_module("campaign-jev")
+    except Exception as e:  # noqa: BLE001
+        for line in raised(e):
+            print(line, file=out)
+        return 0
+    return jev.run_reader(globals(), argv, out=out, env=env)
 
 
 if __name__ == "__main__":

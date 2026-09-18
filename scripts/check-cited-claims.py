@@ -73,7 +73,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READINGS = ("docstring-claims", "reference-claims")
+# THE ROWS' READER KEEPS ITS FLAG, as every row this reader ever wrote carries
+# it; which is why the raise line is `raised`'s and not the shell's stock one.
 READER = "check-cited-claims.py --staged"
+INPUT = "staged"
+USAGE = "scripts/check-cited-claims.py --staged"
 # WHAT A CLAIM THE RESPONSE NEVER ANSWERED READS AS, in the shape an answered
 # one has. `judge` hands back the raws it got and nothing for a question the
 # response left out, where `ask` used to fill in an `unknown` per question.
@@ -88,13 +92,6 @@ WORD = re.compile(r"\b\w+\b")
 BACKTICKED = re.compile(r"`(\w+)`")
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z`(\"'])")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506).
-    Called inside `main`'s boundary, so a campaign-jev that will not load is a
-    reading lost and never a commit refused."""
-    return importlib.import_module("campaign-jev")
 
 
 def code_lines(lines):
@@ -350,9 +347,9 @@ def targets(hunks, texts, decls, cut, prefilter):
             touched, skipped)
 
 
-def ask_all(entry, states, jev, key, env=None):
-    """[(label, claims, {claim id: Answer}, the log line's fate)] for every
-    state, asked six at a time.
+def ask_all(entry, states, jev, key):
+    """The `Ask` of every state, six at a time; what it prints is `report`'s,
+    over [(label, claims, {claim id: Answer}, the log line's fate)].
 
     ONE `judge` CALL A PARAGRAPH, where it used to be one `ask`. The claims
     are handed over as the state's `claim` field and the entry's `compose`
@@ -365,13 +362,19 @@ def ask_all(entry, states, jev, key, env=None):
     DECISION 5722176509)."""
     cut = entry["state"]["claims"]
     found = [claims(paragraph, name, cut) for _, _, paragraph, name, _ in states]
-    judged = jev.judge_each(
-        [{"state": {"paragraph": paragraph,
-                    "pred": {"name": name, "text": text},
-                    "claim": {f"c{i}": c for i, c in enumerate(got)}},
-          "read": label, "key": dict(key, path=path, name=name)}
-         for (label, path, paragraph, name, text), got in zip(states, found)],
-        workers=6, group=entry["group"], reader=READER, env=env)
+    asks = [{"state": {"paragraph": paragraph,
+                       "pred": {"name": name, "text": text},
+                       "claim": {f"c{i}": c for i, c in enumerate(got)}},
+             "read": label, "key": dict(key, path=path, name=name)}
+            for (label, path, paragraph, name, text), got in zip(states, found)]
+    return jev.Ask(asks, {"workers": 6, "group": entry["group"]},
+                   lambda judged: report(answered(entry, states, found, judged,
+                                                  jev), entry))
+
+
+def answered(entry, states, found, judged, jev):
+    """[(label, claims, {claim id: Answer}, the log line's fate)], one per
+    state, from its `Judged`."""
     return [(state[0], got,
              jev.words_of(entry, j.verdicts[next(iter(j.verdicts))]), j.logged)
             for state, got, j in zip(states, found, judged)]
@@ -402,7 +405,8 @@ def index_texts(paths):
     return out
 
 
-def report(results, entry, out):
+def report(results, entry):
+    """The lines to print for `results`."""
     # THE TIER DECIDES WHAT IS SHOWN, per rule-check#455's registry: `shadow`
     # logs every answer and prints only the counts; `advise` prints each claim
     # read contradicted or unknown.
@@ -412,7 +416,7 @@ def report(results, entry, out):
     # two edges -- `model-comment`'s do -- printed "0, 0, 0" over a call it had
     # made and answered.
     counts = {"yes": 0, "no": 0, "uncertain": 0, "unknown": 0}
-    logged = set()
+    logged, lines = set(), []
     for label, found, answers, line in results:
         logged.add(line)
         for i, claim in enumerate(found):
@@ -426,72 +430,70 @@ def report(results, entry, out):
             if not shown:
                 continue
             if a.word == "yes":
-                print(f"  contradicts {p:.2f}  {label}: {claim}", file=out)
+                lines.append(f"  contradicts {p:.2f}  {label}: {claim}")
             elif a.word == "unknown":
-                print(f"  unknown  {label}: {claim} -- {a.why}", file=out)
-    print(f"  {counts['yes']} claim(s) read as contradicted, {counts['no']} "
-          f"clear, {counts['uncertain']} in the gap, {counts['unknown']} "
-          f"unknown; tier `{entry['tier']}`, exit status unmoved", file=out)
-    for line in sorted(logged):
-        print(f"  answers {line}", file=out)
+                lines.append(f"  unknown  {label}: {claim} -- {a.why}")
+    lines.append(f"  {counts['yes']} claim(s) read as contradicted, {counts['no']} "
+                 f"clear, {counts['uncertain']} in the gap, {counts['unknown']} "
+                 f"unknown; tier `{entry['tier']}`, exit status unmoved")
+    return lines + [f"  answers {line}" for line in sorted(logged)]
 
 
-def main(argv, out=sys.stdout, env=None):
-    if argv != ["--staged"]:
-        print("Usage: scripts/check-cited-claims.py --staged", file=sys.stderr)
-        return 2
-    try:
-        jev = jev_module()
-        registry = jev.load_registry()
-        # `--no-prefix` PINNED: a user's `diff.noprefix` changes what `+++`
-        # carries, and a parser reading `b/` found no file at all.
-        hunks = staged_hunks(git("diff", "--cached", "-U0", "-M", "--no-color",
-                                 "--no-ext-diff", "--no-prefix"))
-        in_scripts_dir = jev.load_sibling("check-tree-shape.py").in_scripts_dir
-        sources = {
-            "docstring-claims": lambda p: (
-                paragraphs if p.endswith(".py") and in_scripts_dir(p) else None),
-            "reference-claims": lambda p: (
-                units if REFERENCE.fullmatch(p) else None),
-        }
-        is_spec = lambda p: p.startswith("spec/") and p.endswith(".als")  # noqa: E731
-        wanted = lambda p: is_spec(p) or any(  # noqa: E731
-            sources[r](p) for r in READINGS if r in registry)
-        relevant = [p for p in hunks if wanted(p)]
-        if not relevant:
-            print(f"check-cited-claims: {len(hunks)} staged file(s), none a "
-                  f"spec/ module or a source; nothing asked", file=out)
-            return 0
-        texts = index_texts([p for p in git("ls-files", "-z").split("\0")
-                             if wanted(p)])
-        spec = {p: t for p, t in texts.items() if is_spec(p)}
-        decls, fields = declarations(spec)
-        for reading in READINGS:
-            if reading not in registry:
-                print(f"check-cited-claims: no entry `{reading}` in the "
-                      f"registry; not asked", file=out)
-                continue
-            entry = registry[reading]
-            found, touched, skipped = targets(hunks, texts, decls,
-                                              sources[reading],
-                                              entry.get("prefilter", {}))
-            parts = entry["state"]["pred"]["text"]
-            states = [(f"{p}:{f} `{n}`", p, para, n,
-                       pred_text(n, parts, decls, fields, spec))
-                      for p, f, para, n in found]
-            print(f"check-cited-claims `{reading}`: {len(relevant)} staged "
-                  f"file(s) read; {len(touched)} pred(s) touched; "
-                  f"{len(states)} paragraph citation(s) asked"
-                  + (f"; skipped as declared twice: {', '.join(sorted(skipped))}"
-                     if skipped else ""), file=out)
-            if states:
-                report(ask_all(entry, states, jev, jev.commit_key(), env),
-                       entry, out)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
-        print(f"check-cited-claims: could not read the commit "
-              f"({e.__class__.__name__}: {e}); nothing asked, exit status "
-              f"unmoved", file=out)
-    return 0
+def steps(_inp, registry, jev):
+    # `--no-prefix` PINNED: a user's `diff.noprefix` changes what `+++`
+    # carries, and a parser reading `b/` found no file at all.
+    hunks = staged_hunks(git("diff", "--cached", "-U0", "-M", "--no-color",
+                             "--no-ext-diff", "--no-prefix"))
+    in_scripts_dir = jev.load_sibling("check-tree-shape.py").in_scripts_dir
+    sources = {
+        "docstring-claims": lambda p: (
+            paragraphs if p.endswith(".py") and in_scripts_dir(p) else None),
+        "reference-claims": lambda p: (
+            units if REFERENCE.fullmatch(p) else None),
+    }
+    is_spec = lambda p: p.startswith("spec/") and p.endswith(".als")  # noqa: E731
+    wanted = lambda p: is_spec(p) or any(  # noqa: E731
+        sources[r](p) for r in READINGS if r in registry)
+    relevant = [p for p in hunks if wanted(p)]
+    if not relevant:
+        yield jev.Say(f"check-cited-claims: {len(hunks)} staged file(s), none a "
+                      f"spec/ module or a source; nothing asked")
+        return
+    texts = index_texts([p for p in git("ls-files", "-z").split("\0")
+                         if wanted(p)])
+    spec = {p: t for p, t in texts.items() if is_spec(p)}
+    decls, fields = declarations(spec)
+    for reading in READINGS:
+        if reading not in registry:
+            yield jev.Say(f"check-cited-claims: no entry `{reading}` in the "
+                          f"registry; not asked")
+            continue
+        entry = registry[reading]
+        found, touched, skipped = targets(hunks, texts, decls,
+                                          sources[reading],
+                                          entry.get("prefilter", {}))
+        parts = entry["state"]["pred"]["text"]
+        states = [(f"{p}:{f} `{n}`", p, para, n,
+                   pred_text(n, parts, decls, fields, spec))
+                  for p, f, para, n in found]
+        yield jev.Say(f"check-cited-claims `{reading}`: {len(relevant)} staged "
+                      f"file(s) read; {len(touched)} pred(s) touched; "
+                      f"{len(states)} paragraph citation(s) asked"
+                      + (f"; skipped as declared twice: {', '.join(sorted(skipped))}"
+                         if skipped else ""))
+        if states:
+            yield ask_all(entry, states, jev, jev.commit_key())
+
+
+def raised(e):
+    return [f"check-cited-claims: could not read the commit "
+            f"({e.__class__.__name__}: {e}); nothing asked, exit status "
+            f"unmoved"]
+
+
+def main(argv, out=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, out=out, env=env)
 
 
 if __name__ == "__main__":

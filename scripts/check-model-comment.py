@@ -60,7 +60,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READING = "model-comment"
+# THE ROWS' READER KEEPS ITS FLAG, as every row this reader ever wrote carries
+# it; which is why the raise line is `raised`'s and not the shell's stock one.
 READER = "check-model-comment.py --staged"
+INPUT = "staged"
+USAGE = "scripts/check-model-comment.py --staged"
 S1 = "check-cited-claims.py"
 # A `fact` beside S1's three: see the docstring. S1's own `DECL` stays what it
 # is, because widening it would widen what prose may cite.
@@ -131,9 +135,9 @@ def claims(comment, body, prefilter, s1):
     return list(dict.fromkeys(asked)), skipped
 
 
-def ask_all(entry, states, jev, key, env=None):
-    """[(label, claims, {claim id: Answer}, the log line's fate)] for every
-    definition, asked six at a time.
+def ask_all(entry, states, jev, key, s1):
+    """The `Ask` of every definition, six at a time; what it prints is S1's
+    `report`, over [(label, claims, {claim id: Answer}, the log line's fate)].
 
     ONE `judge` CALL A DEFINITION, where it used to be one `ask`. The entry's
     `compose` puts each claim's text in its own question -- the shape
@@ -144,70 +148,65 @@ def ask_all(entry, states, jev, key, env=None):
     and the definition. Without those a row could never be joined to what
     happened to that comment afterwards, which is why every one of them parked
     in the log for good (sdlc-alloy#458 DECISION 5722176509)."""
-    judged = jev.judge_each(
-        [{"state": {"claim": {f"c{i}": c for i, c in enumerate(found)},
-                    "body": body},
-          "read": label, "key": dict(key, path=path, name=name)}
-         for label, path, name, found, body in states],
-        workers=6, group=entry["group"], reader=READER, env=env)
-    return [(label, found, jev.words_of(entry, j.verdicts[READING]), j.logged)
-            for (label, _path, _name, found, _body), j in zip(states, judged)]
+    asks = [{"state": {"claim": {f"c{i}": c for i, c in enumerate(found)},
+                       "body": body},
+             "read": label, "key": dict(key, path=path, name=name)}
+            for label, path, name, found, body in states]
+    return jev.Ask(asks, {"workers": 6, "group": entry["group"]},
+                   lambda judged: s1.report(
+                       [(label, found, jev.words_of(entry, j.verdicts[READING]),
+                         j.logged)
+                        for (label, _path, _name, found, _body), j
+                        in zip(states, judged)],
+                       entry))
 
 
-def main(argv, out=sys.stdout, env=None):
-    if argv != ["--staged"]:
-        print("Usage: scripts/check-model-comment.py --staged", file=sys.stderr)
-        return 2
-    try:
-        jev = jev_module()
-        registry = jev.load_registry()
-        if READING not in registry:
-            print(f"check-model-comment: no entry `{READING}` in the "
-                  f"registry; nothing asked", file=out)
-            return 0
-        entry = registry[READING]
-        s1 = jev.load_sibling(S1)
-        # `--no-prefix` PINNED, as S1 pins it: a user's `diff.noprefix` changes
-        # what `+++` carries, and a parser reading `b/` found no file at all.
-        hunks = s1.staged_hunks(s1.git("diff", "--cached", "-U0", "-M",
-                                       "--no-color", "--no-ext-diff",
-                                       "--no-prefix"))
-        staged = [p for p in hunks if SPEC.fullmatch(p)]
-        if not staged:
-            print(f"check-model-comment: {len(hunks)} staged file(s), none a "
-                  f"spec/ module; nothing asked", file=out)
-            return 0
-        texts = s1.index_texts([p for p in s1.git("ls-files", "-z").split("\0")
-                                if SPEC.fullmatch(p)])
-        states, skipped = [], 0
-        for path, name, comment, body, first, last in definitions(texts, s1):
-            if not s1.overlaps(hunks.get(path, []), first, last):
-                continue
-            found, dropped = claims(comment, body, entry["prefilter"], s1)
-            for sentence, why in dropped:
-                skipped += 1
-                jev.skip(READER, f"{path} `{name}`: {sentence}", why, env=env)
-            if found:
-                states.append((f"{path} `{name}`", path, name, found, body))
-        print(f"check-model-comment `{READING}`: {len(staged)} staged spec "
-              f"file(s) read; {len(states)} definition(s) asked, "
-              f"{sum(len(s[3]) for s in states)} claim(s); {skipped} "
-              f"sentence(s) settled by code", file=out)
-        if states:
-            s1.report(ask_all(entry, states, jev, jev.commit_key(), env),
-                      entry, out)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
-        print(f"check-model-comment: could not read the commit "
-              f"({e.__class__.__name__}: {e}); nothing asked, exit status "
-              f"unmoved", file=out)
-    return 0
+def steps(_inp, registry, jev):
+    if READING not in registry:
+        yield jev.Say(f"check-model-comment: no entry `{READING}` in the "
+                      f"registry; nothing asked")
+        return
+    entry = registry[READING]
+    s1 = jev.load_sibling(S1)
+    # `--no-prefix` PINNED, as S1 pins it: a user's `diff.noprefix` changes
+    # what `+++` carries, and a parser reading `b/` found no file at all.
+    hunks = s1.staged_hunks(s1.git("diff", "--cached", "-U0", "-M",
+                                   "--no-color", "--no-ext-diff",
+                                   "--no-prefix"))
+    staged = [p for p in hunks if SPEC.fullmatch(p)]
+    if not staged:
+        yield jev.Say(f"check-model-comment: {len(hunks)} staged file(s), none "
+                      f"a spec/ module; nothing asked")
+        return
+    texts = s1.index_texts([p for p in s1.git("ls-files", "-z").split("\0")
+                            if SPEC.fullmatch(p)])
+    states, skipped = [], 0
+    for path, name, comment, body, first, last in definitions(texts, s1):
+        if not s1.overlaps(hunks.get(path, []), first, last):
+            continue
+        found, dropped = claims(comment, body, entry["prefilter"], s1)
+        for sentence, why in dropped:
+            skipped += 1
+            yield jev.Skip(f"{path} `{name}`: {sentence}", why)
+        if found:
+            states.append((f"{path} `{name}`", path, name, found, body))
+    yield jev.Say(f"check-model-comment `{READING}`: {len(staged)} staged spec "
+                  f"file(s) read; {len(states)} definition(s) asked, "
+                  f"{sum(len(s[3]) for s in states)} claim(s); {skipped} "
+                  f"sentence(s) settled by code")
+    if states:
+        yield ask_all(entry, states, jev, jev.commit_key(), s1)
 
 
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506).
-    Called inside `main`'s boundary, so a campaign-jev that will not load is a
-    reading lost and never a commit refused."""
-    return importlib.import_module("campaign-jev")
+def raised(e):
+    return [f"check-model-comment: could not read the commit "
+            f"({e.__class__.__name__}: {e}); nothing asked, exit status "
+            f"unmoved"]
+
+
+def main(argv, out=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, out=out, env=env)
 
 
 if __name__ == "__main__":

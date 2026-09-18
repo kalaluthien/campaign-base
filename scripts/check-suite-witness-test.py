@@ -493,11 +493,12 @@ def fit_weighs_the_whole_state(t):
     """`campaign-jev` measures `{claim, candidates}` and posts it; a fit that
     weighed the candidates alone leaves the claims unweighed, and a state over
     the budget comes back `unknown` with no skip row at all."""
-    cands, head = t.m.fit(DICT_SUITE, ENTRY["prefilter"], 100_000, {})
+    jev = importlib.import_module("campaign-jev")
+    cands, head = t.m.fit(DICT_SUITE, ENTRY["prefilter"], 100_000, {}, jev)
     text = {k: c["name"] + "\n" + c["body"] for k, c in cands.items()}
     bare = len(json.dumps({"candidates": text}).encode("utf-8"))
     tight = t.m.fit(DICT_SUITE, ENTRY["prefilter"], bare + 50,
-                    {"claim": {"c1": "x" * 400}})
+                    {"claim": {"c1": "x" * 400}}, jev)
     return (len(cands) == 2 and head == ENTRY["prefilter"]["head_lines"]
             and tight == ({}, -1)), (head, bare, tight[1])
 
@@ -543,7 +544,7 @@ def failure_exits_zero(t):
     r, out, _ = repo(t, {"scripts/fixture-dict-test.py":
                          DICT_SUITE.replace("return True", "return bool(1)")},
                      registry=False)
-    return r.returncode == 0, out
+    return r.returncode == 0 and out == "", out
 
 
 CASES = {
@@ -570,7 +571,7 @@ CASES = {
     "the row carries the reading, the wording and the join key": the_row_carries_its_join_key,
     "at tier shadow nothing is printed and the call is still made": shadow_prints_nothing,
     "a commit touching neither a suite nor a spec module asks nothing": a_commit_touching_neither_asks_nothing,
-    "a reader that could not read exits 0": failure_exits_zero,
+    "a reader that could not read exits 0, silent at shadow": failure_exits_zero,
 }
 
 MUTATIONS = [
@@ -609,30 +610,30 @@ MUTATIONS = [
      '            "body": "\\n".join(lines[at - 1:n.end_lineno])}',
      "a candidate's body is capped at the entry's head_lines"),
     ("a spec edit read as touching its own file alone",
-     "            if suite not in staged and not (set(names) & moved):",
-     "            if suite not in staged:",
+     "        if suite not in staged and not (set(names) & moved):",
+     "        if suite not in staged:",
      "a staged spec module asks every suite that witnesses what it declares"),
     ("one call a claim rather than a scenario",
      '    claims = {f"c{i}": c for i, c in enumerate(found, 1)}',
      '    claims = {f"c{i}": c for i, c in enumerate(found[:1], 1)}',
      "one select call a scenario, every claim of it in that call"),
     ("a name with no declaration asked anyway",
-     "                if name not in tree.scenarios or name not in defs:",
-     "                if False:",
+     "            if name not in tree.scenarios or name not in defs:",
+     "            if False:",
      "a declared name with no declaration under spec/ logs a skip"),
     ("a suite with no candidate asked anyway",
-     "                if not cands:", "                if False:",
+     "            if not cands:", "            if False:",
      "a suite with no test function logs a skip and asks nothing"),
     ("a settled sentence left unlogged",
-     '                    jev.skip(READER, f"{suite} {name}: {sentence}", why, env,\n'
-     '                             cwd=HERE)', "                    pass",
+     '                yield jev.Skip(f"{suite} {name}: {sentence}", why)',
+     "                pass",
      "a sentence code settled is written as a skip row naming the rule"),
     ('a claim call for noMatch',
      '        if t in cands else None,',
      '        if t else None,',
      'a claim picking noMatch asks no claim call'),
     ('the budget not read',
-     '        if not jev_module().over_budget(dict(rest, candidates=text), budget):',
+     '        if not jev.over_budget(dict(rest, candidates=text), budget):',
      '        if True:',
      'a select state over the budget is not sent and logs a skip'),
     ('the claims left out of what the fit weighs',
@@ -640,25 +641,24 @@ MUTATIONS = [
      'over_budget(dict(candidates=text), budget)',
      'the fit weighs the whole state, the claims included'),
     ("the row keyed by the suite alone",
-     "                         dict(jev.commit_key(cwd=HERE), path=suite,\n"
-     "                              scenario=name), env)",
-     '                         {"path": suite}, env)',
+     "                                    dict(jev.commit_key(cwd=HERE), path=suite,\n"
+     "                                         scenario=name))])",
+     '                                    {"path": suite})])',
      "the row carries the reading, the wording and the join key"),
     ('the picked case never named on the claim row',
      '            "key": dict(key, name=cands[t]["name"])}',
      '            "key": key}',
      'the row carries the reading, the wording and the join key'),
     ("the tier not read before printing",
-     '        if reg[SELECT]["tier"] != "shadow":', "        if True:",
+     '    if reg[SELECT]["tier"] != "shadow":', "    if True:",
      "at tier shadow nothing is printed and the call is still made"),
     ("every tracked suite read whatever the commit holds",
-     "            if suite not in staged and not (set(names) & moved):",
-     "            if False:",
+     "        if suite not in staged and not (set(names) & moved):",
+     "        if False:",
      "a commit touching neither a suite nor a spec module asks nothing"),
-    ("the failure boundary removed",
-     "    except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
-     "    except ZeroDivisionError as e:",
-     "a reader that could not read exits 0"),
+    ("the raise said at shadow",
+     '    if reg_tier(SELECT) == "shadow":', "    if False:",
+     "a reader that could not read exits 0, silent at shadow"),
 ]
 
 

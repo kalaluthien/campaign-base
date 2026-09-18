@@ -380,9 +380,9 @@ MUTATIONS = [
      '"claim": {f"c{i}": c for i, c in enumerate(got)}},',
      '"claim": {}},',
      'a contradicted claim is printed with its value, exit 0'),
-    ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit",
-     "except ZeroDivisionError as e:", "a reader that could not read exits 0 and says so"),
+    ("the raise not said", '    return [f"check-cited-claims: could not read the commit "',
+     '    return []\n    [f"check-cited-claims: could not read the commit "',
+     "a reader that could not read exits 0 and says so"),
     ("a touched paragraph not read as touched",
      "mine = overlaps(hunks.get(path, []), first, last)", "mine = False",
      "a staged paragraph edit asks that paragraph"),
@@ -447,7 +447,7 @@ def live(record):
     its word differs from the last one recorded under the same wording: a
     known miss stays a counted line, and a change is what fails."""
     m = module(SOURCE)
-    jev = m.jev_module()
+    jev = importlib.import_module("campaign-jev")
     for reading in m.READINGS:
         live_one(m, jev, reading, ENTRIES[reading], CORPUS / f"{reading}.jsonl",
                  record)

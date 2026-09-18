@@ -76,7 +76,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SELECT, CLAIM = "suite-witness-select", "suite-witness-claim"
+# THE ROWS' READER KEEPS ITS FLAG, as every row this reader ever wrote carries
+# it.
 READER = "check-suite-witness.py --staged"
+INPUT = "staged"
+USAGE = "scripts/check-suite-witness.py --staged"
+CWD = HERE
 S1, S3 = "check-cited-claims.py", "check-model-comment.py"
 TIE = "check-sdlc-tie.py"
 SPEC = re.compile(r"spec/.+\.als")
@@ -168,7 +173,7 @@ def candidates(source, prefilter):
     return out
 
 
-def fit(source, prefilter, budget, rest):
+def fit(source, prefilter, budget, rest, jev):
     """(the candidates, the head the state fits at), ({}, 0) where the suite
     holds no case, or ({}, -1) where its cases do not fit at `head_floor` --
     two different facts, so the skip row says which.
@@ -191,135 +196,128 @@ def fit(source, prefilter, budget, rest):
         if not cands:
             return {}, 0
         text = {t: c["name"] + "\n" + c["body"] for t, c in cands.items()}
-        if not jev_module().over_budget(dict(rest, candidates=text), budget):
+        if not jev.over_budget(dict(rest, candidates=text), budget):
             return cands, head
         head //= 2
     return {}, -1
 
 
-def ask_pair(reg, suite, scenario, found, cands, jev, key, env=None):
-    """The two calls for one (suite, scenario); {claim id: the key picked}."""
+def ask_pair(reg, suite, scenario, found, cands, key):
+    """The chain ask of the two calls for one (suite, scenario)."""
     text = {t: c["name"] + "\n" + c["body"] for t, c in cands.items()}
     subject = f"{suite} {scenario}"
     claims = {f"c{i}": c for i, c in enumerate(found, 1)}
-    return jev.judge_chain(
-        SELECT, {"candidates": text, "claim": claims},
-        lambda t, asked: {
+    return {
+        "select": SELECT, "state": {"candidates": text, "claim": claims},
+        "then": lambda t, asked: {
             "group": reg[CLAIM]["group"],
             "state": {"test_fn": text[t], "claim": asked},
             "read": f"{subject} claim {t} {cands[t]['name']}",
             "key": dict(key, name=cands[t]["name"])}
         if t in cands else None,
-        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,
-        cwd=HERE)
+        "read": f"{subject} select", "reg": reg, "key": key}
 
 
-def main(argv, out=sys.stdout, env=None):
-    if argv != ["--staged"]:
-        print("Usage: scripts/check-suite-witness.py --staged", file=sys.stderr)
-        return 2
+def steps(_inp, reg, jev):
     asked = calls = skipped = 0
-    try:
-        jev = jev_module()
-        reg = jev.load_registry()
-        if SELECT not in reg or CLAIM not in reg:
-            return 0
-        prefilter = reg[SELECT]["prefilter"]
-        s1 = jev.load_sibling(S1)
-        s3 = jev.load_sibling(S3)
-        tie = jev.load_sibling(TIE)
-        staged = [p for p in s1.git("diff", "--cached", "--name-only", "-z",
-                                    "--diff-filter=d").split("\0") if p]
-        tracked = [p for p in s1.git("ls-files", "-z").split("\0") if p]
-        # ONE TREE, ASKED. Which paths are suites, which names each declares and
-        # which of those are real scenarios are all check-sdlc-tie's readings;
-        # a copy of its `WITNESSES` here would be the second reader AGENTS.md
-        # refuses, and would drift the first time that line moved.
-        in_scripts = jev.load_sibling("check-tree-shape.py").in_scripts_dir
-        # `wanted` covers the snapshot and the suites and NOT spec/: the tie
-        # never reads a module's text, so the spec texts are fetched beside it.
-        want = tie.wanted(tracked, in_scripts)
-        spec = [p for p in tracked if SPEC.fullmatch(p)]
-        got = s1.index_texts(sorted(set(want) | set(spec)))
-        tree = tie.Tree("index", tracked, got, in_scripts)
-        texts = {p: t for p, t in got.items() if SPEC.fullmatch(p)}
-        defs = {}
-        for path, name, comment, body, _, _ in s3.definitions(texts, s1):
-            defs.setdefault(name, (path, comment, body))
-        # WHICH SCENARIOS A STAGED SPEC MODULE DECLARES, so a spec edit re-asks
-        # the suites that witness it and not only its own file.
-        moved = {n for n, (p, _, _) in defs.items() if p in staged}
-        for suite in sorted(tree.suites):
-            names = sorted(tree.declared(suite))
-            if not names:
+    if SELECT not in reg or CLAIM not in reg:
+        return
+    prefilter = reg[SELECT]["prefilter"]
+    s1 = jev.load_sibling(S1)
+    s3 = jev.load_sibling(S3)
+    tie = jev.load_sibling(TIE)
+    staged = [p for p in s1.git("diff", "--cached", "--name-only", "-z",
+                                "--diff-filter=d").split("\0") if p]
+    tracked = [p for p in s1.git("ls-files", "-z").split("\0") if p]
+    # ONE TREE, ASKED. Which paths are suites, which names each declares and
+    # which of those are real scenarios are all check-sdlc-tie's readings;
+    # a copy of its `WITNESSES` here would be the second reader AGENTS.md
+    # refuses, and would drift the first time that line moved.
+    in_scripts = jev.load_sibling("check-tree-shape.py").in_scripts_dir
+    # `wanted` covers the snapshot and the suites and NOT spec/: the tie
+    # never reads a module's text, so the spec texts are fetched beside it.
+    want = tie.wanted(tracked, in_scripts)
+    spec = [p for p in tracked if SPEC.fullmatch(p)]
+    got = s1.index_texts(sorted(set(want) | set(spec)))
+    tree = tie.Tree("index", tracked, got, in_scripts)
+    texts = {p: t for p, t in got.items() if SPEC.fullmatch(p)}
+    defs = {}
+    for path, name, comment, body, _, _ in s3.definitions(texts, s1):
+        defs.setdefault(name, (path, comment, body))
+    # WHICH SCENARIOS A STAGED SPEC MODULE DECLARES, so a spec edit re-asks
+    # the suites that witness it and not only its own file.
+    moved = {n for n, (p, _, _) in defs.items() if p in staged}
+    for suite in sorted(tree.suites):
+        names = sorted(tree.declared(suite))
+        if not names:
+            continue
+        if suite not in staged and not (set(names) & moved):
+            continue
+        for name in names:
+            if name not in tree.scenarios or name not in defs:
+                skipped += 1
+                yield jev.Skip(f"{suite} {name}", "the name is no scenario of "
+                               "the tree, or has no declaration under spec/, "
+                               "so it has no comment to read")
                 continue
-            if suite not in staged and not (set(names) & moved):
+            _, comment, body = defs[name]
+            found, dropped = s3.claims(comment, body,
+                                       reg["model-comment"]["prefilter"], s1)
+            for sentence, why in dropped:
+                skipped += 1
+                yield jev.Skip(f"{suite} {name}: {sentence}", why)
+            if not found:
                 continue
-            for name in names:
-                if name not in tree.scenarios or name not in defs:
-                    skipped += 1
-                    jev.skip(READER, f"{suite} {name}", "the name is no "
-                             "scenario of the tree, or has no declaration under "
-                             "spec/, so it has no comment to read", env,
-                             cwd=HERE)
-                    continue
-                _, comment, body = defs[name]
-                found, dropped = s3.claims(comment, body,
-                                           reg["model-comment"]["prefilter"], s1)
-                for sentence, why in dropped:
-                    skipped += 1
-                    jev.skip(READER, f"{suite} {name}: {sentence}", why, env,
-                             cwd=HERE)
-                if not found:
-                    continue
-                # the fit is per SCENARIO and not per suite: the claims are
-                # half the state, and they are only known here.
-                cands, head = fit(tree.texts.get(suite, ""), prefilter,
-                                  jev.STATE_BUDGET,
-                                  {"claim": {f"c{i}": c for i, c
-                                             in enumerate(found, 1)}})
-                if not cands:
-                    skipped += 1
-                    jev.skip(READER, f"{suite} {name}",
-                             (f"its cases are over the {jev.STATE_BUDGET}-byte "
-                              f"budget even at {prefilter['head_floor']} head "
-                              f"line(s)") if head < 0 else
-                             ("the suite holds no case by AST: no `*CASES` "
-                              "dict, no `@case(...)` decorator and no name the "
-                              "entry's `names` matches"), env, cwd=HERE)
-                    continue
-                asked += len(found)
-                calls += 1
-                # `path` IS THE SUITE and not the spec module: the join reads
-                # what happened to the case, and a sha alone names no file.
-                ask_pair(reg, suite, name, found, cands, jev,
-                         dict(jev.commit_key(cwd=HERE), path=suite,
-                              scenario=name), env)
-        if reg[SELECT]["tier"] != "shadow":
-            print(f"check-suite-witness `{SELECT}`: {calls} scenario(s) asked, "
-                  f"{asked} claim(s); {skipped} settled by code", file=out)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses a commit
-        if reg_tier(SELECT) != "shadow":
-            print(f"check-suite-witness: could not read the commit "
-                  f"({e.__class__.__name__}: {e}); nothing asked, exit status "
-                  f"unmoved", file=out)
-    return 0
+            # the fit is per SCENARIO and not per suite: the claims are
+            # half the state, and they are only known here.
+            cands, head = fit(tree.texts.get(suite, ""), prefilter,
+                              jev.STATE_BUDGET,
+                              {"claim": {f"c{i}": c for i, c
+                                         in enumerate(found, 1)}}, jev)
+            if not cands:
+                skipped += 1
+                yield jev.Skip(f"{suite} {name}",
+                               (f"its cases are over the {jev.STATE_BUDGET}-byte "
+                                f"budget even at {prefilter['head_floor']} head "
+                                f"line(s)") if head < 0 else
+                               ("the suite holds no case by AST: no `*CASES` "
+                                "dict, no `@case(...)` decorator and no name the "
+                                "entry's `names` matches"))
+                continue
+            asked += len(found)
+            calls += 1
+            # `path` IS THE SUITE and not the spec module: the join reads
+            # what happened to the case, and a sha alone names no file.
+            yield jev.Ask([ask_pair(reg, suite, name, found, cands,
+                                    dict(jev.commit_key(cwd=HERE), path=suite,
+                                         scenario=name))])
+    if reg[SELECT]["tier"] != "shadow":
+        yield jev.Say(f"check-suite-witness `{SELECT}`: {calls} scenario(s) "
+                      f"asked, {asked} claim(s); {skipped} settled by code")
+
+
+def raised(e):
+    """The stock line, and nothing at `shadow`."""
+    if reg_tier(SELECT) == "shadow":
+        return []
+    return [f"check-suite-witness: could not read the commit "
+            f"({e.__class__.__name__}: {e}); nothing asked, exit status "
+            f"unmoved"]
+
+
+def main(argv, out=None, env=None):
+    return importlib.import_module("campaign-jev").run_reader(
+        globals(), argv, out=out, env=env)
 
 
 def reg_tier(reading):
     """The reading's tier, or `shadow` when the registry itself did not read --
     silence being the safer half when nothing is known."""
     try:
-        return jev_module().load_registry()[reading]["tier"]
+        return importlib.import_module("campaign-jev").load_registry()[
+            reading]["tier"]
     except Exception:  # noqa: BLE001
         return "shadow"
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506).
-    Called inside `main`'s boundary, so a campaign-jev that will not load is a
-    reading lost and never a commit refused."""
-    return importlib.import_module("campaign-jev")
 
 
 if __name__ == "__main__":

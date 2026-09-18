@@ -68,13 +68,19 @@ to, so the id changes what is PRINTED and never what is decided; that is said
 here so nobody reads the second line as a second gate. A remote that could not
 be asked is printed as such, apart from a ref that was looked for and absent.
 
+THE VERDICT IS RECORDED in the guard's own `guard.log`, one `pre-commit` row
+naming the tree, because it is the label the guard's reading of an unread
+shell write joins to (`record`).
+
 EXIT
 
 0 admits the commit. 1 refuses, printing the reading on stderr. Any other
 status is this script's own failure.
 """
+import datetime
 import importlib.machinery
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -141,6 +147,32 @@ def answer(guard, why) -> int:
     return 1
 
 
+def record(guard, top, status, word, branch=""):
+    """THE COMMIT GATE'S VERDICT, written where the guard writes its own
+    (rule-check#455 pr 6), because it is the label a reading of an unread
+    shell write is joined to: the guard's rows carry the tree's state before
+    each call, and this row says what the gate later decided on that tree.
+    Best effort and silent on failure: the verdict is already decided, and
+    the gate's own output is the reading a person sees."""
+    try:
+        path, _how = guard.log_path(top, top)
+        if path is None:
+            return
+        tree, state = guard.tree_state(top)
+        row = {"at": datetime.datetime.now(datetime.timezone.utc)
+                                   .isoformat(timespec="seconds"),
+               "session": os.environ.get("CLAUDE_CODE_SESSION_ID") or "",
+               "tool": "pre-commit", "status": status, "verdict": word,
+               "tree": tree or str(top), "branch": branch}
+        if tree is not None:
+            row["porcelain"] = state
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except Exception:                           # noqa: BLE001 -- never the verdict
+        pass
+
+
 def main() -> int:
     guard, why = load_guard()
     if "--is-claim" in sys.argv[1:]:
@@ -175,6 +207,7 @@ def main() -> int:
     # What the reading could not see is printed beside every verdict.
     notes = [f"note: {n}" for n in guard.NOTES]
     if not inside and unread:
+        record(guard, top, 1, "unknown")
         return refuse([f"{top} is {where}, and whether it is an install a "
                        f"campaign's `## Repos` names could not be read.", who,
                        *notes, "Could not look is not the same as looked and "
@@ -182,6 +215,7 @@ def main() -> int:
     if not inside:
         print(f"check-commit-claim: {top} is {where}; not campaign work, "
               f"no claim needed. {who}.", *notes, sep="\n  ")
+        record(guard, top, 0, "not campaign work")
         return 0
 
     branch, is_claim, source = guard.claim_on(top)
@@ -189,12 +223,15 @@ def main() -> int:
     if is_claim:
         print(f"check-commit-claim: {top} is {where}; its branch {branch} is a "
               f"claim ({source}). {who}.", *notes, sep="\n  ")
+        record(guard, top, 0, "claim", branch)
         return 0
     if is_claim is None:
+        record(guard, top, 1, "unknown", branch)
         return refuse([f"{top} is {where}, on {branch}, and the claim could "
                        f"not be read: {source}.", who, *notes,
                        "Could not look is not the same as looked and found "
                        "no claim; fetch, or check the remote, and re-run."])
+    record(guard, top, 1, "no-claim", branch)
     return refuse([
         f"{top} is {where}, and its branch is not a claim: {source}.", who,
         *notes,

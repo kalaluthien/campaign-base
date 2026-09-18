@@ -36,7 +36,9 @@ NOT a loop body: `do` and `then` are prefixes, so
 `for i in 1 2; do gh issue close 9; done` is read as the call it is and
 narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
 shell string is an unbounded language, and a shell write on campaign work
-lands at the commit, where the other half reads it.
+lands at the commit, where the other half reads it. One the lint cannot
+clear is read at `shadow`, after the verdict and in a detached child
+(`shell_lint`, `SHELL_GROUP`), and changes nothing here.
 
 THREE SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
 than past that ceiling: a PATTERN KILL, a HOOK BYPASS, and a WALK OF A GUARDED
@@ -181,6 +183,7 @@ session on this machine, and one of this repository's rules walling a session
 that has nothing to do with it is an outage and not a gate.
 """
 import datetime
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -3146,6 +3149,10 @@ def log_path(target, cwd: Path):
     return None, "under no base, so not campaign work and not logged"
 
 
+def command_sha(command):
+    return hashlib.sha256(command.encode()).hexdigest()[:16]
+
+
 def log_verdict(payload, status, target, cwd: Path):
     """Append one line, and return what to say about having done so.
 
@@ -3157,6 +3164,10 @@ def log_verdict(payload, status, target, cwd: Path):
     if path is None:
         return f"verdict not logged: {how}"
     tool_input = payload.get("tool_input") or {}
+    call = (tool_input.get("command") or tool_input.get("prompt")
+            or " ".join(str(v) for v in (tool_input.get(SKILL_NAME),
+                                         tool_input.get(SKILL_ARGS)) if v)
+            or "")
     row = {
         "at": datetime.datetime.now(datetime.timezone.utc)
                       .isoformat(timespec="seconds"),
@@ -3175,10 +3186,7 @@ def log_verdict(payload, status, target, cwd: Path):
         # bucket -- so the instrument built to find false positives by
         # measurement could not see either of the rules on a launch. A `Skill`
         # payload has neither field: the skill and its args are what it ran.
-        "command": (tool_input.get("command") or tool_input.get("prompt")
-                    or " ".join(str(v) for v in (tool_input.get(SKILL_NAME),
-                                                 tool_input.get(SKILL_ARGS))
-                                if v) or "")[:200],
+        "command": call[:200],
     }
     # WHAT THE CALL FILED, WHOLE, where `command` is cut at 200 bytes. Written
     # only when there was one, so every row that carries the key carries a
@@ -3186,6 +3194,18 @@ def log_verdict(payload, status, target, cwd: Path):
     # filed nothing. `FILINGS`' comment says why this row and not a file.
     if FILINGS:
         row["filings"] = list(FILINGS)
+    # THE JOIN A SHELL READING NEEDS (rule-check#455 pr 6): the WHOLE command
+    # hashed, where `command` keeps 200 bytes, and the state of the tree the
+    # call runs in, taken BEFORE the tool runs. The next row of the same
+    # session in the same tree is this call's after; a reading of a call the
+    # lint left carries the same three values as its key.
+    if call:
+        row["command_sha"] = command_sha(call)
+    tree, state = tree_state(cwd)
+    if tree is not None:
+        row["tree"], row["porcelain"] = tree, state
+    if "shell_lint" in LAST:
+        row["shell_lint"] = LAST["shell_lint"]
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:
@@ -3385,6 +3405,15 @@ def bash_call(command, cwd: Path, session_id=""):
                            "`## Lands in`."])
     writes = [rest for rest, is_write, _ in gh if is_write]
     if not writes and not stray:
+        word, why = shell_lint(command)
+        LAST["shell_lint"] = word or "asked"
+        tree, state = tree_state(cwd)
+        if word is None and tree is not None:
+            SHELL_ASKS.append({"command": command[:SHELL_CHARS],
+                               "cwd": str(cwd), "session": session_id,
+                               "tree": tree, "porcelain": state,
+                               "command_sha": command_sha(command),
+                               "lint": why})
         return allow([f"{what}." for _, _, what in gh] + list(unenforced)
                      + ["The command was not read for a target: only a file "
                         "tool's path and a gh write are; its write, if any, is "
@@ -4099,7 +4128,124 @@ def read_filings(cwd: Path):
                   flag={"options": sorted(scopes), "unread": missed})
 
 
+# THE SHELL WRITE THIS GUARD LETS THROUGH UNREAD (rule-check#455 pr 6, over
+# rule-check#471 DECISION 5716551122): does a Bash call allowed unread change a
+# file in the tree it runs in? LINT FIRST, and lint is the planner's list: a
+# command with no redirect, no in-place edit, no `tee`, `mv`, `cp`, `rm`, `git
+# commit` or `git push` is code's `no` and asks nothing. The lint reads the
+# guard's own split, so a heredoc body is data here as everywhere, and `-i` is
+# read only under `sed` and `perl`, where it edits in place; `grep -i` is not
+# a write.
+#
+# WHAT LINT LEAVES IS ASKED DETACHED. A PreToolUse hook holds the tool until it
+# returns, and lint leaves about one unread call in six (5864 of 33402 rows of
+# this machine's guard logs, 2026-09-05 to 09-18) -- a synchronous call there
+# is a second of wait in front of every `rm` and every commit. The reading is
+# at `shadow`, so nothing waits for it: this process hands the state to a
+# child in its own session, with no stdio held, and returns. The role is read
+# THERE, since reading it costs a herdr call this path never made.
+SHELL_GROUP = "shell-unread"
+SHELL_READER = "check-campaign-claim.shell"
+SHELL_CHARS = 2048
+SHELL_WORDS = {"tee", "mv", "cp", "rm"}
+IN_PLACE = {"sed", "perl"}
+REDIRECTS = {">", ">>", "&>", "&>>", ">|"}
+# The Jev question for the child, when lint left one. Empty on every other
+# call, so `main` spawns nothing.
+SHELL_ASKS = []
+
+
+def shell_lint(command):
+    """(`no` or None, why). `no` is code's answer; None leaves it to Jev.
+
+    A command this cannot split is left to Jev, not settled: lint is a claim
+    that nothing on the planner's list is present, and an unread string
+    supports no such claim."""
+    pairs, why = paired_segments(command)
+    if pairs is None:
+        return None, f"the command would not split ({why})"
+    for tokens, *_ in pairs:
+        word, rest = head(tokens)
+        if word in SHELL_WORDS:
+            return None, f"`{word}`"
+        if word in IN_PLACE and any(t == "--in-place" or t.startswith("-i")
+                                    for t in rest[1:]):
+            return None, f"`{word} -i`"
+        if word == "git":
+            sub = next((t for i, t in enumerate(rest[1:], 1)
+                        if not t.startswith("-")
+                        and rest[i - 1] not in ("-C", "-c")), "")
+            if sub in ("commit", "push"):
+                return None, f"`git {sub}`"
+        for i, t in enumerate(tokens):
+            if t in REDIRECTS and tokens[i + 1:i + 2] != ["/dev/null"]:
+                return None, f"a `{t}` redirect"
+    return "no", "no redirect, in-place edit, tee, mv, cp, rm, commit or push"
+
+
+def tree_state(cwd):
+    """(the checkout's toplevel, a 16-hex digest of its state) or (None, why).
+
+    THE STATE IS MORE THAN `git status --porcelain`: a file already dirty
+    that changes again keeps its status line, so each listed path's size and
+    mtime are hashed beside it, with HEAD. What it cannot see is a change git
+    ignores, which is not a change a commit could land."""
+    out, why, _ = git(["rev-parse", "--show-toplevel"], cwd)
+    if out is None:
+        return None, why
+    top = Path(out.strip())
+    head_sha, _w, _ = git(["rev-parse", "-q", "--verify", "HEAD"], top)
+    # `-uall`, or a new directory is one `?? dir/` line whose stat never
+    # moves when a file inside it is rewritten.
+    status, why, _ = git(["status", "--porcelain", "-z", "-uall"], top)
+    if status is None:
+        return None, why
+    h = hashlib.sha256((head_sha or "").encode() + status.encode())
+    for entry in status.split("\0"):
+        path = top / entry[3:]
+        try:
+            st = path.stat()
+            h.update(f"{entry[3:]}:{st.st_size}:{st.st_mtime_ns}".encode())
+        except OSError:
+            pass
+    return str(top), h.hexdigest()[:16]
+
+
+def ask_shell(log_file):
+    """Hand the lint-left call to a detached child and return at once."""
+    if not SHELL_ASKS or log_file is None:
+        return
+    job = dict(SHELL_ASKS[0], guard_log=str(log_file))
+    child = subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), "--shell-reading"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True)
+    child.stdin.write(json.dumps(job).encode())
+    child.stdin.close()
+
+
+def shell_reading():
+    """The child: read the role, and ask the group once. Swallows everything,
+    since nothing is waiting on it and a traceback here reaches nobody."""
+    try:
+        job = json.load(sys.stdin)
+        _campaign, role, how = role_of(job.get("session", ""))
+        jev = load(JEV, "campaign_jev")
+        jev.judge(SHELL_GROUP,
+                  {"command": job["command"], "cwd": job["cwd"],
+                   "role": role or f"none read: {how}"},
+                  read=f"{job['tree']} <- {job['command'][:60]}",
+                  reader=SHELL_READER, cwd=Path(job["cwd"]),
+                  key={k: job[k] for k in ("session", "tree", "porcelain",
+                                           "command_sha", "guard_log")})
+    except Exception:                  # noqa: BLE001 -- nobody is listening
+        pass
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--shell-reading"]:
+        return shell_reading()
     # THE PAYLOAD THAT WOULD NOT READ IS A VERDICT TOO, and it used to return
     # here -- past the log write below, so the one refusal that means the guard
     # was handed something broken was the one refusal nothing recorded and
@@ -4140,6 +4286,10 @@ def main() -> int:
         cwd = Path(".")
     note = log_verdict(payload, status, LAST.get("target"), cwd)
     print(note, file=sys.stderr if status else sys.stdout)
+    try:
+        ask_shell(log_path(LAST.get("target"), cwd)[0])
+    except Exception:                  # noqa: BLE001 -- swallowed, by design
+        pass
     # AND THE FILING READING LAST OF ALL, after the verdict is decided, printed
     # and written down. It is at `shadow`, so it prints nothing and returns
     # nothing here; every failure of it is swallowed, because a judgment is an

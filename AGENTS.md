@@ -472,8 +472,11 @@ whoever it hit. The model rule is `verdictIsDurable`.
 `scripts/check-commit-claim.py` is the `pre-commit`
 gate where a shell write lands: a commit on a base tree, under a campaign
 directory, or in an install `## Repos` names, whose branch is not a claim is
-refused. A change landing outside all three is not campaign work and neither
-refuses it; how each reads its target, and what it does when it cannot, is its
+refused, and it writes its verdict to the same log. Every row carries the
+tree's state before its call, so the next row says whether an unread shell
+command changed it, and one the lint does not clear is asked at `shadow` by
+the `shell-unread` group, detached, never refusing. A change landing outside
+all three is not campaign work and neither refuses it; how each reads its target, and what it does when it cannot, is its
 docstring's. `install-hooks.sh` installs both — the commit gate as a git hook,
 the guard in
 `~/.claude/settings.json`, because a delegate's clone is a different repository

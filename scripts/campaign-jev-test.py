@@ -785,11 +785,13 @@ def joined(m, rows):
     try:
         args = types.SimpleNamespace(
             fetch=lambda repo, number: ISSUES.get((repo, number)),
-            fetch_thread=lambda repo, number: THREADS.get((repo, number)))
+            fetch_thread=lambda repo, number: THREADS.get((repo, number)),
+            fetch_guard_log=m.fetch_guard_log)
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
-                "unverified-done", "filing-scope-covers")}
+                "unverified-done", "filing-scope-covers",
+                "shell-write-unread")}
     finally:
         m.CORPUS = was
         m.fetch_reopen = was_reopen
@@ -1052,6 +1054,73 @@ def join_keeps_what_it_cannot_label(m):
         log_row("eeee", "verb-first", "No key at all", 900, repo=None,
                 issue=None)])
     return (not cases["verb-first"] and lines == 2), (cases["verb-first"], lines)
+
+
+def shell_rows(m):
+    """A guard log of four unread calls, and the reading of each: `aa`
+    changed its tree and a commit was judged there after, `bb` left it as it
+    was, `cc`'s after is the commit gate's own row, unchanged, and `dd`
+    changed a tree the gate reads as no campaign work. A second session
+    writes the tree between `aa` and its after, and must not stand in."""
+    guard = ROOT / "guard-shell.log"
+    tree, other = "/b/wt", "/b/plain"
+    g = [{"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p0",
+          "command_sha": "aa", "at": "2026-09-18T01:00:00+00:00"},
+         {"session": "s2", "tool": "Edit", "tree": tree, "porcelain": "p0",
+          "at": "2026-09-18T01:00:01+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p1",
+          "command_sha": "bb", "at": "2026-09-18T01:00:02+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p1",
+          "command_sha": "cc", "at": "2026-09-18T01:00:03+00:00"},
+         {"session": "s1", "tool": "pre-commit", "tree": tree, "porcelain":
+          "p1", "verdict": "claim", "at": "2026-09-18T01:00:04+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": tree, "porcelain": "p2",
+          "at": "2026-09-18T01:00:05+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": other, "porcelain": "q0",
+          "command_sha": "dd", "at": "2026-09-18T01:00:06+00:00"},
+         {"session": "s1", "tool": "Bash", "tree": other, "porcelain": "q1",
+          "at": "2026-09-18T01:00:07+00:00"},
+         {"session": "", "tool": "pre-commit", "tree": other,
+          "verdict": "not campaign work", "at": "2026-09-18T01:00:08+00:00"}]
+    guard.write_text("".join(json.dumps(r) + "\n" for r in g))
+    rows = []
+    for sha, porcelain, where in (("aa", "p0", tree), ("bb", "p1", tree),
+                                  ("cc", "p1", tree), ("dd", "q0", other)):
+        row = log_row(f"s-{sha}", "shell-write-unread", "", 0,
+                      state={"command": "echo x > f", "cwd": where,
+                             "role": "worker"},
+                      session="s1", tree=where, porcelain=porcelain,
+                      command_sha=sha, guard_log=str(guard),
+                      at="2026-09-18T01:00:09+00:00")
+        row.pop("repo")
+        row.pop("issue")
+        rows.append(row)
+    return rows
+
+
+def join_reads_the_tree_after_an_unread_call(m):
+    """shell-write-unread's join: the same session's next call in the same
+    tree is the after, and the commit gate's later verdict on that tree is
+    what makes a changed tree a label."""
+    cases, _lines = joined(m, shell_rows(m))
+    by = {c["id"]: c for c in cases["shell-write-unread"]}
+    got = {k: (by.get(f"shell-write-unread-s-{k}") or {}).get("truth")
+           for k in ("aa", "bb", "cc", "dd")}
+    return (got == {"aa": "yes", "bb": "no", "cc": "no", "dd": None}
+            and (by.get("shell-write-unread-s-aa") or {}).get("label", {})
+            .get("from") == "join:guard-tree-delta"), got
+
+
+def join_waits_for_the_commit_gate(m):
+    """A tree the call changed, with no commit judged on it yet, is not
+    labelled: the gate's verdict is the label, and it has not been given."""
+    rows = shell_rows(m)
+    guard = Path(rows[0]["guard_log"])
+    kept = [r for r in map(json.loads, guard.read_text().splitlines())
+            if r.get("tool") != "pre-commit"]
+    guard.write_text("".join(json.dumps(r) + "\n" for r in kept))
+    cases, _lines = joined(m, rows[:1])
+    return cases["shell-write-unread"] == [], cases["shell-write-unread"]
 
 
 def join_reads_a_later_review_on_the_thread(m):
@@ -1374,6 +1443,8 @@ def a_case_code_settled_is_never_drift(m):
 
 CASES["a case code settled is never named as drift"] = a_case_code_settled_is_never_drift
 CASES["the thread join reads a later REVIEW that raised the finding again"] = join_reads_a_later_review_on_the_thread
+CASES["the shell join reads the same session's next call in the same tree"] = join_reads_the_tree_after_an_unread_call
+CASES["...and waits for the commit gate's verdict on that tree"] = join_waits_for_the_commit_gate
 CASES["the thread join waits for the merge where nothing was re-raised"] = join_waits_for_the_merge_on_an_open_thread
 CASES["a case the join writes is held to a band, and drift reads it"] = a_joined_case_is_held_to_a_band
 CASES["a case held to no band is listed, never skipped"] = a_case_held_to_no_band_is_listed

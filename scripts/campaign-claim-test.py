@@ -168,6 +168,11 @@ case "$*" in
   # repo-less sub-issue resolves to.
   # The CAMPAIGN issue's body, whose `## Repos` is the campaign's scope. A
   # sub-issue may only name a repository this list holds.
+  # THE SUB-ISSUE'S COMMENTS, for `live --stuck`: #1 holds a NOTE of the
+  # worker's and a REPORT of somebody else's, so the lint asks; #2 holds the
+  # worker's own REPORT, so it is code's `no`.
+  *"issue view 1 "*"--json comments"*) echo '{"comments":[{"createdAt":"2026-09-13T10:05:00Z","body":"NOTE probe-worker-1: a step"},{"createdAt":"2026-09-13T10:06:00Z","body":"REPORT probe-planner-9: theirs"},{"createdAt":"2026-09-13T09:00:00Z","body":"REPORT probe-worker-1: before the assignment"}]}'; exit 0 ;;
+  *"issue view 2 "*"--json comments"*) echo '{"comments":[{"createdAt":"2026-09-13T10:05:00Z","body":"REPORT probe-worker-2: pr#7 at abc"}]}'; exit 0 ;;
   *"issue view 9999 "*) printf '## Repos\n- other/elsewhere\n'; exit 0 ;;
   *"issue view 8888 "*) printf 'no Repos heading at all\n'; exit 0 ;;
   *"issue view 501 "*) exit 1 ;;
@@ -676,6 +681,97 @@ def live_cases(m):
         r = claim(["live", "9999"], no_herdr)
         check("herdr that cannot be run is a failed reading, not zero sessions",
               r.returncode == 1 and "FAILED" in r.stdout + r.stderr)
+
+
+def stuck_cases(m):
+    """`live --stuck`: the lint, the state, and the column end to end."""
+    # --- the lint, pure, in the order the planner named ---
+    own_report = [{"kind": "REPORT", "own": True, "at": "t"}]
+    theirs = [{"kind": "REPORT", "own": False, "at": "t"},
+              {"kind": "NOTE", "own": True, "at": "t"}]
+    check("no claim under the worker's number is code's no",
+          m.stuck_lint(False, "idle", []) == ("no", "no claim under its number"))
+    check("a pane herdr calls working or blocked is code's no, naming the word",
+          m.stuck_lint(True, "working", [])[0] == "no"
+          and "working" in m.stuck_lint(True, "working", [])[1]
+          and m.stuck_lint(True, "blocked", [])[0] == "no")
+    check("a REPORT of its own since the assignment is code's no",
+          m.stuck_lint(True, "idle", own_report)
+          == ("no", "a REPORT of its own since the assignment"))
+    word, why = m.stuck_lint(True, "done", theirs)
+    check("an idle claim holder with no REPORT of its own is asked, its own kinds named",
+          word is None and "NOTE" in why and "REPORT since" in why, (word, why))
+
+    # --- the comment rows ---
+    comments = [{"createdAt": "2026-09-13T10:05:00Z", "body": "NOTE probe-worker-1: x"},
+                {"createdAt": "2026-09-13T10:06:00Z", "body": "REPORT other-worker-2: y"},
+                {"createdAt": "2026-09-13T09:00:00Z", "body": "REPORT probe-worker-1: early"},
+                {"createdAt": "2026-09-13T10:07:00Z", "body": "just prose"},
+                {"createdAt": "2026-09-13T10:08:00Z", "body": "  DECISION owner: z"}]
+    rows = m.comment_rows(comments, "probe-worker-1", "2026-09-13T10:00:00.000Z")
+    check("comment rows keep the kinds since the assignment, own by name, and drop prose",
+          [(r["kind"], r["own"]) for r in rows]
+          == [("NOTE", True), ("REPORT", False), ("DECISION", False)], rows)
+    check("no assignment time means no comment counted",
+          m.comment_rows(comments, "probe-worker-1", None) == [])
+
+    # --- the state ---
+    long = "x" * (m.STUCK_CHARS + 5)
+    check("a text over STUCK_CHARS is cut, and says so inside the field",
+          m.clipped(long) == {"text": "x" * m.STUCK_CHARS, "cut": True}
+          and m.clipped("short") == {"text": "short"})
+    import datetime
+    now = datetime.datetime(2026, 9, 13, 11, 0, tzinfo=datetime.timezone.utc)
+    reading = {"assigned_text": "Work it", "assigned_at": "2026-09-13T10:00:00.000Z",
+               "prompt_text": "go on", "prompt_at": "2026-09-13T10:30:00.000Z",
+               "text": None, "text_at": None}
+    state = m.stuck_state(reading, rows, now)
+    check("the state is the group's four fields with minutes since each",
+          set(state) == {"assignment", "last_prompt", "last_text", "comments"}
+          and state["assignment"] == {"text": "Work it", "minutes": 60}
+          and state["last_prompt"]["minutes"] == 30
+          and state["last_text"] == {"text": "", "minutes": None}
+          and [c["minutes"] for c in state["comments"]] == [55, 54, 52], state)
+    reg = m._jev_module().load_registry()
+    check("...and those are exactly the fields the registry's group names",
+          set(state) == m._jev_module().state_fields(
+              m._jev_module().group_of(reg, m.STUCK_GROUP)))
+
+    # --- end to end: three workers, one asked, one settled, one unread ---
+    with tempfile.TemporaryDirectory() as d:
+        env, _ = transcript(d, "s1", [
+            {"type": "user", "timestamp": "2026-09-13T10:01:00.000Z",
+             "message": {"content": "Work sub-issue o/r#1 now"}},
+            {"type": "assistant", "timestamp": "2026-09-13T10:02:00.000Z",
+             "message": {"model": "m", "content": [{"type": "text", "text": "Now the tests"}]}}])
+        proj = Path(env["HOME"]) / ".claude" / "projects" / "-tmp"
+        (proj / "s3.jsonl").write_text(json.dumps(
+            {"type": "user", "timestamp": "2026-09-13T10:01:00.000Z",
+             "message": {"content": "Work sub-issue o/r#2 now"}}) + "\n")
+        path = shims(d, herdr=listing(
+            agent("s1", "probe-worker-1", d),
+            agent("s3", "probe-worker-2", d, status="working"),
+            agent("s4", "probe-worker-3", d),
+            agent("s2", "probe-planner-9", d)))
+        r = claim(["live", "9999", "--stuck"], path, env)
+        out = r.stdout + r.stderr
+        lines = {l.split()[0]: l for l in out.splitlines() if l.startswith("  probe-worker-")}
+        check("--stuck asks about the idle worker holding a claim with no REPORT of its own",
+              "#1" in lines.get("probe-worker-1", "") and " asked " in lines["probe-worker-1"]
+              and "NOTE since" in lines["probe-worker-1"], lines)
+        check("...settles a working pane by code, naming herdr's word",
+              " no " in lines.get("probe-worker-2", "")
+              and "herdr says working" in lines["probe-worker-2"], lines)
+        check("...reports a worker with no transcript as unread and asks nothing of it",
+              "unread" in lines.get("probe-worker-3", "")
+              and "0 transcript(s)" in lines["probe-worker-3"], lines)
+        check("...names the planner in no row, and never a model's word",
+              "probe-planner-9" not in "".join(lines.values())
+              and "1 asked, 1 settled by code, 1 unread" in out
+              and "shadow" in out, out[-600:])
+        r = claim(["live", "9999"], path, env)
+        check("live without --stuck reads no transcript",
+              "stuck reading" not in r.stdout + r.stderr and r.returncode == 0)
 
 
 def take_cases(m):
@@ -2545,7 +2641,7 @@ def sweep_cwd_cases(m):
 def main():
     m = harness.load(CLAIM, "campaign_claim")
 
-    for fn in (pure_cases, git_cases, live_cases, take_cases, release_cases,
+    for fn in (pure_cases, git_cases, live_cases, stuck_cases, take_cases, release_cases,
                compact_cases, compact_watch_cases, sweep_cwd_cases,
                local_sweep_cases, scope_cases, sweep_scope_cases, listed_repo_cases, sweep_cases, verdict_cases, peer_cases,
                robustness_cases,

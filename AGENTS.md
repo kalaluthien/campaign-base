@@ -601,7 +601,13 @@ and everything that reads it.
   `<slug>/` refs give every claim; and where each is checked out gives
   attribution. `campaign-claim live <N>` makes all three and joins the last two
   on the branch name, which a restart and a rename both leave alone; it
-  concludes nothing, a close reads its counts.
+  concludes nothing, a close reads its counts. **Its `--stuck` is the one
+  reading of a quiet worker**, at `shadow`: for each idle worker of the
+  campaign it reads the transcript's tail and the sub-issue's comment kinds
+  since the assignment, settles by code what it can -- no claim, mid-turn, a
+  `REPORT` of its own -- and asks Jev the rest; nothing polls, since a stuck
+  worker fires no hook, so a planner asks it where it already reads its
+  workers.
   **Attribution names a WORKSPACE, not a session, and that is measured rather
   than conceded**: herdr reports where a session was *started*, a worker on
   the base works in a worktree, and that worktree's owning repository is not

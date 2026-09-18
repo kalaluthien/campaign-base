@@ -1762,6 +1762,12 @@ def cmd_live(args):
               "herdr reports where a\n  session started, not the worktree it "
               "is working in. Ask them; the four messages\n  are the address, "
               "and this list is who to ask.")
+    if getattr(args, "stuck", False):
+        print(f"\nstuck reading of each worker above, at shadow -- code's word "
+              f"or `asked`, never the model's")
+        asked, settled, unread = stuck_column(ours, found, slug)
+        print(f"  {asked} asked, {settled} settled by code, {unread} unread; "
+              f"the answers are in campaign-jev.py's log")
 
     print(f"\nsessions named for no campaign under the base root "
           f"({len(nameless)}) -- not counted: no campaign's")
@@ -1788,6 +1794,164 @@ def cmd_live(args):
     print("No verdict: a close reads these counts, it does not get one from "
           "here.")
     return 0
+
+
+# ---------------------------------------------------------------- live --stuck
+
+# THE `worker-stuck` READING (rule-check#455 pr 7, over rule-check#471's
+# DECISION 5725160413): a worker holding a claim, idle, with no `REPORT`,
+# `BLOCKED` or `NOTE` of its own since its last assignment, for longer than
+# its kind's sub-issues have taken. NOTHING POLLS -- the old watch's thirty
+# quiet minutes was a guess -- so it runs where a planner already reads its
+# workers, here, once a session at `shadow`. LINT FIRST: no claim under its
+# number, or herdr mid-turn, or a `REPORT` of its own since the assignment,
+# is code's `no`; only an idle worker with a claim and no record goes to Jev.
+# The state is the transcript's tail and the sub-issue's comment kinds; its
+# own prose rides, so the address `stuck-addresses-judge` rides too, read by
+# code first (`campaign-jev.py`'s `address_word`). The label is what the
+# planner then did, read by the `stuck-reprompt` join off the same
+# transcript; the entry says what it cannot yet measure.
+STUCK_GROUP = "worker-stuck"
+STUCK_READER = "campaign-claim.live --stuck"
+STUCK_CHARS = 1500
+# herdr's two words for a pane that is ready for input; `working` and
+# `blocked` are mid-turn or at a prompt, and neither is quiet.
+READY = ("idle", "done")
+
+
+def _jev_module():
+    """`campaign-jev.py`, loaded at the one call, as `_transcript_module`."""
+    return load(HERE / "campaign-jev.py", "campaign_jev")
+
+
+def clipped(text):
+    """{"text": the first STUCK_CHARS, "cut": True} or {"text": all of it}:
+    the cut is INSIDE the field, so the model is told what it did not see."""
+    text = text or ""
+    if len(text) > STUCK_CHARS:
+        return {"text": text[:STUCK_CHARS], "cut": True}
+    return {"text": text}
+
+
+def minutes_since(ts, now):
+    """Whole minutes from an ISO timestamp to `now`, or None with no time."""
+    if not ts:
+        return None
+    return int((now - _transcript_module().when(ts)).total_seconds() // 60)
+
+
+def comment_rows(comments, name, since):
+    """[{"kind", "own", "minutes"}] for the comments after `since` whose
+    first word is a comment kind -- the guard's `COMMENT_KINDS`, read and
+    not restated -- `own` when the name after it is this session's."""
+    out = []
+    for c in comments or []:
+        at = c.get("createdAt") or ""
+        if not since or not at or at <= since:
+            continue
+        first = (c.get("body") or "").lstrip().split("\n", 1)[0]
+        kind, _, rest = first.partition(" ")
+        if kind not in GUARD.COMMENT_KINDS:
+            continue
+        out.append({"kind": kind, "own": rest.split(":", 1)[0] == name,
+                    "at": at})
+    return out
+
+
+def stuck_lint(claimed, status, comments):
+    """(word, why) code decided, or (None, why it is asked). PURE: the three
+    `no`s the planner named, in the order they cost -- a claim is a list
+    already read, herdr's word is too, and a `REPORT` is a comment fetched."""
+    if not claimed:
+        return "no", "no claim under its number"
+    if status not in READY:
+        return "no", f"herdr says {status}, so it is mid-turn or at a prompt"
+    if any(c["kind"] == "REPORT" and c["own"] for c in comments):
+        return "no", "a REPORT of its own since the assignment"
+    kinds = sorted({c["kind"] for c in comments if c["own"]})
+    return None, ("idle with a claim and no REPORT since the assignment"
+                  + (f"; its own {', '.join(kinds)} since" if kinds else ""))
+
+
+def stuck_state(reading, comments, now):
+    """The `worker-stuck` group's state off a transcript reading: the
+    assignment, the last prompt, the session's last text, each with its
+    minutes, and the comment kinds since the assignment with theirs."""
+    def said(text, at):
+        return dict(clipped(text), minutes=minutes_since(at, now))
+    return {"assignment": said(reading["assigned_text"], reading["assigned_at"]),
+            "last_prompt": said(reading["prompt_text"], reading["prompt_at"]),
+            "last_text": said(reading["text"], reading["text_at"]),
+            "comments": [{"kind": c["kind"], "own": c["own"],
+                          "minutes": minutes_since(c["at"], now)}
+                         for c in comments]}
+
+
+def sub_issue_comments(number, branch, repo):
+    """(comments, why) -- the sub-issue's comments on the tracker and those
+    of the open pull request whose head is its claim, on `repo`, each
+    {"createdAt", "body"}; `why` names a fetch that failed, and the rest
+    is still returned, since a `REPORT` sits on the pull request where
+    there is one and on the sub-issue where there is none."""
+    out, why = [], []
+    r = run("gh", "issue", "view", str(number), "-R", TRACKER,
+            "--json", "comments")
+    if r.returncode != 0:
+        why.append(f"gh issue view {number}: {r.stderr.strip()[:120]}")
+    else:
+        out += (json.loads(r.stdout or "{}").get("comments") or [])
+    if branch:
+        r = run("gh", "pr", "list", "-R", repo, "--head", branch,
+                "--state", "all", "--json", "comments")
+        if r.returncode != 0:
+            why.append(f"gh pr list --head {branch}: {r.stderr.strip()[:120]}")
+        else:
+            for pr in json.loads(r.stdout or "[]"):
+                out += pr.get("comments") or []
+    return out, "; ".join(why)
+
+
+def stuck_column(ours, found, slug, now=None):
+    """One `worker-stuck` reading per idle worker of `ours`, printed, and
+    the (asked, settled, unread) counts. NEVER THE MODEL'S WORD: the tier is
+    `shadow`, so what prints is code's lint, why, and whether the row was
+    logged; a transcript that would not read is `unread` and asks nothing."""
+    import datetime
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    tr = _transcript_module()
+    asked = settled = unread = 0
+    for sid, row in ours:
+        name = row["name"]
+        if NAMES.role_word(name) != "worker":
+            continue
+        reading, where, why = tr.read_transcript(sid)
+        if reading is None or reading["assigned"] is None:
+            unread += 1
+            print(f"  {name:<24} {'-':<6} unread  "
+                  f"{why or 'no assignment prompt in ' + str(where)}")
+            continue
+        n = reading["assigned"]
+        claim = next((b for b in found if b.startswith(f"{slug}/{n}-")), None)
+        comments, fetch_why = sub_issue_comments(n, claim, found.get(claim) or TRACKER)
+        since = comment_rows(comments, name, reading["assigned_at"])
+        word, why = stuck_lint(claim is not None, row["status"], since)
+        idle = minutes_since(reading["text_at"] or reading["assigned_at"], now)
+        note = f"; {fetch_why}" if fetch_why else ""
+        state = stuck_state(reading, since, now)
+        logged = _jev_module().judge(
+            STUCK_GROUP, state, read=f"{name} on #{n}, quiet {idle} min",
+            reader=STUCK_READER,
+            key={"repo": TRACKER, "issue": n, "session": sid,
+                 "transcript": str(where)},
+            settled=({STUCK_GROUP: word} if word else None),
+            flag={"code": word or "asked", "minutes_quiet": idle}).logged
+        if word:
+            settled += 1
+        else:
+            asked += 1
+        print(f"  {name:<24} #{n:<5} {word or 'asked':<7} quiet {idle} min; "
+              f"{why}{note}; {'logged' if logged else 'NOT logged'}")
+    return asked, settled, unread
 
 
 # --------------------------------------------------------------------- release
@@ -2365,6 +2529,10 @@ def main():
     v = sub.add_parser("live", parents=[against],
                        help="which claims exist, and who is standing in them")
     v.add_argument("campaign_issue", type=number)
+    v.add_argument("--stuck", action="store_true",
+                   help="also ask, at shadow, whether each idle worker of the "
+                        "campaign is stuck: no REPORT of its own since its "
+                        "assignment, off its transcript's tail")
     v.set_defaults(fn=cmd_live)
 
     args = ap.parse_args()

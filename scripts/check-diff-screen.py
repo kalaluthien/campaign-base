@@ -59,8 +59,12 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-READING = "diff-screen"
 READER = "check-diff-screen.py"
+INPUT = "commit"
+USAGE = "scripts/check-diff-screen.py [<commit> [<branch>]]"
+# THE BASE'S LOG, not the checkout's: see WHERE IT LOGS.
+CWD = HERE
+READING = "diff-screen"
 GIT_TIMEOUT = 30
 # 55 KB was the largest patch answered in the measurement; 127 KB came back
 # `max_tokens_exceeded` (topic-jev).
@@ -72,11 +76,6 @@ PATCH_FORM = ("--no-prefix", "--diff-algorithm=histogram", "--no-color",
               "--no-ext-diff", "--no-textconv", "--no-renames")
 TEST = re.compile(r"(-test\.\w+$|_test\.\w+$|(^|/)checks\.als$|(^|/)tests?/)")
 DEFAULT_BRANCH = ("origin/HEAD", "origin/main")
-
-
-def jev_module():
-    """campaign-jev, which holds every step around the call (rule-check#506)."""
-    return importlib.import_module("campaign-jev")
 
 
 def git(*args):
@@ -113,9 +112,10 @@ def merge_base(commit):
                                      for ref in DEFAULT_BRANCH) if b), "")
 
 
-def patches(jev, reader, label, found, base, commit, env):
+def patches(jev, label, found, base, commit):
     """[(path, patch)] of every file `files` found whose patch read and fits
-    under `PATCH_CEILING`; a skip row for each other, naming why."""
+    under `PATCH_CEILING`, returned; a `Skip` yielded for each other, naming
+    why -- so a caller takes it with `yield from`."""
     out = []
     for path, why in found:
         patch = "" if why else git("diff", *PATCH_FORM, base, commit, "--", path)
@@ -124,48 +124,35 @@ def patches(jev, reader, label, found, base, commit, env):
         elif not why and len(patch) > PATCH_CEILING:
             why = f"a patch of {len(patch)} chars, over {PATCH_CEILING}"
         if why:
-            jev.skip(reader, f"{label} {path}", why, env, cwd=HERE)
+            yield jev.Skip(f"{label} {path}", why)
         else:
             out.append((path, patch))
     return out
 
 
-def main(argv, env=None):
-    if len(argv) > 2:
-        print("Usage: scripts/check-diff-screen.py [<commit> [<branch>]]",
-              file=sys.stderr)
-        return 2
-    subject = argv[0] if argv else "HEAD"
-    try:
-        jev = jev_module()
-    except Exception:  # noqa: BLE001 -- no log to count a raise in
-        return 0
-    jev.shielded(READER, subject, lambda: read(argv, subject, jev, env), env,
-                 cwd=HERE)
-    return 0
-
-
-def read(argv, subject, jev, env):
-    commit = (git("rev-parse", "--verify", "-q", subject + "^{commit}")
+def steps(inp, reg, jev):
+    commit = (git("rev-parse", "--verify", "-q", inp.subject + "^{commit}")
               or "").strip()
-    branch = argv[1] if len(argv) > 1 else (
+    branch = inp.branch if inp.branch is not None else (
         git("symbolic-ref", "--quiet", "--short", "HEAD") or "detached").strip()
-    label = f"{branch} {commit[:12] or subject}"
+    label = f"{branch} {commit[:12] or inp.subject}"
     if not commit:
-        jev.skip(READER, label, "the commit does not resolve", env, cwd=HERE)
+        yield jev.Skip(label, "the commit does not resolve")
         return
     base = merge_base(commit)
     if not base:
-        jev.skip(READER, label, "no merge-base with origin/HEAD or "
-                 "origin/main", env, cwd=HERE)
+        yield jev.Skip(label, "no merge-base with origin/HEAD or origin/main")
         return
-    entry = jev.load_registry()[READING]
+    # THE ENTRY IS READ HERE, where the registry is first needed: a registry
+    # that will not read raises before any file is read or skipped.
+    group = reg[READING]["group"]
     found, tests = files(commit, base)
     # A KEY ONLY WHERE THE REPOSITORY IS KNOWN, and the sha this reading
     # judged is the one it was given, not the one a commit-time reader would
     # name: this runs over a branch that already has its commits.
     key = jev.commit_key()
     key = {"repo": key["repo"], "commit": commit} if key.get("repo") else {}
+    sent = yield from patches(jev, label, found, base, commit)
     # ONE `judge` CALL A FILE, a question a noul: the entry's `compose` fills
     # the whole question -- criteria and examples included -- from that noul's
     # row of the entry's own `nouls` table, which is what this file composed
@@ -173,14 +160,18 @@ def read(argv, subject, jev, env):
     # wording and the KEY -- the repository, the sha and the file -- so a
     # later fix commit on that file can be joined to the answer (sdlc-alloy#458
     # DECISION 5722176509).
-    jev.judge_each(
+    yield jev.Ask(
         [{"state": {"file": {"path": path, "patch": patch},
                     "changedTests": tests},
           "read": f"{label} {path}",
           "key": dict(key, path=path) if key else {"path": path}}
-         for path, patch in patches(jev, READER, label, found, base, commit,
-                                    env)],
-        group=entry["group"], reader=READER, env=env, cwd=HERE)
+         for path, patch in sent],
+        {"group": group})
+
+
+def main(argv, env=None):
+    return importlib.import_module("campaign-jev").run_reader(globals(), argv,
+                                                              env=env)
 
 
 if __name__ == "__main__":

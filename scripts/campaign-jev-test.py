@@ -3640,6 +3640,139 @@ CASES["a log row is tied by its state, and a stub's is not"] = a_log_row_is_tied
 CASES["least loss reached in two spans apart takes one span whole"] = a_least_loss_in_two_spans_takes_one_whole
 CASES["two least-loss spans as wide take the lower"] = two_spans_as_wide_take_the_lower
 
+# ------------------------------------------------------ around the call
+# THE HELPERS EVERY READER CALLS instead of its own copy (rule-check#506):
+# `judge` is swapped for a recorder, since what is under test is what each
+# helper asks and in what order, not the call.
+
+
+def recording(m, verdicts=None):
+    """Swap `m.judge` for a recorder; [kwargs] of every call it took."""
+    calls = []
+
+    def judge(group, state, **kw):
+        calls.append(dict(kw, group=group, state=state))
+        return m.Judged(verdicts or {}, MODEL, 0, "c", "")
+    m.judge = judge
+    return calls
+
+
+def shielded_logs_a_raise(m):
+    LOG.write_text("")
+    got = m.shielded("a reader", "a subject", lambda: 1 / 0, env=env())
+    rows = [json.loads(x) for x in LOG.read_text().splitlines() if x]
+    kept = m.shielded("a reader", "a subject", lambda: 7, env=env())
+    return (got is None and kept == 7 and len(rows) == 1
+            and rows[0]["skipped"] == "the reading raised ZeroDivisionError"
+            and rows[0]["read"] == "a subject"), (got, kept, rows)
+
+
+def judge_each_keeps_order(m):
+    calls = recording(m)
+    got = m.judge_each([{"group": "g", "state": {"i": i}, "read": f"r{i}"}
+                        for i in range(5)], reader="R", key={"k": 1})
+    # THE RESULTS COME BACK IN THE ASKS' ORDER, whatever order the threads
+    # finish in: a caller zips them onto its states, so a reordering puts a
+    # verdict on the wrong claim. Each result names its own ask here.
+    m.judge = lambda group, state, **kw: m.Judged({}, MODEL, 0, "c", kw["read"])
+    ordered = [j.logged for j in m.judge_each(
+        [{"group": "g", "state": {}, "read": f"r{i}"} for i in range(20)])]
+    # AN ASK'S OWN KEY WINS over the one every ask shares.
+    own = recording(m)
+    m.judge_each([{"group": "g", "state": {}, "key": {"k": 2}}], key={"k": 1})
+    return (len(got) == 5 and sorted(c["read"] for c in calls)
+            == [f"r{i}" for i in range(5)]
+            and all(c.get("reader") == "R" and c.get("key") == {"k": 1}
+                    for c in calls)
+            and ordered == [f"r{i}" for i in range(20)]
+            and own[0].get("key") == {"k": 2}
+            and m.judge_each([]) == []), (calls, ordered, own)
+
+
+def judge_chain_per_item(m):
+    reg = m.load_registry()
+    raw = {"c1": {"type": "choice", "choice": "h2"},
+           "c2": {"type": "choice", "choice": "h1"},
+           "c3": {"type": "choice", "choice": "h2"},
+           "c4": {"type": "choice", "choice": "none"}}
+    calls = recording(m, {"done-test-select": m.Verdict(None, raw, {}, "shadow", None)})
+    state = {"candidateHunks": {"h1": "a", "h2": "b"},
+             "condition": {f"c{i}": f"text {i}" for i in range(1, 5)}}
+    picked = m.judge_chain(
+        "done-test-select", state,
+        lambda h, conds: None if h == "none" else
+        {"group": "done-test-claim", "state": {"hunk": h, "condition": conds},
+         "read": f"claim {h}"},
+        read="select", reg=reg, reader="R")
+    return (picked == {"c1": "h2", "c2": "h1", "c3": "h2", "c4": "none"}
+            and [c["read"] for c in calls] == ["select", "claim h1", "claim h2"]
+            and calls[2]["state"]["condition"] == {"c1": "text 1", "c3": "text 3"}
+            and all(c["reader"] == "R" for c in calls)), (picked, calls)
+
+
+def judge_chain_once(m):
+    reg = {"s": {"group": "s", "question": {"type": "choice"}}}
+    calls = recording(m, {"s": m.Verdict("b", {}, "", "shadow", None)})
+    picked = m.judge_chain("s", {"x": 1}, lambda w, _: {
+        "group": "t", "state": {"w": w}, "read": "then"}, reg=reg)
+    # THE SUBJECT CARRIES TO THE SECOND CALL: a `then` naming no `read` of
+    # its own logs under the select's, or its rows join to nothing.
+    m.judge_chain("s", {"x": 1}, lambda w, _: {"group": "t", "state": {"w": w},
+                                               "key": {"k": 2}},
+                  read="subject", reg=reg, key={"k": 1})
+    return (picked == {None: "b"}
+            and [c["group"] for c in calls] == ["s", "t", "s", "t"]
+            and calls[1]["state"] == {"w": "b"} and calls[1].get("read") == "then"
+            and calls[3].get("read") == "subject"
+            and calls[2].get("key") == {"k": 1}
+            and calls[3].get("key") == {"k": 2}), (picked, calls)
+
+
+def option_flag_reads_one_option(m):
+    by_name = m.option_flag("dead")
+    by_reading = m.option_flag({"r1": "a", "r2": "b"})
+    raw = {"probabilities": {"a": 0.25, "b": 0.5, "dead": 0.75}}
+    got = (by_name("r1", raw), by_reading("r1", raw), by_reading("r2", raw),
+           by_name("r1", {"probabilities": {}}), by_name("r1", None))
+    return got == ({"code": 0.75, "moved_by": "dead"},
+                   {"code": 0.25, "moved_by": "a"},
+                   {"code": 0.5, "moved_by": "b"}, None, None), got
+
+
+def readers_on_reads_the_owner(m):
+    reg = m.load_registry()
+    got = {e: [Path(x).name for x in m.readers_on(e, reg)]
+           for e in ("issue NOTE", "pr REVIEW", "pr REPORT", "push", "none")}
+    # EVERY STRUCTURED OWNER NAMES TWO FILES THAT EXIST: the reader, and
+    # what starts it -- a rename of either leaves the event starting nothing.
+    missing = [(k, f) for k, e in reg.items() if isinstance(e.get("owner"), dict)
+               for f in (e["owner"]["script"], e["owner"]["started_by"])
+               if not (HERE.parent / f).is_file()]
+    return (got == {"issue NOTE": ["check-research-bar.py"],
+                    "pr REVIEW": ["check-finding-sort.py", "check-finding-site.py"],
+                    "pr REPORT": ["check-done-carry.py", "check-done-report.py"],
+                    "push": ["check-diff-screen.py", "check-form-behaviour.py"],
+                    "none": []}
+            and not missing), (got, missing)
+
+
+def budget_helpers(m):
+    small, big = {"a": "x"}, {"a": "x" * (m.STATE_BUDGET + 1)}
+    return (m.over_budget(small) == 0 and m.over_budget(big) > m.STATE_BUDGET
+            and m.over_budget(small, 3) == len('{"a": "x"}')
+            and not m.over_options(m.OPTION_BUDGET)
+            and m.over_options(m.OPTION_BUDGET + 1)), None
+
+
+CASES["a reading that raised is a skip row, and one that did not returns"] = shielded_logs_a_raise
+CASES["one call per ask, each with what they share"] = judge_each_keeps_order
+CASES["a per-item pick asks once per option picked, with its items"] = judge_chain_per_item
+CASES["a once-asked pick hands its word to the next call"] = judge_chain_once
+CASES["a flag reads the one option's probability, per reading"] = option_flag_reads_one_option
+CASES["the readers an event starts are the registry's owners"] = readers_on_reads_the_owner
+CASES["the budget and the option ceiling are measured once"] = budget_helpers
+
+
 MUTATIONS = [
     # --- the fit (rule-check#505) ---
     ("the floor never read",
@@ -4070,7 +4203,9 @@ MUTATIONS = [
     ("the log line not written",
      'fh.write(json.dumps(row, sort_keys=True) + "\\n")', "pass",
      "the call is logged as one JSON line"),
-    ("the budget never measured", '    if size > STATE_BUDGET:', "    if False:",
+    ("the budget never measured",
+     '    return size if size > (STATE_BUDGET if budget is None else budget) else 0',
+     "    return 0",
      "a state over the budget is never posted"),
     ("the endpoint's max_tokens_exceeded unread",
      '        if e.code == 400 and "max_tokens_exceeded" in detail:',
@@ -4171,6 +4306,36 @@ MUTATIONS = [
     ("the log path never resolved", "    path, how = log_path(env, cwd)",
      '    path, how = None, "nowhere"',
      "a log that would not write is reported, not raised"),
+    ("a raise not logged", "            skip(reader, subject, f\"the reading raised",
+     "            0 and skip(reader, subject, f\"the reading raised",
+     "a reading that raised is a skip row, and one that did not returns"),
+    ("the shared keywords dropped", "judge(**dict(common, **ask)), asks))",
+     "judge(**ask), asks))", "one call per ask, each with what they share"),
+    ("every item of an option but the last", "                by.setdefault(option, {})[item] = state[per][item]",
+     "                by[option] = {item: state[per][item]}",
+     "a per-item pick asks once per option picked, with its items"),
+    ("the once-asked word lost", "        asks = [then(picked[None], None)]",
+     "        asks = [then(None, None)]", "a once-asked pick hands its word to the next call"),
+    ("the fanned results in finishing order",
+     "        return list(pool.map(lambda ask: judge(**dict(common, **ask)), asks))",
+     "        return list(pool.map(lambda ask: judge(**dict(common, **ask)), asks))[::-1]",
+     "one call per ask, each with what they share"),
+    ("the shared key over an ask's own", "judge(**dict(common, **ask))",
+     "judge(**dict(ask, **common))", "one call per ask, each with what they share"),
+    ("the chain's shared key over an ask's own",
+     '"reg": reg, "read": read, **ask}', '"reg": reg, "read": read, **ask, **common}',
+     "a once-asked pick hands its word to the next call"),
+    ("the second call logged under no subject",
+     '"reg": reg, "read": read, **ask', '"reg": reg, **ask',
+     "a once-asked pick hands its word to the next call"),
+    ("the per-reading option ignored",
+     "        name = option[reading] if isinstance(option, dict) else option",
+     "        name = option if isinstance(option, str) else next(iter(option.values()))",
+     "a flag reads the one option's probability, per reading"),
+    ("a reader started twice", "            if path not in out:", "            if True:",
+     "the readers an event starts are the registry's owners"),
+    ("the option ceiling off by one", "    return count > OPTION_BUDGET",
+     "    return count >= OPTION_BUDGET", "the budget and the option ceiling are measured once"),
 ]
 
 

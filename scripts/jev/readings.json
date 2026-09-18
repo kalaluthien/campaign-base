@@ -164,7 +164,7 @@
   }
  },
  "research-bar": {
-  "owner": "scripts/check-research-bar.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-research-bar.py", "started_by": "scripts/check-campaign-claim.py", "on": "issue NOTE"},
   "tier": "shadow",
   "group": "research-bar",
   "state": {
@@ -236,7 +236,7 @@
   }
  },
  "finding-sort": {
-  "owner": "scripts/check-finding-sort.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-finding-sort.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REVIEW"},
   "tier": "shadow",
   "group": "finding-sort",
   "state": {
@@ -455,7 +455,7 @@
   }
  },
  "finding-site": {
-  "owner": "scripts/check-finding-site.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-finding-site.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REVIEW"},
   "tier": "shadow",
   "group": "finding-site",
   "state": {
@@ -529,7 +529,7 @@
   }
  },
  "diff-screen": {
-  "owner": "scripts/check-diff-screen.py, started by scripts/push-campaign-branch.sh",
+  "owner": {"script": "scripts/check-diff-screen.py", "started_by": "scripts/push-campaign-branch.sh", "on": "push"},
   "tier": "shadow",
   "group": "diff-screen",
   "state": {
@@ -1069,7 +1069,7 @@
   }
  },
  "done-test-select": {
-  "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-done-carry.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REPORT"},
   "tier": "shadow",
   "group": "done-test-select",
   "state": {
@@ -1137,7 +1137,7 @@
   }
  },
  "done-test-claim": {
-  "owner": "scripts/check-done-carry.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-done-carry.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REPORT"},
   "tier": "shadow",
   "group": "done-test-claim",
   "state": {
@@ -1213,7 +1213,7 @@
   }
  },
  "done-report-select": {
-  "owner": "scripts/check-done-report.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-done-report.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REPORT"},
   "tier": "shadow",
   "group": "done-report-select",
   "state": {
@@ -1288,7 +1288,7 @@
   }
  },
  "done-report-claim": {
-  "owner": "scripts/check-done-report.py, started by scripts/check-campaign-claim.py",
+  "owner": {"script": "scripts/check-done-report.py", "started_by": "scripts/check-campaign-claim.py", "on": "pr REPORT"},
   "tier": "shadow",
   "group": "done-report-claim",
   "state": {
@@ -1900,7 +1900,7 @@
   }
  },
  "form-behaviour": {
-  "owner": "scripts/check-form-behaviour.py, started by scripts/push-campaign-branch.sh",
+  "owner": {"script": "scripts/check-form-behaviour.py", "started_by": "scripts/push-campaign-branch.sh", "on": "push"},
   "tier": "shadow",
   "group": "form-behaviour",
   "state": {

@@ -128,6 +128,8 @@ Usage: scripts/campaign-jev.py report [<reading>] [--live] [--waiting [--steady]
        scripts/campaign-jev.py new <reading>
        scripts/campaign-jev.py probe <request.json>   -- a hand probe; the file
        holds {"reader": ..., "label": ..., "state": ..., "questions": {...}}
+       scripts/campaign-jev.py readers-on <event>   -- the readers the
+       registry's `owner` says the event starts, for the push hook
 """
 import argparse
 import datetime
@@ -676,6 +678,23 @@ def ask(reader, label, state, questions, env=None, cwd=None, timeout=TIMEOUT,
                    "row is `judge`'s, one per reading", hit, answered_by)
 
 
+def over_budget(state, budget=None):
+    """The state's size in bytes where it is over `budget` -- `STATE_BUDGET`
+    unless a caller's suite pins another -- else 0.
+
+    THE ONE MEASURE OF THE BUDGET. `_answer` reads it before sending, and a
+    reader that must log a skip rather than an `unknown` for a state that will
+    not fit asks it here rather than weighing the state a second way."""
+    size = len(json.dumps(state).encode("utf-8"))
+    return size if size > (STATE_BUDGET if budget is None else budget) else 0
+
+
+def over_options(count):
+    """Whether a `choice` of `count` options -- its no-match option counted --
+    is over the `OPTION_BUDGET` the endpoint takes."""
+    return count > OPTION_BUDGET
+
+
 def _answer(state, questions, env, timeout, cache=True, cwd=None):
     """(the answers, the model that answered, why the whole call failed or "",
     whether a stored answer was replayed, which endpoint answered).
@@ -685,8 +704,8 @@ def _answer(state, questions, env, timeout, cache=True, cwd=None):
     Every path here is one `ask` names; `ask` owns the ones it does not."""
     # THE BUDGET IS READ FIRST, before the key and before the endpoint: an
     # oversize state is the caller's own bug and needs neither to be known.
-    size = len(json.dumps(state).encode("utf-8"))
-    if size > STATE_BUDGET:
+    size = over_budget(state)
+    if size:
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
@@ -697,7 +716,7 @@ def _answer(state, questions, env, timeout, cache=True, cwd=None):
     # built from the state grows with the tree, so a cut that fits today sends
     # 256 one command later and comes back `unknown` with nothing naming why.
     over = sorted(qid for qid, q in questions.items()
-                  if len((q or {}).get("criteria") or {}) > OPTION_BUDGET)
+                  if over_options(len((q or {}).get("criteria") or {})))
     if over:
         why = (f"{', '.join(over)} offers more than the {OPTION_BUDGET} "
                f"options the endpoint takes, so it was not sent; narrowing the "
@@ -1571,6 +1590,102 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
               else "; ".join(notes) or "nothing to log")
     return Judged(verdicts, reading.model, reading.latency, call,
                   f"{len(notes)} row(s) {logged}")
+
+
+# --------------------------------------------------------- around the call
+# WHAT EVERY READER DID AROUND ITS CALL, declared once (rule-check#506): a
+# reading that raised, one call per item, a pick that feeds a second call, and
+# a flag read off one option. Each was a copy in the readers until then.
+
+
+def shielded(reader, subject, body, env=None, cwd=None):
+    """`body()`, or None with a skip row where it raised.
+
+    A READING NEVER REFUSES, and nobody reads a detached reader's exit status
+    or its stderr, so a raise is written where somebody will count it: the log.
+    A log that will not take the row either leaves nothing to tell."""
+    try:
+        return body()
+    except Exception as e:  # noqa: BLE001 -- a reading never refuses
+        try:
+            skip(reader, subject, f"the reading raised {e.__class__.__name__}",
+                 env, cwd=cwd)
+        except Exception:  # noqa: BLE001 -- nothing left to log to
+            pass
+        return None
+
+
+def judge_each(asks, workers=8, **common):
+    """[Judged], one `judge` per ask, `workers` at a time, in the asks' order.
+
+    For a reading whose `compose` is `call`: the item IS the state, so nothing
+    fans out inside a call. Each ask is `judge`'s keywords -- `group`, `state`,
+    `read`, `key`, `settled`, `flag` -- and `common` what every ask shares."""
+    from concurrent.futures import ThreadPoolExecutor
+    if not asks:
+        return []
+    with ThreadPoolExecutor(min(workers, len(asks))) as pool:
+        return list(pool.map(lambda ask: judge(**dict(common, **ask)), asks))
+
+
+def judge_chain(select, state, then, read="", reg=None, settled=None, **common):
+    """Ask `select`, then one `judge` per ask `then` builds from what it picked.
+
+    A select asked PER ITEM picks an option per item, and `then(option, items)`
+    is called once per option picked, in order, with {item: that item's text}
+    from the state field the select is asked per; a select asked once picks one
+    word, and `then(word, None)` is called once. `then` returns `judge`'s
+    keywords, or None where the pick names nothing to weigh; an ask
+    naming no `read` of its own keeps the select's. Returns what was
+    picked: {item: option} per item, {None: word} otherwise."""
+    reg = load_registry() if reg is None else reg
+    entry = reg[select]
+    got = judge(entry["group"], state, read=read, reg=reg, settled=settled,
+                **common)
+    per = (entry.get("question") or {}).get("per")
+    if per:
+        picked = {item: (a.raw or {}).get("choice") for item, a in
+                  words_of(entry, got.verdicts[select]).items()}
+        by = {}
+        for item, option in picked.items():
+            if option is not None:
+                by.setdefault(option, {})[item] = state[per][item]
+        asks = [then(option, items) for option, items in sorted(by.items())]
+    else:
+        picked = {None: got.verdicts[select].word}
+        asks = [then(picked[None], None)]
+    for ask in asks:
+        if ask is not None:
+            judge(**{**common, "reg": reg, "read": read, **ask})
+    return picked
+
+
+def option_flag(option):
+    """A `flag` for `judge`: the probability of the one option the flag reads,
+    and which it was -- `option` a name, or {reading: name}. None where the
+    answer carries no such number: no cut is declared on it, so the row keeps
+    the number and not a word."""
+    def flag(reading, raw):
+        name = option[reading] if isinstance(option, dict) else option
+        p = ((raw or {}).get("probabilities") or {}).get(name)
+        return {"code": p, "moved_by": name} if p is not None else None
+    return flag
+
+
+def readers_on(event, reg=None):
+    """[absolute path] of every reader the registry's `owner` says `event`
+    starts, once each, in registry order. THE ONE TABLE OF WHICH READER RUNS ON
+    WHICH EVENT: the guard and the push hook ask it, and an entry whose owner
+    is prose is started by no event."""
+    reg = load_registry() if reg is None else reg
+    out = []
+    for entry in reg.values():
+        owner = entry.get("owner")
+        if isinstance(owner, dict) and owner.get("on") == event:
+            path = HERE.parent / owner["script"]
+            if path not in out:
+                out.append(path)
+    return [str(p) for p in out]
 
 
 # ------------------------------------------------------------------ the joins
@@ -3755,6 +3870,11 @@ def main(argv):
     p = sub.add_parser("probe", help="one request file, asked as written")
     p.add_argument("request")
     p.set_defaults(run=cmd_probe)
+    p = sub.add_parser("readers-on", help="the readers an event starts, one "
+                                          "path a line")
+    p.add_argument("event")
+    p.set_defaults(run=lambda args: print("\n".join(readers_on(args.event)))
+                   or 0)
     args = ap.parse_args(argv)
     return args.run(args)
 

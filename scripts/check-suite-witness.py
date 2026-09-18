@@ -69,14 +69,13 @@ the log rows are the record.
 Usage: scripts/check-suite-witness.py --staged
 """
 import ast
-import json
+import importlib
 import re
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SELECT, CLAIM = "suite-witness-select", "suite-witness-claim"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-suite-witness.py --staged"
 S1, S3 = "check-cited-claims.py", "check-model-comment.py"
 TIE = "check-sdlc-tie.py"
@@ -192,8 +191,7 @@ def fit(source, prefilter, budget, rest):
         if not cands:
             return {}, 0
         text = {t: c["name"] + "\n" + c["body"] for t, c in cands.items()}
-        if len(json.dumps(dict(rest, candidates=text))
-               .encode("utf-8")) <= budget:
+        if not jev_module().over_budget(dict(rest, candidates=text), budget):
             return cands, head
         head //= 2
     return {}, -1
@@ -204,23 +202,16 @@ def ask_pair(reg, suite, scenario, found, cands, jev, key, env=None):
     text = {t: c["name"] + "\n" + c["body"] for t, c in cands.items()}
     subject = f"{suite} {scenario}"
     claims = {f"c{i}": c for i, c in enumerate(found, 1)}
-    got = jev.judge(reg[SELECT]["group"],
-                    {"candidates": text, "claim": claims},
-                    read=f"{subject} select", reader=READER, key=key,
-                    env=env, cwd=HERE)
-    picked = {cid: (a.raw or {}).get("choice") for cid, a in
-              jev.words_of(reg[SELECT], got.verdicts[SELECT]).items()}
-    by_fn = {}
-    for cid, t in picked.items():
-        if t in cands:
-            by_fn.setdefault(t, {})[cid] = claims[cid]
-    for t, asked in sorted(by_fn.items()):
-        jev.judge(reg[CLAIM]["group"],
-                  {"test_fn": text[t], "claim": asked},
-                  read=f"{subject} claim {t} {cands[t]['name']}",
-                  reader=READER, key=dict(key, name=cands[t]["name"]),
-                  env=env, cwd=HERE)
-    return picked
+    return jev.judge_chain(
+        SELECT, {"candidates": text, "claim": claims},
+        lambda t, asked: {
+            "group": reg[CLAIM]["group"],
+            "state": {"test_fn": text[t], "claim": asked},
+            "read": f"{subject} claim {t} {cands[t]['name']}",
+            "key": dict(key, name=cands[t]["name"])}
+        if t in cands else None,
+        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,
+        cwd=HERE)
 
 
 def main(argv, out=sys.stdout, env=None):
@@ -229,14 +220,14 @@ def main(argv, out=sys.stdout, env=None):
         return 2
     asked = calls = skipped = 0
     try:
-        reg = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        jev = jev_module()
+        reg = jev.load_registry()
         if SELECT not in reg or CLAIM not in reg:
             return 0
         prefilter = reg[SELECT]["prefilter"]
-        s1 = load_sibling(S1)
-        s3 = load_sibling(S3)
-        jev = load_sibling("campaign-jev.py")
-        tie = load_sibling(TIE)
+        s1 = jev.load_sibling(S1)
+        s3 = jev.load_sibling(S3)
+        tie = jev.load_sibling(TIE)
         staged = [p for p in s1.git("diff", "--cached", "--name-only", "-z",
                                     "--diff-filter=d").split("\0") if p]
         tracked = [p for p in s1.git("ls-files", "-z").split("\0") if p]
@@ -244,7 +235,7 @@ def main(argv, out=sys.stdout, env=None):
         # which of those are real scenarios are all check-sdlc-tie's readings;
         # a copy of its `WITNESSES` here would be the second reader AGENTS.md
         # refuses, and would drift the first time that line moved.
-        in_scripts = load_sibling("check-tree-shape.py").in_scripts_dir
+        in_scripts = jev.load_sibling("check-tree-shape.py").in_scripts_dir
         # `wanted` covers the snapshot and the suites and NOT spec/: the tie
         # never reads a module's text, so the spec texts are fetched beside it.
         want = tie.wanted(tracked, in_scripts)
@@ -319,22 +310,16 @@ def reg_tier(reading):
     """The reading's tier, or `shadow` when the registry itself did not read --
     silence being the safer half when nothing is known."""
     try:
-        return json.loads(REGISTRY.read_text(encoding="utf-8"))[reading]["tier"]
+        return jev_module().load_registry()[reading]["tier"]
     except Exception:  # noqa: BLE001
         return "shadow"
 
 
-def load_sibling(name):
-    """check-cited-claims.py's own loader, by path, so there is one of it."""
-    import importlib.machinery
-    import importlib.util
-    src = HERE / name
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(src)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506).
+    Called inside `main`'s boundary, so a campaign-jev that will not load is a
+    reading lost and never a commit refused."""
+    return importlib.import_module("campaign-jev")
 
 
 if __name__ == "__main__":

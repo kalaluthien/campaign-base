@@ -49,28 +49,20 @@ NOTEs flagged at the threshold that flags every negative, of 127:
 
 Usage: scripts/check-research-bar.py <issue> [<repo>] < note
 """
-import importlib.machinery
-import importlib.util
-import json
+import importlib
 import subprocess
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 READING = "research-bar"
-REGISTRY = HERE / "jev" / "readings.json"
 READER = "check-research-bar.py"
 KIND_TIMEOUT = 20
 
 
-def load_sibling(name):
-    """A sibling script as a module, by path: these are scripts, not a package."""
-    key = name.replace("-", "_").replace(".py", "")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(HERE / name)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def jev_module():
+    """campaign-jev, which holds every step around the call (rule-check#506)."""
+    return importlib.import_module("campaign-jev")
 
 
 def work_kind(issue, repo):
@@ -112,34 +104,30 @@ def main(argv, stdin=sys.stdin, env=None):
     issue, repo = argv[0], (argv[1] if len(argv) > 1 else "")
     subject = f"{repo or 'tracker'}#{issue} NOTE"
     try:
-        note = stdin.read()
-        if not note.lstrip().startswith("NOTE "):
-            return 0
-        jev = load_sibling("campaign-jev.py")
-        kind, why = work_kind(issue, repo)
-        if why:
-            jev.skip(READER, subject, f"the kind read failed: {why}", env)
-            return 0
-        if kind != "research":
-            return 0
-        entry = json.loads(REGISTRY.read_text(encoding="utf-8"))[READING]
-        # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: the guard passes it, and a
-        # number with no repository names no issue when a member repository's
-        # numbers collide with this tracker's.
-        ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev,
-                {"repo": repo, "issue": int(issue)} if repo else None, env)
-    except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this
-        skipped(subject, e, env)
+        jev = jev_module()
+    except Exception:  # noqa: BLE001 -- no log to count a raise in
+        return 0
+    jev.shielded(READER, subject, lambda: read(issue, repo, subject, stdin, jev,
+                                               env), env)
     return 0
 
 
-def skipped(subject, e, env):
-    """The skip row for a reading that raised, written if the log can be."""
-    try:
-        load_sibling("campaign-jev.py").skip(
-            READER, subject, f"the reading raised {e.__class__.__name__}", env)
-    except Exception:  # noqa: BLE001 -- campaign-jev itself would not load
-        pass
+def read(issue, repo, subject, stdin, jev, env):
+    note = stdin.read()
+    if not note.lstrip().startswith("NOTE "):
+        return
+    kind, why = work_kind(issue, repo)
+    if why:
+        jev.skip(READER, subject, f"the kind read failed: {why}", env)
+        return
+    if kind != "research":
+        return
+    entry = jev.load_registry()[READING]
+    # A KEY ONLY WHERE THE REPOSITORY IS KNOWN: the guard passes it, and a
+    # number with no repository names no issue when a member repository's
+    # numbers collide with this tracker's.
+    ask_all(entry, note, f"{repo or 'tracker'}#{issue}", jev,
+            {"repo": repo, "issue": int(issue)} if repo else None, env)
 
 
 if __name__ == "__main__":

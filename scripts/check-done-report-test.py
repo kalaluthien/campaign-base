@@ -445,7 +445,7 @@ def result_lines_cut(t):
 
 
 def the_report_line_is_the_best_over_the_floor(t):
-    jev = t.m.load_sibling("campaign-jev.py")
+    jev = t.m.jev_module()
     report = ("REPORT x: asking for the merge\n"
               "It names an empty case.\n"
               "The suite refuses an empty name with a named case.\n")
@@ -478,7 +478,7 @@ def a_closed_sub_issue_is_an_event_here(t):
     pre = dict(SELECT["prefilter"])
     shared = dict(SHARED["prefilter"])
     both = dict(shared, event=shared["event"] + "|" + pre["fact"]["closed"])
-    carry = t.m.load_sibling(t.m.CARRY)
+    carry = t.m.jev_module().load_sibling(t.m.CARRY)
     text = "The sub-issue is closed as completed."
     return (carry.settled(both, text) and not carry.settled(shared, text)
             ), (carry.settled(both, text), carry.settled(shared, text))
@@ -495,8 +495,9 @@ def the_moment_is_read_from_the_other_entry(t):
             ), (SEEN, reads())
 
 
-class RecordingJev:
-    """A jev double that answers nothing and keeps the `cwd` of every call.
+def RecordingJev():
+    """A copy of the real campaign-jev whose `judge` answers nothing and whose
+    `judge` and `skip` keep the `cwd` of every call.
 
     The shared log is where `cwd` used to be observable, and since pr#474 a
     stubbed endpoint that names no log writes nothing at all -- on purpose, so
@@ -504,32 +505,23 @@ class RecordingJev:
     reader's side of the rule is asserted where the reader makes it: every
     call names the reader's OWN base, never the process's cwd, which is what
     puts a production row in that reader's `runtime/jev.log` when a session
-    runs it from some other checkout. Its budget is `BUDGET`, this file's one
-    reading of the real one, since a copy of its own passes a moved budget."""
+    runs it from some other checkout. A COPY OF THE MODULE and not a double:
+    what surrounds the call -- the budget, the chain, the skip on a raise --
+    is campaign-jev's since rule-check#506, and a double would be a second
+    copy of it that passes where the real one moved."""
+    jev = importlib.import_module("campaign-jev").load_sibling("campaign-jev.py")
+    jev.cwds = []
 
-    STATE_BUDGET = BUDGET    # the real one, read once at the top of this file
-
-    def __init__(self):
-        self.cwds = []
-
-    @staticmethod
-    def overlap(text, against):
-        return 1.0
-
-    def judge(self, group, state, read="", reader="", key=None, env=None,
-              cwd=None):
-        self.cwds.append(cwd)
+    def judge(group, state, cwd=None, **_kw):
+        jev.cwds.append(cwd)
         return types.SimpleNamespace(verdicts={group: types.SimpleNamespace(
             raw={cid: {"choice": "h1"} for cid in state.get("condition") or {}},
             why={})})
 
-    def words_of(self, entry, verdict):
-        return {cid: types.SimpleNamespace(raw=raw)
-                for cid, raw in (verdict.raw or {}).items()}
-
-    def skip(self, reader, label, why, env=None, cwd=None):
-        self.cwds.append(cwd)
-
+    def skip(reader, label, why, env=None, cwd=None):
+        jev.cwds.append(cwd)
+    jev.judge, jev.skip = judge, skip
+    return jev
 
 NO_DOD = "## Intent\n\n- x\n"
 EVENTS_ONLY = ("## Definition of done\n\n- The pull request is merged and the "
@@ -541,8 +533,8 @@ def drive(t, jev, answers, diff=DIFF, body=BODY, report=REPORT):
 
     `answers` names the gh verbs that fail. check-done-carry.py is loaded for
     real and its `gh` replaced, since that is the one this reader calls."""
-    real = t.m.load_sibling
-    carry = real(t.m.CARRY)
+    real, real_sibling = t.m.jev_module, jev.load_sibling
+    carry = real_sibling(t.m.CARRY)
     carry.gh = lambda *a: (
         ("", "gh double: refused") if " ".join(a[:2]) in answers else
         (json.dumps(closing(5)), "") if a[:2] == ("pr", "view")
@@ -550,12 +542,12 @@ def drive(t, jev, answers, diff=DIFF, body=BODY, report=REPORT):
         ("MERGED", "") if a[:2] == ("pr", "view") else
         (diff, "") if a[:2] == ("pr", "diff") else
         ("OPEN / kind:dev", "") if "state,labels" in a else (body, ""))
-    t.m.load_sibling = lambda n: (jev if n == "campaign-jev.py" else
-                                  carry if n == t.m.CARRY else real(n))
+    t.m.jev_module = lambda: jev
+    jev.load_sibling = lambda n: carry if n == t.m.CARRY else real_sibling(n)
     try:
         return t.m.main(["9"], io.StringIO(report))
     finally:
-        t.m.load_sibling = real
+        t.m.jev_module, jev.load_sibling = real, real_sibling
 
 
 def every_jev_call_names_the_readers_base(t):
@@ -632,23 +624,21 @@ CASES = {
 }
 
 MUTATIONS = [
-    ("a call a condition",
-     '                    {"candidates": text, "condition": conds},',
-     '                    {"candidates": text,\n'
-     '                     "condition": dict(list(conds.items())[:1])},',
-     "a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked"),
-    ("a claim call for noMatch", "        if h in cands:", "        if h:",
-     "a select answering noMatch throughout asks no claim call"),
-    ("a claim call a condition",
-     "            by_cand.setdefault(h, {})[cid] = conds[cid]",
-     "            by_cand[h + cid] = {cid: conds[cid]}; cands[h + cid] = cands[h]; text[h + cid] = text[h]",
-     "two conditions picking one candidate share one claim call"),
-    ("the test screen kept, so a code hunk is no candidate",
-     "        cands = carry.hunks(diff, ANY)",
-     '        cands = carry.hunks(diff, carry.load_sibling("check-diff-screen.py").TEST)',
+    ('a call a condition',
+     '        SELECT, {"candidates": text, "condition": conds},',
+     '        SELECT, {"candidates": text, "condition": dict(list(conds.items())[:1])},',
+     'a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked'),
+    ('a claim call for noMatch',
+     '        if h in cands else None,',
+     '        if h else None,',
+     'a select answering noMatch throughout asks no claim call'),
+    ('the test screen kept, so a code hunk is no candidate',
+     '    cands = carry.hunks(diff, ANY)',
+     '    cands = carry.hunks(diff, jev.load_sibling("check-diff-screen.py").TEST)',
      "the candidates are every hunk, code and test, and the REPORT's result lines"),
     ("the REPORT's result lines not candidates",
-     '        cands.update(result_lines(pre["result_line"], report))', "        pass",
+     '    cands.update(result_lines(pre["result_line"], report))',
+     '    pass',
      "the candidates are every hunk, code and test, and the REPORT's result lines"),
     ("the path dropped from a candidate",
      '    text = {k: capped(c["path"] + "\\n" + c["text"], ceiling)',
@@ -657,17 +647,17 @@ MUTATIONS = [
     ("a REPORT line given a file's path", 'REPORT_PATH = "the REPORT"',
      'REPORT_PATH = "scripts/tool.py"',
      "the entry's instructions and criteria reach the model, thresholds do not"),
-    ("the REPORT line never handed to the claim call",
-     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
-     '                   "reportLine": {}},',
+    ('the REPORT line never handed to the claim call',
+     '"reportLine": {cid: lines.get(cid) or none\n                                     for cid in asked}},',
+     '"reportLine": {}},',
      "the condition's REPORT line reaches the claim's instructions"),
     ("the condition handed in its REPORT line's place",
-     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
-     '                   "reportLine": dict(asked)},',
+     '"reportLine": {cid: lines.get(cid) or none\n                                     for cid in asked}},',
+     '"reportLine": dict(asked)},',
      "the condition's REPORT line reaches the claim's instructions"),
-    ("no words for a condition the REPORT misses",
-     '                   "reportLine": {cid: lines.get(cid) or none for cid in asked}},',
-     '                   "reportLine": {cid: lines.get(cid, "") for cid in asked}},',
+    ('no words for a condition the REPORT misses',
+     '"reportLine": {cid: lines.get(cid) or none\n                                     for cid in asked}},',
+     '"reportLine": {cid: lines.get(cid, "") for cid in asked}},',
      "a condition no REPORT line matches carries the entry's words for that"),
     ("the ceiling not applied",
      '    raw = text.encode("utf-8")\n    if len(raw) <= ceiling:\n        return text',
@@ -683,13 +673,13 @@ MUTATIONS = [
      '    return raw[:ceiling].decode("utf-8", "ignore") + CUT',
      '    return raw[:ceiling].decode("utf-8", "replace") + CUT',
      "a cut landing inside a character drops it, never halves it"),
-    ("the fact not read",
-     '                    read = read_fact(carry.gh, fact, name, pr, number, seen) \\\n                        if fact != "event" else "no fact here reads it"',
-     '                    read = "no fact here reads it"',
+    ('the fact not read',
+     '                read = read_fact(carry.gh, fact, name, pr, number, seen) \\\n                    if fact != "event" else "no fact here reads it"',
+     '                read = "no fact here reads it"',
      "a settled condition's GitHub fact is read and named in its skip"),
     ("the fact's name dropped",
-     '                             f"an event, settled by the GitHub fact `{fact}`: "',
-     '                             f"an event, settled by the GitHub fact: "',
+     '                         f"an event, settled by the GitHub fact `{fact}`: "',
+     '                         f"an event, settled by the GitHub fact: "',
      "a settled condition's GitHub fact is read and named in its skip"),
     ("a fact read once a name",
      '    key = (name if name in ("merged", "comment") else "issue", issue)',
@@ -699,48 +689,33 @@ MUTATIONS = [
      '        got = f"the pull request is {out.strip()}" if not why else f"unread: {why}"',
      '        got = f"the pull request is {out.strip()}"',
      "a fact gh refused is still one skip row, saying it went unread"),
-    ("the merge ask not read",
-     '        if not re.search(shared["asks_merge"], report):', "        if False:",
-     "a REPORT not asking for the merge asks and logs nothing"),
-    ("the moment copied instead of read",
-     '        shared = dict(reg[pre["reads_from"]]["prefilter"])',
-     '        shared = dict(reg[pre["reads_from"]]["prefilter"], asks_merge="(?i)merge")',
-     "the merge ask is read from the entry `reads_from` names, not a copy"),
-    ("the event cut not widened",
-     '        shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]',
-     "        pass",
-     "a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked"),
+    ('the merge ask not read',
+     '    if not re.search(shared["asks_merge"], report):',
+     '    if False:',
+     'a REPORT not asking for the merge asks and logs nothing'),
+    ('the moment copied instead of read',
+     '    shared = dict(reg[pre["reads_from"]]["prefilter"])',
+     '    shared = dict(reg[pre["reads_from"]]["prefilter"], asks_merge="(?i)merge")',
+     'the merge ask is read from the entry `reads_from` names, not a copy'),
+    ('the event cut not widened',
+     '    shared["event"] = shared["event"] + "|" + pre["fact"]["closed"]',
+     '    pass',
+     'a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked'),
     ("the comment kind not read",
      'if not report.lstrip().startswith("REPORT "):', "if False:",
      "a comment of another kind asks nothing"),
-    ("an issue with no DoD asked", "            elif DOD in body:", "            elif True:",
-     "a pull request closing no Definition of done logs one skip"),
-    ("no candidate not skipped", "        if not cands:", "        if False:",
-     "a diff and a REPORT yielding no candidate log one skip"),
-    ("the budget not read",
-     '    if len(json.dumps({"candidates": text}).encode("utf-8")) > jev.STATE_BUDGET:',
-     "    if False:",
-     "a select state over the budget is not sent and logs a skip"),
-    ("a failed pr read taken for one",
-     '        view, why = carry.gh("pr", "view", pr, *target, "--json",\n                             "closingIssuesReferences")\n        if why:',
-     '        view, why = carry.gh("pr", "view", pr, *target, "--json",\n                             "closingIssuesReferences")\n        if False:',
-     "a failed pull request read logs one skip"),
-    ("a failed issue read unlogged",
-     '                jev.skip(READER, f"{subject} {ref[\'number\']}",\n                         f"the issue read failed: {why}", env, cwd=HERE)',
-     "                pass",
-     "a failed issue read logs a skip for that issue"),
-    ("a failed diff read taken for one",
-     '        diff, why = carry.gh("pr", "diff", pr, *target)\n        if why:',
-     '        diff, why = carry.gh("pr", "diff", pr, *target)\n        if False:',
-     "a failed diff read logs one skip"),
-    ("the repository dropped", 'target = ["-R", repo or TRACKER]', 'target = ["-R", TRACKER]',
-     "a member pull request is read in its repository, its tracker issue in the tracker"),
-    ("no tracker default", 'target = ["-R", repo or TRACKER]', 'target = ["-R", repo] if repo else []',
-     "with no repository gh is told the tracker"),
-    ("the failure boundary removed",
-     "except Exception as e:  # noqa: BLE001 -- a reading never refuses, and nobody reads this",
-     "except ZeroDivisionError as e:",
-     "a reader that raised exits 0, says nothing and logs a skip"),
+    ('no candidate not skipped',
+     '    if not cands:',
+     '    if False:',
+     'a diff and a REPORT yielding no candidate log one skip'),
+    ('the budget not read',
+     '    if jev.over_budget({"candidates": text}):',
+     '    if False:',
+     'a select state over the budget is not sent and logs a skip'),
+    ('the failure boundary removed',
+     '    jev.shielded(READER, subject, lambda: read(pr, repo, subject, stdin, jev,\n                                               env), env, cwd=HERE)',
+     '    read(pr, repo, subject, stdin, jev, env)',
+     'a reader that raised exits 0, says nothing and logs a skip'),
     ("the REPORT's prose taken for a result",
      "             if line.strip() and hit.search(line)]",
      "             if line.strip()]",
@@ -758,18 +733,17 @@ MUTATIONS = [
     ("the facts read in name order", "    for name, pattern in facts.items():",
      "    for name, pattern in sorted(facts.items()):",
      "each settled condition names the first fact its words match"),
-    ("a condition of no event settled", "                if carry.settled(shared, text):",
-     "                if True:",
-     "a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked"),
+    ('a condition of no event settled',
+     '            if carry.settled(shared, text):',
+     '            if True:',
+     'a settlement REPORT asks one select call a sub-issue and one claim call a candidate picked'),
     ("the log resolved from the process's cwd, at a main() skip",
-     '                             f"{read}", env, cwd=HERE)',
-     '                             f"{read}", env)',
+     '                         f"{read}", env, cwd=HERE)',
+     '                         f"{read}", env)',
      "every jev call names the reader's own base, not the process cwd"),
     ("the log resolved from the process's cwd",
-     '                    read=f"{subject} select", reader=READER, key=key,\n'
-     "                    env=env, cwd=HERE)",
-     '                    read=f"{subject} select", reader=READER, key=key,\n'
-     "                    env=env)",
+     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env,\n        cwd=HERE)',
+     '        read=f"{subject} select", reg=reg, reader=READER, key=key, env=env)',
      "every jev call names the reader's own base, not the process cwd"),
 ]
 
@@ -779,8 +753,8 @@ def live(record):
     asked as the reader asks it: one condition's question over the case's own
     state. Prints each answer beside its truth; `--record` appends it."""
     m = load(SOURCE).m
-    jev = m.load_sibling("campaign-jev.py")
-    carry = m.load_sibling(m.CARRY)
+    jev = m.jev_module()
+    carry = jev.load_sibling(m.CARRY)
     today = datetime.date.today().isoformat()
     for name, entry in (("done-report-select", SELECT),
                         ("done-report-claim", CLAIM)):

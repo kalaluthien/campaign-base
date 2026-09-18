@@ -66,14 +66,12 @@ Usage: scripts/spec-dead-count.py [--mode <mode>|all|ruling] [ROOT]
 import argparse
 import collections
 import datetime
-import importlib.machinery
-import importlib.util
+import importlib
 import json
 import os
 import re
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 MODES = ("defs", "unwitnessed", "unpaired", "duplicate", "undefined", "untied",
@@ -96,27 +94,17 @@ PREMISES = (("handoff", re.compile(r"Handoff|Heir|Successor|Predecessor")),
 HANDOFF = re.compile(r"^NOTE [^:]+: .*\bhand(?:ing)?[- ]?off\b", re.I)
 PROFILE = re.compile(r"^`optional = [^`]*`", re.M)
 BASE_REPO = "kalaluthien/campaign-base"
-WORKERS = 8
 FACT_FILES = 6
 FLAG = {"dead-premise": "not_shown", "dead-reader": "dead"}
 PATH = re.compile(r"(?<![\w/])((?:spec|scripts|\.claude|\.github)/[\w./-]+"
                   r"\.(?:als|py|sh|md|jsonl|json|yml|html))(?!\w)")
 
 
-def sibling(name):
-    """A script beside this one as a module, by path: these are scripts and
-    not a package."""
-    src = Path(__file__).resolve().parent / name
-    key = name.replace("-", "_").removesuffix(".py")
-    spec = importlib.util.spec_from_loader(
-        key, importlib.machinery.SourceFileLoader(key, str(src)))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-tie = sibling("check-sdlc-tie.py")
-shape = sibling("check-tree-shape.py")
+# campaign-jev holds every step around the call and loads the siblings
+# (rule-check#506).
+jev = importlib.import_module("campaign-jev")
+tie = jev.load_sibling("check-sdlc-tie.py")
+shape = jev.load_sibling("check-tree-shape.py")
 
 
 def code_lines(text):
@@ -272,23 +260,13 @@ def ruling_asks(files, text, tokens, commands, declared, until=None):
 
 def ruling(files, text, tokens, commands, declared, root):
     """Judge every ask, one call each; at `shadow` the log is the output."""
-    jev = sibling("campaign-jev.py")
     key = jev.commit_key(cwd=root)
-    asks = ruling_asks(files, text, tokens, commands, declared)
-
-    def flagged(reading, raw):
-        """The P of the option each entry's `bands.how` says the flag reads; no
-        cut is declared, so the row keeps the number and not a word."""
-        p = ((raw or {}).get("probabilities") or {}).get(FLAG[reading])
-        return {"code": p, "moved_by": FLAG[reading]} if p is not None else None
-
-    def one(ask):
-        group, name, path, state = ask
-        jev.judge(group, state, read=f"{path} {name}", reader="spec-dead-count.py",
-                  key=dict(key, path=path, name=name) if key.get("repo") else None,
-                  flag=flagged, cwd=root)
-    with ThreadPoolExecutor(WORKERS) as pool:
-        list(pool.map(one, asks))
+    # The P of the option each entry's `bands.how` says the flag reads.
+    jev.judge_each([{"group": group, "state": state, "read": f"{path} {name}",
+                     "key": dict(key, path=path, name=name) if key.get("repo") else None}
+                    for group, name, path, state in
+                    ruling_asks(files, text, tokens, commands, declared)],
+                   reader="spec-dead-count.py", flag=jev.option_flag(FLAG), cwd=root)
 
 
 def main():

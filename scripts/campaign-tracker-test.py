@@ -1456,13 +1456,15 @@ def main():
                      "campaign_jev_real").OPTION_BUDGET
 
     def spy(*a, **k):
-        mod = types.SimpleNamespace()
+        # THE REAL MODULE WITH ITS CALL STUBBED, so `judge_chain` and the
+        # budget are the ones the reading runs.
+        mod = was(Path(m.__file__).resolve().parent / "campaign-jev.py",
+                  "campaign_jev_spy")
         mod.judge = lambda group, state, **kw: (
             asked.append((group, state)) or judged(
                 {group: verdict("noMatch", None, "", "shadow", "nothing")},
                 "jev-1.13.0", 0.1, "c", "logged"))
         mod.skip = lambda *a, **k: asked.append(("skip", a))
-        mod.OPTION_BUDGET = ceiling
         return mod
 
     was, m.load = m.load, spy

@@ -583,7 +583,8 @@ def read_thread(repo, pr, found, pattern):
     jev, why = load(JEV, "campaign_jev")
     if why:
         return
-    try:
+
+    def read():
         sort, sort_why = load(SORT, "check_finding_sort")
         if sort_why:
             jev.skip("check-merge-review.py", f"{repo}#{pr} thread",
@@ -601,12 +602,7 @@ def read_thread(repo, pr, found, pattern):
                   key={"repo": repo, "pull_request": pr,
                        **{k: v for k, v in ids.items() if v is not None}},
                   flag=functools.partial(flag_of, lint=lint, why=why))
-    except Exception as e:                      # noqa: BLE001 -- never the gate's
-        try:
-            jev.skip("check-merge-review.py", f"{repo}#{pr} thread",
-                     f"the reading raised {e.__class__.__name__}")
-        except Exception:                       # noqa: BLE001 -- nothing to log to
-            pass
+    jev.shielded("check-merge-review.py", f"{repo}#{pr} thread", read)
 
 
 def gate(repo, pr, pattern, want_head):

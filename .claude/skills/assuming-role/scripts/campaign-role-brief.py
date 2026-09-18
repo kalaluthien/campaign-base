@@ -500,7 +500,13 @@ def brief_role(event, session_id):
     # harness shows of a long hook output; the brief after it is the same
     # text every start, the hand-off the one part that is news.
     if role == "planner" and event == "SessionStart":
-        shown, verdict = handoff(campaign, how)
+        # ONE GUARD OVER THE WHOLE READING: a module that will not load, or a
+        # page of an unexpected shape, must cost the hand-off and never the
+        # brief, which the outer handler would drop.
+        try:
+            shown, verdict = handoff(campaign, how)
+        except Exception as e:              # noqa: BLE001 -- reported
+            shown, verdict = None, f"could not read the hand-off ({e.__class__.__name__})"
         if shown:
             print(shown + "\n\n---\n")
         say(f"hand-off: {verdict}")

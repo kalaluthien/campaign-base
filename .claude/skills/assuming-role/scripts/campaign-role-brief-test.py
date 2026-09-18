@@ -238,6 +238,14 @@ def handoff_cases():
           and PLANNER in r.stdout and "Hand-off" not in r.stdout
           and "Traceback" not in r.stderr, f"err {r.stderr!r}")
 
+    r, _, _ = run(START, agents=row(SID, "demo-planner-2"),
+                  campaign_list=DEMO_ISSUE, comments={"message": "odd"})
+    check("...and a page of an unexpected shape costs the hand-off, never the "
+          "brief (pr#500 REVIEW 5725372344)",
+          r.returncode == 0 and "hand-off: could not read the hand-off" in r.stderr
+          and PLANNER in r.stdout and "briefed nothing" not in r.stderr,
+          f"err {r.stderr!r}")
+
     r, _, _ = run(START, agents=NAMED, campaign_list=DEMO_ISSUE, comments=thread)
     check("...and a worker's start reads no hand-off",
           "hand-off" not in r.stderr and not any("issue list" in c for c in LAST["gh"]),

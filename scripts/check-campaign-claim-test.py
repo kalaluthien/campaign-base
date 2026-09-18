@@ -27,6 +27,7 @@ named for its row.
 Usage: scripts/check-campaign-claim-test.py
 """
 import contextlib
+import hashlib
 import importlib
 import io
 import json
@@ -1046,6 +1047,122 @@ def main():
               any("was spent on the filings before it" in (x.get("skipped") or "")
                   for x in rows),
               [x.get("skipped") or x.get("reading") for x in rows])
+        # THE SHELL WRITE LET THROUGH UNREAD (rule-check#455 pr 6). Lint first:
+        # a command with no redirect, in-place edit, `tee`, `mv`, `cp`, `rm`,
+        # `git commit` or `git push` is code's `no` and asks nothing.
+        mod = guard_module()
+        for cmd, word in (("ls -la", "no"), ("grep -i x y", "no"),
+                          ("ls >/dev/null 2>&1", "no"),
+                          ("git -C /x log --oneline", "no"),
+                          ("cat <<EOF\nrm -rf x > y\nEOF", "no"),
+                          ("echo x > f", None), ("echo x>>f", None),
+                          ("python3 a.py &> log", None),
+                          ("sed -i '' s/a/b/ f", None),
+                          ("perl -i.bak -pe s/a/b/ f", None),
+                          ("ls | tee o", None), ("(cd x; mv a b)", None),
+                          ("cp a b", None), ("rm -rf y", None),
+                          ("git -C /x commit -m a", None),
+                          ("git push origin HEAD", None),
+                          ("perl -pi -e s/a/b/ f", None),
+                          ("sed -Ei s/a/b/ f", None),
+                          ("find . -name x | xargs rm", None),
+                          ("find . -name '*.pyc' -delete", None),
+                          ("git checkout -- f", None), ("git restore f", None),
+                          ("git reset --hard", None), ("git stash pop", None),
+                          ("touch f", None), ("truncate -s 0 f", None),
+                          ("sed -n 1,5p f", "no"), ("find . -name x", "no"),
+                          ("git -C /x status --short", "no"),
+                          ("git diff --output=p.diff", None),
+                          ("find . -name x | xargs git checkout --", None),
+                          ("find . -exec sh -c 'rm $1' _ {} ;", None),
+                          ("ln -s a b", None), ("tar -xf a.tar", None)):
+            got = mod.shell_lint(cmd)[0]
+            check(f"shell lint on `{cmd[:30]}` is {word or 'left to Jev'}",
+                  got == word, got)
+        # THE RECORD: the full command's hash and the tree's state beside
+        # every row, so the next call in the same tree says whether this one
+        # changed it -- the join a reading of a shell write needs.
+        long_cmd = "ls " + "x" * 400
+        before = log.read_text()
+        ask(f.base, tool="Bash", command=long_cmd)
+        row = json.loads(log.read_text()[len(before):].splitlines()[-1])
+        check("an unread call's row carries the FULL command's hash, not the "
+              "200 bytes it keeps",
+              row.get("command_sha") == hashlib.sha256(
+                  long_cmd.encode()).hexdigest()[:16]
+              and len(row.get("command", "")) == 200, row)
+        check("...and the tree it ran in, with that tree's state hashed",
+              row.get("tree") == str(f.base.resolve())
+              and len(row.get("porcelain") or "") == 16, row)
+        before = log.read_text()
+        ask(f.base, tool="Bash", command="ls")
+        same = json.loads(log.read_text()[len(before):].splitlines()[-1])
+        # UNDER `spec/`, which the fixture's `.gitignore` does not ignore: a
+        # file git ignores is no change a commit could land, and is not seen.
+        (f.base / "spec").mkdir(exist_ok=True)
+        (f.base / "spec" / "dirty.txt").write_text("a")
+        ask(f.base, tool="Bash", command="ls")
+        dirty = json.loads(log.read_text().splitlines()[-1])
+        (f.base / "spec" / "dirty.txt").write_text("changed again, longer")
+        ask(f.base, tool="Bash", command="ls")
+        again = json.loads(log.read_text().splitlines()[-1])
+        (f.base / "spec" / "dirty.txt").unlink()
+        check("the tree's state holds when nothing changed and moves when a "
+              "file appears",
+              same["porcelain"] == row["porcelain"]
+              and dirty["porcelain"] != same["porcelain"],
+              (row.get("porcelain"), same.get("porcelain"),
+               dirty.get("porcelain")))
+        check("...and moves again when the SAME dirty file changes, which "
+              "`git status` alone would not show",
+              again["porcelain"] != dirty["porcelain"],
+              (dirty.get("porcelain"), again.get("porcelain")))
+        check("a call the lint settles says so on its row, asking nothing",
+              same.get("shell_lint") == "no", same)
+        # WHAT LINT LEAVES GOES TO JEV AT `shadow`, DETACHED: the hook has
+        # returned before the reading is asked, so a slow endpoint costs the
+        # tool call nothing. It is polled for here, against the closed port.
+        cmd = "echo x > out.txt"
+        with contextlib.closing(socket.socket()) as blackhole:
+            blackhole.bind(("127.0.0.1", 0))
+            blackhole.listen(8)
+            hang = f"http://127.0.0.1:{blackhole.getsockname()[1]}/v1/systemone"
+            started = time.time()
+            r = ask(f.base, tool="Bash", command="echo y > out2.txt",
+                    env={"CAMPAIGN_JEV_URL": hang})
+            took = time.time() - started
+        row = json.loads(log.read_text().splitlines()[-1])
+        check("a call the lint leaves is allowed at once, its row saying it "
+              "was asked, while the endpoint never answers",
+              r.returncode == 0 and UNREAD in r.stdout and took < 2
+              and row.get("shell_lint") == "asked", (r.returncode, took, row))
+        was = len(jevlog.read_text().splitlines()) if jevlog.is_file() else 0
+        ask(f.base, tool="Bash", command=cmd)
+        row = json.loads(log.read_text().splitlines()[-1])
+        rows = []
+        for _ in range(100):
+            rows = [json.loads(x) for x in
+                    jevlog.read_text().splitlines()[was:]] \
+                if jevlog.is_file() else []
+            if any(x.get("reading") == "shell-write-unread"
+                   and (x.get("state") or {}).get("command") == cmd
+                   for x in rows):
+                break
+            time.sleep(0.1)
+        # BY COMMAND, since the hung call above logs whenever its socket dies.
+        shell = [x for x in rows if x.get("reading") == "shell-write-unread"
+                 and (x.get("state") or {}).get("command") == cmd]
+        check("...and the reading is logged at shadow over the guard's own "
+              "state, keyed to the row",
+              len(shell) == 1 and shell[0]["tier"] == "shadow"
+              and set(shell[0]["state"]) == {"command", "cwd", "role"}
+              and shell[0]["state"]["command"] == cmd
+              and shell[0].get("command_sha") == row.get("command_sha")
+              and shell[0].get("porcelain") == row.get("porcelain")
+              and Path(shell[0].get("guard_log", "")).resolve()
+              == log.resolve(), shell[:1])
+        (f.base / "out.txt").unlink(missing_ok=True)
+        (f.base / "out2.txt").unlink(missing_ok=True)
         r = ask(f.base, tool="Bash", command='gh pr comment 5 --body "unbalanced')
         check("a gh command shlex cannot split is refused, naming why",
               r.returncode == 2 and "would not split" in r.stderr
@@ -4524,7 +4641,7 @@ def main():
     # both lost a case and broke one reported only the count. The count is not
     # a case, so it stays out of the tally: folding it in printed
     # `407/408 cases pass` on a run where all 408 named cases passed.
-    EXPECTED = 690
+    EXPECTED = 731
     status = harness.report()
     if harness.RAN and len(harness.RAN) != EXPECTED:
         print(f"FAIL  the suite ran {len(harness.RAN)} cases, not {EXPECTED}\n"

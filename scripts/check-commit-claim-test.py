@@ -14,6 +14,7 @@ read one claim shape.
 Usage: scripts/check-commit-claim-test.py
 """
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -196,6 +197,18 @@ def main():
         check("SKIP_REPO_GUARDS=1 does not get past a refusal; it covers only a "
               "guard that cannot run",
               r.returncode != 0 and not moved, f"exit {r.returncode}: {out(r)[:300]}")
+        # THE GATE'S VERDICT IS WRITTEN beside the guard's rows (rule-check#455
+        # pr 6): it is the label a reading of an unread shell write joins to.
+        rows = [json.loads(x) for p in Path(d).rglob("runtime/guard.log")
+                for x in p.read_text().splitlines()]
+        gate = [x for x in rows if x.get("tool") == "pre-commit"]
+        check("each commit's verdict is a pre-commit row naming its tree",
+              [(x["verdict"], x["tree"]) for x in gate[:2]]
+              == [("claim", str(f.trees["demo/7-x"].resolve())),
+                  ("no-claim", str(f.trees["feature"].resolve()))]
+              and gate[0].get("session") == "sid-1"
+              and len(gate[0].get("porcelain") or "") == 16,
+              gate[:3])
 
     with tempfile.TemporaryDirectory() as d:
         f = build(d, unpushed=("demo/8-y",))

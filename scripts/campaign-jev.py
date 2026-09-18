@@ -1903,6 +1903,73 @@ def join_report_next_round(row, thread):
                   f"sub-issue of it reopened naming it"), ""
 
 
+def fetch_guard_log(_repo, path):
+    """Every row of one guard.log, in the order written, or None. LOCAL: the
+    record a shell reading joins to is this machine's, and never on GitHub."""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except (OSError, TypeError):
+        return None
+    rows = []
+    for line in text.splitlines():
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            continue
+    return rows
+
+
+def join_guard_tree_delta(row, rows):
+    """shell-write-unread: did the call change its tree, where a claim gates?
+
+    THE AFTER IS THE SAME SESSION'S NEXT ROW IN THE SAME TREE, whatever tool
+    made it, since every guard row carries the tree's state taken before its
+    own call. The same state is `no`. A CHANGED tree that another session
+    also called into between the two is not labelled: checkouts are shared,
+    and nothing says whose call changed it.
+
+    A CHANGED TREE IS LABELLED ONLY BY THE COMMIT GATE'S LATER VERDICT ON IT
+    (rule-check#455 DECISION 5723273420): `yes` once the gate has judged a
+    commit there as campaign work, whatever it decided; not labelled while no
+    commit has been judged, nor where the gate read no campaign work, which
+    is outside what the reading asks."""
+    if rows is None:
+        return None, "", "the guard log did not read"
+    tree, before = row.get("tree"), row.get("porcelain")
+    mine = [n for n, g in enumerate(rows)
+            if g.get("session") == row.get("session")
+            and g.get("command_sha") == row.get("command_sha")
+            and g.get("tree") == tree and g.get("porcelain") == before
+            and (g.get("at") or "") <= (row.get("at") or "")]
+    if not mine:
+        return None, "", "the guard row this reading was asked on is not in the log"
+    at = mine[-1]
+    end = next((n for n in range(at + 1, len(rows))
+                if rows[n].get("session") == row.get("session")
+                and rows[n].get("tree") == tree and rows[n].get("porcelain")),
+               None)
+    if end is None:
+        return None, "", "no later call of this session in this tree yet"
+    after = rows[end]
+    if after["porcelain"] == before:
+        return "no", (f"{tree} read the same before this call and before the "
+                      f"session's next ({after.get('tool')}, {after.get('at')})"
+                      ), ""
+    if any(g.get("tree") == tree and g.get("session") != row.get("session")
+           for g in rows[at + 1:end]):
+        return None, "", "another session called into this tree before it changed"
+    gate = next((g for g in rows[at + 1:] if g.get("tool") == "pre-commit"
+                 and g.get("tree") == tree
+                 and g.get("session") == row.get("session")), None)
+    if gate is None:
+        return None, "", ("the tree changed and this session has had no "
+                          "commit judged on it yet")
+    if gate.get("verdict") == "not campaign work":
+        return None, "", "the commit gate reads this tree as no campaign work"
+    return "yes", (f"{tree} changed by the session's next call "
+                   f"({after.get('at')}), and the commit gate judged it "
+                   f"`{gate.get('verdict')}` at {gate.get('at')}"), ""
+
 
 def repo_of(url):
     """`owner/name` out of a git remote URL, or "". Both spellings git writes:
@@ -2283,6 +2350,7 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
          "decision-gap": join_decision_gap,
          "done-line-reraised": join_done_line_reraised,
          "comment-rewritten": join_comment_rewritten,
+         "guard-tree-delta": join_guard_tree_delta,
          "witness-case-kept": join_witness_case_kept}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
@@ -2290,7 +2358,10 @@ JOINS = {"issue-title-kept": join_issue_title_kept,
 # row names TWO, because no sha alone names a file.
 SUBJECTS = {"issue": ("fetch", ("issue",)),
             "pull_request": ("fetch_thread", ("pull_request",)),
-            "commit": ("fetch_commits", ("commit", "path"))}
+            "commit": ("fetch_commits", ("commit", "path")),
+            "guard_log": ("fetch_guard_log", ("guard_log",))}
+# `guard_log` is a PATH on this machine and names no repository.
+LOCAL_SUBJECTS = {"guard_log"}
 
 
 def subject_of(row):
@@ -2303,7 +2374,7 @@ def subject_of(row):
     `corpus join` prints the one that fits."""
     repo = row.get("repo")
     subject = next((s for s in SUBJECTS if row.get(s)), None)
-    if not repo or subject is None:
+    if subject is None or (subject not in LOCAL_SUBJECTS and not repo):
         return None, (f"the row carries no repo and "
                       f"{' or '.join(SUBJECTS)} field"), ()
     how, fields = SUBJECTS[subject]
@@ -3051,7 +3122,8 @@ def main(argv):
     p = sub.add_parser("corpus", help="the corpus and its join")
     p.add_argument("action", choices=["join"])
     p.set_defaults(run=cmd_corpus_join, fetch=fetch_issue,
-                   fetch_thread=fetch_thread, fetch_commits=fetch_commits)
+                   fetch_thread=fetch_thread, fetch_commits=fetch_commits,
+                   fetch_guard_log=fetch_guard_log)
     p = sub.add_parser("new", help="an empty entry for a new reading")
     p.add_argument("reading")
     p.add_argument("--references",

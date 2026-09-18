@@ -80,8 +80,8 @@ IT READS THE TRANSCRIPT AND GITHUB, AND OF THE PANE ONLY ITS INPUT BOX, which
 is the one thing a transcript cannot show: text typed and not yet sent.
 The last assignment prompt
 and the compaction come from the session's own transcript, through
-`campaign-heartbeat.py`'s `transcript_reading`; when the claim went comes from
-GitHub, through the heartbeat's `ref_went`, which its `retire` asks too. The
+`campaign-transcript.py`'s `transcript_reading`; when the claim went comes from
+GitHub, through that script's `ref_went`. The
 pane's scrollback was the source until kalaluthien/campaign-base#296, and it
 failed both ways (#293, #220). The release line in the releasing pane's
 transcript was the source until rule-check#349, and on the base the planner
@@ -200,21 +200,21 @@ def idle_verdict(row):
                    f"of.")
 
 
-def heartbeat_module():
-    """campaign-heartbeat.py, imported for its reader of a session's
-    transcript and of when a claim went, which its `retire` asks too. Loaded
-    by path from the `assuming-role` skill."""
+def transcript_module():
+    """campaign-transcript.py, imported for its reader of a session's
+    transcript and of when a claim went. Loaded by path from the
+    `assuming-role` skill."""
     return load(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
         __file__))), ".claude", "skills", "assuming-role", "scripts",
-        "campaign-heartbeat.py"), "campaign_heartbeat")
+        "campaign-transcript.py"), "campaign_transcript")
 
 
-def refs_of(m, hb, parent, slug):
-    """The heartbeat's reader of claim refs and their deletion, over the
+def refs_of(m, tr, parent, slug):
+    """That script's reader of claim refs and their deletion, over the
     campaign the sub-issue being assigned hangs from: the pane's last
     sub-issue is of that campaign too, since a worker is named for one, which
     `launch_refusal` has already read."""
-    return hb.refs_reader(hb.claim_reading(parent, slug, m), slug)
+    return tr.refs_reader(tr.claim_reading(parent, slug, m), slug)
 
 
 def behind_main(cwd):
@@ -382,8 +382,8 @@ def main():
         return 1
     print(f"input box empty (herdr pane read {args.pane} --source detection)")
 
-    hb = heartbeat_module()
-    reading, where, why_unread = hb.read_transcript(row["sid"])
+    tr = transcript_module()
+    reading, where, why_unread = tr.read_transcript(row["sid"])
     if reading is None:
         # I COULD NOT LOOK, which is neither a yes nor a no. It refuses, and
         # `--assume-fresh` is the way past: an unreadable transcript is a
@@ -397,8 +397,8 @@ def main():
             return 1
         verdict, why = "unread", f"{where}: {why_unread}"
     else:
-        verdict, why = hb.compacted_since_ref(reading,
-                                              refs_of(m, hb, *campaign))
+        verdict, why = tr.compacted_since_ref(reading,
+                                              refs_of(m, tr, *campaign))
         print(f"{verdict}: {why} (read {where})")
     # ONE REMEDY LIST PER VERDICT: `/compact and retry` changes nothing for
     # `unknown`, and --assume-fresh does not reach `stale`.

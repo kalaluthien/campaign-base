@@ -487,41 +487,23 @@ pred L1b_PromptAfterTheResetIsAnswered {
                    and eventually (limitReset and after (status[a] and after answer[a])))
 }
 
-/* THE HEARTBEAT RETIRES A DONE WORKER. A worker whose
+/* AN `/exit` FOLLOWS THE RELEASE. A worker whose
    sub-issue was released, by any session, and which holds nothing is sent
-   `/exit`; one holding a claim or a live agent, one with no sub-issue
+   `/exit`, whoever sends it -- the worker itself at its last step, or the
+   planner's by-hand `campaign-close.py worker` for one that neither left
+   nor answers; one holding a claim or a live agent, one with no sub-issue
    released, and a planner are not. The first is reachable; the second is
    UNSAT, and dropping any one of the four guards on `s` -- its role, its
    claims, a released sub-issue, its live agents -- makes it SAT
    (`no Target.agent` is a frame, and dropping it leaves this UNSAT). */
-pred H1_HeartbeatRetiresADoneWorker {
+pred E1_ExitFollowsTheRelease {
   some s: Session | eventually (Now.event = Release and Who.session = s
                      and eventually (Now.event = SessionExit and Who.session = s))
 }
-pred H1b_HeartbeatRetiresNoHolder {
+pred E1b_NoHolderIsExited {
   some s: Session | eventually (Now.event = SessionExit and Who.session = s
     and (some s.claimedIssues or some heldBy[s] or s.role = Planner
          or no a: peer.s | once (Now.event = Release and Now.issue = a.task)))
-}
-
-/* THE WATCH READS A LEVEL. An open sub-issue nobody claimed is an
-   `unclaimed` drift until a claim, and a claim on a closed sub-issue is a
-   `settled` drift until its release; each stands on every state between, so
-   the watch reprints what still stands rather than catching one edge. W1's
-   `i not in Backlog` keeps the label from clearing the drift in the claim's
-   place: `Backlog` is unconstrained, so without it W1 stays SAT with a claim
-   that records nothing. */
-pred W1_UnclaimedDriftClearsOnClaim {
-  some c: Campaign, i: Issue | eventually (i in unclaimedDrift[c]
-    and eventually (Now.event = Claim and Now.issue = i
-                    and after (i not in unclaimedDrift[c] and i not in Backlog)))
-}
-pred W1b_SettledDriftClearsOnRelease {
-  some c: Campaign, i: Issue | eventually (Now.event = CloseIssue and Now.issue = i
-    and i in c.memberIssues & Claimed
-    and after (i in settledDrift[c]
-               and eventually (Now.event = Release and Now.issue = i
-                               and after i not in settledDrift[c])))
 }
 
 /* Completion is a GitHub fact, so it survives the death and never undoes. */
@@ -1858,10 +1840,8 @@ run SilentAgentStillRetired         for exactly 2 Issue, 1 PullRequest, exactly 
 run L1_PollIntoTheBannerGetsNoAnswer         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 0
 -- the same prompt sent after the reset is answered
 run L1b_PromptAfterTheResetIsAnswered         for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
-run H1_HeartbeatRetiresADoneWorker      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
-run H1b_HeartbeatRetiresNoHolder         for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
-run W1_UnclaimedDriftClearsOnClaim       for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 8 steps expect 1
-run W1b_SettledDriftClearsOnRelease      for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 8 steps expect 1
+run E1_ExitFollowsTheRelease            for 3 Issue, 1 PullRequest, 1 Campaign, 1 Session, 1 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 14 steps expect 1
+run E1b_NoHolderIsExited                for 3 Issue, 1 PullRequest, 1 Campaign, 2 Session, 2 Agent, 1 Machine, 2 Repo, 1 Branch, 1 CampaignDir, 12 steps expect 0
 
 run S3_DelegateDiesAfterPushing for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1
 run S4_ReportWithoutPush        for exactly 2 Issue, 1 PullRequest, exactly 1 Campaign, exactly 1 Session, exactly 1 Agent, exactly 1 Machine, exactly 2 Repo, exactly 1 Branch, 1 CampaignDir, 12 steps expect 1

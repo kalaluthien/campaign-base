@@ -227,8 +227,9 @@ fact PredecessorOnlyOnHandoff { always (some Who.predecessor iff Now.event = Han
 fact AddressedOnlyOnSwitch { always (Now.event != ModelSwitch implies no Who.addressed) }
 
 /* SESSIONS AN `/exit` HAS CLOSED: a handoff's successor sent it to its
-   predecessor, or the planner's heartbeat sent it to a worker done and
-   holding nothing (`SessionExit`). Grown only by those two and never shrunk,
+   predecessor, or a worker done and holding nothing sent it to itself, the
+   planner's `campaign-close.py worker` standing in for a worker that neither
+   left nor answers (`SessionExit`). Grown only by those two and never shrunk,
    and a closed session performs nothing again -- without this the predecessor
    kept `worksOn` and could claim, launch and stand the heir down after
    handing off. One fact rather than a frame clause in
@@ -385,10 +386,12 @@ pred modelSwitch[r: Role, m: Machine] {
   sessionFrame
 }
 
-/* THE HEARTBEAT RETIRES A WORKER: `/exit` into the pane of a worker that
-   holds no claim, through the one leave in `scripts/campaign-close.py`. The session half; orchestration/system.als's `exitSession`
+/* A WORKER EXITS: `/exit` into the pane of a worker that
+   holds no claim, through the one leave in `scripts/campaign-close.py` -- sent by the worker itself at its
+   last step, or by the planner's `campaign-close.py worker` for one that
+   neither left nor answers. The session half; orchestration/system.als's `exitSession`
    adds that a sub-issue it took was released and it holds no live agent. A
-   planner is never retired: it is the one running the heartbeat. */
+   planner is never exited by it: a campaign always has one. */
 pred sessionExit[s: Session] {
   Now.event = SessionExit and no Now.issue and Who.session = s
   s.role = Worker

@@ -81,7 +81,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[3]
 NAME_SCRIPT = HERE / "campaign-name-session.py"
-HEARTBEAT_SCRIPT = HERE / "campaign-heartbeat.py"
+TRANSCRIPT_SCRIPT = HERE / "campaign-transcript.py"
 DIRECTORY_SCRIPT = BASE / "scripts" / "campaign-directory.py"
 
 PERMISSION = "permission_prompt"
@@ -151,9 +151,9 @@ def push_text(event, name, pane, detail, stamp):
 
 
 def landed(lines, text, texts):
-    """How many user records carry <text> as typed text. `texts` is the
-    heartbeat's reader of a message's text blocks, which leaves a tool
-    result out."""
+    """How many user records carry <text> as typed text. `texts` is
+    campaign-transcript's reader of a message's text blocks, which leaves a
+    tool result out."""
     n = 0
     for line in lines:
         try:
@@ -228,7 +228,7 @@ def log_path(slug):
             f"$TMPDIR, campaign-directory.py said {word!r}")
 
 
-def send(event, name, pane, detail, names, heartbeat, prompt,
+def send(event, name, pane, detail, names, transcript, prompt,
          sleep=time.sleep, now=None, out=None):
     """The sender: one logged line per planner of <name>'s campaign."""
     stamp = (now or dt.datetime.now)().strftime("%Y-%m-%dT%H:%M:%S")
@@ -252,14 +252,14 @@ def send(event, name, pane, detail, names, heartbeat, prompt,
         return
 
     def count(sid):
-        p, err = heartbeat.transcript_path(sid)
+        p, err = transcript.transcript_path(sid)
         if p is None:
             return None, err
         try:
             lines = p.read_text(errors="replace").splitlines()
         except OSError as e:
             return None, f"{p}: {e.__class__.__name__}"
-        return landed(lines, text, heartbeat.texts), None
+        return landed(lines, text, transcript.texts), None
 
     for sid, target, target_pane, _ in found:
         outcome, why = deliver(
@@ -313,8 +313,8 @@ def main(argv):
     names = load(NAME_SCRIPT, "campaign_name_session")
     if argv[1:2] == ["--send"]:
         event, name, pane, detail = argv[2:6]
-        heartbeat = load(HEARTBEAT_SCRIPT, "campaign_heartbeat")
-        send(event, name, pane, detail, names, heartbeat, herdr_prompt)
+        transcript = load(TRANSCRIPT_SCRIPT, "campaign_transcript")
+        send(event, name, pane, detail, names, transcript, herdr_prompt)
         return
     hook(payload, names, spawn_detached)
 

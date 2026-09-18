@@ -38,8 +38,8 @@ worked until a person closes it.
   request.
 - The sub-issue stays open until a person closes it, and only a person puts
   the label on or takes it off.
-- With no claim it is neither `unclaimed` nor a reason the campaign is not
-  `quiet` in the heartbeat; while it holds one it is read like any other.
+- With no claim it is not `unclaimed` in the planner's reading of the open
+  sub-issues; while it holds one it is read like any other.
 
 ## What to refuse
 

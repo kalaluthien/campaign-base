@@ -1550,12 +1550,17 @@ def judge(group, state, read="", reader="", settled=None, key=None, flag=None,
 
 def fetch_issue(repo, number, timeout=30):
     """One issue as `gh` gives it, or None. THE ONE FETCH, so an offline suite
-    stubs this alone and every join is exercised against it."""
+    stubs this alone and every join is exercised against it.
+
+    ITS COMMENTS COME WITH IT, in the same call, because two of the joins read
+    what was said on the sub-issue AFTER the reading -- the next DECISION, the
+    next REVIEW -- and a second call for them would double every fetch this
+    command makes."""
     try:
         out = subprocess.run(
             ["gh", "issue", "view", str(number), "-R", repo, "--json",
-             "title,body,state,labels"], capture_output=True, text=True,
-            timeout=timeout)
+             "title,body,state,labels,comments"], capture_output=True,
+            text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
@@ -1789,7 +1794,8 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
 
     {commits: [{sha, paths}] touching `path` after `sha`, oldest first;
      now: the file as `origin/main` holds it, or None where it is gone;
-     window: how many commits `sha..origin/main` holds at all}
+     window: how many commits `sha..origin/main` holds at all;
+     unmerged: set where the sha has not reached `origin/main`}
 
     THE ONE FETCH for a commit-time reading, as `fetch_issue` is for an issue
     and `fetch_thread` for a pull request, so an offline suite stubs one
@@ -1802,10 +1808,13 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
     all, so a join can tell "nobody has touched it yet" from "nobody touched it
     in the twenty commits since".
 
-    A SHA THAT HAS NOT REACHED `origin/main` READS AS None. `<sha>..origin/main`
-    over an unmerged claim is every commit main took since the fork, not one of
-    which is a later fact about this reading's own change; a join over it would
-    label the reading with somebody else's commit.
+    A SHA THAT HAS NOT REACHED `origin/main` IS `unmerged` AND NOT None.
+    `<sha>..origin/main` over an unmerged claim is every commit main took since
+    the fork, not one of which is a later fact about this reading's own change,
+    so nothing is read there -- but such a sha is WAITING and not unreadable,
+    and None is the word for a subject nothing on this tracker can ever label.
+    A reading made on the claim it is about is the ordinary case, so reporting
+    those as dead would bury every row this machinery was built for.
 
     IT READS THE LOCAL `origin/main` AND FETCHES NOTHING. A clone behind the
     remote sees fewer later commits and a shorter window, which costs a label
@@ -1822,7 +1831,7 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
     try:
         if git("merge-base", "--is-ancestor", sha,
                "origin/main").returncode != 0:
-            return None
+            return {"commits": [], "window": 0, "now": None, "unmerged": True}
         window = git("rev-list", "--count", f"{sha}..origin/main")
         log = git("log", "--reverse", "--format=%H", "--name-only",
                   f"{sha}..origin/main", "--", path)
@@ -1845,10 +1854,152 @@ def fetch_commits(repo, sha, path, timeout=60, cwd=None):
             "now": now.stdout if now.returncode == 0 else None}
 
 
+# HOW MUCH HISTORY MAKES "NOBODY CHANGED IT" A FACT. A comment nobody has gone
+# back to says nothing yet; a comment still standing after twenty commits, one
+# of them on its own file, was read and left. The number is here and not in an
+# entry because it is the same question for every commit-time reading.
+COMMIT_WINDOW = 20
+
+
+def later_comments(issue, at, kind):
+    """The bodies of one issue's comments after `at` whose first word is
+    `kind`. THE ONE READER of "what was said next on that sub-issue", because
+    two joins ask it and a second copy would read a different channel."""
+    return [c.get("body") or "" for c in (issue or {}).get("comments") or []
+            if (c.get("createdAt") or "") > at
+            and (c.get("body") or "").lstrip().startswith(kind + " ")]
+
+
+def join_decision_gap(row, issue):
+    """research-bar: did the next DECISION on that sub-issue name this
+    condition as a gap?
+
+    THE OWNER'S OR PLANNER'S NEXT WORD IS THE LABEL, which is the strongest
+    this tree has for this reading: the reading says whether a NOTE meets a
+    condition of the research bar, and the DECISION answering that NOTE either
+    names what is missing or moves the work on. A DECISION carrying half a
+    condition's words is that condition named -- rule-check#460 set C's own
+    rule, reused here through `re_raised`, so both joins measure "named again"
+    the same way.
+
+    THE TWO HALVES ARE NOT EQUALLY STRONG, as `join_issue_title_kept`'s are
+    not. A condition NAMED is strong: somebody read the note and said that bar
+    was not met. A condition not named is the weak half -- the DECISION may
+    simply not have gone through them -- and it is what labels the `no` class,
+    which is why `label.from` records the join by name."""
+    if issue is None:
+        return None, "", "the issue did not read"
+    conditions = (row.get("state") or {}).get("condition") or {}
+    if not conditions:
+        return None, "", "the row carries no condition to label"
+    later = later_comments(issue, row.get("at") or "", "DECISION")
+    if not later:
+        return None, "", "no DECISION on this sub-issue after the NOTE yet"
+    body = "\n".join(later)
+    truth = {k: ("yes" if re_raised(text, body) else "no")
+             for k, text in conditions.items()}
+    named = sorted(k for k, v in truth.items() if v == "yes")
+    return (truth,
+            f"{len(later)} DECISION(s) after this NOTE on {row.get('repo')}#"
+            f"{row.get('issue')}; " + (f"named as a gap: {', '.join(named)}"
+                                       if named else "none of these named"),
+            "")
+
+
+def join_done_line_reraised(row, issue):
+    """done-test-claim, done-report-claim: did a later REVIEW on that sub-issue
+    name that Definition-of-done line again?
+
+    THE READING SAYS THE EVIDENCE SHOWS THE LINE HOLDS. A later REVIEW naming
+    that line is somebody saying it did not, which is the strong half. The
+    weak half is the sub-issue CLOSED with no REVIEW naming it -- nobody looked
+    again -- and it is what labels the `yes` class, which is why it waits for
+    the close rather than reading an open issue as agreement."""
+    if issue is None:
+        return None, "", "the issue did not read"
+    conditions = (row.get("state") or {}).get("condition") or {}
+    if not conditions:
+        return None, "", "the row carries no condition to label"
+    later = later_comments(issue, row.get("at") or "", "REVIEW")
+    body = "\n".join(later)
+    truth = {k: ("no" if later and re_raised(text, body) else "yes")
+             for k, text in conditions.items()}
+    again = sorted(k for k, v in truth.items() if v == "no")
+    if not again and str(issue.get("state", "")).upper() != "CLOSED":
+        return None, "", ("no REVIEW naming these lines yet, and the sub-issue "
+                          "is still open")
+    return (truth,
+            f"{len(later)} REVIEW(s) after this reading on {row.get('repo')}#"
+            f"{row.get('issue')}; " + (f"named again: {', '.join(again)}"
+                                       if again else "the sub-issue closed "
+                                       "with none of these named again"),
+            "")
+
+
+def join_comment_rewritten(row, seen):
+    """docstring-claims, reference-claims, model-comment: did a later commit
+    take that claim out of the file?
+
+    THE READING SAYS A CLAIM IS CONTRADICTED BY THE CODE UNDER IT, and the
+    later fact is what somebody did to the claim. A claim GONE while the
+    definition it is about is still there is the strong half: the comment was
+    rewritten and the claim did not survive it. A claim still standing is the
+    weak half -- and it is only read as one at all once somebody has come back
+    to that file and left it, which is why `no` needs a later commit ON THE
+    FILE and a window of `COMMIT_WINDOW` commits behind it.
+
+    TWO STATES ARE NOT LABELLED AT ALL, and both are said rather than guessed:
+    the file gone from `origin/main`, where what happened to the claim cannot
+    be read from what replaced it; and the DEFINITION gone, where a claim gone
+    with it says nothing about the claim. A claim left undecided is simply
+    left out of the truth, so the ones that are decided are not held back by
+    it."""
+    if seen is None:
+        return None, "", "the file's history did not read"
+    if seen.get("unmerged"):
+        return None, "", (f"{row.get('commit', '')[:12]} has not reached "
+                          f"`origin/main`, so no commit after it is a later "
+                          f"fact about this reading")
+    claims = (row.get("state") or {}).get("claim") or {}
+    if not claims:
+        return None, "", "the row carries no claim to label"
+    now = seen.get("now")
+    if now is None:
+        return None, "", (f"`{row.get('path')}` is gone from `origin/main`, so "
+                          f"what happened to the claim cannot be read from "
+                          f"what replaced it")
+    name = row.get("name") or ""
+    if name and name not in now:
+        return None, "", (f"`{name}` is gone from `{row.get('path')}`, so a "
+                          f"claim gone with it says nothing about the claim")
+    touched, window = len(seen.get("commits") or []), seen.get("window") or 0
+    flat = " ".join(now.split())
+    truth = {}
+    for item, text in claims.items():
+        if " ".join(str(text).split()) not in flat:
+            truth[item] = "yes"
+        elif touched and window >= COMMIT_WINDOW:
+            truth[item] = "no"
+    if not truth:
+        return None, "", (f"{window} commit(s) on `origin/main` since, "
+                          f"{touched} of them on this file; every claim is "
+                          f"still there and that is under {COMMIT_WINDOW}")
+    gone = sorted(k for k, v in truth.items() if v == "yes")
+    return (truth,
+            f"{len(truth)} of {len(claims)} claim(s) labelled on "
+            f"{row.get('path')} `{name}` after {row.get('commit', '')[:12]}, "
+            f"{window} commit(s) and {touched} on the file since; "
+            + (f"rewritten away: {', '.join(gone)}" if gone
+               else "each still there"), "")
+
+
 JOINS = {"issue-title-kept": join_issue_title_kept,
          "issue-kind-label": join_issue_kind_label,
          "thread-refinding": join_thread_refinding,
-         "filing-parent-slug": join_filing_parent_slug}
+         "filing-parent-slug": join_filing_parent_slug,
+         "decision-gap": join_decision_gap,
+         "done-line-reraised": join_done_line_reraised,
+         "comment-rewritten": join_comment_rewritten}
 # WHICH FIELDS A ROW'S JOIN READS, and which fetch answers it: (the fetch, the
 # fields it is given after the repository). A row carries its join key as
 # FIELDS, so the subject is the field it names and never a guess. A commit-time

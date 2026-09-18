@@ -57,7 +57,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  },
  "reference-claims": {
@@ -120,7 +120,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  },
  "research-bar": {
@@ -170,7 +170,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "decision-gap",
   "bands": {}
  },
  "finding-sort": {
@@ -211,6 +211,7 @@
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "no later fact of this tree labels it. The reading sorts a finding into defect or refinement; the DECISION's candidate -- the same thread's next REVIEW, the finding re-found or gone -- says whether the finding was DISPOSED, which is `thread-refinding`'s word and not one of these. A finding raised again may be either kind, and one never raised again may be either kind fixed.",
   "bands": {}
  },
  "verb-first": {
@@ -360,6 +361,7 @@
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "no later fact of this tree labels it. `thread-refinding` answers disposed or undisposed, and this reading answers whether the slice contradicts the finding's claim about it; a finding disposed was as often fixed as wrong, so reusing that join would write the two classes into one word.",
   "bands": {}
  },
  "diff-screen": {
@@ -439,6 +441,7 @@
    "no_under": 0.2
   },
   "join": null,
+  "join_why": "one fact cannot label five questions. The later fact this tree holds for a file is a commit touching it again, and this reading asks five different things of that file -- behaviour, boundary, caller, failure, untested -- each of which that one commit is consistent with either way.",
   "bands": {}
  },
  "C-report-disposes-finding": {
@@ -514,6 +517,7 @@
   "thresholds": {},
   "combine": "nothing yet. At `shadow` the answer is recorded and no cut is applied, so no code reads it",
   "join": null,
+  "join_why": "the fact is not on this tracker. One `gh` account signs every session's write, so who wrote a REVIEW and who wrote the commits is the same name in the API; the thread the reading is given is already the whole of what this machine can see.",
   "bands": {
    "model": "jev-1.13.0",
    "measured": null,
@@ -597,6 +601,7 @@
   },
   "thresholds": {},
   "join": null,
+  "join_why": "nothing later reads it. The reading is over the text of a request at the moment it is filed, and no artifact afterwards records whether that request addressed its judge -- the filed issue holds the body, which is the state, not a later fact about it.",
   "bands": {
    "model": "jev-1.13.0",
    "measured": "2026-09-17",
@@ -643,6 +648,7 @@
    "no_match": "noMatch"
   },
   "join": null,
+  "join_why": "the fact is one-sided. A later REVIEW naming a Definition-of-done line says no test carried it, which is the `noMatch` option; nothing later says WHICH candidate carried one that was carried, so every case this join could write would wear one option and the band would be fitted to it.",
   "bands": {}
  },
  "done-test-claim": {
@@ -685,7 +691,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "done-line-reraised",
   "bands": {}
  },
  "done-report-select": {
@@ -731,6 +737,7 @@
    "no_match": "noMatch"
   },
   "join": null,
+  "join_why": "the fact is one-sided, as `done-test-select`'s is: a later REVIEW can say a line went unshown, and nothing later names which candidate showed one that was.",
   "bands": {}
  },
  "done-report-claim": {
@@ -777,7 +784,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "done-line-reraised",
   "bands": {}
  },
  "model-comment": {
@@ -823,7 +830,7 @@
    "yes_over": 0.5,
    "no_under": 0.2
   },
-  "join": null,
+  "join": "comment-rewritten",
   "bands": {}
  }
 }

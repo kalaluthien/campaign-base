@@ -645,6 +645,17 @@ THREADS = {
 }
 
 
+# ONE FILE'S HISTORY PER (sha, path), as `ISSUES` is one issue per number:
+# a commit-time reading is read at a sha AND a path, so the stub is keyed by
+# both and a row naming either alone reaches no fetch at all.
+FILES = {
+    ("o/r", "0" * 40, "spec/x.als"): {
+        "now": "-- A claim is atomic.\npred peerHasPeer {}\n",
+        "window": 30,
+        "commits": [{"sha": "1" * 40, "paths": ["spec/x.als"]}]},
+}
+
+
 def thread_row(call, number, findings, **kw):
     row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
            "reading": "C-report-disposes-finding",
@@ -691,11 +702,12 @@ def joined(m, rows):
     try:
         args = types.SimpleNamespace(
             fetch=lambda repo, number: ISSUES.get((repo, number)),
-            fetch_thread=lambda repo, number: THREADS.get((repo, number)))
+            fetch_thread=lambda repo, number: THREADS.get((repo, number)),
+            fetch_commits=lambda repo, sha, path: FILES.get((repo, sha, path)))
         m.cmd_corpus_join(args)
         out = {n: m.read_corpus(n) for n in
                ("verb-first", "work-kind", "C-report-disposes-finding",
-                "filing-scope-covers")}
+                "filing-scope-covers", "model-comment")}
     finally:
         m.CORPUS = was
         if old is None:
@@ -1094,16 +1106,25 @@ def fetch_commits_reads_one_file_s_later_commits(m):
         (got, other)
 
 
-def fetch_commits_refuses_a_sha_that_has_not_reached_main(m):
+def fetch_commits_tells_unmerged_from_unreadable(m):
     """`<sha>..origin/main` over an unmerged claim is every commit main took
     since the fork, not one of which is a later fact about this reading's own
-    change. Such a sha reads as None and the join COUNTS it, rather than
-    labelling the reading with somebody else's commit."""
+    change -- so nothing is read there. It is `unmerged` and NOT None, because
+    None is the word for a subject nothing on this tracker can ever label, and
+    a reading made on the claim it is about is the ordinary case: reporting
+    those as dead would bury every row this machinery was built for.
+
+    A REPOSITORY THIS MACHINE DOES NOT HOLD IS the None: nothing here will ever
+    read that sha, whichever day the join runs."""
     path, shas = a_clone()
     unmerged = m.fetch_commits("o/r", shas["unmerged"], "spec/x.als", cwd=path)
     elsewhere = m.fetch_commits("o/other", shas["first"], "spec/x.als",
                                 cwd=path)
-    return unmerged is None and elsewhere is None, (unmerged, elsewhere)
+    waiting, _e, why = m.join_comment_rewritten(
+        commit_row("a", "model-comment", {"c0": "x"}), unmerged)
+    return ((unmerged or {}).get("unmerged") is True and elsewhere is None
+            and waiting is None and "has not reached" in why), \
+        (unmerged, elsewhere, why)
 
 
 def the_subject_names_the_fetch_and_what_it_is_given(m):
@@ -1135,8 +1156,24 @@ def the_subject_names_the_fetch_and_what_it_is_given(m):
 
 
 CASES["fetch_commits reads one file's later commits and the file now"] = fetch_commits_reads_one_file_s_later_commits
-CASES["fetch_commits refuses a sha that has not reached origin/main"] = fetch_commits_refuses_a_sha_that_has_not_reached_main
+CASES["fetch_commits tells an unmerged sha from an unreadable one"] = fetch_commits_tells_unmerged_from_unreadable
 CASES["a row's subject names the fetch and what it is given"] = the_subject_names_the_fetch_and_what_it_is_given
+
+
+def the_join_reaches_a_commit_time_row(m):
+    """A row keyed by a sha and a path reaches `fetch_commits` and is labelled,
+    which is what the commit subject was added for: before it, every row of the
+    three comment readings parked as "carries no repo and issue or pull_request
+    field" and no join could ever touch one."""
+    cases, _lines = joined(m, [commit_row("mmmm", "model-comment", {
+        "c0": "The ref is cut on the remote.",
+        "c1": "A claim is atomic."})])
+    one = next((c for c in cases["model-comment"]
+                if c["id"] == "model-comment-mmmm"), {})
+    return (one.get("truth") == {"c0": "yes", "c1": "no"}
+            and one.get("label", {}).get("from") == "join:comment-rewritten"
+            and sorted(one.get("state") or {}) == ["body", "claim"]), \
+        (one, len(cases["model-comment"]))
 
 
 def join_writes_one_case_for_one_row(m):
@@ -1336,6 +1373,127 @@ CASES["every question over one thread goes in one call, one per finding"] = a_pe
 CASES["a finding the prefilter cleared is never sent"] = a_cleared_finding_is_never_sent
 CASES["a flag the reader computes from the answers reaches the log row"] = a_flag_may_be_computed_from_the_answers
 CASES["a per-item question must name its item"] = a_per_item_question_must_name_its_item
+
+
+def note_row(call, issue, conditions, **kw):
+    """A `research-bar` row as the reader writes one: its conditions are the
+    item source, so they are on the row and were never sent."""
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call,
+           "reading": "research-bar",
+           "read": f"kalaluthien/campaign-base#{issue} NOTE",
+           "subject": f"kalaluthien/campaign-base#{issue} NOTE",
+           "repo": "kalaluthien/campaign-base", "issue": issue,
+           "state": {"note": "NOTE w-1: measured", "condition": conditions},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": None, "raw": {}, "why": {}, "endpoint": "real",
+           "flag": None}
+    row.update(kw)
+    return row
+
+
+def commit_row(call, reading, claims, **kw):
+    """A commit-time row as a comment reader writes one: keyed by the
+    repository, the sha it committed onto, the file and the definition."""
+    row = {"at": "2026-09-17T00:00:00+00:00", "call": call, "reading": reading,
+           "read": "spec/x.als `peerHasPeer`",
+           "subject": "spec/x.als `peerHasPeer`",
+           "repo": "o/r", "commit": "0" * 40, "path": "spec/x.als",
+           "name": "peerHasPeer",
+           "state": {"body": "pred peerHasPeer {}", "claim": claims},
+           "wording": "0" * 12, "settled": None, "tier": "shadow",
+           "does": "nothing", "asked": MODEL, "answered": MODEL, "latency": 0.5,
+           "branch": None, "raw": {}, "why": {}, "endpoint": "real",
+           "flag": None}
+    row.update(kw)
+    return row
+
+
+def the_decision_join_labels_a_named_condition(m):
+    """research-bar: the next DECISION on that sub-issue either names a
+    condition as a gap -- the strong half -- or does not, which is the weak
+    half and labels the `no` class. A NOTE with no DECISION after it waits."""
+    conds = {"baseline": "runs a baseline over the same cases",
+             "raw": "names a file where the raw per-case output is kept"}
+    said = {"comments": [
+        {"createdAt": "2026-09-18T00:00:00Z",
+         "body": "DECISION planner-1: it runs a baseline over the same cases "
+                 "but nothing here is measured against it"}], "state": "OPEN"}
+    quiet = {"comments": [{"createdAt": "2026-09-18T00:00:00Z",
+                           "body": "NOTE w-1: pushed"}], "state": "OPEN"}
+    labelled, _e, _w = m.join_decision_gap(note_row("a", 1, conds), said)
+    waiting, _e, why = m.join_decision_gap(note_row("b", 2, conds), quiet)
+    return (labelled == {"baseline": "yes", "raw": "no"} and waiting is None
+            and "no DECISION" in why), (labelled, waiting, why)
+
+
+def the_done_join_labels_a_line_named_again(m):
+    """done-*-claim: a later REVIEW naming that Definition-of-done line is the
+    strong half and labels `no`; the sub-issue CLOSED with none naming it is
+    the weak half and labels `yes`. An open one with none waits."""
+    conds = {"c1": "the guard refuses a comment over the ceiling",
+             "c2": "a skip row names the rule that took it"}
+    row = dict(note_row("a", 3, conds), reading="done-test-claim")
+    named = {"state": "OPEN", "comments": [
+        {"createdAt": "2026-09-18T00:00:00Z",
+         "body": "REVIEW r-1: the guard still takes a comment over the "
+                 "ceiling, refusing nothing"}]}
+    closed = {"state": "CLOSED", "comments": []}
+    still = {"state": "OPEN", "comments": []}
+    a, _e, _w = m.join_done_line_reraised(row, named)
+    b, _e, _w = m.join_done_line_reraised(row, closed)
+    c, _e, why = m.join_done_line_reraised(row, still)
+    return (a == {"c1": "no", "c2": "yes"}
+            and b == {"c1": "yes", "c2": "yes"} and c is None
+            and "still open" in why), (a, b, c, why)
+
+
+def the_comment_join_labels_a_claim_rewritten_away(m):
+    """S1, S2 and S3: a claim gone from the file while the definition it is
+    about is still there is the strong half. A claim still standing is read as
+    `no` only once somebody has come back to that FILE and a window of commits
+    is behind it, and neither a file gone nor a definition gone is labelled at
+    all."""
+    claims = {"c0": "The ref is cut on the remote.",
+              "c1": "A claim is atomic."}
+    row = commit_row("a", "model-comment", claims)
+    kept = "-- A claim is atomic.\npred peerHasPeer {}\n"
+    seen = lambda now, touched, window: {  # noqa: E731
+        "now": now, "window": window,
+        "commits": [{"sha": "0" * 40, "paths": ["spec/x.als"]}] * touched}
+    read = lambda got: m.join_comment_rewritten(row, got)  # noqa: E731
+    try:                 # a file gone is SAID, never tripped over
+        gone_file, _e, why_file = read(seen(None, 1, 30))
+    except Exception as e:  # noqa: BLE001 -- the failure this asserts
+        gone_file, why_file = "took a file that is gone", f"{e!r}"
+    rewritten, _e, _w = m.join_comment_rewritten(row, seen(kept, 1, 30))
+    young, _e, why_young = m.join_comment_rewritten(
+        row, seen(kept + "-- The ref is cut on the remote.\n", 1, 3))
+    gone_def, _e, why_def = m.join_comment_rewritten(
+        row, seen("-- A claim is atomic.\npred somethingElse {}\n", 1, 30))
+    return (rewritten == {"c0": "yes", "c1": "no"}
+            and young is None and str(m.COMMIT_WINDOW) in why_young
+            and gone_file is None and "gone from `origin/main`" in why_file
+            and gone_def is None and "`peerHasPeer` is gone" in why_def), \
+        (rewritten, why_young, why_file, why_def)
+
+
+def a_reading_with_no_join_says_why(m):
+    """EVERY ENTRY EITHER DECLARES A JOIN OR SAYS WHY IT HAS NONE
+    (sdlc-alloy#458 DECISION 5722176509: "a fact too weak to label: leave
+    `join` null, the reason in the entry"). A null with no reason is a reading
+    nobody can tell from one whose join was simply never written."""
+    bad = []
+    for name, entry in sorted(m.load_registry().items()):
+        if entry.get("join") in m.JOINS:
+            if entry.get("join_why"):
+                bad.append(f"{name}: a join AND a reason for having none")
+            continue
+        if entry.get("join") is not None:
+            bad.append(f"{name}: join `{entry['join']}` is in no JOINS")
+        elif len(entry.get("join_why") or "") < 40:
+            bad.append(f"{name}: no `join_why` worth reading")
+    return not bad, bad
 
 
 def the_composed_question_is_what_the_reader_sent(m):
@@ -1653,6 +1811,11 @@ CASES["the join labels a closed issue by what happened to its title"] = join_lab
 CASES["the join reads the kind label the owner set"] = join_reads_the_kind_label
 CASES["a row the join cannot label stays in the log and is counted"] = join_keeps_what_it_cannot_label
 CASES["joining twice writes one case"] = join_writes_one_case_for_one_row
+CASES["the join reaches a row keyed by a sha and a path"] = the_join_reaches_a_commit_time_row
+CASES["the DECISION join labels a condition named as a gap"] = the_decision_join_labels_a_named_condition
+CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
+CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
+CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent
 CASES["a question spliced or filled from a table is what the reader sent"] = the_spliced_and_filled_questions_are_what_the_readers_sent
 CASES["a built-criteria question and a two-placeholder one are what their readers sent"] = the_done_questions_are_what_their_readers_sent
@@ -2607,6 +2770,24 @@ MUTATIONS = [
      "        for mark, field in how.items():",
      "        for mark, field in list(how.items())[:1]:",
      "a built-criteria question and a two-placeholder one are what their readers sent"),
+    ("a DECISION that named nothing read as naming everything",
+     '    truth = {k: ("yes" if re_raised(text, body) else "no")',
+     '    truth = {k: "yes"',
+     "the DECISION join labels a condition named as a gap"),
+    ("an open sub-issue read as agreement",
+     '    if not again and str(issue.get("state", "")).upper() != "CLOSED":',
+     "    if False:",
+     "the done join labels a Definition-of-done line named again"),
+    ("a claim still there labelled without a commit on its file",
+     "        elif touched and window >= COMMIT_WINDOW:",
+     "        elif True:",
+     "the comment join labels a claim rewritten away"),
+    ("a definition gone read as the claim rewritten",
+     "    if name and name not in now:", "    if False:",
+     "the comment join labels a claim rewritten away"),
+    ("a file gone read as the claim rewritten",
+     "    if now is None:", "    if False:",
+     "the comment join labels a claim rewritten away"),
     ("a per-item reading with no declared shape loaded anyway",
      '    if not isinstance(shape, dict) or shape.get("where") not in WHERE:',
      "    if False:",
@@ -2672,8 +2853,10 @@ MUTATIONS = [
              if (c.get("where") == "comment") and (c.get("at") or "") > at''',
      "the thread join reads a later REVIEW on the review channel"),
     ("the later REVIEW never read",
-     '    body = "\\n".join(later)',
-     '    body = ""',
+     '    body = "\\n".join(later)\n'
+     '    truth = {k: ("undisposed" if re_raised(text, body) else "disposed")',
+     '    body = ""\n'
+     '    truth = {k: ("undisposed" if re_raised(text, body) else "disposed")',
      "the thread join reads a later REVIEW that raised the finding again"),
     ("an open thread read as agreement",
      '        if str(thread.get("state", "")).upper() != "MERGED":',
@@ -2688,11 +2871,11 @@ MUTATIONS = [
      '        if git("merge-base", "--is-ancestor", sha,\n'
      '               "origin/main").returncode != 0:',
      "        if False:",
-     "fetch_commits refuses a sha that has not reached origin/main"),
+     "fetch_commits tells an unmerged sha from an unreadable one"),
     ("a sha read in whichever checkout the call was made from",
      "    return root if repo_of(out.stdout) == repo else None",
      "    return root",
-     "fetch_commits refuses a sha that has not reached origin/main"),
+     "fetch_commits tells an unmerged sha from an unreadable one"),
     ("a subject taken with a field of its key missing",
      "    missing = [f for f in fields if not row.get(f)]\n    if missing:",
      "    missing = []\n    if missing:",

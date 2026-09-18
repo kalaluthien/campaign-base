@@ -833,8 +833,8 @@ def base_root(start: Path):
     """(base root, note) for a script at `start`: the base checkout whose
     campaign directories it reads. (None, note) when git cannot say.
 
-    ONE HOME (rule-check#370 row 2): campaign-claim.py, campaign-local-work.py
-    and campaign-token-tally.py ask this rather than resolve their own, and
+    ONE HOME (rule-check#370 row 2): campaign-claim.py, campaign-local-work.py,
+    campaign-token-tally.py and campaign-jev.py ask this rather than resolve their own, and
     `campaign-claim.py`'s `base_root` is what the rest ask through.
 
     TWO RULES, and the first exists because the base is a member of its own

@@ -632,8 +632,12 @@ def launch_findings(rest):
     missed it (pr#495 review), and reading which flags take a value would be
     a second reader of the agent's own option table. The named cost: a
     one-token rule refuses a genuine flag value containing a space -- a path
-    with one, `--append-system-prompt` -- neither of which this procedure
-    passes, and neither appears in `scripts/fixtures/guard-allow-corpus.jsonl`.
+    with one, `--append-system-prompt`, and an `--allowedTools` list quoted
+    as one word rather than passed as the separate tokens its variadic form
+    takes. None of the three is on the launch line `launching.md` gives.
+    `scripts/fixtures/guard-allow-corpus.jsonl` neither supports that nor
+    contradicts it: it holds no `agent start` row and no `send-text` row at
+    all, so this rule has no measured allow to be read against yet.
 
     THE SENTENCE IS THE SCRIPT'S, so this reads what `campaign-assign.py`
     writes and not the act: a hand-written assignment carried by

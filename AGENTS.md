@@ -723,7 +723,13 @@ write the code. `check-merge-review.py` reads it at `shadow` — the
 `C-review-not-the-author` reading of `scripts/jev/readings.json`, over the
 thread the gate already fetched — which logs an answer and decides nothing:
 it has no cut, no join and no measurement, and moves neither the word nor the
-exit status.
+exit status. **The gate's thread readings are the `pull-request-thread` group
+and ride in one call**, so each new one costs the gate nothing a state:
+`C-report-disposes-finding` over the round's findings, `C-review-not-the-author`
+over who wrote what, and `unverified-done` with its address `noul`
+`report-addresses-judge` over the round's `REPORT` — does it claim a thing done
+with no check that could have failed named beside it. Each is at `shadow`;
+which questions the group holds is the registry's and is not counted here.
 
 **The push that retires a review does not start the next one, so whoever pushed
 it launches it and then asks for the merge**, because **a silent wait is

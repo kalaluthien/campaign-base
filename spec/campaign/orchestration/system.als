@@ -695,14 +695,14 @@ pred agentRelease {
 
 /* THE WORKER'S EXIT, the orchestration half of `sessionExit`: a
    sub-issue the worker took was released, BY ANY SESSION, and it holds no
-   live agent. On the base the planner releases, so a release by the worker
-   itself left every base worker unretirable.
-   Who sends the `/exit` is outside the model: the worker itself at its last
-   step (`.claude/skills/assuming-role/references/role-worker.md` step 9, the
-   self-leave `scripts/campaign-close.py leave`), or the planner's
-   `scripts/campaign-close.py worker` by hand, for a worker that neither left
-   nor answers a `STATUS`. No compaction is asked: `/exit` ends the context
-   whatever its size.
+   live agent. Who sends the `/exit` is outside the model, and so is who
+   reads these two: the worker itself at its last step
+   (`.claude/skills/assuming-role/references/role-worker.md` step 9, the
+   release then the self-leave `scripts/campaign-close.py leave`) holds them
+   by the order of its own steps; the planner's `scripts/campaign-close.py
+   worker` by hand, for a worker that neither left nor answers a `STATUS`,
+   reads neither -- that reading is the caller's, as its docstring says. No
+   compaction is asked: `/exit` ends the context whatever its size.
 
    THE LEAVE is `scripts/campaign-close.py`'s one step behind every way a
    session ends -- a worker's exit, a handover's (`handoff` above), and a

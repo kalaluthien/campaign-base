@@ -27,7 +27,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "campaign-transcript.py"
-sys.path.append(str(HERE.parents[3] / "scripts"))
+BASE_SCRIPTS = HERE.parents[3] / "scripts"
+sys.path.append(str(BASE_SCRIPTS))
 harness = importlib.import_module("suite-harness-test")
 
 
@@ -57,15 +58,9 @@ def work(n):
     return f"Work sub-issue kalaluthien/campaign-base#{n} now"
 
 
-def boundary(minute, post=9000):
+def boundary(minute):
     return {"type": "system", "subtype": "compact_boundary",
-            "timestamp": ts(minute), "compactMetadata": {"postTokens": post}}
-
-
-def usage(minute, tokens, **extra):
-    return dict({"type": "assistant", "timestamp": ts(minute), "message": {
-        "usage": {"input_tokens": 2, "cache_creation_input_tokens": 998,
-                  "cache_read_input_tokens": tokens - 1000}}}, **extra)
+            "timestamp": ts(minute)}
 
 
 def prompt(minute, text="Work sub-issue kalaluthien/campaign-base#9 now", **extra):
@@ -80,14 +75,6 @@ def queued(minute, text="Work sub-issue kalaluthien/campaign-base#9 now",
     return {"type": "attachment", "timestamp": ts(minute), "attachment": dict(
         {"type": "queued_command", "prompt": text, "commandMode": mode,
          "timestamp": ts(minute)}, **extra)}
-
-
-def call(minute, tool="Bash"):
-    """An assistant turn calling a tool: the work, a REPORT, a memory filed."""
-    return {"type": "assistant", "timestamp": ts(minute), "message": {
-        "content": [{"type": "tool_use", "name": tool, "input": {}}],
-        "usage": {"input_tokens": 1, "cache_creation_input_tokens": 0,
-                  "cache_read_input_tokens": 5000}}}
 
 
 def lines(*records):
@@ -151,12 +138,6 @@ def _(m):
         ["model", "Set model to `Opus 5`"], ["effort", None]])), r
 
 
-@case("last is the latest record of any kind, by time")
-def _(m):
-    r = reading(m, call(6), prompt(2, work(9)), boundary(4), usage(5, 10))
-    return r["last"] == ts(6), r
-
-
 @case("every last is by time, not by position in the file")
 def _(m):
     r = reading(m, prompt(5, work(5)), prompt(1, work(1)), boundary(3),
@@ -193,57 +174,17 @@ def _(m):
             and "no deletion read" in e[1]), (a, b, c, d, e)
 
 
-@case("context is the latest usage record's input plus cache tokens")
+@case("a subagent's records are not this session's")
 def _(m):
-    r = reading(m, usage(1, 300_000), usage(2, 120_000))
-    return r["context"] == 120_000, r
+    r = reading(m, prompt(1, work(5)), prompt(2, work(7), isSidechain=True))
+    return (r["assigned"], r["records"]) == (5, 1), r
 
 
-@case("context after a compaction is the boundary's postTokens")
+@case("a command's own echoes are not a prompt")
 def _(m):
-    r = reading(m, usage(1, 300_000), boundary(2, post=8_000))
-    return r["context"] == 8_000, r
-
-
-@case("a subagent's records are not this session's context")
-def _(m):
-    r = reading(m, usage(1, 50_000), usage(2, 400_000, isSidechain=True))
-    return r["context"] == 50_000, r
-
-
-@case("a prompt of another shape is a user record carrying text, quoted")
-def _(m):
-    r = reading(m, prompt(4, "wait,\n launch nothing"))
-    return (r["other_at"], r["other"]) == (ts(4), "wait, launch nothing"), r
-
-
-@case("the other prompt is the last by time, and an assignment is not one")
-def _(m):
-    r = reading(m, prompt(4, "wait"), prompt(2, "older"), prompt(5, work(9)))
-    return (r["other_at"], r["other"], r["assigned"]) == (ts(4), "wait", 9), r
-
-
-@case("the compaction's own echoes are not a prompt")
-def _(m):
-    r = reading(m, prompt(1, "<command-name>/compact</command-name>\n"),
-                prompt(2, "<local-command-stdout>Compacted</local-command-stdout>"))
-    return r["other_at"] is None, r
-
-
-@case("the bare /compact that release queues is not a prompt")
-def _(m):
-    r = reading(m, prompt(2, "/compact"), boundary(3))
-    return r["other_at"] is None, r
-
-
-@case("a synthetic record, a limit banner, does not zero the context")
-def _(m):
-    r = reading(m, usage(1, 351_805), {"type": "assistant", "timestamp": ts(2),
-        "message": {"model": "<synthetic>", "content": [{"type": "text",
-        "text": "You've hit your session limit"}], "usage": {
-        "input_tokens": 0, "cache_creation_input_tokens": 0,
-        "cache_read_input_tokens": 0}}})
-    return r["context"] == 351_805, r
+    r = reading(m, prompt(1, "<command-name>/compact</command-name>\n" + work(5)),
+                prompt(2, "<local-command-stdout>" + work(6)))
+    return r["assigned"] is None, r
 
 
 @case("an assignment typed into a busy pane is the assignment, whatever its origin")
@@ -255,41 +196,29 @@ def _(m):
 
 @case("a peer's message queued into the pane is not a prompt")
 def _(m):
-    r = reading(m, queued(2, "<cross-session-message from=x>", isMeta=True,
-                          origin={"kind": "peer"}))
-    return r["other_at"] is None, r
+    r = reading(m, queued(2, f"<cross-session-message from=x>{work(9)}",
+                          isMeta=True, origin={"kind": "peer"}))
+    return r["assigned"] is None, r
 
 
 @case("a queued command in any mode but prompt is not a prompt")
 def _(m):
     r = reading(m, queued(2, "Work sub-issue kalaluthien/campaign-base#9 now",
                           mode="task-notification"))
-    return r["other_at"] is None and r["assigned"] is None, r
+    return r["assigned"] is None, r
 
 
 @case("a task notification reaching an idle pane is not a prompt")
 def _(m):
     r = reading(m, boundary(2),
-                prompt(3, "<task-notification>\n<task-id>b1</task-id>"))
-    return r["other_at"] is None, r
+                prompt(3, f"<task-notification>\n<task-id>b1</task-id>{work(9)}"))
+    return r["assigned"] is None, r
 
 
-@case("a compaction whose boundary carries no size leaves no context, not the stale one")
+@case("a command's output queued while busy is not a prompt")
 def _(m):
-    r = reading(m, usage(1, 396_000), boundary(2, post=None))
-    return r["context"] is None, r
-
-
-@case("the release's /compact, queued while busy, is not a prompt")
-def _(m):
-    r = reading(m, queued(2, "/compact"), boundary(3))
-    return r["other_at"] is None, r
-
-
-@case("a person's `/compact <focus>` is a prompt")
-def _(m):
-    r = reading(m, prompt(4, "/compact keep the review findings"))
-    return r["other_at"] == ts(4), r
+    r = reading(m, queued(2, "<local-command-stdout>" + work(9)), boundary(3))
+    return r["assigned"] is None, r
 
 
 def enqueued(minute, text="/compact"):
@@ -329,36 +258,6 @@ def _(m):
     return (not any(m.compaction_pending(r) for r in ends)
             and m.compaction_pending(other) and m.compaction_pending(earlier)
             ), (ends, other, earlier)
-
-
-@case("an assistant turn with text and no tool call is not acting")
-def _(m):
-    r = reading(m, {"type": "assistant", "timestamp": ts(2),
-        "message": {"content": [{"type": "text", "text": "done"}]}})
-    return r["acted"] is None, r
-
-
-@case("an assistant record without usage leaves the context as it was")
-def _(m):
-    try:
-        r = reading(m, usage(1, 70_000), {"type": "assistant",
-                    "timestamp": ts(2), "message": {"content": []}})
-    except Exception as e:  # noqa: BLE001 -- raising is not reading
-        return False, f"raised {e.__class__.__name__}"
-    return r["context"] == 70_000, r
-
-
-@case("a tool call is read as the session acting")
-def _(m):
-    r = reading(m, call(2))
-    return r["acted"] == ts(2), r
-
-
-@case("a harness note and a summary are not a prompt")
-def _(m):
-    r = reading(m, prompt(1, "Stop hook feedback: x", isMeta=True),
-                prompt(2, "This session is being continued", isCompactSummary=True))
-    return r["other_at"] is None, r
 
 
 # the claim refs
@@ -458,7 +357,7 @@ def refs_read(m, d, *ns):
     os.environ.update({"PATH": str(d / "bin"), "TMPDIR": str(d)})
     os.chdir(d)
     try:
-        claim = m.load(m.RELEASE_SCRIPT, "campaign_claim")
+        claim = m.load(BASE_SCRIPTS / "campaign-claim.py", "campaign_claim")
         refs = m.refs_reader(m.claim_reading("7", "tk", claim), "tk")
         got = [refs(n) for n in ns]
     finally:
@@ -568,10 +467,6 @@ MUTATIONS = [
     ("the model read by position", "if msg.get(\"model\") and (out[\"model_at\"] is None or ts > out[\"model_at\"]):",
      "if msg.get(\"model\"):",
      "the model is the latest assistant's, and each slash command carries what it printed"),
-    ("last is every record", '        later("last", ts)\n', "",
-     "last is the latest record of any kind, by time"),
-    ("the other prompt by time", 'if out["other_at"] is None or ts > out["other_at"]:',
-     "if True:", "the other prompt is the last by time, and an assignment is not one"),
     ("no assignment, no time", '    if n is None:\n        return None, (f"no assignment prompt',
      '    if False:\n        return None, (f"no assignment prompt',
      "compacted after the ref went is compacted, before it stale, and no time unknown"),
@@ -587,7 +482,7 @@ MUTATIONS = [
      "hit = None", "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
     ("a queued assignment", 'said(ts, a.get("prompt"))', 'pass',
      "the assignment is the sub-issue the last assignment prompt names, typed or queued"),
-    ("the last assignment by time", 'or ts > out["assigned_at"]:', "or True:",
+    ("the last assignment by time", 'or ts > out["assigned_at"])', "or True)",
      "every last is by time, not by position in the file"),
     ("no assignment in a note or a summary", 'if r.get("isMeta") or r.get("isCompactSummary"):',
      "if False:", "an assignment in a summary, a harness note or a tool result is none"),
@@ -630,16 +525,11 @@ MUTATIONS = [
      "the compaction marker printed as text is not a compaction"),
     ("last by time", "if out[key] is None or ts > out[key]:",
      "if True:", "every last is by time, not by position in the file"),
-    ("context from usage", '"cache_read_input_tokens")))', '"input_tokens",)))',
-     "context is the latest usage record's input plus cache tokens"),
-    ("context from the boundary",
-     'size(ts, (r.get("compactMetadata") or {}).get("postTokens"))', "pass",
-     "context after a compaction is the boundary's postTokens"),
     ("skip a subagent", 'if not isinstance(r, dict) or r.get("isSidechain"):',
-     "if not isinstance(r, dict):", "a subagent's records are not this session's context"),
+     "if not isinstance(r, dict):", "a subagent's records are not this session's"),
     ("a prompt is text", "if is_prompt(content):\n                said(ts, content)",
      "if False:\n                said(ts, content)",
-     "a prompt of another shape is a user record carrying text, quoted"),
+     "every last is by time, not by position in the file"),
     ("a prompt typed into a busy pane", 'elif kind == "attachment":', "elif False:",
      "an assignment typed into a busy pane is the assignment, whatever its origin"),
     ("a queued peer message", 'and not a.get("isMeta")):', "):",
@@ -647,30 +537,17 @@ MUTATIONS = [
     ("only a queued prompt", 'and a.get("commandMode") == "prompt"', "",
      "a queued command in any mode but prompt is not a prompt"),
     ("a queued echo", 'if is_prompt(a.get("prompt")):', "if True:",
-     "the release's /compact, queued while busy, is not a prompt"),
+     "a command's output queued while busy is not a prompt"),
     ("the compaction's echo", 'COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")',
-     'COMPACTION_ECHOES = ("\\x00",)', "the compaction's own echoes are not a prompt"),
+     'COMPACTION_ECHOES = ("\\x00",)', "a command's own echoes are not a prompt"),
     ("a harness note", 'if r.get("isMeta") or r.get("isCompactSummary"):',
-     'if r.get("isCompactSummary"):', "a harness note and a summary are not a prompt"),
-    ("the bare /compact is an echo", "bool(said) and said != QUEUED_COMPACT and not",
-     "bool(said) and not", "the bare /compact that release queues is not a prompt"),
-    ("only the bare /compact", "said != QUEUED_COMPACT and not",
-     "not said.startswith(QUEUED_COMPACT) and not",
-     "a person's `/compact <focus>` is a prompt"),
-    ("only a tool call is acting", 'b.get("type") == "tool_use"',
-     'b.get("type") in ("tool_use", "text")',
-     "an assistant turn with text and no tool call is not acting"),
-    ("a record without usage", "            if not isinstance(u, dict):\n                continue\n", "",
-     "an assistant record without usage leaves the context as it was"),
+     'if r.get("isCompactSummary"):',
+     "an assignment in a summary, a harness note or a tool result is none"),
     ("skip a synthetic record", 'elif kind == "assistant" and msg.get("model") != "<synthetic>":',
-     'elif kind == "assistant":', "a synthetic record, a limit banner, does not zero the context"),
-    ("read a tool call", 'later("acted", ts)', "pass",
-     "a tool call is read as the session acting"),
+     'elif kind == "assistant":',
+     "the model is the latest assistant's, and each slash command carries what it printed"),
     ("a task notice is no prompt", "COMPACTION_ECHOES + (TASK_NOTICE,))", "COMPACTION_ECHOES)",
      "a task notification reaching an idle pane is not a prompt"),
-    ("a sizeless boundary clears the context", 'out["context"], out["context_at"] = tokens, ts',
-     'out["context"], out["context_at"] = (out["context"] if tokens is None else tokens), ts',
-     "a compaction whose boundary carries no size leaves no context, not the stale one"),
     ("pending is after the last boundary", "when(asked) > when(done)", "True",
      "every shape of /compact is asked, and pending until a boundary after it"),
     ("a /compact enqueued into a busy pane", 'elif (kind == "queue-operation"', "elif (False",

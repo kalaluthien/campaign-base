@@ -18,9 +18,9 @@ WHAT IS READ, AND FROM WHERE
 
   the transcript       `~/.claude/projects/*/<session id>.jsonl`, the file
                        herdr's session id names. The last assignment prompt,
-                       the last compaction, the context size, the model and
-                       the commands run all come from here and never from the
-                       screen: `transcript_reading` is the one reader.
+                       the last compaction, the model and the commands run all
+                       come from here and never from the screen:
+                       `transcript_reading` is the one reader.
   the refs             a campaign's claim refs, through `campaign-claim.py`'s
                        readers (`claim_reading`): a `<slug>/<N>-` ref
                        standing is sub-issue N still claimed, and GitHub is
@@ -68,9 +68,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[3]   # .claude/skills/assuming-role/scripts -> the base
 
-# The claim refs and herdr's listing live behind that script's readers, which
-# `claim_reading` is handed rather than importing: this names where they are.
-RELEASE_SCRIPT = BASE / "scripts" / "campaign-claim.py"
 # The assignment sentence's shape: `ASSIGNMENT` there is its one home.
 ASSIGN_SCRIPT = BASE / "scripts" / "campaign-assign.py"
 # GitHub's events feed: 100 a page, and HTTP 422 past the third page (probed
@@ -84,7 +81,7 @@ EVENT_PAGES = 3
 # everything else a user record carries as text counts as a prompt, which errs
 # toward reading it as work.
 COMPACTION_ECHOES = ("<command-name>/compact<", "<local-command-")
-QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is a person's prompt
+QUEUED_COMPACT = "/compact"   # exactly: `/compact <focus>` is not the queued one
 # A `/compact` that ran and wrote no boundary: a `local_command` record opening
 # with one of these (9 and 5 on this machine, 2026-09-13).
 COMPACT_REFUSALS = ("<local-command-stdout>Not enough messages to compact",
@@ -96,9 +93,6 @@ TASK_NOTICE = "<task-notification>"
 # A slash command the session ran, and what it printed: two user records in
 # that order, sharing one timestamp (probed on rule-check#431).
 COMMAND_OPEN, STDOUT_OPEN = "<command-name>/", "<local-command-stdout>"
-# How much of the last prompt of another shape a reading quotes: enough to
-# tell "wait, launch nothing" from work handed over in words.
-OTHER_CHARS = 80
 
 
 def load(path, name):
@@ -149,11 +143,11 @@ def is_compact(content):
 
 
 def is_prompt(content):
-    """Does this content carry text a person or a peer typed, rather than the
-    compaction's own echo, the bare `/compact` release queues, or a
-    background task's notice?"""
+    """Does this content carry text a person or a peer typed, rather than a
+    command's own echo or a background task's notice? An assignment sentence
+    counts only where this says yes, so a notice quoting one is not one."""
     said = "".join(texts(content)).strip()
-    return bool(said) and said != QUEUED_COMPACT and not said.startswith(
+    return bool(said) and not said.startswith(
         COMPACTION_ECHOES + (TASK_NOTICE,))
 
 
@@ -166,7 +160,7 @@ def assignment(content):
 
 def transcript_reading(lines):
     """What one session's transcript says. Pure, over its lines. Returns a
-    dict of timestamps, the context size, the model and the commands run:
+    dict of timestamps, the model and the commands run:
 
       assigned   the sub-issue the last prompt carrying an assignment
                  sentence names, at `assigned_at`: `campaign-assign.py`'s
@@ -180,52 +174,37 @@ def transcript_reading(lines):
                  a compaction is pending.
       compact_refused  the last `local_command` record of COMPACT_REFUSALS:
                  a `/compact` that ran and compacted nothing.
-      other      the last prompt carrying no assignment sentence, at
-                 `other_at`, as its first OTHER_CHARS characters. A prompt
-                 is a user record carrying text that is not the
-                 compaction's own echo and not a harness note (`isMeta`),
-                 or one typed while the pane was busy: an `attachment`
-                 record of type `queued_command`, mode `prompt`, not
-                 `isMeta` -- which a peer's message is, and a task
-                 notification is another mode.
-      acted      the last assistant record calling a tool.
-      last       the latest record of any kind: when the session last wrote.
-      model      the model of the latest assistant record, at `model_at`.
+      model      the model of the latest assistant record, at `model_at`. A
+                 `<synthetic>` record -- a limit banner, an API error -- is
+                 the harness's and is skipped.
       commands   every slash command the session ran, IN FILE ORDER, as
                  [name, what it printed or None]: `campaign-model.py` reads
                  its `/model` and `/effort` confirmations here.
-      context    input plus cache tokens of the latest usage record, or the
-                 boundary's `postTokens` when a compaction came after it --
-                 none when the boundary carries none, since the usage before
-                 it describes a context the compaction replaced. A
-                 `<synthetic>` record -- a limit banner, an API error -- is
-                 the harness's, carries zero usage, and is skipped.
+      records    how many records were read, which `ref_went` quotes when it
+                 finds no assignment among them.
+
+    A PROMPT is a user record carrying text that is not a command's own echo
+    and not a harness note (`isMeta`), or one typed while the pane was busy:
+    an `attachment` record of type `queued_command`, mode `prompt`, not
+    `isMeta` -- which a peer's message is, and a task notification is another
+    mode. Only a prompt's assignment sentence counts.
 
     BY TIMESTAMP, NOT POSITION: a command's record carries the time it was
     queued, which can be earlier than records written before it, so every
-    "last" is the latest time. Records of a subagent (`isSidechain`) are its
-    own context, not this session's."""
+    "the last" above is the latest timestamp. Records of a subagent
+    (`isSidechain`) are its own, not this session's, and are not read."""
     out = {"assigned": None, "assigned_at": None, "compacted": None,
-           "compact_asked": None, "compact_refused": None, "other": None, "other_at": None, "acted": None, "context": None,
-           "context_at": None, "records": 0, "last": None, "model": None, "model_at": None,
-           "commands": []}
+           "compact_asked": None, "compact_refused": None, "records": 0,
+           "model": None, "model_at": None, "commands": []}
 
     def later(key, ts):
         if out[key] is None or ts > out[key]:
             out[key] = ts
 
-    def size(ts, tokens):
-        if out["context_at"] is None or ts > out["context_at"]:
-            out["context"], out["context_at"] = tokens, ts
-
     def said(ts, content):
         n = assignment(content)
-        if n is None:
-            if out["other_at"] is None or ts > out["other_at"]:
-                out["other_at"] = ts
-                out["other"] = " ".join("".join(texts(content)).split())[
-                    :OTHER_CHARS]
-        elif out["assigned_at"] is None or ts > out["assigned_at"]:
+        if n is not None and (out["assigned_at"] is None
+                              or ts > out["assigned_at"]):
             out["assigned"], out["assigned_at"] = n, ts
 
     for line in lines:
@@ -239,28 +218,15 @@ def transcript_reading(lines):
         if not isinstance(ts, str):
             continue
         out["records"] += 1
-        later("last", ts)
         kind, msg = r.get("type"), r.get("message") or {}
         if kind == "system" and r.get("subtype") == "compact_boundary":
             later("compacted", ts)
-            size(ts, (r.get("compactMetadata") or {}).get("postTokens"))
         elif (kind == "system" and r.get("subtype") == "local_command"
               and str(r.get("content")).startswith(COMPACT_REFUSALS)):
             later("compact_refused", ts)
         elif kind == "assistant" and msg.get("model") != "<synthetic>":
             if msg.get("model") and (out["model_at"] is None or ts > out["model_at"]):
                 out["model"], out["model_at"] = msg["model"], ts
-            calls = msg.get("content")
-            if isinstance(calls, list) and any(
-                    isinstance(b, dict) and b.get("type") == "tool_use"
-                    for b in calls):
-                later("acted", ts)
-            u = msg.get("usage")
-            if not isinstance(u, dict):
-                continue
-            size(ts, sum(u.get(k) or 0 for k in (
-                "input_tokens", "cache_creation_input_tokens",
-                "cache_read_input_tokens")))
         elif kind == "user":
             if r.get("isMeta") or r.get("isCompactSummary"):
                 continue

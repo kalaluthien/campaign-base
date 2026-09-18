@@ -1072,7 +1072,7 @@
     "scenarios"
    ],
    "plan": "the sub-issue's `## Plan` section, whole, as the body carries it. It is read at `campaign-claim take`, which runs `check` -- BEFORE ANY SPEC IS WRITTEN, which is the moment the miss happens: the author searches `spec/` by hand, and what they miss is a duplicate scenario or a skipped Spec that needed one",
-   "scenarios": "every command `spec/commands.snapshot.json` lists, keyed s1..sN in snapshot order, each its verb and name, a newline, and the nearest `--` comment line above its declaration in the `checks.als` the snapshot names -- 217 of the 244 have one, and one whose declaration has none carries its name alone. THE HEADING IS SHARED: `-- the floor` sits above a run of commands and belongs to each of them, so the walk up passes another declaration and stops at a block comment, which is the module's own header and about no command. CUT BY ENTITY ONLY WHERE THE PLAN NAMES ONE, and a Plan naming none gets ALL OF THEM: that is the ordinary case and not a fallback. 133 of this tracker's 138 Plans name no entity at all (4 name a `spec/<entity>/...als` path, 1 a declared command in backticks), and the whole state, every command and an empty Plan, is 22,651 bytes against `STATE_BUDGET`'s 60,000 -- per entity the scenarios alone are orchestration 159 commands and 15,961 bytes, sdlc 33/2,523, github 24/2,253, session 18/1,138, directory 10/628. So NO STATE IS SKIPPED FOR WANT OF AN ENTITY, and the entity cut buys a narrower field where it is there to read and nothing where it is not. The word match that would guess one was measured and refused: `session`, `directory` and the rest are ordinary prose here -- a Claude session far more often than the spec entity -- so it would pick an entity off a coincidence (sdlc-alloy#458 NOTE 5724505059)",
+   "scenarios": "every command `spec/commands.snapshot.json` lists, keyed s1..sN in snapshot order, each its verb and name, a newline, and the nearest `--` comment line above its declaration in the `checks.als` the snapshot names -- 217 of the 244 have one, and one whose declaration has none carries its name alone. THE HEADING IS SHARED: `-- the floor` sits above a run of commands and belongs to each of them, so the walk up passes another declaration and stops at a block comment, which is the module's own header and about no command. CUT BY ENTITY ONLY WHERE THE PLAN NAMES ONE, and a Plan naming none gets ALL OF THEM: that is the ordinary case and not a fallback. 133 of this tracker's 138 Plans name no entity at all (4 name a `spec/<entity>/...als` path, 1 a declared command in backticks), and the whole state, every command and an empty Plan, is 22,651 bytes against `STATE_BUDGET`'s 60,000 -- per entity the scenarios alone are orchestration 159 commands and 15,961 bytes, sdlc 33/2,523, github 24/2,253, session 18/1,138, directory 10/628. So NO STATE IS SKIPPED FOR WANT OF AN ENTITY, and the entity cut buys a narrower field where it is there to read and nothing where it is not. THE CEILING IS THE OPTION COUNT AND NOT THE BYTES: the endpoint takes `campaign-jev.py`'s `OPTION_BUDGET` options, 255, counting the entry's own `noMatch`, and refuses 256 with an HTTP 400 that reads exactly like an outage (measured by binary search, sdlc-alloy#458 S7). `spec/` declares 244 commands, ELEVEN UNDER IT, so this is the branch the tree grows into: a cut at or over the ceiling is a SKIP ROW naming the count, never a field quietly shortened to fit, because a reading that stopped offering the right answer still answers. The word match that would guess one was measured and refused: `session`, `directory` and the rest are ordinary prose here -- a Claude session far more often than the spec entity -- so it would pick an entity off a coincidence (sdlc-alloy#458 NOTE 5724505059)",
    "why": "the duplicate is invisible at the moment it is made. `spec/` holds 244 commands over 5 entities and nothing reads a Plan against them, so whether one already covers the behaviour is asked of whoever is about to write the Spec, by hand, and the state above is that search made once and recorded"
   },
   "prefilter": {
@@ -1090,7 +1090,17 @@
   },
   "thresholds": {},
   "join": "plan-closing-diff",
-  "bands": {}
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "wording": "3024147a9eb0",
+   "cases": 36,
+   "declared": {},
+   "why": "UNCUT, AND NOT BECAUSE THE PASS WAS A FIRST ONE. The reading was measured over three runs and it does not separate: no option of it is a flag, so no cut is proposed and the entry declares none. It stays at `shadow`, where `branch` records the option and judges nothing.",
+   "how": "36 states over 3 runs, sdlc-alloy#458 S7. 12 positives -- a sub-issue whose closing pull request's `# witnesses:` line names a declared command -- against 24 negatives made BY ONE EDIT: 12 `sibling`, the same Plan against the largest entity holding none of the covering commands, and 12 `minus`, its own field with them removed. THE READING ANSWERS `noMatch` FOR ALMOST EVERYTHING: 24 of 24 negatives AND 11 of 12 positives, identically in all three runs. So the cut that flags every negative is 0.41-0.46 and it takes 11 of the 12 positives with it -- everything is flagged, which is not a reading. P(noMatch) AUC 0.63-0.68 against 0.59 for a token-overlap baseline that picks the option sharing most of the Plan's word tokens; selection hit the command the later diff names 1 of 12, against the baseline's 0 of 12. One call a state, 1.03 measured, since the cover call is reached once.",
+   "not_the_field_and_not_the_text": "TWO HYPOTHESES FOR THE FAILURE WERE PROBED AND BOTH DIED. (1) The field is 244 wide: the 10 positives whose covering commands sit in ONE entity were asked again cut to THAT entity -- 18 to 159 options, the right answer certainly on offer -- and selection hit 1 of 10, `noMatch` picked 9 of 10. (2) The option text is a command name plus a group heading two words long that several commands share: the same 10 were asked with the doc comment above the PRED instead, where the behaviour is written, and selection hit 2 of 10, `noMatch` picked 8 of 10. Neither moved it. What fails is the question, not its packaging.",
+   "known_wrong": "THE TRUTH IS A PROXY AND A WEAK ONE. A `# witnesses:` line says which scenario the work ended up TIED to, never that the scenario already covered the Plan -- and this history barely separates the two: of the 12, 8 witness a command that was in the snapshot at the closing pull request's base and 4 witness only commands their own work created. The 8 are not clean either, since a sub-issue's earlier pull request may have added the command the closing one witnesses. AND THE POPULATION IS THIN FOR A DEEPER REASON: 57 of the 69 closed sub-issues with a Plan and one closing pull request add no `# witnesses:` line at all, so nothing in this tree's history records a Plan that a pre-existing scenario covered. The duplicate this reading hunts may simply not have happened here."
+  }
  },
   "plan-scenario-cover": {
   "owner": "scripts/campaign-tracker.py check",
@@ -1128,6 +1138,13 @@
   },
   "thresholds": {},
   "join": "plan-cover-kept",
-  "bands": {}
+  "bands": {
+   "model": "jev-1.13.0",
+   "measured": "2026-09-18",
+   "wording": "1e2d0c03ece1",
+   "cases": 3,
+   "declared": {},
+   "how": "THE CALL IS ALL BUT NEVER REACHED, which is the select call's result and not this one's: the select answered `noMatch` on 35 of the 36 states, so this was asked 1 state a run, 3 in all. One positive and no negative is no measurement at all, and nothing is proposed. Whether the second call separates the Plan's behaviour from its noun is unmeasured and stays unmeasured until a select call exists that picks something (sdlc-alloy#458 S7)."
+  }
  }
 }

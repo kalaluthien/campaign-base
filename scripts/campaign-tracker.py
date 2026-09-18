@@ -1321,6 +1321,17 @@ def plan_scenario_read(repo, number, body):
         jev = load(Path(__file__).resolve().parent / "campaign-jev.py",
                    "campaign_jev")
         key = {"repo": repo, "issue": number}
+        # THE OPTION CEILING IS THE ENDPOINT'S AND THE NUMBER IS `campaign-jev`'s
+        # to state. The call carries one option a scenario PLUS the entry's own
+        # `noMatch`, so a cut of the ceiling itself is already one too many.
+        # This is the branch `spec/` grows into: 244 commands today against 255,
+        # and a Plan naming no entity gets all of them. It is a SKIP ROW naming
+        # the count, because the alternative -- dropping scenarios to fit -- is
+        # a reading that silently stopped offering the right answer.
+        if not why and len(scenarios) >= jev.OPTION_BUDGET:
+            why = (f"the cut leaves {len(scenarios)} scenario(s) and the call "
+                   f"takes {jev.OPTION_BUDGET} options counting `noMatch`: "
+                   f"`spec/` has outgrown a Plan that names no entity")
         if why:
             jev.skip(PLAN_READER, f"{repo}#{number} {PLAN_SELECT}", why)
             return

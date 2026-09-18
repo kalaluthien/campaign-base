@@ -1449,6 +1449,11 @@ def main():
     # list handed to a regex raises, and the guard around the whole reading
     # swallowed that into a reading that silently never happened.
     asked = []
+    # THE CEILING COMES FROM THE REAL MODULE, so this case tracks the number
+    # `campaign-jev.py` states rather than restating it here. Read before the
+    # loader is swapped, since the stub is what `plan_scenario_read` gets.
+    ceiling = m.load(Path(m.__file__).resolve().parent / "campaign-jev.py",
+                     "campaign_jev_real").OPTION_BUDGET
 
     def spy(*a, **k):
         mod = types.SimpleNamespace()
@@ -1457,6 +1462,7 @@ def main():
                 {group: verdict("noMatch", None, "", "shadow", "nothing")},
                 "jev-1.13.0", 0.1, "c", "logged"))
         mod.skip = lambda *a, **k: asked.append(("skip", a))
+        mod.OPTION_BUDGET = ceiling
         return mod
 
     was, m.load = m.load, spy
@@ -1469,6 +1475,21 @@ def main():
               and isinstance(asked[0][1]["plan"], str)
               and "stale claim" in asked[0][1]["plan"], asked)
         check("...and `noMatch` asks no cover call", len(asked) == 1, asked)
+        # THE CUT OVER THE ENDPOINT'S OPTION CEILING IS A SKIP ROW NAMING THE
+        # COUNT, not a field shortened to fit: `spec/` declares 244 commands
+        # against 255, so this is the branch the tree grows into, and a
+        # `choice` short of the right answer still answers.
+        asked.clear()
+        was_of, m.scenarios_of = m.scenarios_of, lambda plan, root=None: (
+            {f"s{i}": "run X" for i in range(300)}, "")
+        try:
+            m.plan_scenario_read("o/r", 5, "## Plan\n\n- refuse a stale claim\n")
+        finally:
+            m.scenarios_of = was_of
+        check("a cut over the endpoint's option ceiling is a skip row",
+              len(asked) == 1 and asked[0][0] == "skip"
+              and "300 scenario(s)" in asked[0][1][2]
+              and f"{ceiling} options" in asked[0][1][2], asked)
     finally:
         m.load = was
 

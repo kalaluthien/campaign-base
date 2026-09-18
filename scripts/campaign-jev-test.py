@@ -2038,6 +2038,33 @@ def the_plan_join_reads_the_closing_diff(m):
         (old, cover, fresh, astray, quiet, open_, dropped, two)
 
 
+def a_choice_over_the_option_ceiling_is_unknown(m):
+    """THE SECOND BUDGET, and it is read before the endpoint for the reason the
+    first is: the endpoint refuses 256 options with an HTTP 400, which reads
+    exactly like an outage, and a reading whose options are built from the
+    state grows into it as the tree grows. Measured by binary search, not read
+    off a document (sdlc-alloy#458 S7): 255 options are taken and 256 are not.
+
+    NOTHING IS DROPPED TO FIT. A `choice` short of the right answer still
+    answers, and that is the failure this exists to refuse to make."""
+    fits = {"q": {"type": "choice", "instructions": "pick",
+                  "criteria": {f"o{i}": "an option"
+                               for i in range(m.OPTION_BUDGET)}}}
+    over = {"q": {"type": "choice", "instructions": "pick",
+                  "criteria": {f"o{i}": "an option"
+                               for i in range(m.OPTION_BUDGET + 1)}}}
+    ans, model, why, hit, where = m._answer({"a": "b"}, over, {}, 1, cache=False)
+    return (ans["q"].word == m.UNKNOWN and where == m.NONE_SENT
+            and str(m.OPTION_BUDGET) in why and "q" in why
+            and len(fits["q"]["criteria"]) == m.OPTION_BUDGET
+            # THE CONTROL: one option fewer is not refused HERE -- it goes on
+            # to the key and the endpoint, which an offline case has neither
+            # of, so it fails for a DIFFERENT reason and never this one.
+            and str(m.OPTION_BUDGET) not in (
+                m._answer({"a": "b"}, fits, {}, 1, cache=False)[2])), \
+        (ans["q"], why)
+
+
 def a_reading_with_no_join_says_why(m):
     """EVERY ENTRY EITHER DECLARES A JOIN OR SAYS WHY IT HAS NONE
     (sdlc-alloy#458 DECISION 5722176509: "a fact too weak to label: leave
@@ -2378,6 +2405,7 @@ CASES["the DECISION join labels a condition named as a gap"] = the_decision_join
 CASES["the done join labels a Definition-of-done line named again"] = the_done_join_labels_a_line_named_again
 CASES["the comment join labels a claim rewritten away"] = the_comment_join_labels_a_claim_rewritten_away
 CASES["the witness join labels a case the suite dropped"] = the_witness_join_labels_a_case_the_suite_dropped
+CASES["a choice over the option ceiling is unknown"] = a_choice_over_the_option_ceiling_is_unknown
 CASES["the plan join reads the closing diff"] = the_plan_join_reads_the_closing_diff
 CASES["a reading with no join says why it has none"] = a_reading_with_no_join_says_why
 CASES["a question composed into the instructions is what the reader sent"] = the_composed_question_is_what_the_reader_sent

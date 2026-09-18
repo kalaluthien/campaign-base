@@ -39,8 +39,9 @@ with `guarded_by`, and `address_word` is the one reader of THAT rule: at
 `ADDRESS_OVER` or over the guarded reading answers `uncertain`, whatever it
 said (rule-check#471 DECISION 5717901390).
 
-UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET` -- which
-is never sent and never cut down -- no key, a `~/.env` that is not text,
+UNKNOWN IS THE ANSWER FOR EVERY FAILURE. A state over `STATE_BUDGET`, or a
+`choice` over `OPTION_BUDGET` options -- neither ever sent, neither ever cut
+down -- no key, a `~/.env` that is not text,
 `CAMPAIGN_JEV_URL` set to nothing, a URL with no scheme, an endpoint that would
 not answer, an HTTP error, a timeout, a body that is not JSON, a response naming
 another model, an answer missing for a question, an answer of another type --
@@ -180,6 +181,13 @@ TIMEOUT = 10.0
 # that knows which part of its state carries the answer -- so slicing stays the
 # reader's and this returns `unknown` naming both numbers.
 STATE_BUDGET = 60_000
+# HOW MANY `choice` OPTIONS THE ENDPOINT TAKES, measured and not read off
+# a document: 254 scenarios plus the entry's own `noMatch` answer, 255
+# refuse with an HTTP 400 that reads exactly like an outage (binary
+# search, sdlc-alloy#458 S7, 2026-09-18). It bites a reading whose
+# options are BUILT FROM THE STATE and so grow with the tree: `spec/`
+# declares 244 commands today, eleven under the ceiling.
+OPTION_BUDGET = 255
 UNKNOWN = "unknown"
 # THE ANSWER THAT LANDED BETWEEN THE EDGES, and it is NOT `unknown`. A lone cut
 # inside a measured band flips on noise, so a reading that has bands takes two
@@ -679,6 +687,18 @@ def _answer(state, questions, env, timeout, cache=True, cwd=None):
         why = (f"the state is {size} bytes, over the {STATE_BUDGET}-byte "
                f"budget, so it was not sent; slicing it is the reader's, and "
                f"this never truncates a state to fit")
+        return unknown_all(questions, why), "", why, False, NONE_SENT
+    # THE OPTION CEILING IS THE SECOND BUDGET, and it is read here for the same
+    # reason: it is the caller's own bug and the endpoint answers it with an
+    # HTTP 400, which reads exactly like an outage. A reading whose options are
+    # built from the state grows with the tree, so a cut that fits today sends
+    # 256 one command later and comes back `unknown` with nothing naming why.
+    over = sorted(qid for qid, q in questions.items()
+                  if len((q or {}).get("criteria") or {}) > OPTION_BUDGET)
+    if over:
+        why = (f"{', '.join(over)} offers more than the {OPTION_BUDGET} "
+               f"options the endpoint takes, so it was not sent; narrowing the "
+               f"option set is the reader's, and this never drops one to fit")
         return unknown_all(questions, why), "", why, False, NONE_SENT
     # THE STORE IS READ BEFORE THE KEY AND BEFORE THE ENDPOINT. A hit is an
     # answer this state, this wording and this model already gave, so a reader

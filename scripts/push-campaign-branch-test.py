@@ -3,7 +3,8 @@
 
 The subject is reached through a SYMLINK in the fixture's own `scripts/`, so
 `$0`'s directory is that one and the siblings it calls -- `check-commit-claim.py`,
-`check-diff-screen.py` and `check-form-behaviour.py` -- are stand-ins, while the
+`check-diff-screen.py`, `check-form-behaviour.py` and the `campaign-jev.py`
+naming them as the readers a push starts -- are stand-ins, while the
 code that runs is the script itself and not a copy. `gh` is a fake on PATH that records its calls.
 
 The fixture's origin has a github.com FETCH url and the bare repository as its
@@ -65,7 +66,18 @@ exec /usr/bin/mktemp "$FAKE_MKTEMP_DIR/tmp.XXXXXXXX"
 '''
 
 FAKE_CLAIM = '#!/bin/sh\necho claim\nexit 0\n'
-FAKE_SCREEN = '#!/bin/sh\nexit 0\n'
+# A READER STAND-IN records which one started, and on what.
+FAKE_SCREEN = ('#!/bin/sh\n'
+               'echo "$(basename "$0") $2" >> "$READERS_LOG"\n')
+# THE REGISTRY STAND-IN names the two readers a push starts, as the real
+# `readers-on push` does, beside itself.
+FAKE_JEV = ('#!/bin/sh\n'
+            '[ "$1 $2" = "readers-on push" ] || exit 2\n'
+            'here=$(dirname "$0")\n'
+            'echo "$here/check-diff-screen.py"\n'
+            'echo "$here/check-form-behaviour.py"\n')
+# What the last `run` saw started, since its four values are every case's.
+STARTED = []
 
 
 def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
@@ -89,7 +101,8 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
         (d / "scripts" / SCRIPT.name).symlink_to(SCRIPT)
         for name, body in (("check-commit-claim.py", FAKE_CLAIM),
                            ("check-diff-screen.py", FAKE_SCREEN),
-                           ("check-form-behaviour.py", FAKE_SCREEN)):
+                           ("check-form-behaviour.py", FAKE_SCREEN),
+                           ("campaign-jev.py", FAKE_JEV)):
             (d / "scripts" / name).write_text(body)
             (d / "scripts" / name).chmod(0o755)
         harness.fake(d / "bin", "gh", FAKE_GH)
@@ -140,7 +153,8 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
                    GH_LOG=str(log), GH_PRS=prs, FAKE_GH_SLEEP=str(gh_sleep),
                    FAKE_MKTEMP_COUNT=str(d / "mktemp-count"),
                    FAKE_MKTEMP_FAILS_AT=str(mktemp_fails_at),
-                   FAKE_MKTEMP_DIR=str(temps))
+                   FAKE_MKTEMP_DIR=str(temps),
+                   READERS_LOG=str(d / "readers"))
         if tries is not None:
             env["GH_TRIES"] = str(tries)
         if gh_fails:
@@ -152,6 +166,13 @@ def run(commits=1, prs="", gh_fails=False, gh_sleep=0, stale=0,
         if grace:
             time.sleep(grace)
         survived = Path(str(log) + ".survived").exists()
+        readers = d / "readers"
+        for _ in range(40):  # they are started unwaited, so wait for both
+            if readers.exists() and len(readers.read_text().splitlines()) >= 2:
+                break
+            time.sleep(0.05)
+        STARTED[:] = sorted(readers.read_text().splitlines()
+                            if readers.exists() else [])
         return r, calls, survived, sorted(q.name for q in temps.iterdir())
 
 
@@ -166,6 +187,10 @@ def main():
           and "--head slug/1-topic" in r.stdout
           and "first commit" in r.stdout,
           f"exit {r.returncode} out {r.stdout!r} err {r.stderr!r}")
+    check("...and it started each reader the registry says a push starts, on "
+          "this branch",
+          STARTED == ["check-diff-screen.py slug/1-topic",
+                      "check-form-behaviour.py slug/1-topic"], f"started {STARTED}")
     check("...and it asked gh about this branch's open pull requests",
           [c for c in calls if c[:2] == ["pr", "list"]]
           and "slug/1-topic" in calls[0],

@@ -2250,6 +2250,33 @@ def a_stub_never_writes_the_shared_log(m):
         (before, stubbed, lines(log), r.logged)
 
 
+def a_call_from_inside_a_clone_logs_to_the_base(m):
+    """THE FIRST LIVE CHORE'S LEFTOVER (rule-check#475, DECISION 5723273621):
+    `campaign-tracker check` run with `<campaign>/repos/<repo>/` as its working
+    directory wrote `jev.log` and `jev-cache/` under the clone, which is its
+    own git common dir. The base is the campaign directory's parent, read off
+    the `.campaign` marker before git is asked.
+
+    COUNTED, NOT READ BY PRESENCE: the base's log is there before the call, so
+    its line count is what says a row landed; the clone's `runtime/` must not
+    exist after, since nothing there existed before."""
+    base, log = a_base("clone-log")
+    campaign = base / "campaign-fix-260918"
+    clone = campaign / "repos" / "member"
+    clone.mkdir(parents=True, exist_ok=True)
+    (campaign / ".campaign").write_text("485 fix\n")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(clone)], check=True)
+    shutil.rmtree(clone / "runtime", ignore_errors=True)
+    before = lines(log)
+    said = m.log_call({"a": 3}, env={"HOME": str(HOME)}, cwd=clone)
+    cache = m.cache_path("k", env={"HOME": str(HOME)}, cwd=clone)
+    return (lines(log) == before + 1 and not (clone / "runtime").exists()
+            and cache is not None
+            and (base / "runtime").resolve() in cache.resolve().parents), \
+        (before, lines(log), said, sorted(p.name for p in clone.iterdir()),
+         cache)
+
+
 def a_row_of_no_real_endpoint_is_refused_by_the_join(m):
     """NAMED, not dropped: the output says which row and why. Nothing can ever
     label it, so it is not waiting either."""
@@ -2443,6 +2470,8 @@ CASES["spend_lines leaves a stubbed call out of the ratio"] = spend_lines_leaves
 CASES["waiting_line counts the never-joinable apart"] = waiting_line_counts_the_never_joinable_apart
 
 CASES["a stubbed call never writes the shared log"] = a_stub_never_writes_the_shared_log
+CASES["a call from inside a clone logs to the base, not the clone"] = \
+    a_call_from_inside_a_clone_logs_to_the_base
 CASES["a row no real endpoint answered is refused by the join, and named"] = a_row_of_no_real_endpoint_is_refused_by_the_join
 
 CASES["a registry file carrying a bad act never loads"] = a_bad_entry_never_loads
@@ -2503,6 +2532,10 @@ CASES["a declared wording is the hash of its question"] = wording_is_computed
 CASES["no Jev question is written outside the registry"] = no_question_outside_the_registry
 
 MUTATIONS = [
+    ("the base root read from git alone, so a clone is its own base",
+     '        root, _note = load_sibling("check-campaign-claim.py").base_root(\n            start.resolve())',
+     '        root = Path(subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True, cwd=str(start)).stdout.strip()).parent',
+     "a call from inside a clone logs to the base, not the clone"),
     ("the two edges allowed to cross", "            if hi <= lo:",
      "            if False:", "the two edges of a band do not cross"),
     ("the edge check never run at load",

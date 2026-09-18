@@ -102,7 +102,8 @@ one. The store is scratch: gone, unreadable or corrupt, it costs a call and
 never an answer (DECISION 5716060001).
 
 EVERY CALL IS LOGGED, one JSON line to `<base>/runtime/jev.log` -- git-ignored
-scratch -- naming the reader, a SHORT label for what it read (never the state,
+scratch, the base being the campaign directory's parent when the call runs
+inside a clone (`base_root`) -- naming the reader, a SHORT label for what it read (never the state,
 which carries issue bodies), the model that answered, the latency, the
 `endpoint` word, and per question the raw value and the branch taken.
 
@@ -339,19 +340,24 @@ def branch(spec, raw):
 
 
 def base_root(cwd=None):
-    """The base checkout's root, or None. AGENTS.md's one form: the parent of
-    the COMMON git dir, which is the main checkout even from a linked worktree,
-    where `--show-toplevel` answers the worktree instead."""
+    """The base checkout's root, or None: the claim guard's `base_root`, the
+    one home of that reading (rule-check#370 row 2). A campaign directory among
+    the working directory's ancestors decides first and the base root is its
+    parent; only with none does git answer, AGENTS.md's one form.
+
+    THE GIT FORM ALONE WROTE INSIDE A CLONE (rule-check#475, DECISION
+    5723273621). `campaign-tracker check` run with `<campaign>/repos/<repo>/`
+    as its working directory got THAT repository's common dir, so `jev.log`
+    and `jev-cache/` landed under the clone: rows `report` never read, and an
+    ignored file `local-work` counted against the chore's own unattended close.
+    """
+    start = Path(cwd) if cwd else Path(os.getcwd())
     try:
-        out = subprocess.run(["git", "rev-parse", "--path-format=absolute",
-                              "--git-common-dir"], capture_output=True,
-                             text=True, timeout=10,
-                             cwd=str(cwd) if cwd else None)
-    except (OSError, subprocess.SubprocessError):
+        root, _note = load_sibling("check-campaign-claim.py").base_root(
+            start.resolve())
+    except Exception:                          # noqa: BLE001 -- no base, then
         return None
-    if out.returncode != 0 or not out.stdout.strip():
-        return None
-    return Path(out.stdout.strip()).parent.resolve()
+    return root
 
 
 # WHICH ENDPOINT ANSWERED, in one plain word on every row. `real` is the live

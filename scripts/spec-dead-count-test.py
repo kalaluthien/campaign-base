@@ -96,11 +96,15 @@ def main() -> int:
     return harness.report()
 
 
+# THE SNAPSHOT NAMES A MODULE RELATIVE TO spec/, the key its path from the
+# top: `fetch_commits` reads `origin/main:<path>`, so a relative key is a row
+# the join can never label (pr#504 F1).
 RULED = "spec/two/checks.als"
+SNAPPED = "two/checks.als"
 RULING_TREE = {
     "spec/commands.snapshot.json": json.dumps({"commands": [
-        [RULED, "run", "R1_Live"], [RULED, "run", "R2_Dead"],
-        [RULED, "run", "Cov_Gate"], [RULED, "check", "R3_TwoMachines"]]}),
+        [SNAPPED, "run", "R1_Live"], [SNAPPED, "run", "R2_Dead"],
+        [SNAPPED, "run", "Cov_Gate"], [SNAPPED, "check", "R3_TwoMachines"]]}),
     RULED: ("pred R1_Live { some univ }\n\n-- the rejected candidate\npred R2_Dead { no univ }\n\n"
             "pred Cov_Gate { lone univ }\n\nassert R3_TwoMachines { no univ }\n\n"
             "run R1_Live expect 1\nrun R2_Dead expect 1\nrun Cov_Gate expect 1\n"
@@ -217,6 +221,8 @@ RULING_MUTATIONS = [
      FACT),
     ("the flag on the wrong option", '"dead-premise": "not_shown"', '"dead-premise": "shown"',
      FLAGS),
+    ("the key relative to spec/", 'row, path = row_of(n, table), "spec/" + m',
+     "row, path = row_of(n, table), m", KEY),
     ("the key without the command", "key=dict(key, path=path, name=name)",
      "key=dict(key, path=path)", KEY),
 ]

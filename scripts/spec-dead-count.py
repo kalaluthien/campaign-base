@@ -256,14 +256,16 @@ def ruling_asks(files, text, tokens, commands, declared, until=None):
     for m, k, n in commands:
         if n.startswith("Cov_") or n not in table:
             continue
-        row = row_of(n, table)
+        # The snapshot names a module relative to spec/; the key is its path
+        # from the top, the one `fetch_commits` can read at `origin/main`.
+        row, path = row_of(n, table), "spec/" + m
         kind = premise_of(row)
         if kind:
             if kind not in fetched:
                 fetched[kind] = facts[kind]()
-            asks.append(("dead-premise", n, m, {"row": row, "fact": fetched[kind]}))
+            asks.append(("dead-premise", n, path, {"row": row, "fact": fetched[kind]}))
         if n not in declared:
-            asks.append(("dead-reader", n, m, {"row": row, "fact": reader_fact(
+            asks.append(("dead-reader", n, path, {"row": row, "fact": reader_fact(
                 [n] + callees(n, table), tokens)}))
     return asks
 

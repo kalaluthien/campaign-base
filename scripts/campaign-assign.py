@@ -35,8 +35,11 @@ WHAT IT REFUSES, AND WHY EACH IS A REFUSAL AND NOT A WARNING
                     #213): no binding or name can be read for it, so relink
                     it first. Neither flag reaches
                     these: each is a fact about the launch, not about the
-                    transcript. A raw `herdr agent prompt` is read by nothing,
-                    so they hold only on this path.
+                    transcript. They hold on this path only, which is why
+                    `check-campaign-claim.py` refuses the two herdr calls that
+                    go round it -- an `agent prompt` carrying the sentence
+                    `ASSIGNMENT` below matches, and an `agent start` whose
+                    `--` tail opens with a prompt.
   (not idle)        a pane mid-turn queues the prompt behind work whose outcome
                     nobody has read, and the assignment lands on a session that
                     may be about to report something that changes it.

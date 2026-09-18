@@ -38,12 +38,14 @@ narrowed to #9. Every other Bash command is ALLOWED UNREAD, printing so: a
 shell string is an unbounded language, and a shell write on campaign work
 lands at the commit, where the other half reads it.
 
-THREE SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
-than past that ceiling: a PATTERN KILL, a HOOK BYPASS, and a WALK OF A GUARDED
-FOLDER. None is a write with a landing, so none reaches the commit gate, and
-each has an incident behind it (kalaluthien/campaign-base#278). They are read
+FOUR SHELL RULES NAME NO TARGET AT ALL, and are read off the same split rather
+than past that ceiling: a PATTERN KILL, a HOOK BYPASS, a WALK OF A GUARDED
+FOLDER, and a RAW HERDR LAUNCH. None is a write with a landing, so none reaches
+the commit gate, and each has an incident behind it (kalaluthien/campaign-base#278,
+rule-check#461). They are read
 from the segment's command word and its own flags, so a command matching no
-name is allowed unread exactly as it was. The bypass half asks one thing more,
+name is allowed unread exactly as it was. The launch half is `launch_findings`
+and its ceilings are its own docstring's. The bypass half asks one thing more,
 the repository the call would run in: a hook that is not installed is not one
 being skipped, and the `cd`s of the command are walked to find it. The walk
 half reads the ROOT a walking verb is given -- the home folder, or one of the
@@ -374,6 +376,15 @@ BYPASS_RULE = "a hook bypass"
 # spelling. A kill through herdr names a PANE and not a pid, which is a better
 # handle -- and still not a peer's consent, which is what the rule is about.
 HERDR_KILL = ("agent", "kill")
+# THE LAUNCH PATH, AND WHAT GOING ROUND IT SKIPS (rule-check#461, rank 1 of
+# DECISION 5719727578). pr#467 put four checks in front of every assignment --
+# the sub-issue open, its campaign bound to this machine, the pane's session
+# named for that campaign, and the pane's checkout not behind `origin/main` --
+# and `campaign-assign.py`'s own docstring says they hold on that path only.
+# These are the two herdr verbs that reach a pane without it.
+HERDR_PROMPT = ("agent", "prompt")
+HERDR_START = ("agent", "start")
+LAUNCH_RULE = "a raw herdr launch"
 # herdr's own options before the subcommand that take a separate word. Same
 # hazard as git's, found in the same review: without them
 # `herdr --session main agent kill <pane>` shifts the two words this reads and
@@ -581,6 +592,72 @@ def skill_module(stem, alias):
     either. Failure is the CALLER's to report -- `role_of` turns it into
     could-not-look -- so nothing is swallowed here."""
     return load(SKILL_SCRIPTS / f"{stem}.py", alias)
+
+
+# THE ASSIGNMENT SENTENCE IS `campaign-assign.py`'S, imported and never
+# respelled: it writes the sentence and `campaign-role-brief.py` already reads
+# it back from this same attribute, so a third spelling here would admit what
+# the writer stopped saying the moment the sentence was reworded.
+ASSIGN_SCRIPT = HERE / "campaign-assign.py"
+
+
+def assignment_pattern():
+    """`campaign-assign.py`'s `ASSIGNMENT`, or None with why it did not read.
+    None is COULD NOT LOOK and is said as one: this rule then refuses nothing
+    on the prompt half, because a pattern that is not there cannot match."""
+    try:
+        return load(ASSIGN_SCRIPT, "cassign").ASSIGNMENT, None
+    except Exception as e:  # noqa: BLE001 -- every failure is one unread rule
+        return None, f"{ASSIGN_SCRIPT.name} did not load ({e.__class__.__name__})"
+
+
+def launch_findings(rest):
+    """(findings, notes) for one segment whose command word is `herdr`.
+
+    TWO SHAPES, ONE RULE. A `herdr agent prompt` whose text is an assignment
+    sentence is the assignment without its checks. A `herdr agent start`
+    carrying a prompt is the same bypass at the launch, and AGENTS.md
+    § Delegate launch refuses it twice over: herdr types the launch line into
+    the pane and word-splits it, so the delegate has been handed the first
+    word alone while the launch reads successful.
+
+    THE LAUNCH-LINE PROMPT IS READ AT ONE POSITION, the first word of the `--`
+    tail, because that is where the procedure puts it: `launching.md` says to
+    put the prompt before any variadic flag, and one hidden after `--add-dir`
+    is swallowed and dies loudly on "Input must be provided" without reaching
+    a pane at all. Reading further would need a table of the agent's own
+    options, which is herdr's to own and not this file's.
+    """
+    out, notes = [], []
+    words = herdr_words(rest)
+    pair = tuple(words[:2])
+    if pair == HERDR_PROMPT:
+        pattern, why = assignment_pattern()
+        if pattern is None:
+            notes.append(f"a `herdr agent prompt`'s text was not read for an "
+                         f"assignment: {why}")
+        elif any(pattern.search(w) for w in words[2:]):
+            out.append((LAUNCH_RULE,
+                "`herdr agent prompt` carrying an assignment sentence takes "
+                "none of the four checks `campaign-assign.py` makes before it "
+                "sends one: the sub-issue open, its campaign bound to this "
+                "machine, the pane named for that campaign, and the pane's "
+                "checkout not behind `origin/main`. Send it through that "
+                "script: `scripts/campaign-assign.py <pane> <sub-issue>`. "
+                "Every other prompt into a pane passes here unread."))
+    elif pair == HERDR_START:
+        tail = rest[rest.index("--") + 1:] if "--" in rest else []
+        if tail and not tail[0].startswith("-"):
+            out.append((LAUNCH_RULE,
+                f"a prompt on a `herdr agent start` line ({tail[0][:60]!r}) "
+                f"takes none of `campaign-assign.py`'s four launch checks, "
+                f"and herdr word-splits the line it types into the pane, so "
+                f"the delegate is handed its first word alone while the launch "
+                f"reads successful (AGENTS.md § Delegate launch). Launch with "
+                f"flags only, then send the brief: "
+                f"`scripts/campaign-assign.py <pane> <sub-issue> "
+                f"--assume-fresh`."))
+    return out, notes
 
 
 _roles = None
@@ -2070,11 +2147,15 @@ def shell_findings(pairs, cwd=None):
                 f"`kill <pid>` is allowed, in every form, and only the verb is "
                 f"read here. A peer is asked instead: `STATUS`, then "
                 f"`STAND DOWN`."))
-        elif word == "herdr" and tuple(herdr_words(rest)[:2]) == HERDR_KILL:
-            out.append((PEER_RULE,
-                "`herdr agent kill` stops a session that has not agreed to "
-                "stop. A listed peer is asked and never killed: it is the only "
-                "thing that can say which claim it holds."))
+        elif word == "herdr":
+            if tuple(herdr_words(rest)[:2]) == HERDR_KILL:
+                out.append((PEER_RULE,
+                    "`herdr agent kill` stops a session that has not agreed to "
+                    "stop. A listed peer is asked and never killed: it is the "
+                    "only thing that can say which claim it holds."))
+            found, said = launch_findings(rest)
+            out.extend(found)
+            notes.extend(said)
         cmd_at = len(seg) - len(rest)
         for token, root in walk_roots(word, rest, shell.expands[cmd_at:], where):
             what = guarded(root)

@@ -19,9 +19,13 @@ Launch in `<campaign>/repos/<repo>/`.
   prompt has to be short either way, and a `gh issue view` is the shortest thing
   that carries a whole brief. Nothing is written, nothing goes stale against the
   issue, and the brief outlives the machine.
-- **Put the prompt before any variadic flag.** `--add-dir` and `--allowedTools`
-  swallow a trailing prompt as one of their own values, and the run dies on
-  "Input must be provided".
+- **No prompt on the launch line at all**, variadic flag or not: the brief is
+  delivered afterwards, by the script "Delivering the prompt" below names, and
+  `scripts/check-campaign-claim.py` refuses a launch line whose `--` tail
+  opens with a word rather than a flag. One put after `--add-dir` or
+  `--allowedTools` is swallowed as one of their values and the run dies on
+  "Input must be provided", which is loud; one put before them is silent, and
+  that is the half the guard reads.
 - **Pass `--add-dir <base> [<other paths the sub-issue names>]` for a MEMBER
   repository.** Its delegate's cwd is `<campaign>/repos/<repo>/`, and the claim
   script under `<base>/scripts/` lies outside it, so without the flag its first
@@ -85,7 +89,9 @@ four messages.
 A prompt put on the launch line is
 word-split: a launch ending with a whole sentence delivered its first word alone,
 and the delegate reported it had been given no brief while the launch looked
-successful.
+successful. **A raw `herdr agent prompt` carrying the assignment sentence is
+refused the same way**, and by the same reader, since the four checks above
+live on this script's path and nowhere else.
 
 This form submits and returns; it does not wait. Every waiting behaviour belongs
 to `--wait`, which it does not pass. **If you add `--wait`, add a `--timeout`

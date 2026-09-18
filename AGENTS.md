@@ -568,7 +568,10 @@ there is nothing to keep in step with it and nothing that dies with a directory;
 the prompt is delivered by **`scripts/campaign-assign.py`**, which sends
 `herdr agent prompt`, and never on the launch line, an instance of § The four messages' criterion rather than a second rule;
 and **read the pane once after every launch**, because the dialogs that halt a
-fresh delegate do not all report `blocked`. The full procedure — the launch
+fresh delegate do not all report `blocked`. `check-campaign-claim.py` refuses
+the two ways round that script -- a `herdr agent prompt` carrying the
+assignment sentence, and a launch line whose `--` tail opens with a prompt --
+since its four launch checks hold on its own path and nowhere else. The full procedure — the launch
 line and its flags, the outcome names, and the three dialogs — is
 `.claude/skills/assuming-role/references/launching.md`.
 
